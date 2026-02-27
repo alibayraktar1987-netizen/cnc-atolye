@@ -893,9 +893,9 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
   })();
   const dayLabels=dayKeys.map(k=>{
     const d=parseYmdLocal(k);
-    return period==="haftalik"
-      ? new Intl.DateTimeFormat("tr-TR",{weekday:"short",day:"2-digit"}).format(d)
-      : new Intl.DateTimeFormat("tr-TR",{day:"2-digit",month:"2-digit"}).format(d);
+    if(period==="haftalik") return new Intl.DateTimeFormat("tr-TR",{weekday:"short",day:"2-digit"}).format(d);
+    if(period==="aylik") return String(d.getDate());
+    return new Intl.DateTimeFormat("tr-TR",{day:"2-digit",month:"2-digit"}).format(d);
   });
   const lineSeries=machines.map((m,i)=>{
     const totals=dayKeys.map(day=>filtered
