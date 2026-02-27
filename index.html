@@ -94,6 +94,13 @@ const C = {
   purple:"#9b7ff4",
   text:"#e2e5f0", muted:"#5a5f75", muted2:"#8b90a8",
 };
+const ORDER_STATUS_OPTIONS = [
+  { id:"active", label:"Aktif", color:C.green },
+  { id:"completed", label:"Tamamlandı", color:C.accent },
+  { id:"shipped", label:"Kargolandı", color:C.warn },
+  { id:"liquidation", label:"Tesfiyede", color:C.red },
+  { id:"passive", label:"Pasif", color:C.muted2 },
+];
 
 // ── HELPERS ──────────────────────────────────────────────────
 const pad2 = n => String(n).padStart(2,"0");
@@ -140,6 +147,9 @@ function formatBytes(b) {
   return (b/1048576).toFixed(1)+" MB";
 }
 function hashPass(p) { return btoa(unescape(encodeURIComponent(p))); }
+function getOrderStatusMeta(status) {
+  return ORDER_STATUS_OPTIONS.find(s=>s.id===status) || ORDER_STATUS_OPTIONS.find(s=>s.id==="passive");
+}
 
 // ── STYLE ATOMS ──────────────────────────────────────────────
 const labelSt={color:C.muted2,fontSize:11,letterSpacing:.8,textTransform:"uppercase",fontWeight:600,marginBottom:6,display:"block"};
@@ -371,6 +381,8 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   const [loading,setLoading]=useState(true);
   const [showForm,setShowForm]=useState(false);
   const [editId,setEditId]=useState(null);
+  const [statusFilter,setStatusFilter]=useState("all");
+  const [search,setSearch]=useState("");
   const [viewOrder,setViewOrder]=useState(null);
   const [previewFile,setPreviewFile]=useState(null);
   const [uploading,setUploading]=useState(false);
@@ -420,11 +432,18 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
     setShowForm(false); setForm(emptyForm); setEditId(null);
   }
 
-  async function toggleStatus(o) {
-    const ns=o.status==="active"?"passive":"active";
-    await window.DB.updateDoc("orders",o.id,{status:ns});
-    setOrders(orders=>orders.map(x=>x.id===o.id?{...x,status:ns}:x));
+  async function setOrderStatus(o,status) {
+    if(o.status===status) return;
+    await window.DB.updateDoc("orders",o.id,{status});
+    setOrders(orders=>orders.map(x=>x.id===o.id?{...x,status}:x));
   }
+
+  const q=search.trim().toLowerCase();
+  const filteredOrders=orders.filter(o=>{
+    const statusOk=statusFilter==="all" ? true : (o.status||"passive")===statusFilter;
+    const textOk=!q || (o.code||"").toLowerCase().includes(q) || (o.name||"").toLowerCase().includes(q) || (o.material||"").toLowerCase().includes(q);
+    return statusOk&&textOk;
+  });
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
 
@@ -434,7 +453,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16,marginBottom:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
           <div><div style={{fontWeight:800,fontSize:18,fontFamily:"monospace",color:C.text}}>{viewOrder.code}</div><div style={{fontSize:15,fontWeight:600,marginTop:2,color:C.text}}>{viewOrder.name}</div></div>
-          <Badge label={viewOrder.status==="active"?"Aktif":"Pasif"} color={viewOrder.status==="active"?C.green:C.muted2}/>
+          <Badge label={getOrderStatusMeta(viewOrder.status).label} color={getOrderStatusMeta(viewOrder.status).color}/>
         </div>
         {[["Malzeme",viewOrder.material],["Parça Süresi",fmtSec(viewOrder.partSec)],["Maks Üretim/Gün",viewOrder.partSec?Math.floor(EFFECTIVE_SECONDS/viewOrder.partSec)+" adet":"-"],["Tezgahlar",(viewOrder.machines||[]).join(", ")],["Notlar",viewOrder.notes]].map(([l,v])=>v?(
           <div key={l} style={{marginBottom:10}}><div style={{color:C.muted2,fontSize:11,letterSpacing:.8,textTransform:"uppercase",marginBottom:2}}>{l}</div><div style={{fontSize:14,color:C.text}}>{v}</div></div>
@@ -517,13 +536,21 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
         <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>İş Emirleri · {orders.filter(o=>o.status==="active").length} aktif</div>
         <button onClick={()=>{setEditId(null);setForm({...emptyForm,code:nextOrderCode()});setShowForm(true);}} style={{...btnSt("primary"),padding:"8px 14px",fontSize:12}}>+ Yeni</button>
       </div>
+      <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+        <input style={{...inputSt,flex:"1 1 230px",padding:"9px 12px",fontSize:13}} placeholder="Kod, parça veya malzeme ara..." value={search} onChange={e=>setSearch(e.target.value)}/>
+        <select style={{...inputSt,width:170,padding:"9px 12px",fontSize:13}} value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
+          <option value="all">Tüm Durumlar</option>
+          {ORDER_STATUS_OPTIONS.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
+        </select>
+      </div>
       {orders.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"40px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}><div style={{fontSize:36,marginBottom:10}}>📋</div>Henüz iş emri yok</div>}
-      {orders.map(o=>(
-        <div key={o.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"13px 15px",marginBottom:10,opacity:o.status==="passive"?.6:1}}>
+      {orders.length>0&&filteredOrders.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"24px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Filtreye uygun iş emri bulunamadı</div>}
+      {filteredOrders.map(o=>(
+        <div key={o.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"13px 15px",marginBottom:10,opacity:(o.status==="passive"||o.status==="liquidation")?.6:1}}>
           <div style={{marginBottom:8}}>
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
               <span style={{fontWeight:800,fontSize:14,fontFamily:"monospace",color:C.text}}>{o.code}</span>
-              <Badge label={o.status==="active"?"Aktif":"Pasif"} color={o.status==="active"?C.green:C.muted2}/>
+              <Badge label={getOrderStatusMeta(o.status).label} color={getOrderStatusMeta(o.status).color}/>
               {(o.files||[]).length>0&&<Badge label={`${o.files.length} dosya`} color={C.purple}/>}
             </div>
             <div style={{fontSize:13,color:C.muted2,marginTop:3}}>{o.name}</div>
@@ -533,7 +560,9 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
           <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
             <button onClick={()=>setViewOrder(o)} style={{...btnSt("ghost"),padding:"6px 12px",fontSize:12}}>👁 Görüntüle</button>
             <button onClick={()=>{setForm({code:o.code,name:o.name,material:o.material||"",partSec:o.partSec,machines:o.machines||[],notes:o.notes||"",files:o.files||[]});setEditId(o.id);setShowForm(true);}} style={{...btnSt(),padding:"6px 12px",fontSize:12}}>✏️ Düzenle</button>
-            <button onClick={()=>toggleStatus(o)} style={{...btnSt(o.status==="active"?"danger":"green"),padding:"6px 12px",fontSize:12}}>{o.status==="active"?"Pasife Al":"Aktifleştir"}</button>
+            <select style={{...inputSt,width:150,padding:"6px 10px",fontSize:12}} value={o.status||"passive"} onChange={e=>setOrderStatus(o,e.target.value)}>
+              {ORDER_STATUS_OPTIONS.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
+            </select>
           </div>
         </div>
       ))}
