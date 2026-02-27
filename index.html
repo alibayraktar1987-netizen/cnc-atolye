@@ -183,11 +183,17 @@ function PerfBar({perf,small}) {
 //  AUTH SCREEN
 // ════════════════════════════════════════════════════════════
 function AuthScreen({onLogin}) {
+  const [portal,setPortal]=useState("operator");
   const [mode,setMode]=useState("login");
   const [form,setForm]=useState({username:"",password:"",confirm:"",fullName:""});
   const [err,setErr]=useState(""); const [ok,setOk]=useState(""); const [loading,setLoading]=useState(false);
   const [logoError,setLogoError]=useState(false);
   const f=k=>e=>setForm(p=>({...p,[k]:e.target.value}));
+
+  useEffect(()=>{
+    if(portal==="admin"&&mode!=="login") setMode("login");
+    setErr(""); setOk("");
+  },[portal,mode]);
 
   async function doLogin() {
     setErr(""); setLoading(true);
@@ -196,6 +202,8 @@ function AuthScreen({onLogin}) {
     if(u.password!==hashPass(form.password)){setErr("Şifre hatalı.");setLoading(false);return;}
     if(u.status==="pending"){setErr("Hesabınız onay bekliyor.");setLoading(false);return;}
     if(u.status==="rejected"){setErr("Hesabınız reddedildi.");setLoading(false);return;}
+    if(portal==="admin"&&u.role!=="admin"){setErr("Bu giriş ekranı yalnızca yönetici hesapları içindir.");setLoading(false);return;}
+    if(portal==="operator"&&u.role!=="operator"){setErr("Yönetici hesabı ile Yönetici Girişi ekranını kullanın.");setLoading(false);return;}
     window.Session.set({username:u.id});
     onLogin(u); setLoading(false);
   }
@@ -223,33 +231,77 @@ function AuthScreen({onLogin}) {
 
   return (
     <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{width:"100%",maxWidth:380}}>
-        <div style={{textAlign:"center",marginBottom:28}}>
-          <div style={{width:60,height:60,borderRadius:18,background:`linear-gradient(135deg,${C.accent},#7b5cf0)`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 10px",overflow:"hidden"}}>
-            {!logoError?<img src={LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:28}}>⚙️</span>}
-          </div>
-          <div style={{fontWeight:800,fontSize:22,color:C.text,letterSpacing:-.5}}>CNC Atölye</div>
-          <div style={{color:C.muted2,fontSize:13,marginTop:2}}>İş Takip Sistemi</div>
+      <div style={{width:"100%",maxWidth:portal==="admin"?980:380}}>
+        <div style={{display:"flex",background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:4,margin:"0 auto 22px",maxWidth:420}}>
+          {[["operator","Operatör Girişi"],["admin","Yönetici Girişi"]].map(([id,lbl])=>(
+            <button key={id} onClick={()=>setPortal(id)} style={{flex:1,padding:"10px 0",border:"none",borderRadius:9,cursor:"pointer",background:portal===id?C.card:"transparent",color:portal===id?C.text:C.muted2,fontWeight:portal===id?700:500,fontSize:13,fontFamily:"inherit"}}>{lbl}</button>
+          ))}
         </div>
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:24}}>
-          <div style={{display:"flex",background:C.surface,borderRadius:10,padding:3,marginBottom:20}}>
-            {[["login","Giriş Yap"],["register","Kayıt Ol"]].map(([id,lbl])=>(
-              <button key={id} onClick={()=>{setMode(id);setErr("");setOk("");}} style={{flex:1,padding:"9px 0",border:"none",borderRadius:8,cursor:"pointer",background:mode===id?C.card:"transparent",color:mode===id?C.text:C.muted2,fontWeight:mode===id?700:400,fontSize:13,fontFamily:"inherit"}}>{lbl}</button>
-            ))}
+
+        {portal==="operator"?(
+          <div style={{width:"100%",maxWidth:380,margin:"0 auto"}}>
+            <div style={{textAlign:"center",marginBottom:28}}>
+              <div style={{width:60,height:60,borderRadius:18,background:`linear-gradient(135deg,${C.accent},#7b5cf0)`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 10px",overflow:"hidden"}}>
+                {!logoError?<img src={LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:28}}>⚙️</span>}
+              </div>
+              <div style={{fontWeight:800,fontSize:22,color:C.text,letterSpacing:-.5}}>CNC Atölye</div>
+              <div style={{color:C.muted2,fontSize:13,marginTop:2}}>İş Takip Sistemi</div>
+            </div>
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:24}}>
+              <div style={{display:"flex",background:C.surface,borderRadius:10,padding:3,marginBottom:20}}>
+                {[["login","Giriş Yap"],["register","Kayıt Ol"]].map(([id,lbl])=>(
+                  <button key={id} onClick={()=>{setMode(id);setErr("");setOk("");}} style={{flex:1,padding:"9px 0",border:"none",borderRadius:8,cursor:"pointer",background:mode===id?C.card:"transparent",color:mode===id?C.text:C.muted2,fontWeight:mode===id?700:400,fontSize:13,fontFamily:"inherit"}}>{lbl}</button>
+                ))}
+              </div>
+              {err&&<div style={{background:C.redDim,border:`1px solid ${C.red}40`,borderRadius:10,padding:"10px 14px",color:C.red,fontSize:13,marginBottom:14}}>{err}</div>}
+              {ok&&<div style={{background:C.greenDim,border:`1px solid ${C.green}40`,borderRadius:10,padding:"10px 14px",color:C.green,fontSize:13,marginBottom:14}}>{ok}</div>}
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                {mode==="register"&&<div><span style={labelSt}>Ad Soyad</span><input style={inputSt} placeholder="Adınız Soyadınız" value={form.fullName} onChange={f("fullName")}/></div>}
+                <div><span style={labelSt}>Kullanıcı Adı</span><input style={inputSt} placeholder="kullanici_adi" value={form.username} onChange={f("username")} autoCapitalize="none" autoCorrect="off"/></div>
+                <div><span style={labelSt}>Şifre</span><input style={inputSt} placeholder="••••••" type="password" value={form.password} onChange={f("password")}/></div>
+                {mode==="register"&&<div><span style={labelSt}>Şifre Tekrar</span><input style={inputSt} placeholder="••••••" type="password" value={form.confirm} onChange={f("confirm")}/></div>}
+                <button onClick={mode==="login"?doLogin:doRegister} style={{...btnSt("primary"),width:"100%",padding:14,fontSize:15,opacity:loading?.7:1}} disabled={loading}>
+                  {loading?"...":mode==="login"?"Giriş Yap":"Kayıt Ol"}
+                </button>
+              </div>
+            </div>
+            <div style={{textAlign:"center",color:C.muted,fontSize:11,marginTop:12}}>İlk kayıt otomatik Yönetici olur.</div>
           </div>
-          {err&&<div style={{background:C.redDim,border:`1px solid ${C.red}40`,borderRadius:10,padding:"10px 14px",color:C.red,fontSize:13,marginBottom:14}}>{err}</div>}
-          {ok&&<div style={{background:C.greenDim,border:`1px solid ${C.green}40`,borderRadius:10,padding:"10px 14px",color:C.green,fontSize:13,marginBottom:14}}>{ok}</div>}
-          <div style={{display:"flex",flexDirection:"column",gap:12}}>
-            {mode==="register"&&<div><span style={labelSt}>Ad Soyad</span><input style={inputSt} placeholder="Adınız Soyadınız" value={form.fullName} onChange={f("fullName")}/></div>}
-            <div><span style={labelSt}>Kullanıcı Adı</span><input style={inputSt} placeholder="kullanici_adi" value={form.username} onChange={f("username")} autoCapitalize="none" autoCorrect="off"/></div>
-            <div><span style={labelSt}>Şifre</span><input style={inputSt} placeholder="••••••" type="password" value={form.password} onChange={f("password")}/></div>
-            {mode==="register"&&<div><span style={labelSt}>Şifre Tekrar</span><input style={inputSt} placeholder="••••••" type="password" value={form.confirm} onChange={f("confirm")}/></div>}
-            <button onClick={mode==="login"?doLogin:doRegister} style={{...btnSt("primary"),width:"100%",padding:14,fontSize:15,opacity:loading?.7:1}} disabled={loading}>
-              {loading?"...":mode==="login"?"Giriş Yap":"Kayıt Ol"}
-            </button>
+        ):(
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16,alignItems:"stretch"}}>
+            <div style={{background:`linear-gradient(155deg,${C.surface},${C.card})`,border:`1px solid ${C.border}`,borderRadius:16,padding:22}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:18}}>
+                <div style={{width:42,height:42,borderRadius:12,background:`linear-gradient(135deg,${C.accent},#7b5cf0)`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
+                  {!logoError?<img src={LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:18}}>⚙️</span>}
+                </div>
+                <div>
+                  <div style={{fontWeight:800,fontSize:18,color:C.text,letterSpacing:-.3}}>Yönetici Paneli</div>
+                  <div style={{fontSize:12,color:C.muted2}}>Dashboard erişimi</div>
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10}}>
+                {[["Canlı Takip","Makine durumları"],["Raporlar","Verim ve hata analizi"],["İş Emirleri","Sipariş yönetimi"],["Yetkiler","Kullanıcı kontrolü"]].map(([t,d])=>(
+                  <div key={t} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+                    <div style={{fontSize:12,color:C.muted2,marginBottom:4}}>{t}</div>
+                    <div style={{fontSize:12,color:C.text,fontWeight:600}}>{d}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:22}}>
+              <div style={{fontWeight:700,fontSize:18,color:C.text,marginBottom:4}}>Yönetici Girişi</div>
+              <div style={{fontSize:12,color:C.muted2,marginBottom:16}}>Sadece yönetici hesaplarıyla giriş yapılabilir.</div>
+              {err&&<div style={{background:C.redDim,border:`1px solid ${C.red}40`,borderRadius:10,padding:"10px 14px",color:C.red,fontSize:13,marginBottom:14}}>{err}</div>}
+              {ok&&<div style={{background:C.greenDim,border:`1px solid ${C.green}40`,borderRadius:10,padding:"10px 14px",color:C.green,fontSize:13,marginBottom:14}}>{ok}</div>}
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                <div><span style={labelSt}>Kullanıcı Adı</span><input style={inputSt} placeholder="yonetici_adi" value={form.username} onChange={f("username")} autoCapitalize="none" autoCorrect="off"/></div>
+                <div><span style={labelSt}>Şifre</span><input style={inputSt} placeholder="••••••" type="password" value={form.password} onChange={f("password")}/></div>
+                <button onClick={doLogin} style={{...btnSt("primary"),width:"100%",padding:14,fontSize:15,opacity:loading?.7:1}} disabled={loading}>{loading?"...":"Yönetici Olarak Giriş Yap"}</button>
+                <button onClick={()=>{setPortal("operator");setMode("register");setErr("");setOk("");}} style={{...btnSt("ghost"),width:"100%",padding:12,fontSize:13}}>Yeni hesap oluştur</button>
+              </div>
+            </div>
           </div>
-        </div>
-        <div style={{textAlign:"center",color:C.muted,fontSize:11,marginTop:12}}>İlk kayıt otomatik Yönetici olur.</div>
+        )}
       </div>
     </div>
   );
@@ -331,7 +383,7 @@ function AdminUsers({currentUser,machines,onMachinesUpdate}) {
   return (
     <div style={{padding:16}}>
       <MachineSettings machines={machines} onUpdate={onMachinesUpdate}/>
-      <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>Kullanıcı Yönetimi · {list.length} kullanıcı</div>
+      <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>Ayarlar · Kullanıcı Yönetimi · {list.length} kullanıcı</div>
       {list.map(u=>(
         <div key={u.id} style={{background:C.card,border:`1px solid ${u.status==="pending"?C.warn+"60":C.border}`,borderRadius:14,padding:"14px 16px",marginBottom:10}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
@@ -972,7 +1024,7 @@ function App() {
     ...(canEntry?[{id:"giris",icon:"📝",label:"Giriş"}]:[]),
     ...(canReport?[{id:"rapor",icon:"📊",label:"Rapor"}]:[]),
     ...(canOrders?[{id:"orders",icon:"📋",label:"İş Emirleri"}]:[]),
-    ...(canUsers?[{id:"users",icon:"👥",label:"Kullanıcılar"}]:[]),
+    ...(canUsers?[{id:"users",icon:"👥",label:"Ayarlar"}]:[]),
   ];
 
   const activeView=(
