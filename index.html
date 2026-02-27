@@ -182,7 +182,7 @@ function PerfBar({perf,small}) {
 // ════════════════════════════════════════════════════════════
 //  AUTH SCREEN
 // ════════════════════════════════════════════════════════════
-function AuthScreen({onLogin}) {
+function AuthScreen({onLogin,logoSrc=LOGO_SRC}) {
   const [portal,setPortal]=useState("operator");
   const [mode,setMode]=useState("login");
   const [form,setForm]=useState({username:"",password:"",confirm:"",fullName:""});
@@ -195,6 +195,7 @@ function AuthScreen({onLogin}) {
     if(portal==="admin"&&mode!=="login") setMode("login");
     setErr(""); setOk("");
   },[portal,mode]);
+  useEffect(()=>{setLogoError(false);},[logoSrc]);
 
   const loadAdminStats=useCallback(async()=>{
     setAdminStats(s=>({...s,loading:true}));
@@ -272,7 +273,7 @@ function AuthScreen({onLogin}) {
           <div style={{width:"100%",maxWidth:380,margin:"0 auto"}}>
             <div style={{textAlign:"center",marginBottom:28}}>
               <div style={{width:60,height:60,borderRadius:18,background:`linear-gradient(135deg,${C.accent},#7b5cf0)`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 10px",overflow:"hidden"}}>
-                {!logoError?<img src={LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:28}}>⚙️</span>}
+                {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:28}}>⚙️</span>}
               </div>
               <div style={{fontWeight:800,fontSize:22,color:C.text,letterSpacing:-.5}}>CNC Atölye</div>
               <div style={{color:C.muted2,fontSize:13,marginTop:2}}>İş Takip Sistemi</div>
@@ -302,7 +303,7 @@ function AuthScreen({onLogin}) {
             <div style={{background:`linear-gradient(155deg,${C.surface},${C.card})`,border:`1px solid ${C.border}`,borderRadius:16,padding:22}}>
               <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:18}}>
                 <div style={{width:42,height:42,borderRadius:12,background:`linear-gradient(135deg,${C.accent},#7b5cf0)`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
-                  {!logoError?<img src={LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:18}}>⚙️</span>}
+                  {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:18}}>⚙️</span>}
                 </div>
                 <div>
                   <div style={{fontWeight:800,fontSize:18,color:C.text,letterSpacing:-.3}}>Yönetici Paneli</div>
@@ -401,10 +402,12 @@ function MachineSettings({machines,onUpdate}) {
 // ════════════════════════════════════════════════════════════
 //  ADMIN USERS
 // ════════════════════════════════════════════════════════════
-function AdminUsers({currentUser,machines,onMachinesUpdate}) {
+function AdminUsers({currentUser,machines,onMachinesUpdate,currentLogo,onLogoUpdate}) {
   const [users,setUsers]=useState([]);
   const [loading,setLoading]=useState(true);
   const [expanded,setExpanded]=useState(null);
+  const [logoLoading,setLogoLoading]=useState(false);
+  const logoInputRef=useRef(null);
 
   const load=useCallback(async()=>{ const u=await window.DB.getAll("users"); setUsers(u); setLoading(false); },[]);
   useEffect(()=>{load();},[load]);
@@ -424,8 +427,36 @@ function AdminUsers({currentUser,machines,onMachinesUpdate}) {
   const list=[...users].sort((a,b)=>{const o={pending:0,active:1,rejected:2};return(o[a.status]??3)-(o[b.status]??3);});
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
 
+  async function pickLogo(e){
+    const file=e.target.files&&e.target.files[0];
+    if(!file) return;
+    if(!file.type.startsWith("image/")){alert("Lutfen bir gorsel dosyasi secin."); return;}
+    if(file.size>2*1024*1024){alert("Logo en fazla 2MB olabilir."); return;}
+    setLogoLoading(true);
+    const data=await fileToBase64(file);
+    await onLogoUpdate(data);
+    setLogoLoading(false);
+    e.target.value="";
+  }
+
   return (
     <div style={{padding:16}}>
+      <div style={{marginBottom:18}}>
+        <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Logo Ayari</div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+            <div style={{width:56,height:56,borderRadius:12,background:C.surface,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
+              <img src={currentLogo||LOGO_SRC} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+            </div>
+            <div style={{fontSize:12,color:C.muted2}}>Giris sayfasi ve uygulama basliginda kullanilir.</div>
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={()=>logoInputRef.current?.click()} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={logoLoading}>{logoLoading?"Yukleniyor...":"Logo Yukle"}</button>
+            <button onClick={()=>onLogoUpdate("")} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}} disabled={logoLoading}>Varsayilana Don</button>
+            <input ref={logoInputRef} type="file" accept="image/*" style={{display:"none"}} onChange={pickLogo}/>
+          </div>
+        </div>
+      </div>
       <MachineSettings machines={machines} onUpdate={onMachinesUpdate}/>
       <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>Ayarlar · Kullanıcı Yönetimi · {list.length} kullanıcı</div>
       {list.map(u=>(
@@ -1276,6 +1307,7 @@ function App() {
   const [loading,setLoading]=useState(true);
   const [tab,setTab]=useState("giris");
   const [machines,setMachines]=useState(DEFAULT_MACHINES);
+  const [logoSrc,setLogoSrc]=useState(LOGO_SRC);
   const [isTablet,setIsTablet]=useState(()=>typeof window!=="undefined"?window.matchMedia("(min-width: 768px)").matches:false);
   const [logoError,setLogoError]=useState(false);
 
@@ -1283,6 +1315,8 @@ function App() {
     async function init() {
       const mc=await window.DB.getDoc("config","machines");
       if(mc&&mc.list&&mc.list.length>0) setMachines(mc.list);
+      const branding=await window.DB.getDoc("config","branding");
+      if(branding&&branding.logo) setLogoSrc(branding.logo);
       const session=window.Session.get();
       if(session){
         const u=await window.DB.getDoc("users",session.username);
@@ -1306,15 +1340,21 @@ function App() {
       else mq.removeListener(onChange);
     };
   },[]);
+  useEffect(()=>{setLogoError(false);},[logoSrc]);
 
   async function updateMachines(list){
     setMachines(list);
     await window.DB.setDoc("config","machines",{list});
   }
+  async function updateLogo(logoData){
+    const next=logoData||LOGO_SRC;
+    setLogoSrc(next);
+    await window.DB.setDoc("config","branding",{logo:logoData||""});
+  }
   async function logout(){window.Session.clear();setCurrentUser(null);setTab("giris");}
 
   if(loading) return <div style={{background:C.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12}}><div style={{width:40,height:40,border:`3px solid ${C.border}`,borderTop:`3px solid ${C.accent}`,borderRadius:"50%",animation:"spin 1s linear infinite"}}/><div style={{color:C.muted2,fontSize:13}}>Bağlanıyor...</div><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>;
-  if(!currentUser) return <AuthScreen onLogin={u=>setCurrentUser(u)}/>;
+  if(!currentUser) return <AuthScreen onLogin={u=>setCurrentUser(u)} logoSrc={logoSrc}/>;
 
   const isAdmin=currentUser.role==="admin";
   const canEntry=hasPermission(currentUser,"data_entry");
@@ -1337,7 +1377,7 @@ function App() {
       {tab==="rapor"&&<Report currentUser={currentUser} machines={machines}/>} 
       {tab==="tools"&&<ToolStock currentUser={currentUser} machines={machines}/>} 
       {tab==="orders"&&<WorkOrders currentUser={currentUser} machines={machines}/>} 
-      {tab==="users"&&<AdminUsers currentUser={currentUser} machines={machines} onMachinesUpdate={updateMachines}/>} 
+      {tab==="users"&&<AdminUsers currentUser={currentUser} machines={machines} onMachinesUpdate={updateMachines} currentLogo={logoSrc} onLogoUpdate={updateLogo}/>} 
     </>
   );
 
@@ -1347,7 +1387,7 @@ function App() {
         <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:isTablet?"14px 20px":"14px 16px",position:"sticky",top:0,zIndex:10}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             <div style={{width:34,height:34,borderRadius:10,background:`linear-gradient(135deg,${C.accent},#7b5cf0)`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
-              {!logoError?<img src={LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:16}}>⚙️</span>}
+              {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:16}}>⚙️</span>}
             </div>
             <div style={{flex:1}}><div style={{fontWeight:700,fontSize:14,color:C.text}}>CNC Atölye Takip</div><div style={{color:C.muted2,fontSize:11,display:"flex",alignItems:"center",gap:5}}><span>{currentUser.fullName}</span><Badge label={isAdmin?"Yönetici":"Operatör"} color={isAdmin?C.accent:C.muted2}/></div></div>
             <button onClick={logout} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12}}>Çıkış</button>
