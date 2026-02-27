@@ -508,21 +508,39 @@ function ToolStock({currentUser,machines=DEFAULT_MACHINES}) {
   const [showForm,setShowForm]=useState(false);
   const [editId,setEditId]=useState(null);
   const [form,setForm]=useState({code:"",name:"",category:"",machine:"",qty:"",minQty:"",location:"",notes:""});
+  const [orders,setOrders]=useState([]);
+  const [movements,setMovements]=useState([]);
+  const [moveOpenId,setMoveOpenId]=useState(null);
+  const [moveForm,setMoveForm]=useState({type:"out",qty:"",orderId:"",note:""});
 
   const load=useCallback(async()=>{
-    const rows=await window.DB.getAll("toolStock");
+    const [rows,ords,mvs]=await Promise.all([
+      window.DB.getAll("toolStock"),
+      window.DB.getAll("orders"),
+      window.DB.getAll("toolMovements"),
+    ]);
     setTools(rows.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    setOrders(ords.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setMovements(mvs.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
 
   const resetForm=()=>setForm({code:"",name:"",category:"",machine:"",qty:"",minQty:"",location:"",notes:""});
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const nextToolCode=useCallback((list=tools)=>{
+    const nums=list.map(t=>{
+      const m=String(t.code||"").toUpperCase().match(/^TKM-(\d+)$/);
+      return m?Number(m[1]):null;
+    }).filter(n=>n!==null);
+    const next=(nums.length?Math.max(...nums):0)+1;
+    return `TKM-${String(next).padStart(3,"0")}`;
+  },[tools]);
 
   async function saveTool(){
     if(!form.name.trim()){alert("Takim adi zorunlu.");return;}
     const payload={
-      code:form.code.trim(),
+      code:(form.code.trim()||nextToolCode()).toUpperCase(),
       name:form.name.trim(),
       category:form.category.trim(),
       machine:form.machine.trim(),
@@ -552,6 +570,40 @@ function ToolStock({currentUser,machines=DEFAULT_MACHINES}) {
     if(!confirm(`"${name}" takimini silmek istiyor musunuz?`)) return;
     const ok=await window.DB.deleteDoc("toolStock",id);
     if(ok) setTools(t=>t.filter(x=>x.id!==id));
+  }
+  function openMovement(toolId,type){
+    setMoveOpenId(toolId);
+    setMoveForm({type,qty:"",orderId:"",note:""});
+  }
+  async function saveMovement(tool){
+    const qty=Math.max(0,Number(moveForm.qty)||0);
+    if(!qty){alert("Miktar girin.");return;}
+    const currentQty=Number(tool.qty)||0;
+    if(moveForm.type==="out"&&qty>currentQty){alert("Stok yetersiz.");return;}
+    const nextQty=moveForm.type==="in"?(currentQty+qty):(currentQty-qty);
+    const pickedOrder=orders.find(o=>o.id===moveForm.orderId);
+    const stockOk=await window.DB.updateDoc("toolStock",tool.id,{qty:nextQty,updatedAt:new Date().toISOString()});
+    if(!stockOk){alert("Stok guncellenemedi.");return;}
+    const movePayload={
+      toolId:tool.id,
+      toolCode:tool.code||"",
+      toolName:tool.name||"",
+      type:moveForm.type,
+      qty,
+      orderId:pickedOrder?.id||"",
+      orderCode:pickedOrder?.code||"",
+      orderName:pickedOrder?.name||"",
+      note:moveForm.note.trim(),
+      createdAt:new Date().toISOString(),
+      userId:currentUser.id,
+      userName:currentUser.fullName||currentUser.id,
+      balanceAfter:nextQty,
+    };
+    await window.DB.addDoc("toolMovements",movePayload);
+    setTools(t=>t.map(x=>x.id===tool.id?{...x,qty:nextQty,updatedAt:new Date().toISOString()}:x));
+    setMovements(m=>[{...movePayload,id:`temp_${Date.now()}`},...m]);
+    setMoveOpenId(null);
+    setMoveForm({type:"out",qty:"",orderId:"",note:""});
   }
 
   const filtered=tools.filter(t=>{
@@ -597,7 +649,7 @@ function ToolStock({currentUser,machines=DEFAULT_MACHINES}) {
     <div style={{padding:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:8,flexWrap:"wrap"}}>
         <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>Takim Stogu · {tools.length} kayit · {lowCount} kritik</div>
-        {isAdmin&&<button onClick={()=>{resetForm();setEditId(null);setShowForm(true);}} style={{...btnSt("primary"),padding:"8px 14px",fontSize:12}}>+ Yeni Takim</button>}
+        {isAdmin&&<button onClick={()=>{resetForm();setEditId(null);setForm(p=>({...p,code:nextToolCode()}));setShowForm(true);}} style={{...btnSt("primary"),padding:"8px 14px",fontSize:12}}>+ Yeni Takim</button>}
       </div>
       <div style={{marginBottom:12}}>
         <input style={{...inputSt,padding:"9px 12px",fontSize:13}} placeholder="Takim adi, kod, kategori, tezgah veya konum ara..." value={search} onChange={e=>setSearch(e.target.value)}/>
@@ -627,10 +679,42 @@ function ToolStock({currentUser,machines=DEFAULT_MACHINES}) {
             {t.notes&&<div style={{fontSize:12,color:C.muted2,marginBottom:8}}>{t.notes}</div>}
             {isAdmin&&(
               <div style={{display:"flex",gap:7}}>
+                <button onClick={()=>openMovement(t.id,"in")} style={{...btnSt("green"),padding:"6px 10px",fontSize:12}}>Stok Girisi</button>
+                <button onClick={()=>openMovement(t.id,"out")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Stok Cikisi</button>
                 <button onClick={()=>{setEditId(t.id);setForm({code:t.code||"",name:t.name||"",category:t.category||"",machine:t.machine||"",qty:String(qty),minQty:String(min),location:t.location||"",notes:t.notes||""});setShowForm(true);}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
                 <button onClick={()=>removeTool(t.id,t.name||"Takim")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
               </div>
             )}
+            {isAdmin&&moveOpenId===t.id&&(
+              <div style={{marginTop:10,padding:10,background:C.surface,border:`1px solid ${C.border}`,borderRadius:10}}>
+                <div style={{display:"grid",gridTemplateColumns:"120px 1fr",gap:8}}>
+                  <select style={{...inputSt,padding:"7px 10px",fontSize:12}} value={moveForm.type} onChange={e=>setMoveForm(f=>({...f,type:e.target.value}))}>
+                    <option value="in">Giris</option>
+                    <option value="out">Cikis</option>
+                  </select>
+                  <input style={{...inputSt,padding:"7px 10px",fontSize:12}} type="number" min="1" placeholder="Miktar" value={moveForm.qty} onChange={e=>setMoveForm(f=>({...f,qty:e.target.value}))}/>
+                  <select style={{...inputSt,padding:"7px 10px",fontSize:12,gridColumn:"1 / -1"}} value={moveForm.orderId} onChange={e=>setMoveForm(f=>({...f,orderId:e.target.value}))}>
+                    <option value="">Is emri sec (opsiyonel)</option>
+                    {orders.map(o=><option key={o.id} value={o.id}>{o.code} - {o.name}</option>)}
+                  </select>
+                  <input style={{...inputSt,padding:"7px 10px",fontSize:12,gridColumn:"1 / -1"}} placeholder="Not (opsiyonel)" value={moveForm.note} onChange={e=>setMoveForm(f=>({...f,note:e.target.value}))}/>
+                </div>
+                <div style={{display:"flex",gap:7,marginTop:8}}>
+                  <button onClick={()=>saveMovement(t)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}>Hareket Kaydet</button>
+                  <button onClick={()=>setMoveOpenId(null)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kapat</button>
+                </div>
+              </div>
+            )}
+            <div style={{marginTop:10}}>
+              <div style={{color:C.muted2,fontSize:10,letterSpacing:.7,textTransform:"uppercase",marginBottom:6}}>Son Hareketler</div>
+              {movements.filter(m=>m.toolId===t.id).slice(0,3).map((m,i)=>(
+                <div key={m.id||i} style={{display:"flex",justifyContent:"space-between",fontSize:11,color:C.muted2,marginBottom:4}}>
+                  <span>{m.type==="in"?"Giris":"Cikis"} · {m.qty} {m.orderCode?`· ${m.orderCode}`:""}</span>
+                  <span>{(m.createdAt||"").slice(0,10)}</span>
+                </div>
+              ))}
+              {movements.filter(m=>m.toolId===t.id).length===0&&<div style={{fontSize:11,color:C.muted}}>Hareket yok</div>}
+            </div>
           </div>
         );
       })}
@@ -643,12 +727,14 @@ function ToolStock({currentUser,machines=DEFAULT_MACHINES}) {
 // ════════════════════════════════════════════════════════════
 function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   const [orders,setOrders]=useState([]);
+  const [toolMovements,setToolMovements]=useState([]);
   const [loading,setLoading]=useState(true);
   const [showForm,setShowForm]=useState(false);
   const [editId,setEditId]=useState(null);
   const [statusFilters,setStatusFilters]=useState([]);
   const [search,setSearch]=useState("");
   const [viewOrder,setViewOrder]=useState(null);
+  const [viewOrderMoves,setViewOrderMoves]=useState([]);
   const [previewFile,setPreviewFile]=useState(null);
   const [uploading,setUploading]=useState(false);
   const fileRef=useRef();
@@ -663,8 +749,17 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
     return `IE-${String(next).padStart(3,"0")}`;
   },[orders]);
 
-  const load=useCallback(async()=>{ const o=await window.DB.getAll("orders"); setOrders(o.sort((a,b)=>b.createdAt?.localeCompare(a.createdAt))); setLoading(false); },[]);
+  const load=useCallback(async()=>{
+    const [o,m]=await Promise.all([window.DB.getAll("orders"),window.DB.getAll("toolMovements")]);
+    setOrders(o.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setToolMovements(m.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setLoading(false);
+  },[]);
   useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    if(!viewOrder){ setViewOrderMoves([]); return; }
+    setViewOrderMoves(toolMovements.filter(m=>(m.orderId&&m.orderId===viewOrder.id)||(!m.orderId&&m.orderCode===viewOrder.code)));
+  },[viewOrder,toolMovements]);
 
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
   const toggleMachine=m=>fv("machines",form.machines.includes(m)?form.machines.filter(x=>x!==m):[...form.machines,m]);
@@ -704,6 +799,12 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   }
 
   const q=search.trim().toLowerCase();
+  const usageCountByOrder={};
+  toolMovements.forEach(m=>{
+    const key=m.orderId||m.orderCode;
+    if(!key) return;
+    usageCountByOrder[key]=(usageCountByOrder[key]||0)+1;
+  });
   const toggleStatusFilter=statusId=>{
     setStatusFilters(prev=>prev.includes(statusId)?prev.filter(x=>x!==statusId):[...prev,statusId]);
   };
@@ -727,6 +828,22 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
           <div key={l} style={{marginBottom:10}}><div style={{color:C.muted2,fontSize:11,letterSpacing:.8,textTransform:"uppercase",marginBottom:2}}>{l}</div><div style={{fontSize:14,color:C.text}}>{v}</div></div>
         ):null)}
       </div>
+      <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>Takım Kullanımları ({viewOrderMoves.length})</div>
+      {viewOrderMoves.length===0?(
+        <div style={{color:C.muted,fontSize:13,textAlign:"center",padding:20,background:C.card,borderRadius:12,border:`1px solid ${C.border}`,marginBottom:12}}>Bu iş emrine bağlı takım hareketi yok</div>
+      ):(
+        <div style={{marginBottom:12}}>
+          {viewOrderMoves.map((m,i)=>(
+            <div key={m.id||i} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",marginBottom:7,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+              <div>
+                <div style={{fontSize:13,color:C.text,fontWeight:700}}>{m.toolCode?`${m.toolCode} · `:""}{m.toolName||"Takım"}</div>
+                <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{(m.createdAt||"").slice(0,16).replace("T"," ")} {m.userName?`· ${m.userName}`:""} {m.note?`· ${m.note}`:""}</div>
+              </div>
+              <Badge label={`${m.type==="in"?"Giriş":"Çıkış"} ${m.qty}`} color={m.type==="in"?C.green:C.red}/>
+            </div>
+          ))}
+        </div>
+      )}
       <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>Teknik Dosyalar ({(viewOrder.files||[]).length})</div>
       {(viewOrder.files||[]).length===0?<div style={{color:C.muted,fontSize:13,textAlign:"center",padding:20,background:C.card,borderRadius:12,border:`1px solid ${C.border}`}}>Dosya yüklenmemiş</div>:
         (viewOrder.files||[]).map((f,i)=>(
@@ -820,6 +937,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
               <span style={{fontWeight:800,fontSize:14,fontFamily:"monospace",color:C.text}}>{o.code}</span>
               <Badge label={getOrderStatusMeta(o.status).label} color={getOrderStatusMeta(o.status).color}/>
               {(o.files||[]).length>0&&<Badge label={`${o.files.length} dosya`} color={C.purple}/>}
+              {(usageCountByOrder[o.id]||usageCountByOrder[o.code])>0&&<Badge label={`${usageCountByOrder[o.id]||usageCountByOrder[o.code]} takım`} color={C.warn}/>}
             </div>
             <div style={{fontSize:13,color:C.muted2,marginTop:3}}>{o.name}</div>
             {o.material&&<div style={{fontSize:11,color:C.muted,marginTop:1}}>🔩 {o.material}</div>}
