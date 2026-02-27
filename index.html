@@ -925,7 +925,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
               <>
                 <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:8,fontSize:11,color:C.muted2}}>
                   <span style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:12,height:12,borderRadius:3,background:C.green,display:"inline-block"}}/>Doğru</span>
-                  <span style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:12,height:12,borderRadius:3,background:"#f1c40f",display:"inline-block"}}/>Yanlış</span>
+                  <span style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:12,height:12,borderRadius:3,background:C.red,display:"inline-block"}}/>Yanlış</span>
                 </div>
                 <div style={{height:250,overflowX:"auto"}}>
                   <svg width="100%" height="250" viewBox="0 0 760 250" preserveAspectRatio="none">
@@ -954,7 +954,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
                       return (
                         <g key={b.machine}>
                           <rect x={x} y={yCorrect} width={barW} height={Math.max(hCorrect,1)} fill={C.green}/>
-                          <rect x={x} y={yWrong} width={barW} height={Math.max(hWrong,1)} fill="#f1c40f"/>
+                          <rect x={x} y={yWrong} width={barW} height={Math.max(hWrong,1)} fill={C.red}/>
                           {(b.correct+b.wrong)>0&&<text x={x+barW/2} y={Math.max(yWrong-6,16)} fill={C.text} fontSize="10" textAnchor="middle">{b.correct+b.wrong}</text>}
                           <text x={x+barW/2} y="228" fill={C.muted2} fontSize="10" textAnchor="middle">{b.machine}</text>
                         </g>
@@ -966,7 +966,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:6}}>
                   {dailyBars.map(b=>(
                     <div key={b.machine} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 8px",fontSize:11,color:C.muted2}}>
-                      <span style={{color:C.text,fontWeight:700}}>{b.machine}</span> · <span style={{color:C.green}}>✓ {b.correct}</span> <span style={{color:"#f1c40f"}}>✕ {b.wrong}</span>
+                      <span style={{color:C.text,fontWeight:700}}>{b.machine}</span> · <span style={{color:C.green}}>✓ {b.correct}</span> <span style={{color:C.red}}>✕ {b.wrong}</span>
                     </div>
                   ))}
                 </div>
