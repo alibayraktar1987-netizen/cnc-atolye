@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="tr">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
-<title>CNC AtÃ¶lye Takip</title>
+<title>CNC Atölye Takip</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
 <style>*{box-sizing:border-box;margin:0;padding:0;}body{background:#0a0c12;}</style>
 </head>
@@ -27,7 +27,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// â”€â”€ DB HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── DB HELPERS ──────────────────────────────────────────────
 window.DB = {
   async getDoc(col, id) {
     try { const s = await getDoc(doc(db, col, id)); return s.exists() ? { id: s.id, ...s.data() } : null; } catch { return null; }
@@ -49,7 +49,7 @@ window.DB = {
   }
 };
 
-// â”€â”€ SESSION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── SESSION ─────────────────────────────────────────────────
 window.Session = {
   get() { try { const s = localStorage.getItem("cnc_session"); return s ? JSON.parse(s) : null; } catch { return null; } },
   set(u) { localStorage.setItem("cnc_session", JSON.stringify(u)); },
@@ -69,19 +69,19 @@ window.dispatchEvent(new Event("fb_ready"));
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useCallback, useRef } = React;
 
-// â”€â”€ CONSTANTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── CONSTANTS ────────────────────────────────────────────────
 const DEFAULT_MACHINES = ["CNC-1","CNC-2","CNC-3","CNC-4"];
 const SHIFTS = [
-  { id:"sabah", label:"Sabah", time:"06:00â€“14:00" },
-  { id:"ogleden", label:"Ã–ÄŸleden Sonra", time:"14:00â€“22:00" },
-  { id:"gece", label:"Gece", time:"22:00â€“06:00" },
+  { id:"sabah", label:"Sabah", time:"06:00–14:00" },
+  { id:"ogleden", label:"Öğleden Sonra", time:"14:00–22:00" },
+  { id:"gece", label:"Gece", time:"22:00–06:00" },
 ];
 const EFFECTIVE_SECONDS = 72000;
 const PERMISSIONS = [
-  { id:"data_entry", label:"Veri GiriÅŸi", icon:"ğŸ“", desc:"Ãœretim verisi girebilir" },
-  { id:"view_reports", label:"Rapor GÃ¶rÃ¼ntÃ¼leme", icon:"ğŸ“Š", desc:"TÃ¼m raporlarÄ± gÃ¶rebilir" },
-  { id:"manage_orders", label:"Ä°ÅŸ Emri OluÅŸturma", icon:"ğŸ“‹", desc:"Ä°ÅŸ emri ekleyip dÃ¼zenleyebilir" },
-  { id:"approve_users", label:"KullanÄ±cÄ± Onaylama", icon:"ğŸ‘¥", desc:"KullanÄ±cÄ±larÄ± onaylayabilir" },
+  { id:"data_entry", label:"Veri Girişi", icon:"g���", desc:"Üretim verisi girebilir" },
+  { id:"view_reports", label:"Rapor Görüntüleme", icon:"g���", desc:"Tüm raporları görebilir" },
+  { id:"manage_orders", label:"İş Emri Oluşturma", icon:"g���", desc:"İş emri ekleyip düzenleyebilir" },
+  { id:"approve_users", label:"Kullanıcı Onaylama", icon:"g���", desc:"Kullanıcıları onaylayabilir" },
 ];
 
 const C = {
@@ -94,7 +94,7 @@ const C = {
   text:"#e2e5f0", muted:"#5a5f75", muted2:"#8b90a8",
 };
 
-// â”€â”€ HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── HELPERS ──────────────────────────────────────────────────
 const todayStr = () => new Date().toISOString().slice(0,10);
 const monthStr = (d=new Date()) => d.toISOString().slice(0,7);
 function weekStart(d=new Date()) {
@@ -121,10 +121,10 @@ async function fileToBase64(file) {
 }
 function getFileIcon(name) {
   const ext=(name||"").split(".").pop().toLowerCase();
-  if(["jpg","jpeg","png","gif","webp"].includes(ext)) return "ğŸ–¼ï¸";
-  if(ext==="pdf") return "ğŸ“„";
-  if(["dxf","dwg"].includes(ext)) return "ğŸ“";
-  return "ğŸ“";
+  if(["jpg","jpeg","png","gif","webp"].includes(ext)) return "g���️";
+  if(ext==="pdf") return "g���";
+  if(["dxf","dwg"].includes(ext)) return "g���";
+  return "g��?";
 }
 function formatBytes(b) {
   if(b<1024) return b+" B";
@@ -133,7 +133,7 @@ function formatBytes(b) {
 }
 function hashPass(p) { return btoa(unescape(encodeURIComponent(p))); }
 
-// â”€â”€ STYLE ATOMS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── STYLE ATOMS ──────────────────────────────────────────────
 const labelSt={color:C.muted2,fontSize:11,letterSpacing:.8,textTransform:"uppercase",fontWeight:600,marginBottom:6,display:"block"};
 const inputSt={width:"100%",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 14px",color:C.text,fontSize:14,outline:"none",boxSizing:"border-box",fontFamily:"inherit"};
 const chip=(active,color=C.accent)=>({padding:"8px 13px",borderRadius:9,border:`1px solid ${active?color:C.border}`,background:active?color+"18":C.surface,color:active?color:C.muted2,fontSize:12,fontWeight:active?700:400,cursor:"pointer",fontFamily:"inherit"});
@@ -161,9 +161,9 @@ function PerfBar({perf,small}) {
   );
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════
 //  AUTH SCREEN
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════
 function AuthScreen({onLogin}) {
   const [mode,setMode]=useState("login");
   const [form,setForm]=useState({username:"",password:"",confirm:"",fullName:""});
@@ -173,23 +173,23 @@ function AuthScreen({onLogin}) {
   async function doLogin() {
     setErr(""); setLoading(true);
     const u = await window.DB.getDoc("users", form.username.toLowerCase());
-    if(!u){setErr("KullanÄ±cÄ± bulunamadÄ±.");setLoading(false);return;}
-    if(u.password!==hashPass(form.password)){setErr("Åifre hatalÄ±.");setLoading(false);return;}
-    if(u.status==="pending"){setErr("HesabÄ±nÄ±z onay bekliyor.");setLoading(false);return;}
-    if(u.status==="rejected"){setErr("HesabÄ±nÄ±z reddedildi.");setLoading(false);return;}
+    if(!u){setErr("Kullanıcı bulunamadı.");setLoading(false);return;}
+    if(u.password!==hashPass(form.password)){setErr("�?ifre hatalı.");setLoading(false);return;}
+    if(u.status==="pending"){setErr("Hesabınız onay bekliyor.");setLoading(false);return;}
+    if(u.status==="rejected"){setErr("Hesabınız reddedildi.");setLoading(false);return;}
     window.Session.set({username:u.id});
     onLogin(u); setLoading(false);
   }
 
   async function doRegister() {
     setErr(""); setOk("");
-    if(!form.username||!form.password||!form.fullName){setErr("TÃ¼m alanlar zorunlu.");return;}
-    if(form.password!==form.confirm){setErr("Åifreler eÅŸleÅŸmiyor.");return;}
-    if(form.password.length<4){setErr("Åifre en az 4 karakter.");return;}
+    if(!form.username||!form.password||!form.fullName){setErr("Tüm alanlar zorunlu.");return;}
+    if(form.password!==form.confirm){setErr("�?ifreler eşleşmiyor.");return;}
+    if(form.password.length<4){setErr("�?ifre en az 4 karakter.");return;}
     setLoading(true);
     const key=form.username.toLowerCase().trim();
     const existing=await window.DB.getDoc("users",key);
-    if(existing){setErr("Bu kullanÄ±cÄ± adÄ± alÄ±nmÄ±ÅŸ.");setLoading(false);return;}
+    if(existing){setErr("Bu kullanıcı adı alınmış.");setLoading(false);return;}
     const allUsers=await window.DB.getAll("users");
     const isFirst=allUsers.length===0;
     const saved=await window.DB.setDoc("users",key,{
@@ -198,7 +198,7 @@ function AuthScreen({onLogin}) {
       permissions:["data_entry","view_reports"]
     });
     if(!saved){setErr("Kullanici kaydi olusturulamadi. Veritabani yetkilerini (Firestore Rules) kontrol edin.");setLoading(false);return;}
-    setOk(isFirst?"Ä°lk kullanÄ±cÄ± â†’ otomatik YÃ¶netici! GiriÅŸ yapabilirsiniz.":"KayÄ±t baÅŸarÄ±lÄ±! YÃ¶netici onayÄ±nÄ± bekleyin.");
+    setOk(isFirst?"İlk kullanıcı → otomatik Yönetici! Giriş yapabilirsiniz.":"Kayıt başarılı! Yönetici onayını bekleyin.");
     setMode("login"); setForm({username:"",password:"",confirm:"",fullName:""}); setLoading(false);
   }
 
@@ -206,37 +206,37 @@ function AuthScreen({onLogin}) {
     <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div style={{width:"100%",maxWidth:380}}>
         <div style={{textAlign:"center",marginBottom:28}}>
-          <div style={{width:60,height:60,borderRadius:18,background:`linear-gradient(135deg,${C.accent},#7b5cf0)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 10px"}}>âš™ï¸</div>
-          <div style={{fontWeight:800,fontSize:22,color:C.text,letterSpacing:-.5}}>CNC AtÃ¶lye</div>
-          <div style={{color:C.muted2,fontSize:13,marginTop:2}}>Ä°ÅŸ Takip Sistemi</div>
+          <div style={{width:60,height:60,borderRadius:18,background:`linear-gradient(135deg,${C.accent},#7b5cf0)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 10px"}}>⚙️</div>
+          <div style={{fontWeight:800,fontSize:22,color:C.text,letterSpacing:-.5}}>CNC Atölye</div>
+          <div style={{color:C.muted2,fontSize:13,marginTop:2}}>İş Takip Sistemi</div>
         </div>
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:24}}>
           <div style={{display:"flex",background:C.surface,borderRadius:10,padding:3,marginBottom:20}}>
-            {[["login","GiriÅŸ Yap"],["register","KayÄ±t Ol"]].map(([id,lbl])=>(
+            {[["login","Giriş Yap"],["register","Kayıt Ol"]].map(([id,lbl])=>(
               <button key={id} onClick={()=>{setMode(id);setErr("");setOk("");}} style={{flex:1,padding:"9px 0",border:"none",borderRadius:8,cursor:"pointer",background:mode===id?C.card:"transparent",color:mode===id?C.text:C.muted2,fontWeight:mode===id?700:400,fontSize:13,fontFamily:"inherit"}}>{lbl}</button>
             ))}
           </div>
           {err&&<div style={{background:C.redDim,border:`1px solid ${C.red}40`,borderRadius:10,padding:"10px 14px",color:C.red,fontSize:13,marginBottom:14}}>{err}</div>}
           {ok&&<div style={{background:C.greenDim,border:`1px solid ${C.green}40`,borderRadius:10,padding:"10px 14px",color:C.green,fontSize:13,marginBottom:14}}>{ok}</div>}
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
-            {mode==="register"&&<div><span style={labelSt}>Ad Soyad</span><input style={inputSt} placeholder="AdÄ±nÄ±z SoyadÄ±nÄ±z" value={form.fullName} onChange={f("fullName")}/></div>}
-            <div><span style={labelSt}>KullanÄ±cÄ± AdÄ±</span><input style={inputSt} placeholder="kullanici_adi" value={form.username} onChange={f("username")} autoCapitalize="none" autoCorrect="off"/></div>
-            <div><span style={labelSt}>Åifre</span><input style={inputSt} placeholder="â€¢â€¢â€¢â€¢â€¢â€¢" type="password" value={form.password} onChange={f("password")}/></div>
-            {mode==="register"&&<div><span style={labelSt}>Åifre Tekrar</span><input style={inputSt} placeholder="â€¢â€¢â€¢â€¢â€¢â€¢" type="password" value={form.confirm} onChange={f("confirm")}/></div>}
+            {mode==="register"&&<div><span style={labelSt}>Ad Soyad</span><input style={inputSt} placeholder="Adınız Soyadınız" value={form.fullName} onChange={f("fullName")}/></div>}
+            <div><span style={labelSt}>Kullanıcı Adı</span><input style={inputSt} placeholder="kullanici_adi" value={form.username} onChange={f("username")} autoCapitalize="none" autoCorrect="off"/></div>
+            <div><span style={labelSt}>�?ifre</span><input style={inputSt} placeholder="••••••" type="password" value={form.password} onChange={f("password")}/></div>
+            {mode==="register"&&<div><span style={labelSt}>�?ifre Tekrar</span><input style={inputSt} placeholder="••••••" type="password" value={form.confirm} onChange={f("confirm")}/></div>}
             <button onClick={mode==="login"?doLogin:doRegister} style={{...btnSt("primary"),width:"100%",padding:14,fontSize:15,opacity:loading?.7:1}} disabled={loading}>
-              {loading?"...":mode==="login"?"GiriÅŸ Yap":"KayÄ±t Ol"}
+              {loading?"...":mode==="login"?"Giriş Yap":"Kayıt Ol"}
             </button>
           </div>
         </div>
-        <div style={{textAlign:"center",color:C.muted,fontSize:11,marginTop:12}}>Ä°lk kayÄ±t otomatik YÃ¶netici olur.</div>
+        <div style={{textAlign:"center",color:C.muted,fontSize:11,marginTop:12}}>İlk kayıt otomatik Yönetici olur.</div>
       </div>
     </div>
   );
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════
 //  MACHINE SETTINGS
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════
 function MachineSettings({machines,onUpdate}) {
   const [editing,setEditing]=useState(false);
   const [draft,setDraft]=useState([...machines]);
@@ -250,8 +250,8 @@ function MachineSettings({machines,onUpdate}) {
   return (
     <div style={{marginBottom:24}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-        <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600}}>Tezgah Ä°simleri</div>
-        {!editing&&<button onClick={()=>{setDraft([...machines]);setEditing(true);}} style={{...btnSt("ghost"),padding:"6px 12px",fontSize:12}}>âœï¸ DÃ¼zenle</button>}
+        <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600}}>Tezgah İsimleri</div>
+        {!editing&&<button onClick={()=>{setDraft([...machines]);setEditing(true);}} style={{...btnSt("ghost"),padding:"6px 12px",fontSize:12}}>✏️ Düzenle</button>}
       </div>
       {!editing?(
         <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
@@ -263,17 +263,17 @@ function MachineSettings({machines,onUpdate}) {
             {draft.map((m,i)=>(
               <div key={i} style={{display:"flex",gap:8,alignItems:"center"}}>
                 <input value={m} onChange={e=>setDraft(d=>d.map((x,idx)=>idx===i?e.target.value:x))} style={{...inputSt,flex:1,padding:"9px 12px",fontSize:13}}/>
-                <button onClick={()=>setDraft(d=>d.filter((_,idx)=>idx!==i))} style={{background:"transparent",border:`1px solid ${C.red}50`,borderRadius:8,color:C.red,width:34,height:34,cursor:"pointer",fontSize:16,flexShrink:0}}>Ã—</button>
+                <button onClick={()=>setDraft(d=>d.filter((_,idx)=>idx!==i))} style={{background:"transparent",border:`1px solid ${C.red}50`,borderRadius:8,color:C.red,width:34,height:34,cursor:"pointer",fontSize:16,flexShrink:0}}>×</button>
               </div>
             ))}
           </div>
           <div style={{display:"flex",gap:8,marginBottom:12}}>
-            <input value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&newName.trim()){setDraft(d=>[...d,newName.trim()]);setNewName("");}}} placeholder="Yeni tezgah adÄ±..." style={{...inputSt,flex:1,padding:"9px 12px",fontSize:13}}/>
+            <input value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&newName.trim()){setDraft(d=>[...d,newName.trim()]);setNewName("");}}} placeholder="Yeni tezgah adı..." style={{...inputSt,flex:1,padding:"9px 12px",fontSize:13}}/>
             <button onClick={()=>{if(newName.trim()){setDraft(d=>[...d,newName.trim()]);setNewName("");}}} style={{...btnSt("primary"),padding:"9px 14px",fontSize:13,flexShrink:0}}>+ Ekle</button>
           </div>
           <div style={{display:"flex",gap:8}}>
-            <button onClick={save} style={{...btnSt("green"),flex:1,padding:10}}>ğŸ’¾ Kaydet</button>
-            <button onClick={()=>setEditing(false)} style={{...btnSt("ghost"),padding:10}}>Ä°ptal</button>
+            <button onClick={save} style={{...btnSt("green"),flex:1,padding:10}}>g��� Kaydet</button>
+            <button onClick={()=>setEditing(false)} style={{...btnSt("ghost"),padding:10}}>İptal</button>
           </div>
         </div>
       )}
@@ -281,9 +281,9 @@ function MachineSettings({machines,onUpdate}) {
   );
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════
 //  ADMIN USERS
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════
 function AdminUsers({currentUser,machines,onMachinesUpdate}) {
   const [users,setUsers]=useState([]);
   const [loading,setLoading]=useState(true);
@@ -305,39 +305,39 @@ function AdminUsers({currentUser,machines,onMachinesUpdate}) {
   }
 
   const list=[...users].sort((a,b)=>{const o={pending:0,active:1,rejected:2};return(o[a.status]??3)-(o[b.status]??3);});
-  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>YÃ¼kleniyor...</div>;
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
 
   return (
     <div style={{padding:16}}>
       <MachineSettings machines={machines} onUpdate={onMachinesUpdate}/>
-      <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>KullanÄ±cÄ± YÃ¶netimi Â· {list.length} kullanÄ±cÄ±</div>
+      <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>Kullanıcı Yönetimi · {list.length} kullanıcı</div>
       {list.map(u=>(
         <div key={u.id} style={{background:C.card,border:`1px solid ${u.status==="pending"?C.warn+"60":C.border}`,borderRadius:14,padding:"14px 16px",marginBottom:10}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
             <div><div style={{fontWeight:700,fontSize:14}}>{u.fullName}</div><div style={{color:C.muted2,fontSize:12,marginTop:1}}>@{u.username||u.id}</div></div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
-              <Badge label={u.role==="admin"?"YÃ¶netici":"OperatÃ¶r"} color={u.role==="admin"?C.accent:C.muted2}/>
-              <Badge label={u.status==="active"?"Aktif":u.status==="pending"?"Bekliyor":"AskÄ±da"} color={u.status==="active"?C.green:u.status==="pending"?C.warn:C.red}/>
+              <Badge label={u.role==="admin"?"Yönetici":"Operatör"} color={u.role==="admin"?C.accent:C.muted2}/>
+              <Badge label={u.status==="active"?"Aktif":u.status==="pending"?"Bekliyor":"Askıda"} color={u.status==="active"?C.green:u.status==="pending"?C.warn:C.red}/>
             </div>
           </div>
           {u.id!==currentUser.id&&(
             <>
               <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:8}}>
-                {u.status==="pending"&&<><button onClick={()=>update(u.id,{status:"active"})} style={{...btnSt("green"),padding:"7px 13px",fontSize:12}}>âœ“ Onayla</button><button onClick={()=>update(u.id,{status:"rejected"})} style={{...btnSt("danger"),padding:"7px 13px",fontSize:12}}>âœ• Reddet</button></>}
-                {u.status==="active"&&<><button onClick={()=>update(u.id,{role:u.role==="admin"?"operator":"admin"})} style={{...btnSt(),padding:"7px 13px",fontSize:12}}>{u.role==="admin"?"ğŸ‘· OperatÃ¶r Yap":"ğŸ‘‘ YÃ¶netici Yap"}</button><button onClick={()=>update(u.id,{status:"rejected"})} style={{...btnSt("danger"),padding:"7px 13px",fontSize:12}}>AskÄ±ya Al</button></>}
-                {u.status==="rejected"&&<button onClick={()=>update(u.id,{status:"active"})} style={{...btnSt("green"),padding:"7px 13px",fontSize:12}}>AktifleÅŸtir</button>}
-                {u.role==="operator"&&<button onClick={()=>setExpanded(expanded===u.id?null:u.id)} style={{...btnSt("ghost"),padding:"7px 13px",fontSize:12}}>{expanded===u.id?"â–² Gizle":"âš™ï¸ Yetkiler"}</button>}
+                {u.status==="pending"&&<><button onClick={()=>update(u.id,{status:"active"})} style={{...btnSt("green"),padding:"7px 13px",fontSize:12}}>✓ Onayla</button><button onClick={()=>update(u.id,{status:"rejected"})} style={{...btnSt("danger"),padding:"7px 13px",fontSize:12}}>✕ Reddet</button></>}
+                {u.status==="active"&&<><button onClick={()=>update(u.id,{role:u.role==="admin"?"operator":"admin"})} style={{...btnSt(),padding:"7px 13px",fontSize:12}}>{u.role==="admin"?"g��� Operatör Yap":"g��� Yönetici Yap"}</button><button onClick={()=>update(u.id,{status:"rejected"})} style={{...btnSt("danger"),padding:"7px 13px",fontSize:12}}>Askıya Al</button></>}
+                {u.status==="rejected"&&<button onClick={()=>update(u.id,{status:"active"})} style={{...btnSt("green"),padding:"7px 13px",fontSize:12}}>Aktifleştir</button>}
+                {u.role==="operator"&&<button onClick={()=>setExpanded(expanded===u.id?null:u.id)} style={{...btnSt("ghost"),padding:"7px 13px",fontSize:12}}>{expanded===u.id?"▲ Gizle":"⚙️ Yetkiler"}</button>}
               </div>
               {expanded===u.id&&u.role==="operator"&&(
                 <div style={{background:C.surface,borderRadius:10,padding:12,border:`1px solid ${C.border}`}}>
-                  <div style={{color:C.muted2,fontSize:11,letterSpacing:.8,textTransform:"uppercase",marginBottom:10,fontWeight:600}}>KullanÄ±cÄ± Yetkileri</div>
+                  <div style={{color:C.muted2,fontSize:11,letterSpacing:.8,textTransform:"uppercase",marginBottom:10,fontWeight:600}}>Kullanıcı Yetkileri</div>
                   {PERMISSIONS.map(p=>{
                     const active=(u.permissions||[]).includes(p.id);
                     return (
                       <div key={p.id} onClick={()=>togglePerm(u.id,p.id)} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:9,marginBottom:6,cursor:"pointer",background:active?C.accent+"12":C.card,border:`1px solid ${active?C.accent+"40":C.border}`}}>
                         <div style={{fontSize:18}}>{p.icon}</div>
                         <div style={{flex:1}}><div style={{fontWeight:600,fontSize:13,color:active?C.accent:C.text}}>{p.label}</div><div style={{fontSize:11,color:C.muted2,marginTop:1}}>{p.desc}</div></div>
-                        <div style={{width:20,height:20,borderRadius:5,border:`2px solid ${active?C.accent:C.border}`,background:active?C.accent:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{active&&<span style={{color:"#fff",fontSize:12,fontWeight:800}}>âœ“</span>}</div>
+                        <div style={{width:20,height:20,borderRadius:5,border:`2px solid ${active?C.accent:C.border}`,background:active?C.accent:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{active&&<span style={{color:"#fff",fontSize:12,fontWeight:800}}>✓</span>}</div>
                       </div>
                     );
                   })}
@@ -345,22 +345,23 @@ function AdminUsers({currentUser,machines,onMachinesUpdate}) {
               )}
             </>
           )}
-          {u.id===currentUser.id&&<div style={{color:C.muted,fontSize:11}}>Bu sizin hesabÄ±nÄ±z</div>}
+          {u.id===currentUser.id&&<div style={{color:C.muted,fontSize:11}}>Bu sizin hesabınız</div>}
         </div>
       ))}
     </div>
   );
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════
 //  WORK ORDERS
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════
 function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   const [orders,setOrders]=useState([]);
   const [loading,setLoading]=useState(true);
   const [showForm,setShowForm]=useState(false);
   const [editId,setEditId]=useState(null);
   const [viewOrder,setViewOrder]=useState(null);
+  const [previewFile,setPreviewFile]=useState(null);
   const [uploading,setUploading]=useState(false);
   const fileRef=useRef();
   const emptyForm={code:"",name:"",material:"",partSec:"",machines:[],notes:"",files:[]};
@@ -379,12 +380,13 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
 
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
   const toggleMachine=m=>fv("machines",form.machines.includes(m)?form.machines.filter(x=>x!==m):[...form.machines,m]);
+  const canPreview=f=>!!(f&&f.data&&(f.type?.startsWith("image/")||f.type==="application/pdf"));
 
   async function handleFiles(fileList) {
     setUploading(true);
     const results=[];
     for(const file of Array.from(fileList)){
-      if(file.size>5*1024*1024){alert(`${file.name} 5MB'dan bÃ¼yÃ¼k, atlandÄ±.`);continue;}
+      if(file.size>5*1024*1024){alert(`${file.name} 5MB'dan büyük, atlandı.`);continue;}
       const b64=await fileToBase64(file);
       results.push({name:file.name,size:file.size,type:file.type,data:b64});
     }
@@ -393,8 +395,8 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   }
 
   async function save() {
-    if(!form.name||!form.partSec){alert("ParÃ§a adÄ± ve sÃ¼re zorunlu!");return;}
-    if(form.machines.length===0){alert("En az bir tezgah seÃ§in!");return;}
+    if(!form.name||!form.partSec){alert("Parça adı ve süre zorunlu!");return;}
+    if(form.machines.length===0){alert("En az bir tezgah seçin!");return;}
     const finalCode=editId?form.code:(form.code||nextOrderCode());
     const data={code:finalCode.toUpperCase(),name:form.name,material:form.material,partSec:Number(form.partSec),machines:form.machines,notes:form.notes,files:form.files,status:"active",updatedAt:new Date().toISOString()};
     if(editId){
@@ -413,49 +415,64 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
     setOrders(orders=>orders.map(x=>x.id===o.id?{...x,status:ns}:x));
   }
 
-  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>YÃ¼kleniyor...</div>;
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
 
   if(viewOrder) return (
     <div style={{padding:16}}>
-      <button onClick={()=>setViewOrder(null)} style={{...btnSt("ghost"),marginBottom:16,padding:"8px 14px",fontSize:13}}>â† Geri</button>
+      <button onClick={()=>{setPreviewFile(null);setViewOrder(null);}} style={{...btnSt("ghost"),marginBottom:16,padding:"8px 14px",fontSize:13}}>← Geri</button>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16,marginBottom:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
           <div><div style={{fontWeight:800,fontSize:18,fontFamily:"monospace",color:C.text}}>{viewOrder.code}</div><div style={{fontSize:15,fontWeight:600,marginTop:2,color:C.text}}>{viewOrder.name}</div></div>
           <Badge label={viewOrder.status==="active"?"Aktif":"Pasif"} color={viewOrder.status==="active"?C.green:C.muted2}/>
         </div>
-        {[["Malzeme",viewOrder.material],["ParÃ§a SÃ¼resi",fmtSec(viewOrder.partSec)],["Maks Ãœretim/GÃ¼n",viewOrder.partSec?Math.floor(EFFECTIVE_SECONDS/viewOrder.partSec)+" adet":"-"],["Tezgahlar",(viewOrder.machines||[]).join(", ")],["Notlar",viewOrder.notes]].map(([l,v])=>v?(
+        {[["Malzeme",viewOrder.material],["Parça Süresi",fmtSec(viewOrder.partSec)],["Maks Üretim/Gün",viewOrder.partSec?Math.floor(EFFECTIVE_SECONDS/viewOrder.partSec)+" adet":"-"],["Tezgahlar",(viewOrder.machines||[]).join(", ")],["Notlar",viewOrder.notes]].map(([l,v])=>v?(
           <div key={l} style={{marginBottom:10}}><div style={{color:C.muted2,fontSize:11,letterSpacing:.8,textTransform:"uppercase",marginBottom:2}}>{l}</div><div style={{fontSize:14,color:C.text}}>{v}</div></div>
         ):null)}
       </div>
       <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>Teknik Dosyalar ({(viewOrder.files||[]).length})</div>
-      {(viewOrder.files||[]).length===0?<div style={{color:C.muted,fontSize:13,textAlign:"center",padding:20,background:C.card,borderRadius:12,border:`1px solid ${C.border}`}}>Dosya yÃ¼klenmemiÅŸ</div>:
+      {(viewOrder.files||[]).length===0?<div style={{color:C.muted,fontSize:13,textAlign:"center",padding:20,background:C.card,borderRadius:12,border:`1px solid ${C.border}`}}>Dosya yüklenmemiş</div>:
         (viewOrder.files||[]).map((f,i)=>(
           <div key={i} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",marginBottom:8,display:"flex",alignItems:"center",gap:12}}>
             <div style={{fontSize:28,flexShrink:0}}>{getFileIcon(f.name)}</div>
             <div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,fontSize:13,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:C.text}}>{f.name}</div><div style={{color:C.muted2,fontSize:11,marginTop:2}}>{formatBytes(f.size)}</div></div>
             {f.data&&f.type&&f.type.startsWith("image/")&&<img src={f.data} alt={f.name} style={{width:48,height:48,objectFit:"cover",borderRadius:8,border:`1px solid ${C.border}`}}/>}
-            {f.data&&<a href={f.data} download={f.name} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,textDecoration:"none",flexShrink:0}}>â¬‡</a>}
+            {canPreview(f)&&<button onClick={()=>setPreviewFile(f)} style={{...btnSt(),padding:"6px 10px",fontSize:12,flexShrink:0}}>Görüntüle</button>}
+            {f.data&&<a href={f.data} download={f.name} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,textDecoration:"none",flexShrink:0}}>⬇</a>}
           </div>
         ))
       }
+      {previewFile&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.72)",zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setPreviewFile(null)}>
+          <div style={{width:"100%",maxWidth:960,maxHeight:"88vh",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>
+              <div style={{fontSize:13,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{previewFile.name}</div>
+              <button onClick={()=>setPreviewFile(null)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kapat</button>
+            </div>
+            <div style={{padding:10,overflow:"auto",background:C.surface}}>
+              {previewFile.type&&previewFile.type.startsWith("image/")&&<img src={previewFile.data} alt={previewFile.name} style={{width:"100%",height:"auto",borderRadius:10,border:`1px solid ${C.border}`}}/>}
+              {previewFile.type==="application/pdf"&&<iframe title={previewFile.name} src={previewFile.data} style={{width:"100%",height:"70vh",border:`1px solid ${C.border}`,borderRadius:10,background:"#fff"}}/>}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 
   if(showForm) return (
     <div style={{padding:16}}>
-      <button onClick={()=>{setShowForm(false);setForm(emptyForm);setEditId(null);}} style={{...btnSt("ghost"),marginBottom:16,padding:"8px 14px",fontSize:13}}>â† Geri</button>
-      <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:16}}>{editId?"Ä°ÅŸ Emri DÃ¼zenle":"Yeni Ä°ÅŸ Emri"}</div>
+      <button onClick={()=>{setShowForm(false);setForm(emptyForm);setEditId(null);}} style={{...btnSt("ghost"),marginBottom:16,padding:"8px 14px",fontSize:13}}>← Geri</button>
+      <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:16}}>{editId?"İş Emri Düzenle":"Yeni İş Emri"}</div>
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
-        <div><span style={labelSt}>Ä°ÅŸ Emri Kodu *</span><input style={{...inputSt,background:editId?C.surface:C.card,color:editId?C.text:C.accent,fontWeight:700}} placeholder="IE-001" value={form.code} readOnly={!editId} onChange={e=>fv("code",e.target.value.toUpperCase())}/></div>
-        <div><span style={labelSt}>ParÃ§a AdÄ± *</span><input style={inputSt} placeholder="ParÃ§a adÄ±" value={form.name} onChange={e=>fv("name",e.target.value)}/></div>
-        <div><span style={labelSt}>Malzeme</span><input style={inputSt} placeholder="AISI 304, AlÃ¼minyum 6061..." value={form.material} onChange={e=>fv("material",e.target.value)}/></div>
+        <div><span style={labelSt}>İş Emri Kodu *</span><input style={{...inputSt,background:editId?C.surface:C.card,color:editId?C.text:C.accent,fontWeight:700}} placeholder="IE-001" value={form.code} readOnly={!editId} onChange={e=>fv("code",e.target.value.toUpperCase())}/></div>
+        <div><span style={labelSt}>Parça Adı *</span><input style={inputSt} placeholder="Parça adı" value={form.name} onChange={e=>fv("name",e.target.value)}/></div>
+        <div><span style={labelSt}>Malzeme</span><input style={inputSt} placeholder="AISI 304, Alüminyum 6061..." value={form.material} onChange={e=>fv("material",e.target.value)}/></div>
         <div>
-          <span style={labelSt}>ParÃ§a SÃ¼resi (saniye) *</span>
-          <input style={inputSt} type="number" min="1" placeholder="Ã–rn: 90" value={form.partSec} onChange={e=>fv("partSec",e.target.value)}/>
-          {form.partSec>0&&<div style={{color:C.muted2,fontSize:11,marginTop:5}}>â†’ Maks: <span style={{color:C.accent,fontWeight:700}}>{Math.floor(EFFECTIVE_SECONDS/Number(form.partSec))} adet</span>/gÃ¼n ({fmtSec(Number(form.partSec))}/parÃ§a)</div>}
+          <span style={labelSt}>Parça Süresi (saniye) *</span>
+          <input style={inputSt} type="number" min="1" placeholder="Örn: 90" value={form.partSec} onChange={e=>fv("partSec",e.target.value)}/>
+          {form.partSec>0&&<div style={{color:C.muted2,fontSize:11,marginTop:5}}>→ Maks: <span style={{color:C.accent,fontWeight:700}}>{Math.floor(EFFECTIVE_SECONDS/Number(form.partSec))} adet</span>/gün ({fmtSec(Number(form.partSec))}/parça)</div>}
         </div>
         <div>
-          <span style={labelSt}>Tezgah AtamasÄ± *</span>
+          <span style={labelSt}>Tezgah Ataması *</span>
           <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
             {machines.map(m=><button key={m} onClick={()=>toggleMachine(m)} style={chip(form.machines.includes(m))}>{m}</button>)}
           </div>
@@ -464,9 +481,9 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
         <div>
           <span style={labelSt}>Teknik Dosyalar</span>
           <div onClick={()=>fileRef.current?.click()} style={{border:`2px dashed ${C.border}`,borderRadius:12,padding:20,textAlign:"center",cursor:"pointer",background:C.surface}} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();handleFiles(e.dataTransfer.files);}}>
-            <div style={{fontSize:28,marginBottom:6}}>ğŸ“</div>
-            <div style={{color:C.muted2,fontSize:13}}>{uploading?"YÃ¼kleniyor...":"Dosya seÃ§ veya sÃ¼rÃ¼kle bÄ±rak"}</div>
-            <div style={{color:C.muted,fontSize:11,marginTop:4}}>Resim, PDF, DXF, DWG Â· Maks 5MB/dosya</div>
+            <div style={{fontSize:28,marginBottom:6}}>g��?</div>
+            <div style={{color:C.muted2,fontSize:13}}>{uploading?"Yükleniyor...":"Dosya seç veya sürükle bırak"}</div>
+            <div style={{color:C.muted,fontSize:11,marginTop:4}}>Resim, PDF, DXF, DWG · Maks 5MB/dosya</div>
           </div>
           <input ref={fileRef} type="file" multiple accept="image/*,.pdf,.dxf,.dwg,.step,.stp" style={{display:"none"}} onChange={e=>handleFiles(e.target.files)}/>
           {form.files.map((f,i)=>(
@@ -474,11 +491,11 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
               <span style={{fontSize:20}}>{getFileIcon(f.name)}</span>
               <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:C.text}}>{f.name}</div><div style={{fontSize:11,color:C.muted2}}>{formatBytes(f.size)}</div></div>
               {f.data&&f.type&&f.type.startsWith("image/")&&<img src={f.data} alt="" style={{width:36,height:36,objectFit:"cover",borderRadius:6}}/>}
-              <button onClick={()=>fv("files",form.files.filter((_,idx)=>idx!==i))} style={{background:"transparent",border:"none",color:C.red,fontSize:18,cursor:"pointer"}}>Ã—</button>
+              <button onClick={()=>fv("files",form.files.filter((_,idx)=>idx!==i))} style={{background:"transparent",border:"none",color:C.red,fontSize:18,cursor:"pointer"}}>×</button>
             </div>
           ))}
         </div>
-        <div style={{display:"flex",gap:8}}><button onClick={save} style={{...btnSt("primary"),flex:1,padding:13}}>ğŸ’¾ Kaydet</button><button onClick={()=>{setShowForm(false);setForm(emptyForm);setEditId(null);}} style={{...btnSt("ghost"),padding:13}}>Ä°ptal</button></div>
+        <div style={{display:"flex",gap:8}}><button onClick={save} style={{...btnSt("primary"),flex:1,padding:13}}>g��� Kaydet</button><button onClick={()=>{setShowForm(false);setForm(emptyForm);setEditId(null);}} style={{...btnSt("ghost"),padding:13}}>İptal</button></div>
       </div>
     </div>
   );
@@ -486,10 +503,10 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   return (
     <div style={{padding:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-        <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>Ä°ÅŸ Emirleri Â· {orders.filter(o=>o.status==="active").length} aktif</div>
+        <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>İş Emirleri · {orders.filter(o=>o.status==="active").length} aktif</div>
         <button onClick={()=>{setEditId(null);setForm({...emptyForm,code:nextOrderCode()});setShowForm(true);}} style={{...btnSt("primary"),padding:"8px 14px",fontSize:12}}>+ Yeni</button>
       </div>
-      {orders.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"40px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}><div style={{fontSize:36,marginBottom:10}}>ğŸ“‹</div>HenÃ¼z iÅŸ emri yok</div>}
+      {orders.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"40px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}><div style={{fontSize:36,marginBottom:10}}>g���</div>Henüz iş emri yok</div>}
       {orders.map(o=>(
         <div key={o.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"13px 15px",marginBottom:10,opacity:o.status==="passive"?.6:1}}>
           <div style={{marginBottom:8}}>
@@ -499,13 +516,13 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
               {(o.files||[]).length>0&&<Badge label={`${o.files.length} dosya`} color={C.purple}/>}
             </div>
             <div style={{fontSize:13,color:C.muted2,marginTop:3}}>{o.name}</div>
-            {o.material&&<div style={{fontSize:11,color:C.muted,marginTop:1}}>ğŸ”© {o.material}</div>}
-            <div style={{fontSize:11,color:C.muted,marginTop:1}}>â± {fmtSec(o.partSec)} Â· {(o.machines||[]).join(", ")}</div>
+            {o.material&&<div style={{fontSize:11,color:C.muted,marginTop:1}}>g��� {o.material}</div>}
+            <div style={{fontSize:11,color:C.muted,marginTop:1}}>⏱ {fmtSec(o.partSec)} · {(o.machines||[]).join(", ")}</div>
           </div>
           <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-            <button onClick={()=>setViewOrder(o)} style={{...btnSt("ghost"),padding:"6px 12px",fontSize:12}}>ğŸ‘ GÃ¶rÃ¼ntÃ¼le</button>
-            <button onClick={()=>{setForm({code:o.code,name:o.name,material:o.material||"",partSec:o.partSec,machines:o.machines||[],notes:o.notes||"",files:o.files||[]});setEditId(o.id);setShowForm(true);}} style={{...btnSt(),padding:"6px 12px",fontSize:12}}>âœï¸ DÃ¼zenle</button>
-            <button onClick={()=>toggleStatus(o)} style={{...btnSt(o.status==="active"?"danger":"green"),padding:"6px 12px",fontSize:12}}>{o.status==="active"?"Pasife Al":"AktifleÅŸtir"}</button>
+            <button onClick={()=>setViewOrder(o)} style={{...btnSt("ghost"),padding:"6px 12px",fontSize:12}}>g��� Görüntüle</button>
+            <button onClick={()=>{setForm({code:o.code,name:o.name,material:o.material||"",partSec:o.partSec,machines:o.machines||[],notes:o.notes||"",files:o.files||[]});setEditId(o.id);setShowForm(true);}} style={{...btnSt(),padding:"6px 12px",fontSize:12}}>✏️ Düzenle</button>
+            <button onClick={()=>toggleStatus(o)} style={{...btnSt(o.status==="active"?"danger":"green"),padding:"6px 12px",fontSize:12}}>{o.status==="active"?"Pasife Al":"Aktifleştir"}</button>
           </div>
         </div>
       ))}
@@ -513,9 +530,9 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   );
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════
 //  DATA ENTRY
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════
 function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
   const [orders,setOrders]=useState([]);
   const [todayEntries,setTodayEntries]=useState([]);
@@ -533,8 +550,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
   const filtered=orders.filter(o=>o.code.toLowerCase().includes(search.toLowerCase())||o.name.toLowerCase().includes(search.toLowerCase()));
 
   async function submit() {
-    if(!form.selectedOrder){alert("Ä°ÅŸ emri seÃ§in!");return;}
-    if(!form.correct){alert("DoÄŸru adet zorunlu!");return;}
+    if(!form.selectedOrder){alert("İş emri seçin!");return;}
+    if(!form.correct){alert("Doğru adet zorunlu!");return;}
     const entry={
       date:todayStr(), week:weekStart(), month:monthStr(),
       machine:form.machine, shift:form.shift,
@@ -566,28 +583,28 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
         </div>
       </div>
       <div>
-        <span style={labelSt}>Ä°ÅŸ Emri *</span>
+        <span style={labelSt}>İş Emri *</span>
         {form.selectedOrder?(
           <div style={{background:C.surface,border:`1px solid ${C.accent}50`,borderRadius:10,padding:"12px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <div>
               <div style={{fontWeight:700,fontFamily:"monospace",fontSize:14,color:C.text}}>{form.selectedOrder.code}</div>
-              <div style={{fontSize:12,color:C.muted2,marginTop:1}}>{form.selectedOrder.name} Â· {fmtSec(form.selectedOrder.partSec)} Â· Maks: {Math.floor(EFFECTIVE_SECONDS/form.selectedOrder.partSec)} adet/gÃ¼n</div>
-              {form.selectedOrder.material&&<div style={{fontSize:11,color:C.muted,marginTop:1}}>ğŸ”© {form.selectedOrder.material}</div>}
+              <div style={{fontSize:12,color:C.muted2,marginTop:1}}>{form.selectedOrder.name} · {fmtSec(form.selectedOrder.partSec)} · Maks: {Math.floor(EFFECTIVE_SECONDS/form.selectedOrder.partSec)} adet/gün</div>
+              {form.selectedOrder.material&&<div style={{fontSize:11,color:C.muted,marginTop:1}}>g��� {form.selectedOrder.material}</div>}
             </div>
-            <button onClick={()=>fv("selectedOrder",null)} style={{background:"transparent",border:"none",color:C.red,fontSize:20,cursor:"pointer"}}>Ã—</button>
+            <button onClick={()=>fv("selectedOrder",null)} style={{background:"transparent",border:"none",color:C.red,fontSize:20,cursor:"pointer"}}>×</button>
           </div>
         ):(
           <>
-            <button onClick={()=>setShowPicker(!showPicker)} style={{...inputSt,textAlign:"left",cursor:"pointer",color:C.muted2,display:"block"}}>{orders.length===0?"Aktif iÅŸ emri yok":"Ä°ÅŸ emri seÃ§in..."}</button>
+            <button onClick={()=>setShowPicker(!showPicker)} style={{...inputSt,textAlign:"left",cursor:"pointer",color:C.muted2,display:"block"}}>{orders.length===0?"Aktif iş emri yok":"İş emri seçin..."}</button>
             {showPicker&&(
               <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,marginTop:4,overflow:"hidden"}}>
                 <input style={{...inputSt,borderRadius:0,borderBottom:`1px solid ${C.border}`}} placeholder="Ara..." value={search} onChange={e=>setSearch(e.target.value)} autoFocus/>
                 <div style={{maxHeight:240,overflowY:"auto"}}>
-                  {filtered.length===0&&<div style={{padding:16,color:C.muted2,textAlign:"center",fontSize:13}}>SonuÃ§ yok</div>}
+                  {filtered.length===0&&<div style={{padding:16,color:C.muted2,textAlign:"center",fontSize:13}}>Sonuç yok</div>}
                   {filtered.map(o=>(
                     <div key={o.id} onClick={()=>{fv("selectedOrder",o);setShowPicker(false);setSearch("");}} style={{padding:"12px 14px",cursor:"pointer",borderBottom:`1px solid ${C.border}`}}>
                       <div style={{fontWeight:700,fontFamily:"monospace",fontSize:13,color:C.text}}>{o.code}</div>
-                      <div style={{fontSize:12,color:C.muted2,marginTop:1}}>{o.name} Â· â±{fmtSec(o.partSec)} Â· {(o.machines||[]).join(", ")}</div>
+                      <div style={{fontSize:12,color:C.muted2,marginTop:1}}>{o.name} · ⏱{fmtSec(o.partSec)} · {(o.machines||[]).join(", ")}</div>
                     </div>
                   ))}
                 </div>
@@ -597,13 +614,13 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
         )}
       </div>
       <div style={{display:"flex",gap:10}}>
-        <div style={{flex:1}}><span style={labelSt}>âœ… DoÄŸru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={form.correct} onChange={e=>fv("correct",e.target.value)}/></div>
-        <div style={{flex:1}}><span style={labelSt}>âŒ HatalÄ± Adet</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={form.wrong} onChange={e=>fv("wrong",e.target.value)}/></div>
+        <div style={{flex:1}}><span style={labelSt}>✅ Doğru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={form.correct} onChange={e=>fv("correct",e.target.value)}/></div>
+        <div style={{flex:1}}><span style={labelSt}>❌ Hatalı Adet</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={form.wrong} onChange={e=>fv("wrong",e.target.value)}/></div>
       </div>
-      <button onClick={submit} style={{...btnSt(saved?"green":"primary"),width:"100%",padding:14,fontSize:15}}>{saved?"âœ“ Kaydedildi!":"Kaydet"}</button>
+      <button onClick={submit} style={{...btnSt(saved?"green":"primary"),width:"100%",padding:14,fontSize:15}}>{saved?"✓ Kaydedildi!":"Kaydet"}</button>
       {todayEntries.length>0&&(
         <div>
-          <span style={{...labelSt,marginTop:4}}>BugÃ¼nkÃ¼ GiriÅŸlerim</span>
+          <span style={{...labelSt,marginTop:4}}>Bugünkü Girişlerim</span>
           {todayEntries.slice(0,5).map(e=>{
             const p=calcPerf(e.correct,e.wrong,e.partSec);
             return (
@@ -613,9 +630,9 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
                   <div style={{display:"flex",gap:5}}><Badge label={e.machine} color={C.accent}/><Badge label={e.shift} color={C.muted2}/></div>
                 </div>
                 <div style={{display:"flex",gap:12,marginTop:7,fontSize:13}}>
-                  <span style={{color:C.green,fontWeight:600}}>âœ… {e.correct}</span>
-                  <span style={{color:C.red,fontWeight:600}}>âŒ {e.wrong}</span>
-                  {p&&<span style={{color:C.muted2}}>Maks/gÃ¼n: {p.max}</span>}
+                  <span style={{color:C.green,fontWeight:600}}>✅ {e.correct}</span>
+                  <span style={{color:C.red,fontWeight:600}}>❌ {e.wrong}</span>
+                  {p&&<span style={{color:C.muted2}}>Maks/gün: {p.max}</span>}
                 </div>
                 {p&&<PerfBar perf={p.perf} small/>}
               </div>
@@ -627,9 +644,9 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
   );
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════
 //  REPORT
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════
 function Report({currentUser,machines=DEFAULT_MACHINES}) {
   const [period,setPeriod]=useState("gunluk");
   const [entries,setEntries]=useState([]);
@@ -650,47 +667,47 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
   const totalW=filtered.reduce((s,e)=>s+e.wrong,0);
   const qual=totalC+totalW>0?Math.round((totalC/(totalC+totalW))*100):0;
 
-  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>YÃ¼kleniyor...</div>;
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
 
   return (
     <div style={{padding:16}}>
       <div style={{display:"flex",gap:7,marginBottom:16}}>
-        {[["gunluk","GÃ¼nlÃ¼k"],["haftalik","HaftalÄ±k"],["aylik","AylÄ±k"]].map(([id,lbl])=>(
+        {[["gunluk","Günlük"],["haftalik","Haftalık"],["aylik","Aylık"]].map(([id,lbl])=>(
           <button key={id} onClick={()=>setPeriod(id)} style={{flex:1,...chip(period===id)}}>{lbl}</button>
         ))}
       </div>
       {filtered.length===0?(
-        <div style={{textAlign:"center",color:C.muted2,padding:"40px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}><div style={{fontSize:36,marginBottom:10}}>ğŸ“­</div>Bu dÃ¶nemde kayÄ±t yok</div>
+        <div style={{textAlign:"center",color:C.muted2,padding:"40px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}><div style={{fontSize:36,marginBottom:10}}>g���</div>Bu dönemde kayıt yok</div>
       ):(
         <>
           <div style={{display:"flex",gap:8,marginBottom:16}}>
-            {[{l:"DoÄŸru",v:totalC,col:C.green},{l:"HatalÄ±",v:totalW,col:C.red},{l:"Kalite",v:`${qual}%`,col:qual>=90?C.green:qual>=75?C.warn:C.red}].map(({l,v,col})=>(
+            {[{l:"Doğru",v:totalC,col:C.green},{l:"Hatalı",v:totalW,col:C.red},{l:"Kalite",v:`${qual}%`,col:qual>=90?C.green:qual>=75?C.warn:C.red}].map(({l,v,col})=>(
               <div key={l} style={{flex:1,background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px"}}>
                 <div style={{color:C.muted2,fontSize:10,letterSpacing:1,textTransform:"uppercase",marginBottom:3}}>{l}</div>
                 <div style={{color:col,fontSize:24,fontWeight:800,fontFamily:"monospace"}}>{v}</div>
               </div>
             ))}
           </div>
-          <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>Ä°ÅŸ Emri BazlÄ±</div>
+          <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>İş Emri Bazlı</div>
           {jobs.map(j=>{
             const p=calcPerf(j.correct,j.wrong,j.partSec);
             const q=j.correct+j.wrong>0?Math.round((j.correct/(j.correct+j.wrong))*100):0;
             return (
               <div key={j.jobCode} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"14px 16px",marginBottom:10}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-                  <div><div style={{fontWeight:800,fontSize:14,fontFamily:"monospace",color:C.text}}>{j.jobCode}</div><div style={{fontSize:12,color:C.muted2,marginTop:1}}>{j.jobName}</div><div style={{fontSize:11,color:C.muted,marginTop:1}}>{j.machines.join(", ")} Â· {j.ops.join(", ")}</div></div>
+                  <div><div style={{fontWeight:800,fontSize:14,fontFamily:"monospace",color:C.text}}>{j.jobCode}</div><div style={{fontSize:12,color:C.muted2,marginTop:1}}>{j.jobName}</div><div style={{fontSize:11,color:C.muted,marginTop:1}}>{j.machines.join(", ")} · {j.ops.join(", ")}</div></div>
                   <div style={{textAlign:"right"}}><div style={{fontSize:10,color:C.muted2}}>Kalite</div><div style={{fontWeight:800,color:q>=90?C.green:q>=75?C.warn:C.red,fontSize:16}}>{q}%</div></div>
                 </div>
                 <div style={{display:"flex",gap:8,fontSize:13,marginBottom:p?6:0}}>
-                  <div style={{background:C.greenDim,border:`1px solid ${C.green}30`,borderRadius:8,padding:"5px 12px",color:C.green,fontWeight:700}}>âœ… {j.correct}</div>
-                  <div style={{background:C.redDim,border:`1px solid ${C.red}30`,borderRadius:8,padding:"5px 12px",color:C.red,fontWeight:700}}>âŒ {j.wrong}</div>
-                  {p&&<div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 12px",color:C.muted2,fontSize:12}}>Maks/gÃ¼n: {p.max}</div>}
+                  <div style={{background:C.greenDim,border:`1px solid ${C.green}30`,borderRadius:8,padding:"5px 12px",color:C.green,fontWeight:700}}>✅ {j.correct}</div>
+                  <div style={{background:C.redDim,border:`1px solid ${C.red}30`,borderRadius:8,padding:"5px 12px",color:C.red,fontWeight:700}}>❌ {j.wrong}</div>
+                  {p&&<div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 12px",color:C.muted2,fontSize:12}}>Maks/gün: {p.max}</div>}
                 </div>
                 {p&&<PerfBar perf={p.perf}/>}
               </div>
             );
           })}
-          <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:10,marginTop:18}}>Tezgah Ã–zeti</div>
+          <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:10,marginTop:18}}>Tezgah Özeti</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
             {machines.map(m=>{
               const md=filtered.filter(e=>e.machine===m);
@@ -699,7 +716,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
               return (
                 <div key={m} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",opacity:md.length===0?.4:1}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}><span style={{fontWeight:700,color:C.text}}>{m}</span>{mq!==null&&<span style={{color:mq>=90?C.green:mq>=75?C.warn:C.red,fontWeight:700,fontSize:13}}>{mq}%</span>}</div>
-                  <div style={{fontSize:12,color:C.muted2}}>{md.length===0?"KayÄ±t yok":`âœ… ${mc}  âŒ ${mw}`}</div>
+                  <div style={{fontSize:12,color:C.muted2}}>{md.length===0?"Kayıt yok":`✅ ${mc}  ❌ ${mw}`}</div>
                   {mq!==null&&<div style={{background:C.border,borderRadius:99,height:4,marginTop:8}}><div style={{width:`${mq}%`,height:"100%",background:mq>=90?C.green:mq>=75?C.warn:C.red,borderRadius:99}}/></div>}
                 </div>
               );
@@ -711,11 +728,11 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
             const ops=Object.values(byOp).sort((a,b)=>b.correct-a.correct);
             if(!ops.length) return null;
             return (<>
-              <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:10,marginTop:18}}>OperatÃ¶r PerformansÄ±</div>
+              <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:10,marginTop:18}}>Operatör Performansı</div>
               {ops.map((op,i)=>{const q=op.correct+op.wrong>0?Math.round((op.correct/(op.correct+op.wrong))*100):0;return(
                 <div key={op.name} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 16px",marginBottom:8,display:"flex",alignItems:"center",gap:12}}>
                   <div style={{width:28,height:28,borderRadius:8,background:i===0?C.warn+"25":C.surface,display:"flex",alignItems:"center",justifyContent:"center",color:i===0?C.warn:C.muted2,fontWeight:800,fontSize:13}}>{i+1}</div>
-                  <div style={{flex:1}}><div style={{fontWeight:600,fontSize:13,color:C.text}}>{op.name}</div><div style={{fontSize:12,color:C.muted2,marginTop:1}}>âœ… {op.correct} &nbsp; âŒ {op.wrong}</div></div>
+                  <div style={{flex:1}}><div style={{fontWeight:600,fontSize:13,color:C.text}}>{op.name}</div><div style={{fontSize:12,color:C.muted2,marginTop:1}}>✅ {op.correct} &nbsp; ❌ {op.wrong}</div></div>
                   <div style={{color:q>=90?C.green:q>=75?C.warn:C.red,fontWeight:800,fontSize:15}}>{q}%</div>
                 </div>
               );})}
@@ -727,9 +744,9 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
   );
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════
 //  MAIN APP
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════
 function App() {
   const [currentUser,setCurrentUser]=useState(null);
   const [loading,setLoading]=useState(true);
@@ -760,7 +777,7 @@ function App() {
   }
   async function logout(){window.Session.clear();setCurrentUser(null);setTab("giris");}
 
-  if(loading) return <div style={{background:C.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12}}><div style={{width:40,height:40,border:`3px solid ${C.border}`,borderTop:`3px solid ${C.accent}`,borderRadius:"50%",animation:"spin 1s linear infinite"}}/><div style={{color:C.muted2,fontSize:13}}>BaÄŸlanÄ±yor...</div><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>;
+  if(loading) return <div style={{background:C.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12}}><div style={{width:40,height:40,border:`3px solid ${C.border}`,borderTop:`3px solid ${C.accent}`,borderRadius:"50%",animation:"spin 1s linear infinite"}}/><div style={{color:C.muted2,fontSize:13}}>Bağlanıyor...</div><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>;
   if(!currentUser) return <AuthScreen onLogin={u=>setCurrentUser(u)}/>;
 
   const isAdmin=currentUser.role==="admin";
@@ -770,19 +787,19 @@ function App() {
   const canUsers=hasPermission(currentUser,"approve_users")||isAdmin;
 
   const tabs=[
-    ...(canEntry?[{id:"giris",icon:"ğŸ“",label:"GiriÅŸ"}]:[]),
-    ...(canReport?[{id:"rapor",icon:"ğŸ“Š",label:"Rapor"}]:[]),
-    ...(canOrders?[{id:"orders",icon:"ğŸ“‹",label:"Ä°ÅŸ Emirleri"}]:[]),
-    ...(canUsers?[{id:"users",icon:"ğŸ‘¥",label:"KullanÄ±cÄ±lar"}]:[]),
+    ...(canEntry?[{id:"giris",icon:"g���",label:"Giriş"}]:[]),
+    ...(canReport?[{id:"rapor",icon:"g���",label:"Rapor"}]:[]),
+    ...(canOrders?[{id:"orders",icon:"g���",label:"İş Emirleri"}]:[]),
+    ...(canUsers?[{id:"users",icon:"g���",label:"Kullanıcılar"}]:[]),
   ];
 
   return (
     <div style={{background:C.bg,minHeight:"100vh",color:C.text,fontFamily:"'DM Sans','Segoe UI',sans-serif",maxWidth:480,margin:"0 auto",paddingBottom:80}}>
       <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"14px 16px",position:"sticky",top:0,zIndex:10}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <div style={{width:34,height:34,borderRadius:10,background:`linear-gradient(135deg,${C.accent},#7b5cf0)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>âš™ï¸</div>
-          <div style={{flex:1}}><div style={{fontWeight:700,fontSize:14,color:C.text}}>CNC AtÃ¶lye Takip</div><div style={{color:C.muted2,fontSize:11,display:"flex",alignItems:"center",gap:5}}><span>{currentUser.fullName}</span><Badge label={isAdmin?"YÃ¶netici":"OperatÃ¶r"} color={isAdmin?C.accent:C.muted2}/></div></div>
-          <button onClick={logout} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12}}>Ã‡Ä±kÄ±ÅŸ</button>
+          <div style={{width:34,height:34,borderRadius:10,background:`linear-gradient(135deg,${C.accent},#7b5cf0)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>⚙️</div>
+          <div style={{flex:1}}><div style={{fontWeight:700,fontSize:14,color:C.text}}>CNC Atölye Takip</div><div style={{color:C.muted2,fontSize:11,display:"flex",alignItems:"center",gap:5}}><span>{currentUser.fullName}</span><Badge label={isAdmin?"Yönetici":"Operatör"} color={isAdmin?C.accent:C.muted2}/></div></div>
+          <button onClick={logout} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12}}>Çıkış</button>
         </div>
       </div>
       {tab==="giris"&&<DataEntry currentUser={currentUser} machines={machines}/>}
