@@ -188,12 +188,42 @@ function AuthScreen({onLogin}) {
   const [form,setForm]=useState({username:"",password:"",confirm:"",fullName:""});
   const [err,setErr]=useState(""); const [ok,setOk]=useState(""); const [loading,setLoading]=useState(false);
   const [logoError,setLogoError]=useState(false);
+  const [adminStats,setAdminStats]=useState({loading:false,activeOrders:0,todayEntries:0,pendingUsers:0,activeOperators:0,todayCorrect:0,todayWrong:0,lastUpdated:""});
   const f=k=>e=>setForm(p=>({...p,[k]:e.target.value}));
 
   useEffect(()=>{
     if(portal==="admin"&&mode!=="login") setMode("login");
     setErr(""); setOk("");
   },[portal,mode]);
+
+  const loadAdminStats=useCallback(async()=>{
+    setAdminStats(s=>({...s,loading:true}));
+    const [users,orders,entries]=await Promise.all([
+      window.DB.getAll("users"),
+      window.DB.getAll("orders"),
+      window.DB.getAll("entries"),
+    ]);
+    const today=todayStr();
+    const todayRows=entries.filter(e=>e.date===today);
+    const now=new Date();
+    const hh=pad2(now.getHours());
+    const mm=pad2(now.getMinutes());
+    setAdminStats({
+      loading:false,
+      activeOrders:orders.filter(o=>o.status==="active").length,
+      todayEntries:todayRows.length,
+      pendingUsers:users.filter(u=>u.status==="pending").length,
+      activeOperators:users.filter(u=>u.role==="operator"&&u.status==="active").length,
+      todayCorrect:todayRows.reduce((s,e)=>s+(Number(e.correct)||0),0),
+      todayWrong:todayRows.reduce((s,e)=>s+(Number(e.wrong)||0),0),
+      lastUpdated:`${hh}:${mm}`,
+    });
+  },[]);
+
+  useEffect(()=>{
+    if(portal!=="admin") return;
+    loadAdminStats();
+  },[portal,loadAdminStats]);
 
   async function doLogin() {
     setErr(""); setLoading(true);
@@ -280,17 +310,31 @@ function AuthScreen({onLogin}) {
                 </div>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10}}>
-                {[["Canlı Takip","Makine durumları"],["Raporlar","Verim ve hata analizi"],["İş Emirleri","Sipariş yönetimi"],["Yetkiler","Kullanıcı kontrolü"]].map(([t,d])=>(
-                  <div key={t} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
-                    <div style={{fontSize:12,color:C.muted2,marginBottom:4}}>{t}</div>
-                    <div style={{fontSize:12,color:C.text,fontWeight:600}}>{d}</div>
+                {[
+                  ["Aktif İş Emirleri",adminStats.activeOrders,C.accent],
+                  ["Bugün Giriş",adminStats.todayEntries,C.green],
+                  ["Onay Bekleyen",adminStats.pendingUsers,C.warn],
+                  ["Aktif Operatör",adminStats.activeOperators,C.muted2],
+                ].map(([title,value,color])=>(
+                  <div key={title} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+                    <div style={{fontSize:11,color:C.muted2,marginBottom:6,textTransform:"uppercase",letterSpacing:.7}}>{title}</div>
+                    <div style={{fontSize:22,color,marginBottom:2,fontWeight:800,fontFamily:"monospace"}}>{value}</div>
                   </div>
                 ))}
+              </div>
+              <div style={{display:"flex",gap:10,marginTop:10}}>
+                <div style={{flex:1,background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}>
+                  <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Bugün Doğru / Hatalı</div>
+                  <div style={{fontSize:14,color:C.text,fontWeight:700,marginTop:2}}><span style={{color:C.green}}>{adminStats.todayCorrect}</span> / <span style={{color:C.red}}>{adminStats.todayWrong}</span></div>
+                </div>
+                <button onClick={loadAdminStats} disabled={adminStats.loading} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,alignSelf:"stretch",opacity:adminStats.loading?.7:1}}>
+                  {adminStats.loading?"Yenileniyor...":"Yenile"}
+                </button>
               </div>
             </div>
             <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:22}}>
               <div style={{fontWeight:700,fontSize:18,color:C.text,marginBottom:4}}>Yönetici Girişi</div>
-              <div style={{fontSize:12,color:C.muted2,marginBottom:16}}>Sadece yönetici hesaplarıyla giriş yapılabilir.</div>
+              <div style={{fontSize:12,color:C.muted2,marginBottom:16}}>Sadece yönetici hesaplarıyla giriş yapılabilir. {adminStats.lastUpdated?`Son güncelleme: ${adminStats.lastUpdated}`:""}</div>
               {err&&<div style={{background:C.redDim,border:`1px solid ${C.red}40`,borderRadius:10,padding:"10px 14px",color:C.red,fontSize:13,marginBottom:14}}>{err}</div>}
               {ok&&<div style={{background:C.greenDim,border:`1px solid ${C.green}40`,borderRadius:10,padding:"10px 14px",color:C.green,fontSize:13,marginBottom:14}}>{ok}</div>}
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
