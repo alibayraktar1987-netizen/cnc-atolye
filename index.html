@@ -550,6 +550,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
   const [saved,setSaved]=useState(false);
   const [search,setSearch]=useState("");
   const [showPicker,setShowPicker]=useState(false);
+  const [editId,setEditId]=useState(null);
   const [form,setForm]=useState({entryDate:todayStr(),machine:machines[0]||"CNC-1",shift:"sabah",selectedOrder:null,correct:"",wrong:""});
 
   useEffect(()=>{
@@ -561,6 +562,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
   const filtered=orders.filter(o=>o.code.toLowerCase().includes(search.toLowerCase())||o.name.toLowerCase().includes(search.toLowerCase()));
   const selectedDateObj=parseYmdLocal(form.entryDate);
   const selectedDateLabel=new Intl.DateTimeFormat("tr-TR",{weekday:"long",day:"2-digit",month:"long",year:"numeric"}).format(selectedDateObj);
+  const resetEntryForm=()=>setForm(p=>({entryDate:p.entryDate,machine:p.machine||machines[0]||"CNC-1",shift:p.shift||"sabah",selectedOrder:null,correct:"",wrong:""}));
 
   async function submit() {
     if(!form.selectedOrder){alert("İş emri seçin!");return;}
@@ -574,12 +576,37 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
       partSec:Number(form.selectedOrder.partSec),
       correct:Number(form.correct), wrong:Number(form.wrong)||0,
     };
+    if(editId){
+      const ok=await window.DB.updateDoc("entries",editId,entry);
+      if(ok){
+        setTodayEntries(e=>e.map(x=>x.id===editId?{...x,...entry}:x));
+        setEditId(null);
+        setSaved(true); setTimeout(()=>setSaved(false),2000);
+        resetEntryForm();
+      }
+      return;
+    }
     const id=await window.DB.addDoc("entries",entry);
     if(id){
       setTodayEntries(e=>[{id,...entry},...e]);
       setSaved(true); setTimeout(()=>setSaved(false),2000);
-      setForm(p=>({...p,correct:"",wrong:""}));
+      resetEntryForm();
     }
+  }
+
+  function startEdit(entry){
+    const matched=orders.find(o=>o.code===entry.jobCode);
+    const selectedOrder=matched||{code:entry.jobCode,name:entry.jobName,partSec:entry.partSec};
+    setEditId(entry.id);
+    setShowPicker(false);
+    setForm({
+      entryDate:entry.date||todayStr(),
+      machine:entry.machine||machines[0]||"CNC-1",
+      shift:entry.shift||"sabah",
+      selectedOrder,
+      correct:String(entry.correct??""),
+      wrong:String(entry.wrong??0),
+    });
   }
 
   return (
@@ -590,6 +617,12 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
           <input style={{...inputSt,padding:"8px 10px",fontSize:13}} type="date" max={todayStr()} value={form.entryDate} onChange={e=>fv("entryDate",e.target.value||todayStr())}/>
         </div>
       </div>
+      {editId&&(
+        <div style={{background:C.warnDim,border:`1px solid ${C.warn}50`,borderRadius:10,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+          <span style={{fontSize:12,color:C.warn,fontWeight:700}}>Düzenleme modu açık</span>
+          <button onClick={()=>{setEditId(null);resetEntryForm();}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>İptal</button>
+        </div>
+      )}
       <div>
         <span style={labelSt}>Tezgah</span>
         <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
@@ -637,7 +670,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
         <div style={{flex:1}}><span style={labelSt}>✅ Doğru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={form.correct} onChange={e=>fv("correct",e.target.value)}/></div>
         <div style={{flex:1}}><span style={labelSt}>❌ Hatalı Adet</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={form.wrong} onChange={e=>fv("wrong",e.target.value)}/></div>
       </div>
-      <button onClick={submit} style={{...btnSt(saved?"green":"primary"),width:"100%",padding:14,fontSize:15}}>{saved?"✓ Kaydedildi!":"Kaydet"}</button>
+      <button onClick={submit} style={{...btnSt(saved?"green":"primary"),width:"100%",padding:14,fontSize:15}}>{saved?"Kaydedildi!":editId?"Güncellemeyi Kaydet":"Kaydet"}</button>
       {todayEntries.length>0&&(
         <div>
           <span style={{...labelSt,marginTop:4}}>Seçili Gün Girişlerim</span>
@@ -653,6 +686,9 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
                   <span style={{color:C.green,fontWeight:600}}>✅ {e.correct}</span>
                   <span style={{color:C.red,fontWeight:600}}>❌ {e.wrong}</span>
                   {p&&<span style={{color:C.muted2}}>Maks/gün: {p.max}</span>}
+                </div>
+                <div style={{marginTop:8}}>
+                  <button onClick={()=>startEdit(e)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Düzenle</button>
                 </div>
                 {p&&<PerfBar perf={p.perf} small/>}
               </div>
