@@ -182,7 +182,7 @@ function AuthScreen({onLogin}) {
   }
 
   async function doRegister() {
-    setErr("");
+    setErr(""); setOk("");
     if(!form.username||!form.password||!form.fullName){setErr("Tüm alanlar zorunlu.");return;}
     if(form.password!==form.confirm){setErr("Şifreler eşleşmiyor.");return;}
     if(form.password.length<4){setErr("Şifre en az 4 karakter.");return;}
@@ -192,11 +192,12 @@ function AuthScreen({onLogin}) {
     if(existing){setErr("Bu kullanıcı adı alınmış.");setLoading(false);return;}
     const allUsers=await window.DB.getAll("users");
     const isFirst=allUsers.length===0;
-    await window.DB.setDoc("users",key,{
+    const saved=await window.DB.setDoc("users",key,{
       username:key, fullName:form.fullName, password:hashPass(form.password),
       role:isFirst?"admin":"operator", status:isFirst?"active":"pending",
       permissions:["data_entry","view_reports"]
     });
+    if(!saved){setErr("Kullanici kaydi olusturulamadi. Veritabani yetkilerini (Firestore Rules) kontrol edin.");setLoading(false);return;}
     setOk(isFirst?"İlk kullanıcı → otomatik Yönetici! Giriş yapabilirsiniz.":"Kayıt başarılı! Yönetici onayını bekleyin.");
     setMode("login"); setForm({username:"",password:"",confirm:"",fullName:""}); setLoading(false);
   }
