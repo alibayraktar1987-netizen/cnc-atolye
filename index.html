@@ -845,13 +845,18 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
 // ════════════════════════════════════════════════════════════
 function Report({currentUser,machines=DEFAULT_MACHINES}) {
   const [period,setPeriod]=useState("gunluk");
+  const [rangeEnabled,setRangeEnabled]=useState(false);
+  const [fromDate,setFromDate]=useState(()=>todayStr());
+  const [toDate,setToDate]=useState(()=>todayStr());
   const [entries,setEntries]=useState([]);
   const [loading,setLoading]=useState(true);
 
   useEffect(()=>{window.DB.getAll("entries").then(e=>{setEntries(e);setLoading(false);});},[]);
 
   const today=todayStr(),thisWeek=weekStart(),thisMonth=monthStr();
-  const filtered=entries.filter(e=>period==="gunluk"?e.date===today:period==="haftalik"?e.week===thisWeek:e.month===thisMonth);
+  const rangeStart=fromDate<=toDate?fromDate:toDate;
+  const rangeEnd=fromDate<=toDate?toDate:fromDate;
+  const filtered=entries.filter(e=>rangeEnabled?(e.date>=rangeStart&&e.date<=rangeEnd):(period==="gunluk"?e.date===today:period==="haftalik"?e.week===thisWeek:e.month===thisMonth));
   const byJob={};
   filtered.forEach(e=>{
     if(!byJob[e.jobCode]) byJob[e.jobCode]={jobCode:e.jobCode,jobName:e.jobName,correct:0,wrong:0,partSec:e.partSec,machines:new Set(),ops:new Set()};
@@ -862,7 +867,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
   const totalC=filtered.reduce((s,e)=>s+e.correct,0);
   const totalW=filtered.reduce((s,e)=>s+e.wrong,0);
   const qual=totalC+totalW>0?Math.round((totalC/(totalC+totalW))*100):0;
-  const periodLabel=period==="gunluk"?"Günlük":period==="haftalik"?"Haftalık":"Aylık";
+  const periodLabel=rangeEnabled?`Tarih Aralığı (${rangeStart} - ${rangeEnd})`:(period==="gunluk"?"Günlük":period==="haftalik"?"Haftalık":"Aylık");
   const dailyBars=machines.map(m=>{
     const md=filtered.filter(e=>e.machine===m);
     const correct=md.reduce((s,e)=>s+e.correct,0);
@@ -878,6 +883,17 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
   const dailyMaxPct=Math.max(5,Math.ceil((Math.max(0,...dailyBarsPct.map(b=>b.correctPct+b.wrongPct))+2)/5)*5);
   const chartPalette=["#4f8ef7","#00c896","#ffb830","#9b7ff4","#ff4d6d","#2dd4bf","#f97316","#38bdf8"];
   const dayKeys=(()=>{
+    if(rangeEnabled){
+      const start=parseYmdLocal(rangeStart);
+      const end=parseYmdLocal(rangeEnd);
+      const out=[];
+      const cur=new Date(start);
+      while(cur<=end&&out.length<120){
+        out.push(ymdLocal(cur));
+        cur.setDate(cur.getDate()+1);
+      }
+      return out;
+    }
     if(period==="gunluk") return [today];
     if(period==="haftalik"){
       const start=parseYmdLocal(thisWeek);
@@ -893,6 +909,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
   })();
   const dayLabels=dayKeys.map(k=>{
     const d=parseYmdLocal(k);
+    if(rangeEnabled) return String(d.getDate());
     if(period==="haftalik") return new Intl.DateTimeFormat("tr-TR",{weekday:"short",day:"2-digit"}).format(d);
     if(period==="aylik") return String(d.getDate());
     return new Intl.DateTimeFormat("tr-TR",{day:"2-digit",month:"2-digit"}).format(d);
@@ -912,8 +929,21 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
     <div style={{padding:16}}>
       <div style={{display:"flex",gap:7,marginBottom:16}}>
         {[["gunluk","Günlük"],["haftalik","Haftalık"],["aylik","Aylık"]].map(([id,lbl])=>(
-          <button key={id} onClick={()=>setPeriod(id)} style={{flex:1,...chip(period===id)}}>{lbl}</button>
+          <button key={id} onClick={()=>{setPeriod(id);setRangeEnabled(false);}} style={{flex:1,...chip(!rangeEnabled&&period===id)}}>{lbl}</button>
         ))}
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:rangeEnabled?10:0}}>
+          <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>Filtre</div>
+          <button onClick={()=>setRangeEnabled(v=>!v)} style={chip(rangeEnabled,C.accent)}>{rangeEnabled?"Tarih Aralığı: Açık":"Tarih Aralığı"}</button>
+        </div>
+        {rangeEnabled&&(
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr auto",gap:8,alignItems:"end"}}>
+            <div><span style={labelSt}>Başlangıç</span><input type="date" value={fromDate} max={today} onChange={e=>setFromDate(e.target.value||today)} style={{...inputSt,padding:"9px 10px",fontSize:13}}/></div>
+            <div><span style={labelSt}>Bitiş</span><input type="date" value={toDate} max={today} onChange={e=>setToDate(e.target.value||today)} style={{...inputSt,padding:"9px 10px",fontSize:13}}/></div>
+            <button onClick={()=>{const t=todayStr();setFromDate(t);setToDate(t);}} style={{...btnSt("ghost"),padding:"9px 11px",fontSize:12,marginBottom:1}}>Bugün</button>
+          </div>
+        )}
       </div>
       {filtered.length===0?(
         <div style={{textAlign:"center",color:C.muted2,padding:"40px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}><div style={{fontSize:36,marginBottom:10}}>📰</div>Bu dönemde kayıt yok</div>
