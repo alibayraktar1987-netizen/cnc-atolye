@@ -609,6 +609,17 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
     });
   }
 
+  async function removeEntry(entry){
+    if(!confirm(`Bu girisi silmek istiyor musunuz? (${entry.jobCode})`)) return;
+    const ok=await window.DB.deleteDoc("entries",entry.id);
+    if(!ok) return;
+    setTodayEntries(e=>e.filter(x=>x.id!==entry.id));
+    if(editId===entry.id){
+      setEditId(null);
+      resetEntryForm();
+    }
+  }
+
   return (
     <div style={{padding:16,display:"flex",flexDirection:"column",gap:14}}>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
@@ -687,8 +698,9 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
                   <span style={{color:C.red,fontWeight:600}}>❌ {e.wrong}</span>
                   {p&&<span style={{color:C.muted2}}>Maks/gün: {p.max}</span>}
                 </div>
-                <div style={{marginTop:8}}>
+                <div style={{marginTop:8,display:"flex",gap:8}}>
                   <button onClick={()=>startEdit(e)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Düzenle</button>
+                  <button onClick={()=>removeEntry(e)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
                 </div>
                 {p&&<PerfBar perf={p.perf} small/>}
               </div>
