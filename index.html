@@ -78,10 +78,10 @@ const SHIFTS = [
 ];
 const EFFECTIVE_SECONDS = 72000;
 const PERMISSIONS = [
-  { id:"data_entry", label:"Veri Girişi", icon:"g���", desc:"Üretim verisi girebilir" },
-  { id:"view_reports", label:"Rapor Görüntüleme", icon:"g���", desc:"Tüm raporları görebilir" },
-  { id:"manage_orders", label:"İş Emri Oluşturma", icon:"g���", desc:"İş emri ekleyip düzenleyebilir" },
-  { id:"approve_users", label:"Kullanıcı Onaylama", icon:"g���", desc:"Kullanıcıları onaylayabilir" },
+  { id:"data_entry", label:"Veri Girişi", icon:"📝", desc:"Üretim verisi girebilir" },
+  { id:"view_reports", label:"Rapor Görüntüleme", icon:"📊", desc:"Tüm raporları görebilir" },
+  { id:"manage_orders", label:"İş Emri Oluşturma", icon:"📋", desc:"İş emri ekleyip düzenleyebilir" },
+  { id:"approve_users", label:"Kullanıcı Onaylama", icon:"👥", desc:"Kullanıcıları onaylayabilir" },
 ];
 
 const C = {
@@ -121,10 +121,10 @@ async function fileToBase64(file) {
 }
 function getFileIcon(name) {
   const ext=(name||"").split(".").pop().toLowerCase();
-  if(["jpg","jpeg","png","gif","webp"].includes(ext)) return "g���️";
-  if(ext==="pdf") return "g���";
-  if(["dxf","dwg"].includes(ext)) return "g���";
-  return "g��?";
+  if(["jpg","jpeg","png","gif","webp"].includes(ext)) return "🖼️";
+  if(ext==="pdf") return "📄";
+  if(["dxf","dwg"].includes(ext)) return "📐";
+  return "📎";
 }
 function formatBytes(b) {
   if(b<1024) return b+" B";
@@ -174,7 +174,7 @@ function AuthScreen({onLogin}) {
     setErr(""); setLoading(true);
     const u = await window.DB.getDoc("users", form.username.toLowerCase());
     if(!u){setErr("Kullanıcı bulunamadı.");setLoading(false);return;}
-    if(u.password!==hashPass(form.password)){setErr("�?ifre hatalı.");setLoading(false);return;}
+    if(u.password!==hashPass(form.password)){setErr("Şifre hatalı.");setLoading(false);return;}
     if(u.status==="pending"){setErr("Hesabınız onay bekliyor.");setLoading(false);return;}
     if(u.status==="rejected"){setErr("Hesabınız reddedildi.");setLoading(false);return;}
     window.Session.set({username:u.id});
@@ -184,8 +184,8 @@ function AuthScreen({onLogin}) {
   async function doRegister() {
     setErr(""); setOk("");
     if(!form.username||!form.password||!form.fullName){setErr("Tüm alanlar zorunlu.");return;}
-    if(form.password!==form.confirm){setErr("�?ifreler eşleşmiyor.");return;}
-    if(form.password.length<4){setErr("�?ifre en az 4 karakter.");return;}
+    if(form.password!==form.confirm){setErr("Şifreler eşleşmiyor.");return;}
+    if(form.password.length<4){setErr("Şifre en az 4 karakter.");return;}
     setLoading(true);
     const key=form.username.toLowerCase().trim();
     const existing=await window.DB.getDoc("users",key);
@@ -221,8 +221,8 @@ function AuthScreen({onLogin}) {
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
             {mode==="register"&&<div><span style={labelSt}>Ad Soyad</span><input style={inputSt} placeholder="Adınız Soyadınız" value={form.fullName} onChange={f("fullName")}/></div>}
             <div><span style={labelSt}>Kullanıcı Adı</span><input style={inputSt} placeholder="kullanici_adi" value={form.username} onChange={f("username")} autoCapitalize="none" autoCorrect="off"/></div>
-            <div><span style={labelSt}>�?ifre</span><input style={inputSt} placeholder="••••••" type="password" value={form.password} onChange={f("password")}/></div>
-            {mode==="register"&&<div><span style={labelSt}>�?ifre Tekrar</span><input style={inputSt} placeholder="••••••" type="password" value={form.confirm} onChange={f("confirm")}/></div>}
+            <div><span style={labelSt}>Şifre</span><input style={inputSt} placeholder="••••••" type="password" value={form.password} onChange={f("password")}/></div>
+            {mode==="register"&&<div><span style={labelSt}>Şifre Tekrar</span><input style={inputSt} placeholder="••••••" type="password" value={form.confirm} onChange={f("confirm")}/></div>}
             <button onClick={mode==="login"?doLogin:doRegister} style={{...btnSt("primary"),width:"100%",padding:14,fontSize:15,opacity:loading?.7:1}} disabled={loading}>
               {loading?"...":mode==="login"?"Giriş Yap":"Kayıt Ol"}
             </button>
@@ -272,7 +272,7 @@ function MachineSettings({machines,onUpdate}) {
             <button onClick={()=>{if(newName.trim()){setDraft(d=>[...d,newName.trim()]);setNewName("");}}} style={{...btnSt("primary"),padding:"9px 14px",fontSize:13,flexShrink:0}}>+ Ekle</button>
           </div>
           <div style={{display:"flex",gap:8}}>
-            <button onClick={save} style={{...btnSt("green"),flex:1,padding:10}}>g��� Kaydet</button>
+            <button onClick={save} style={{...btnSt("green"),flex:1,padding:10}}>💾 Kaydet</button>
             <button onClick={()=>setEditing(false)} style={{...btnSt("ghost"),padding:10}}>İptal</button>
           </div>
         </div>
@@ -324,7 +324,7 @@ function AdminUsers({currentUser,machines,onMachinesUpdate}) {
             <>
               <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:8}}>
                 {u.status==="pending"&&<><button onClick={()=>update(u.id,{status:"active"})} style={{...btnSt("green"),padding:"7px 13px",fontSize:12}}>✓ Onayla</button><button onClick={()=>update(u.id,{status:"rejected"})} style={{...btnSt("danger"),padding:"7px 13px",fontSize:12}}>✕ Reddet</button></>}
-                {u.status==="active"&&<><button onClick={()=>update(u.id,{role:u.role==="admin"?"operator":"admin"})} style={{...btnSt(),padding:"7px 13px",fontSize:12}}>{u.role==="admin"?"g��� Operatör Yap":"g��� Yönetici Yap"}</button><button onClick={()=>update(u.id,{status:"rejected"})} style={{...btnSt("danger"),padding:"7px 13px",fontSize:12}}>Askıya Al</button></>}
+                {u.status==="active"&&<><button onClick={()=>update(u.id,{role:u.role==="admin"?"operator":"admin"})} style={{...btnSt(),padding:"7px 13px",fontSize:12}}>{u.role==="admin"?"👷 Operatör Yap":"👑 Yönetici Yap"}</button><button onClick={()=>update(u.id,{status:"rejected"})} style={{...btnSt("danger"),padding:"7px 13px",fontSize:12}}>Askıya Al</button></>}
                 {u.status==="rejected"&&<button onClick={()=>update(u.id,{status:"active"})} style={{...btnSt("green"),padding:"7px 13px",fontSize:12}}>Aktifleştir</button>}
                 {u.role==="operator"&&<button onClick={()=>setExpanded(expanded===u.id?null:u.id)} style={{...btnSt("ghost"),padding:"7px 13px",fontSize:12}}>{expanded===u.id?"▲ Gizle":"⚙️ Yetkiler"}</button>}
               </div>
@@ -481,7 +481,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
         <div>
           <span style={labelSt}>Teknik Dosyalar</span>
           <div onClick={()=>fileRef.current?.click()} style={{border:`2px dashed ${C.border}`,borderRadius:12,padding:20,textAlign:"center",cursor:"pointer",background:C.surface}} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();handleFiles(e.dataTransfer.files);}}>
-            <div style={{fontSize:28,marginBottom:6}}>g��?</div>
+            <div style={{fontSize:28,marginBottom:6}}>📎</div>
             <div style={{color:C.muted2,fontSize:13}}>{uploading?"Yükleniyor...":"Dosya seç veya sürükle bırak"}</div>
             <div style={{color:C.muted,fontSize:11,marginTop:4}}>Resim, PDF, DXF, DWG · Maks 5MB/dosya</div>
           </div>
@@ -495,7 +495,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
             </div>
           ))}
         </div>
-        <div style={{display:"flex",gap:8}}><button onClick={save} style={{...btnSt("primary"),flex:1,padding:13}}>g��� Kaydet</button><button onClick={()=>{setShowForm(false);setForm(emptyForm);setEditId(null);}} style={{...btnSt("ghost"),padding:13}}>İptal</button></div>
+        <div style={{display:"flex",gap:8}}><button onClick={save} style={{...btnSt("primary"),flex:1,padding:13}}>💾 Kaydet</button><button onClick={()=>{setShowForm(false);setForm(emptyForm);setEditId(null);}} style={{...btnSt("ghost"),padding:13}}>İptal</button></div>
       </div>
     </div>
   );
@@ -506,7 +506,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
         <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>İş Emirleri · {orders.filter(o=>o.status==="active").length} aktif</div>
         <button onClick={()=>{setEditId(null);setForm({...emptyForm,code:nextOrderCode()});setShowForm(true);}} style={{...btnSt("primary"),padding:"8px 14px",fontSize:12}}>+ Yeni</button>
       </div>
-      {orders.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"40px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}><div style={{fontSize:36,marginBottom:10}}>g���</div>Henüz iş emri yok</div>}
+      {orders.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"40px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}><div style={{fontSize:36,marginBottom:10}}>📋</div>Henüz iş emri yok</div>}
       {orders.map(o=>(
         <div key={o.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"13px 15px",marginBottom:10,opacity:o.status==="passive"?.6:1}}>
           <div style={{marginBottom:8}}>
@@ -516,11 +516,11 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
               {(o.files||[]).length>0&&<Badge label={`${o.files.length} dosya`} color={C.purple}/>}
             </div>
             <div style={{fontSize:13,color:C.muted2,marginTop:3}}>{o.name}</div>
-            {o.material&&<div style={{fontSize:11,color:C.muted,marginTop:1}}>g��� {o.material}</div>}
+            {o.material&&<div style={{fontSize:11,color:C.muted,marginTop:1}}>🔩 {o.material}</div>}
             <div style={{fontSize:11,color:C.muted,marginTop:1}}>⏱ {fmtSec(o.partSec)} · {(o.machines||[]).join(", ")}</div>
           </div>
           <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-            <button onClick={()=>setViewOrder(o)} style={{...btnSt("ghost"),padding:"6px 12px",fontSize:12}}>g��� Görüntüle</button>
+            <button onClick={()=>setViewOrder(o)} style={{...btnSt("ghost"),padding:"6px 12px",fontSize:12}}>👁 Görüntüle</button>
             <button onClick={()=>{setForm({code:o.code,name:o.name,material:o.material||"",partSec:o.partSec,machines:o.machines||[],notes:o.notes||"",files:o.files||[]});setEditId(o.id);setShowForm(true);}} style={{...btnSt(),padding:"6px 12px",fontSize:12}}>✏️ Düzenle</button>
             <button onClick={()=>toggleStatus(o)} style={{...btnSt(o.status==="active"?"danger":"green"),padding:"6px 12px",fontSize:12}}>{o.status==="active"?"Pasife Al":"Aktifleştir"}</button>
           </div>
@@ -589,7 +589,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
             <div>
               <div style={{fontWeight:700,fontFamily:"monospace",fontSize:14,color:C.text}}>{form.selectedOrder.code}</div>
               <div style={{fontSize:12,color:C.muted2,marginTop:1}}>{form.selectedOrder.name} · {fmtSec(form.selectedOrder.partSec)} · Maks: {Math.floor(EFFECTIVE_SECONDS/form.selectedOrder.partSec)} adet/gün</div>
-              {form.selectedOrder.material&&<div style={{fontSize:11,color:C.muted,marginTop:1}}>g��� {form.selectedOrder.material}</div>}
+              {form.selectedOrder.material&&<div style={{fontSize:11,color:C.muted,marginTop:1}}>🔩 {form.selectedOrder.material}</div>}
             </div>
             <button onClick={()=>fv("selectedOrder",null)} style={{background:"transparent",border:"none",color:C.red,fontSize:20,cursor:"pointer"}}>×</button>
           </div>
@@ -677,7 +677,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
         ))}
       </div>
       {filtered.length===0?(
-        <div style={{textAlign:"center",color:C.muted2,padding:"40px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}><div style={{fontSize:36,marginBottom:10}}>g���</div>Bu dönemde kayıt yok</div>
+        <div style={{textAlign:"center",color:C.muted2,padding:"40px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}><div style={{fontSize:36,marginBottom:10}}>📰</div>Bu dönemde kayıt yok</div>
       ):(
         <>
           <div style={{display:"flex",gap:8,marginBottom:16}}>
@@ -752,13 +752,12 @@ function App() {
   const [loading,setLoading]=useState(true);
   const [tab,setTab]=useState("giris");
   const [machines,setMachines]=useState(DEFAULT_MACHINES);
+  const [isTablet,setIsTablet]=useState(()=>typeof window!=="undefined"?window.matchMedia("(min-width: 768px)").matches:false);
 
   useEffect(()=>{
     async function init() {
-      // Load machines config
       const mc=await window.DB.getDoc("config","machines");
       if(mc&&mc.list&&mc.list.length>0) setMachines(mc.list);
-      // Restore session
       const session=window.Session.get();
       if(session){
         const u=await window.DB.getDoc("users",session.username);
@@ -769,6 +768,18 @@ function App() {
     }
     if(window.FB_READY) init();
     else window.addEventListener("fb_ready",init,{once:true});
+  },[]);
+
+  useEffect(()=>{
+    const mq=window.matchMedia("(min-width: 768px)");
+    const onChange=e=>setIsTablet(e.matches);
+    setIsTablet(mq.matches);
+    if(mq.addEventListener) mq.addEventListener("change",onChange);
+    else mq.addListener(onChange);
+    return ()=>{
+      if(mq.removeEventListener) mq.removeEventListener("change",onChange);
+      else mq.removeListener(onChange);
+    };
   },[]);
 
   async function updateMachines(list){
@@ -787,37 +798,63 @@ function App() {
   const canUsers=hasPermission(currentUser,"approve_users")||isAdmin;
 
   const tabs=[
-    ...(canEntry?[{id:"giris",icon:"g���",label:"Giriş"}]:[]),
-    ...(canReport?[{id:"rapor",icon:"g���",label:"Rapor"}]:[]),
-    ...(canOrders?[{id:"orders",icon:"g���",label:"İş Emirleri"}]:[]),
-    ...(canUsers?[{id:"users",icon:"g���",label:"Kullanıcılar"}]:[]),
+    ...(canEntry?[{id:"giris",icon:"📝",label:"Giriş"}]:[]),
+    ...(canReport?[{id:"rapor",icon:"📊",label:"Rapor"}]:[]),
+    ...(canOrders?[{id:"orders",icon:"📋",label:"İş Emirleri"}]:[]),
+    ...(canUsers?[{id:"users",icon:"👥",label:"Kullanıcılar"}]:[]),
   ];
 
-  return (
-    <div style={{background:C.bg,minHeight:"100vh",color:C.text,fontFamily:"'DM Sans','Segoe UI',sans-serif",maxWidth:480,margin:"0 auto",paddingBottom:80}}>
-      <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"14px 16px",position:"sticky",top:0,zIndex:10}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <div style={{width:34,height:34,borderRadius:10,background:`linear-gradient(135deg,${C.accent},#7b5cf0)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>⚙️</div>
-          <div style={{flex:1}}><div style={{fontWeight:700,fontSize:14,color:C.text}}>CNC Atölye Takip</div><div style={{color:C.muted2,fontSize:11,display:"flex",alignItems:"center",gap:5}}><span>{currentUser.fullName}</span><Badge label={isAdmin?"Yönetici":"Operatör"} color={isAdmin?C.accent:C.muted2}/></div></div>
-          <button onClick={logout} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12}}>Çıkış</button>
-        </div>
-      </div>
+  const activeView=(
+    <>
       {tab==="giris"&&<DataEntry currentUser={currentUser} machines={machines}/>}
-      {tab==="rapor"&&<Report currentUser={currentUser} machines={machines}/>}
-      {tab==="orders"&&<WorkOrders currentUser={currentUser} machines={machines}/>}
-      {tab==="users"&&<AdminUsers currentUser={currentUser} machines={machines} onMachinesUpdate={updateMachines}/>}
-      <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:480,background:C.surface,borderTop:`1px solid ${C.border}`,display:"flex",zIndex:20}}>
-        {tabs.map(t=>(
-          <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:"12px 0 10px",border:"none",background:"transparent",cursor:"pointer",color:tab===t.id?C.accent:C.muted,borderTop:`2px solid ${tab===t.id?C.accent:"transparent"}`,fontFamily:"inherit"}}>
-            <div style={{fontSize:20}}>{t.icon}</div>
-            <div style={{fontSize:10,fontWeight:tab===t.id?700:400,marginTop:2}}>{t.label}</div>
-          </button>
-        ))}
+      {tab==="rapor"&&<Report currentUser={currentUser} machines={machines}/>} 
+      {tab==="orders"&&<WorkOrders currentUser={currentUser} machines={machines}/>} 
+      {tab==="users"&&<AdminUsers currentUser={currentUser} machines={machines} onMachinesUpdate={updateMachines}/>} 
+    </>
+  );
+
+  return (
+    <div style={{background:C.bg,minHeight:"100vh",color:C.text,fontFamily:"'DM Sans','Segoe UI',sans-serif"}}>
+      <div style={{width:"100%",maxWidth:isTablet?1040:480,margin:"0 auto",paddingBottom:isTablet?20:80}}>
+        <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:isTablet?"14px 20px":"14px 16px",position:"sticky",top:0,zIndex:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{width:34,height:34,borderRadius:10,background:`linear-gradient(135deg,${C.accent},#7b5cf0)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>⚙️</div>
+            <div style={{flex:1}}><div style={{fontWeight:700,fontSize:14,color:C.text}}>CNC Atölye Takip</div><div style={{color:C.muted2,fontSize:11,display:"flex",alignItems:"center",gap:5}}><span>{currentUser.fullName}</span><Badge label={isAdmin?"Yönetici":"Operatör"} color={isAdmin?C.accent:C.muted2}/></div></div>
+            <button onClick={logout} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12}}>Çıkış</button>
+          </div>
+        </div>
+
+        {isTablet?(
+          <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 220px",gap:14,alignItems:"start"}}>
+            <div style={{minWidth:0}}>{activeView}</div>
+            <div style={{position:"sticky",top:74,padding:"12px 10px"}}>
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:8,display:"flex",flexDirection:"column",gap:8}}>
+                {tabs.map(t=>( 
+                  <button key={t.id} onClick={()=>setTab(t.id)} style={{display:"flex",alignItems:"center",gap:10,textAlign:"left",padding:"10px 12px",borderRadius:10,border:`1px solid ${tab===t.id?C.accent:C.border}`,background:tab===t.id?C.accent+"18":C.card,color:tab===t.id?C.accent:C.text,cursor:"pointer",fontFamily:"inherit"}}>
+                    <span style={{fontSize:18,width:22,textAlign:"center"}}>{t.icon}</span>
+                    <span style={{fontSize:13,fontWeight:tab===t.id?700:500}}>{t.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        ):( 
+          <>
+            {activeView}
+            <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:480,background:C.surface,borderTop:`1px solid ${C.border}`,display:"flex",zIndex:20}}>
+              {tabs.map(t=>( 
+                <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:"12px 0 10px",border:"none",background:"transparent",cursor:"pointer",color:tab===t.id?C.accent:C.muted,borderTop:`2px solid ${tab===t.id?C.accent:"transparent"}`,fontFamily:"inherit"}}>
+                  <div style={{fontSize:20}}>{t.icon}</div>
+                  <div style={{fontSize:10,fontWeight:tab===t.id?700:400,marginTop:2}}>{t.label}</div>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
 }
-
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
 </body>
