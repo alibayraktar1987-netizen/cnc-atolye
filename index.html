@@ -853,6 +853,22 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
 
   useEffect(()=>{window.DB.getAll("entries").then(e=>{setEntries(e);setLoading(false);});},[]);
 
+  function applyRangePreset(type){
+    const end=todayStr();
+    const endDate=parseYmdLocal(end);
+    let start=end;
+    if(type==="last7"){
+      const d=new Date(endDate); d.setDate(d.getDate()-6); start=ymdLocal(d);
+    }else if(type==="last30"){
+      const d=new Date(endDate); d.setDate(d.getDate()-29); start=ymdLocal(d);
+    }else if(type==="thisMonth"){
+      const d=new Date(endDate.getFullYear(),endDate.getMonth(),1); start=ymdLocal(d);
+    }
+    setRangeEnabled(true);
+    setFromDate(start);
+    setToDate(end);
+  }
+
   const today=todayStr(),thisWeek=weekStart(),thisMonth=monthStr();
   const rangeStart=fromDate<=toDate?fromDate:toDate;
   const rangeEnd=fromDate<=toDate?toDate:fromDate;
@@ -938,10 +954,17 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
           <button onClick={()=>setRangeEnabled(v=>!v)} style={chip(rangeEnabled,C.accent)}>{rangeEnabled?"Tarih Aralığı: Açık":"Tarih Aralığı"}</button>
         </div>
         {rangeEnabled&&(
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr auto",gap:8,alignItems:"end"}}>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              <button onClick={()=>applyRangePreset("last7")} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Son 7 gün</button>
+              <button onClick={()=>applyRangePreset("last30")} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Son 30 gün</button>
+              <button onClick={()=>applyRangePreset("thisMonth")} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Bu ay</button>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr auto",gap:8,alignItems:"end"}}>
             <div><span style={labelSt}>Başlangıç</span><input type="date" value={fromDate} max={today} onChange={e=>setFromDate(e.target.value||today)} style={{...inputSt,padding:"9px 10px",fontSize:13}}/></div>
             <div><span style={labelSt}>Bitiş</span><input type="date" value={toDate} max={today} onChange={e=>setToDate(e.target.value||today)} style={{...inputSt,padding:"9px 10px",fontSize:13}}/></div>
             <button onClick={()=>{const t=todayStr();setFromDate(t);setToDate(t);}} style={{...btnSt("ghost"),padding:"9px 11px",fontSize:12,marginBottom:1}}>Bugün</button>
+            </div>
           </div>
         )}
       </div>
