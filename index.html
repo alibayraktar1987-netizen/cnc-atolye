@@ -469,6 +469,144 @@ function AdminUsers({currentUser,machines,onMachinesUpdate}) {
   );
 }
 
+function ToolStock({currentUser,machines=DEFAULT_MACHINES}) {
+  const isAdmin=currentUser.role==="admin";
+  const [tools,setTools]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [search,setSearch]=useState("");
+  const [showForm,setShowForm]=useState(false);
+  const [editId,setEditId]=useState(null);
+  const [form,setForm]=useState({code:"",name:"",category:"",machine:"",qty:"",minQty:"",location:"",notes:""});
+
+  const load=useCallback(async()=>{
+    const rows=await window.DB.getAll("toolStock");
+    setTools(rows.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  const resetForm=()=>setForm({code:"",name:"",category:"",machine:"",qty:"",minQty:"",location:"",notes:""});
+  const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
+
+  async function saveTool(){
+    if(!form.name.trim()){alert("Takim adi zorunlu.");return;}
+    const payload={
+      code:form.code.trim(),
+      name:form.name.trim(),
+      category:form.category.trim(),
+      machine:form.machine.trim(),
+      qty:Number(form.qty)||0,
+      minQty:Number(form.minQty)||0,
+      location:form.location.trim(),
+      notes:form.notes.trim(),
+      updatedAt:new Date().toISOString(),
+    };
+    if(editId){
+      const ok=await window.DB.updateDoc("toolStock",editId,payload);
+      if(ok){
+        setTools(t=>t.map(x=>x.id===editId?{...x,...payload}:x));
+        setShowForm(false); setEditId(null); resetForm();
+      }
+      return;
+    }
+    const id=`tool_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`;
+    const ok=await window.DB.setDoc("toolStock",id,payload);
+    if(ok){
+      setTools(t=>[...t,{id,...payload}].sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+      setShowForm(false); resetForm();
+    }
+  }
+
+  async function removeTool(id,name){
+    if(!confirm(`"${name}" takimini silmek istiyor musunuz?`)) return;
+    const ok=await window.DB.deleteDoc("toolStock",id);
+    if(ok) setTools(t=>t.filter(x=>x.id!==id));
+  }
+
+  const filtered=tools.filter(t=>{
+    const q=search.toLowerCase().trim();
+    if(!q) return true;
+    return (t.name||"").toLowerCase().includes(q)||
+      (t.code||"").toLowerCase().includes(q)||
+      (t.category||"").toLowerCase().includes(q)||
+      (t.machine||"").toLowerCase().includes(q)||
+      (t.location||"").toLowerCase().includes(q);
+  });
+  const lowCount=tools.filter(t=>(Number(t.qty)||0)<=Math.max(Number(t.minQty)||0,0)).length;
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+
+  if(showForm&&isAdmin){
+    return (
+      <div style={{padding:16}}>
+        <button onClick={()=>{setShowForm(false);setEditId(null);resetForm();}} style={{...btnSt("ghost"),marginBottom:16,padding:"8px 14px",fontSize:13}}>Geri</button>
+        <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:14}}>{editId?"Takim Duzenle":"Yeni Takim"}</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div><span style={labelSt}>Kod</span><input style={inputSt} value={form.code} onChange={e=>fv("code",e.target.value)} placeholder="TKM-001"/></div>
+          <div><span style={labelSt}>Takim Adi *</span><input style={inputSt} value={form.name} onChange={e=>fv("name",e.target.value)} placeholder="12mm Parmak Freze"/></div>
+          <div><span style={labelSt}>Kategori</span><input style={inputSt} value={form.category} onChange={e=>fv("category",e.target.value)} placeholder="Freze, Matkap..."/></div>
+          <div><span style={labelSt}>Ilgili Tezgah</span><input style={inputSt} value={form.machine} onChange={e=>fv("machine",e.target.value)} list="tool-stock-machines" placeholder="CNC-1"/></div>
+          <div><span style={labelSt}>Stok Adedi</span><input style={inputSt} type="number" min="0" value={form.qty} onChange={e=>fv("qty",e.target.value)} placeholder="0"/></div>
+          <div><span style={labelSt}>Minimum Adet</span><input style={inputSt} type="number" min="0" value={form.minQty} onChange={e=>fv("minQty",e.target.value)} placeholder="0"/></div>
+          <div><span style={labelSt}>Konum</span><input style={inputSt} value={form.location} onChange={e=>fv("location",e.target.value)} placeholder="Raf A2"/></div>
+          <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Not</span><textarea style={{...inputSt,resize:"vertical",minHeight:70}} value={form.notes} onChange={e=>fv("notes",e.target.value)} placeholder="Aciklama..."/></div>
+          <div style={{gridColumn:"1 / -1",display:"flex",gap:8}}>
+            <button onClick={saveTool} style={{...btnSt("primary"),padding:"10px 14px"}}>Kaydet</button>
+            <button onClick={()=>{setShowForm(false);setEditId(null);resetForm();}} style={{...btnSt("ghost"),padding:"10px 14px"}}>Iptal</button>
+          </div>
+        </div>
+        <datalist id="tool-stock-machines">
+          {machines.map(m=><option key={m} value={m}/>)}
+        </datalist>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{padding:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:8,flexWrap:"wrap"}}>
+        <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>Takim Stogu · {tools.length} kayit · {lowCount} kritik</div>
+        {isAdmin&&<button onClick={()=>{resetForm();setEditId(null);setShowForm(true);}} style={{...btnSt("primary"),padding:"8px 14px",fontSize:12}}>+ Yeni Takim</button>}
+      </div>
+      <div style={{marginBottom:12}}>
+        <input style={{...inputSt,padding:"9px 12px",fontSize:13}} placeholder="Takim adi, kod, kategori, tezgah veya konum ara..." value={search} onChange={e=>setSearch(e.target.value)}/>
+      </div>
+      {filtered.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"30px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Sonuc yok</div>}
+      {filtered.map(t=>{
+        const qty=Number(t.qty)||0;
+        const min=Math.max(Number(t.minQty)||0,0);
+        const critical=qty<=min;
+        return (
+          <div key={t.id} style={{background:C.card,border:`1px solid ${critical?C.red+"66":C.border}`,borderRadius:14,padding:"12px 14px",marginBottom:9}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,marginBottom:8}}>
+              <div>
+                <div style={{fontSize:14,fontWeight:700,color:C.text}}>{t.name||"-"}</div>
+                <div style={{fontSize:12,color:C.muted2,marginTop:2}}>{t.code?`${t.code} · `:""}{t.category||"Kategori yok"}</div>
+              </div>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                <Badge label={`Stok ${qty}`} color={critical?C.red:C.green}/>
+                <Badge label={`Min ${min}`} color={C.muted2}/>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:7,flexWrap:"wrap",fontSize:11,color:C.muted2,marginBottom:8}}>
+              {t.machine&&<span style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"3px 8px"}}>Tezgah: {t.machine}</span>}
+              {t.location&&<span style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"3px 8px"}}>Konum: {t.location}</span>}
+              {critical&&<span style={{background:C.redDim,border:`1px solid ${C.red}44`,borderRadius:8,padding:"3px 8px",color:C.red}}>Stok kritik</span>}
+            </div>
+            {t.notes&&<div style={{fontSize:12,color:C.muted2,marginBottom:8}}>{t.notes}</div>}
+            {isAdmin&&(
+              <div style={{display:"flex",gap:7}}>
+                <button onClick={()=>{setEditId(t.id);setForm({code:t.code||"",name:t.name||"",category:t.category||"",machine:t.machine||"",qty:String(qty),minQty:String(min),location:t.location||"",notes:t.notes||""});setShowForm(true);}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
+                <button onClick={()=>removeTool(t.id,t.name||"Takim")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ════════════════════════════════════════════════════════════
 //  WORK ORDERS
 // ════════════════════════════════════════════════════════════
@@ -1183,10 +1321,12 @@ function App() {
   const canReport=hasPermission(currentUser,"view_reports");
   const canOrders=hasPermission(currentUser,"manage_orders")||isAdmin;
   const canUsers=hasPermission(currentUser,"approve_users")||isAdmin;
+  const canTools=true;
 
   const tabs=[
     ...(canEntry?[{id:"giris",icon:"📝",label:"Giriş"}]:[]),
     ...(canReport?[{id:"rapor",icon:"📊",label:"Rapor"}]:[]),
+    ...(canTools?[{id:"tools",icon:"🧰",label:"Takım Stoğu"}]:[]),
     ...(canOrders?[{id:"orders",icon:"📋",label:"İş Emirleri"}]:[]),
     ...(canUsers?[{id:"users",icon:"👥",label:"Ayarlar"}]:[]),
   ];
@@ -1195,6 +1335,7 @@ function App() {
     <>
       {tab==="giris"&&<DataEntry currentUser={currentUser} machines={machines}/>}
       {tab==="rapor"&&<Report currentUser={currentUser} machines={machines}/>} 
+      {tab==="tools"&&<ToolStock currentUser={currentUser} machines={machines}/>} 
       {tab==="orders"&&<WorkOrders currentUser={currentUser} machines={machines}/>} 
       {tab==="users"&&<AdminUsers currentUser={currentUser} machines={machines} onMachinesUpdate={updateMachines}/>} 
     </>
