@@ -381,7 +381,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   const [loading,setLoading]=useState(true);
   const [showForm,setShowForm]=useState(false);
   const [editId,setEditId]=useState(null);
-  const [statusFilter,setStatusFilter]=useState("all");
+  const [statusFilters,setStatusFilters]=useState([]);
   const [search,setSearch]=useState("");
   const [viewOrder,setViewOrder]=useState(null);
   const [previewFile,setPreviewFile]=useState(null);
@@ -439,8 +439,11 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   }
 
   const q=search.trim().toLowerCase();
+  const toggleStatusFilter=statusId=>{
+    setStatusFilters(prev=>prev.includes(statusId)?prev.filter(x=>x!==statusId):[...prev,statusId]);
+  };
   const filteredOrders=orders.filter(o=>{
-    const statusOk=statusFilter==="all" ? true : (o.status||"passive")===statusFilter;
+    const statusOk=statusFilters.length===0 ? true : statusFilters.includes(o.status||"passive");
     const textOk=!q || (o.code||"").toLowerCase().includes(q) || (o.name||"").toLowerCase().includes(q) || (o.material||"").toLowerCase().includes(q);
     return statusOk&&textOk;
   });
@@ -538,10 +541,10 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
       </div>
       <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
         <input style={{...inputSt,flex:"1 1 230px",padding:"9px 12px",fontSize:13}} placeholder="Kod, parça veya malzeme ara..." value={search} onChange={e=>setSearch(e.target.value)}/>
-        <select style={{...inputSt,width:170,padding:"9px 12px",fontSize:13}} value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
-          <option value="all">Tüm Durumlar</option>
-          {ORDER_STATUS_OPTIONS.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
-        </select>
+      </div>
+      <div style={{display:"flex",gap:7,marginBottom:12,flexWrap:"wrap"}}>
+        <button onClick={()=>setStatusFilters([])} style={chip(statusFilters.length===0,C.muted2)}>Tüm Durumlar</button>
+        {ORDER_STATUS_OPTIONS.map(s=><button key={s.id} onClick={()=>toggleStatusFilter(s.id)} style={chip(statusFilters.includes(s.id),s.color)}>{s.label}</button>)}
       </div>
       {orders.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"40px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}><div style={{fontSize:36,marginBottom:10}}>📋</div>Henüz iş emri yok</div>}
       {orders.length>0&&filteredOrders.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"24px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Filtreye uygun iş emri bulunamadı</div>}
