@@ -2470,10 +2470,14 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     const toAdd=nextDates.filter(d=>!oldSet.has(d));
     const segPlanByDate={};
     seg.plans.forEach(p=>{segPlanByDate[p.date]=p;});
+    const segPlanIds=new Set(seg.plans.map(p=>p.id));
     const duplicateAdd=toAdd.filter(d=>plans.some(p=>p.machine===seg.machine&&p.date===d&&!segPlanByDate[d]));
     if(duplicateAdd.length>0){
       alert(`Çakışma var: ${duplicateAdd.slice(0,4).join(", ")}`);
       return;
+    }
+    if(editId&&segPlanIds.has(editId)){
+      setForm(f=>({...f,startDate:nextStart,endDate:nextEnd}));
     }
     const base=seg.plans[0];
     for(const d of toRemove){
@@ -2641,15 +2645,35 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       ...(editId?{}:{createdBy:currentUser.id}),
     };
     if(editId){
-      const data={
-        ...baseData,
-        date:form.startDate,
-        week:weekStart(parseYmdLocal(form.startDate)),
-        month:monthStr(parseYmdLocal(form.startDate)),
-      };
-      const ok=await window.DB.updateDoc("plans",editId,data);
-      if(!ok){alert("Plan güncellenemedi.");return;}
-      setPlans(p=>p.map(x=>x.id===editId?{...x,...data}:x));
+      const seg=buildPlanSegments(plans).find(s=>(s.plans||[]).some(x=>x.id===editId))||null;
+      if(!seg||!seg.plans||seg.plans.length===0){alert("Düzenlenecek plan bulunamadı.");return;}
+      const segIds=new Set(seg.plans.map(x=>x.id));
+      const targetDates=getDateRange(form.startDate,form.endDate);
+      const duplicateDates=targetDates.filter(dt=>plans.some(p=>!segIds.has(p.id)&&p.date===dt&&p.machine===form.machine));
+      if(duplicateDates.length>0){
+        alert(`Bu tezgah için plan zaten var: ${duplicateDates.slice(0,5).join(", ")}${duplicateDates.length>5?" ...":""}`);
+        return;
+      }
+      for(const old of seg.plans){
+        const ok=await window.DB.deleteDoc("plans",old.id);
+        if(!ok){alert("Plan güncellenemedi (silme).");await refreshPlans();return;}
+      }
+      const recreated=[];
+      for(const dt of targetDates){
+        const data={
+          ...baseData,
+          date:dt,
+          week:weekStart(parseYmdLocal(dt)),
+          month:monthStr(parseYmdLocal(dt)),
+        };
+        const id=await window.DB.addDoc("plans",data);
+        if(!id){alert("Plan güncellenemedi (ekleme).");await refreshPlans();return;}
+        recreated.push({id,...data});
+      }
+      setPlans(prev=>{
+        const cleaned=prev.filter(x=>!segIds.has(x.id));
+        return [...recreated.reverse(),...cleaned];
+      });
       setEditId(null);
       setForm({...emptyForm,machine:form.machine,startDate:form.startDate,endDate:form.endDate});
       return;
@@ -2797,7 +2821,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
           <div><span style={labelSt}>Başlangıç</span><input type="date" value={form.startDate} onChange={e=>fv("startDate",e.target.value||todayStr())} style={{...inputSt,padding:"9px 10px",fontSize:13}}/></div>
           <div><span style={labelSt}>Bitiş</span><input type="date" value={form.endDate} onChange={e=>fv("endDate",e.target.value||form.startDate||todayStr())} style={{...inputSt,padding:"9px 10px",fontSize:13}}/></div>
         </div>
-        <div style={{fontSize:12,color:C.muted2,marginTop:6}}>{editId?`Düzenlenen gün: ${form.startDate}`:`Uygulanacak aralık: ${rangeLabel}`}</div>
+        <div style={{fontSize:12,color:C.muted2,marginTop:6}}>{editId?`Düzenlenen aralık: ${form.startDate}${form.endDate&&form.endDate!==form.startDate?` - ${form.endDate}`:""}`:`Uygulanacak aralık: ${rangeLabel}`}</div>
         <div style={{marginTop:9}}>
           <span style={labelSt}>Tezgah</span>
           <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
