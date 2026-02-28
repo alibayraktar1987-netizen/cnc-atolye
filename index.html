@@ -78,11 +78,27 @@ const SHIFTS = [
 ];
 const EFFECTIVE_SECONDS = 72000;
 const LOGO_SRC = "./logo.png";
+const SESSION_TIMEOUT_MIN = 30;
+const USER_ROLES = [
+  { id:"admin", label:"Admin" },
+  { id:"sales", label:"Satis" },
+  { id:"planner", label:"Planlama" },
+  { id:"purchasing", label:"Satin Alma" },
+  { id:"supervisor", label:"Vardiya Sefi" },
+  { id:"operator", label:"Operator" },
+  { id:"quality", label:"Kalite" },
+  { id:"viewer", label:"Izleyici" },
+];
 const PERMISSIONS = [
   { id:"data_entry", label:"Veri Girişi", icon:"📝", desc:"Üretim verisi girebilir" },
   { id:"view_reports", label:"Rapor Görüntüleme", icon:"📊", desc:"Tüm raporları görebilir" },
   { id:"manage_orders", label:"İş Emri Oluşturma", icon:"📋", desc:"İş emri ekleyip düzenleyebilir" },
   { id:"approve_users", label:"Kullanıcı Onaylama", icon:"👥", desc:"Kullanıcıları onaylayabilir" },
+  { id:"manage_sales", label:"Satis ve Teklif", icon:"💼", desc:"Teklif ve siparis yonetebilir" },
+  { id:"manage_purchasing", label:"Satin Alma", icon:"🛒", desc:"Talep ve PO yonetebilir" },
+  { id:"manage_quality", label:"Kalite", icon:"🧪", desc:"Muayene ve FAI kayitlari girebilir" },
+  { id:"manage_downtime", label:"Durus Yonetimi", icon:"⏱️", desc:"Durus nedeni ve kaydi girebilir" },
+  { id:"manage_notifications", label:"Bildirim Kurallari", icon:"🔔", desc:"Uyari kurallari duzenleyebilir" },
 ];
 
 const C = {
@@ -95,17 +111,30 @@ const C = {
   text:"#e2e5f0", muted:"#5a5f75", muted2:"#8b90a8",
 };
 const ORDER_STATUS_OPTIONS = [
-  { id:"active", label:"Aktif", color:C.green },
-  { id:"completed", label:"Tamamlandı", color:C.accent },
-  { id:"shipped", label:"Kargolandı", color:C.warn },
-  { id:"liquidation", label:"Tesfiyede", color:C.red },
+  { id:"planned", label:"Planlandi", color:C.accent },
+  { id:"in_production", label:"Uretimde", color:C.green },
+  { id:"waiting", label:"Bekliyor", color:C.warn },
+  { id:"completed", label:"Tamamlandi", color:C.accent },
+  { id:"cancelled", label:"Iptal", color:C.red },
+  { id:"active", label:"Aktif (Legacy)", color:C.green },
   { id:"passive", label:"Pasif", color:C.muted2 },
+  { id:"liquidation", label:"Tasfiye", color:C.red },
+  { id:"shipped", label:"Teslim/Sevk", color:C.warn },
 ];
 const SALES_STATUS_OPTIONS = [
+  { id:"offer", label:"Teklif", color:C.muted2 },
+  { id:"approved", label:"Onaylandi", color:C.accent },
+  { id:"in_production", label:"Uretimde", color:C.green },
+  { id:"delivered", label:"Teslim Edildi", color:C.green },
   { id:"new", label:"Yeni", color:C.accent },
   { id:"waiting", label:"Beklemede", color:C.warn },
   { id:"cancelled", label:"Iptal", color:C.red },
   { id:"converted", label:"Donustu", color:C.green },
+];
+const PRIORITY_OPTIONS = [
+  { id:"acil", label:"Acil", color:C.red },
+  { id:"normal", label:"Normal", color:C.accent },
+  { id:"dusuk", label:"Dusuk", color:C.muted2 },
 ];
 const MACHINE_BRAND_OPTIONS = ["Fanuc","Siemens","Heidenhain","Generic"];
 const MACHINE_PROTOCOL_OPTIONS = {
@@ -159,6 +188,27 @@ function hasPermission(user,perm) {
   if(user.role==="admin") return true;
   return (user.permissions||[]).includes(perm);
 }
+function isOpenOrderStatus(status) {
+  return !["completed","cancelled","passive","liquidation","shipped"].includes(status||"");
+}
+function safeNum(v) {
+  const n=Number(v);
+  return Number.isFinite(n)?n:0;
+}
+async function addAuditLog(actorId,entityType,entityId,action,beforeData,afterData,meta={}) {
+  try{
+    await window.DB.addDoc("auditLogs",{
+      actorId:actorId||"",
+      entityType:entityType||"",
+      entityId:entityId||"",
+      action:action||"",
+      before:beforeData||null,
+      after:afterData||null,
+      meta,
+      createdAt:new Date().toISOString(),
+    });
+  }catch{}
+}
 async function fileToBase64(file) {
   return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
 }
@@ -176,7 +226,7 @@ function formatBytes(b) {
 }
 function hashPass(p) { return btoa(unescape(encodeURIComponent(p))); }
 function getOrderStatusMeta(status) {
-  return ORDER_STATUS_OPTIONS.find(s=>s.id===status) || ORDER_STATUS_OPTIONS.find(s=>s.id==="passive");
+  return ORDER_STATUS_OPTIONS.find(s=>s.id===status) || ORDER_STATUS_OPTIONS.find(s=>s.id==="planned");
 }
 function getSalesStatusMeta(status) {
   return SALES_STATUS_OPTIONS.find(s=>s.id===status) || SALES_STATUS_OPTIONS.find(s=>s.id==="new");
@@ -242,7 +292,7 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC}) {
     const mm=pad2(now.getMinutes());
     setAdminStats({
       loading:false,
-      activeOrders:orders.filter(o=>o.status==="active").length,
+      activeOrders:orders.filter(o=>isOpenOrderStatus(o.status)).length,
       todayEntries:todayRows.length,
       pendingUsers:users.filter(u=>u.status==="pending").length,
       activeOperators:users.filter(u=>u.role==="operator"&&u.status==="active").length,
@@ -1179,6 +1229,476 @@ function MaterialLibrary() {
 }
 
 // ════════════════════════════════════════════════════════════
+//  SALES MANAGEMENT V2
+// ════════════════════════════════════════════════════════════
+function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders,defaultView="orders"}) {
+  const [customers,setCustomers]=useState([]);
+  const [customerPrices,setCustomerPrices]=useState([]);
+  const [quotes,setQuotes]=useState([]);
+  const [salesOrders,setSalesOrders]=useState([]);
+  const [workOrders,setWorkOrders]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [view,setView]=useState(defaultView==="quotes"?"quotes":"orders");
+  const [search,setSearch]=useState("");
+  const [customerForm,setCustomerForm]=useState({name:"",code:"",contact:"",phone:"",email:"",discountPct:"0"});
+  const [priceForm,setPriceForm]=useState({customerId:"",partNo:"",price:"",discountPct:"0",currency:"TRY"});
+  const [quoteForm,setQuoteForm]=useState({
+    code:"",
+    customerId:"",
+    validUntil:todayStr(),
+    priority:"normal",
+    note:"",
+    lines:[{partNo:"",partName:"",revision:"A",qty:"1",unitPrice:"0",discountPct:"0",dueDate:todayStr(),partSec:"60",machine:(machines[0]||"CNC-1")}],
+  });
+
+  const nextCode=useCallback((prefix,list,regex)=>{
+    const nums=list.map(x=>{
+      const m=String(x.code||"").toUpperCase().match(regex);
+      return m?Number(m[1]):null;
+    }).filter(n=>n!==null);
+    const next=(nums.length?Math.max(...nums):0)+1;
+    return `${prefix}-${String(next).padStart(4,"0")}`;
+  },[]);
+
+  const load=useCallback(async()=>{
+    const [c,prices,q,s,wo]=await Promise.all([
+      window.DB.getAll("customers"),
+      window.DB.getAll("customerPrices"),
+      window.DB.getAll("salesQuotes"),
+      window.DB.getAll("salesOrders"),
+      window.DB.getAll("orders"),
+    ]);
+    setCustomers(c.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    setCustomerPrices(prices.sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||"")));
+    setQuotes(q.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setSalesOrders(s.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setWorkOrders(wo.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setQuoteForm(f=>({...f,code:nextCode("TKL",q,/^TKL-(\d+)$/)}));
+    setLoading(false);
+  },[nextCode]);
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{setView(defaultView==="quotes"?"quotes":"orders");},[defaultView]);
+
+  const selectedCustomer=customers.find(c=>c.id===quoteForm.customerId)||null;
+  const customerStats=customers.map(c=>{
+    const rows=salesOrders.filter(s=>s.customerId===c.id);
+    const totalAmount=rows.reduce((sum,row)=>sum+safeNum(row.totalAmount),0);
+    const open=rows.filter(r=>!["delivered","cancelled"].includes(r.status||"")).length;
+    return {id:c.id,name:c.name,totalOrders:rows.length,totalAmount,open};
+  }).filter(x=>x.totalOrders>0).sort((a,b)=>b.totalAmount-a.totalAmount);
+
+  const lineTotal=line=>{
+    const qty=Math.max(0,safeNum(line.qty));
+    const price=Math.max(0,safeNum(line.unitPrice));
+    const disc=Math.max(0,Math.min(100,safeNum(line.discountPct)));
+    const gross=qty*price;
+    const discAmt=(gross*disc)/100;
+    return {gross,discAmt,net:gross-discAmt};
+  };
+  const quoteTotals=quoteForm.lines.reduce((acc,line)=>{
+    const t=lineTotal(line);
+    acc.gross+=t.gross; acc.discount+=t.discAmt; acc.net+=t.net;
+    return acc;
+  },{gross:0,discount:0,net:0});
+
+  const setQ=(k,v)=>setQuoteForm(f=>({...f,[k]:v}));
+  const setLine=(idx,k,v)=>setQuoteForm(f=>({...f,lines:f.lines.map((line,i)=>i===idx?{...line,[k]:v}:line)}));
+  const addLine=()=>setQuoteForm(f=>({...f,lines:[...f.lines,{partNo:"",partName:"",revision:"A",qty:"1",unitPrice:"0",discountPct:"0",dueDate:todayStr(),partSec:"60",machine:(machines[0]||"CNC-1")}]}));
+  const removeLine=idx=>setQuoteForm(f=>({...f,lines:f.lines.filter((_,i)=>i!==idx)}));
+
+  function applyCustomerPrice(idx,partNo){
+    const priceRow=customerPrices.find(p=>p.customerId===quoteForm.customerId&&String(p.partNo||"").trim().toLowerCase()===String(partNo||"").trim().toLowerCase());
+    if(!priceRow) return;
+    setLine(idx,"unitPrice",String(priceRow.price||0));
+    setLine(idx,"discountPct",String(priceRow.discountPct||0));
+  }
+
+  async function saveCustomer(){
+    if(!customerForm.name.trim()){alert("Musteri adi zorunlu.");return;}
+    const payload={
+      name:customerForm.name.trim(),
+      code:(customerForm.code||`CUS-${Date.now().toString(36).toUpperCase()}`).toUpperCase(),
+      contact:customerForm.contact.trim(),
+      phone:customerForm.phone.trim(),
+      email:customerForm.email.trim(),
+      discountPct:Math.max(0,Math.min(100,safeNum(customerForm.discountPct))),
+      updatedAt:new Date().toISOString(),
+    };
+    const id=await window.DB.addDoc("customers",payload);
+    if(!id){alert("Musteri kaydedilemedi.");return;}
+    await addAuditLog(currentUser.id,"customer",id,"create",null,payload,{module:"sales"});
+    setCustomers(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev].sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    setCustomerForm({name:"",code:"",contact:"",phone:"",email:"",discountPct:"0"});
+  }
+
+  async function savePrice(){
+    if(!priceForm.customerId||!priceForm.partNo.trim()){alert("Musteri ve parca no zorunlu.");return;}
+    const payload={
+      customerId:priceForm.customerId,
+      partNo:priceForm.partNo.trim().toUpperCase(),
+      price:Math.max(0,safeNum(priceForm.price)),
+      discountPct:Math.max(0,Math.min(100,safeNum(priceForm.discountPct))),
+      currency:priceForm.currency||"TRY",
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser.id,
+    };
+    const id=await window.DB.addDoc("customerPrices",payload);
+    if(!id){alert("Fiyat kaydi olusturulamadi.");return;}
+    setCustomerPrices(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
+    setPriceForm({customerId:"",partNo:"",price:"",discountPct:"0",currency:"TRY"});
+  }
+
+  async function saveQuote(){
+    if(!quoteForm.customerId){alert("Musteri secin.");return;}
+    if(!quoteForm.lines.length){alert("En az bir satir ekleyin.");return;}
+    if(quoteForm.lines.some(l=>!l.partNo||safeNum(l.qty)<=0)){alert("Satirlarda parca no ve miktar zorunlu.");return;}
+    const customer=customers.find(c=>c.id===quoteForm.customerId);
+    const payload={
+      code:(quoteForm.code||nextCode("TKL",quotes,/^TKL-(\d+)$/)).toUpperCase(),
+      customerId:customer?.id||"",
+      customerName:customer?.name||"",
+      validUntil:quoteForm.validUntil||todayStr(),
+      priority:quoteForm.priority||"normal",
+      note:quoteForm.note.trim(),
+      lines:quoteForm.lines.map(l=>({
+        partNo:String(l.partNo||"").trim().toUpperCase(),
+        partName:String(l.partName||"").trim(),
+        revision:String(l.revision||"A").trim().toUpperCase(),
+        qty:Math.max(0,safeNum(l.qty)),
+        unitPrice:Math.max(0,safeNum(l.unitPrice)),
+        discountPct:Math.max(0,Math.min(100,safeNum(l.discountPct))),
+        dueDate:l.dueDate||todayStr(),
+        partSec:Math.max(1,safeNum(l.partSec)||60),
+        machine:l.machine||machines[0]||"CNC-1",
+      })),
+      grossAmount:quoteTotals.gross,
+      discountAmount:quoteTotals.discount,
+      totalAmount:quoteTotals.net,
+      status:"offer",
+      updatedAt:new Date().toISOString(),
+      createdBy:currentUser.id,
+    };
+    const id=await window.DB.addDoc("salesQuotes",payload);
+    if(!id){alert("Teklif kaydedilemedi.");return;}
+    await addAuditLog(currentUser.id,"salesQuote",id,"create",null,payload,{module:"sales"});
+    setQuotes(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
+    setQuoteForm({
+      code:nextCode("TKL",[...quotes,{id,...payload}],/^TKL-(\d+)$/),
+      customerId:"",
+      validUntil:todayStr(),
+      priority:"normal",
+      note:"",
+      lines:[{partNo:"",partName:"",revision:"A",qty:"1",unitPrice:"0",discountPct:"0",dueDate:todayStr(),partSec:"60",machine:(machines[0]||"CNC-1")}],
+    });
+    setView("quotes");
+  }
+
+  async function setQuoteStatus(q,status){
+    if(q.status===status) return;
+    const patch={status,updatedAt:new Date().toISOString(),updatedBy:currentUser.id};
+    const ok=await window.DB.updateDoc("salesQuotes",q.id,patch);
+    if(!ok){alert("Teklif durumu guncellenemedi.");return;}
+    setQuotes(prev=>prev.map(x=>x.id===q.id?{...x,...patch}:x));
+  }
+
+  async function convertQuoteToOrder(q){
+    if(!q.lines||q.lines.length===0){alert("Teklif satiri yok.");return;}
+    const existing=salesOrders.find(s=>s.sourceQuoteId===q.id);
+    if(existing){alert(`Bu teklif zaten siparise donustu: ${existing.code}`);return;}
+    const orderCode=nextCode("SIP",salesOrders,/^SIP-(\d+)$/);
+    const qtyTotal=q.lines.reduce((sum,l)=>sum+safeNum(l.qty),0);
+    const dueDate=[...q.lines].sort((a,b)=>String(a.dueDate||"").localeCompare(String(b.dueDate||"")))[0]?.dueDate||todayStr();
+    const payload={
+      code:orderCode,
+      customerId:q.customerId||"",
+      customerName:q.customerName||"",
+      sourceQuoteId:q.id,
+      sourceQuoteCode:q.code||"",
+      lines:q.lines||[],
+      qty:qtyTotal,
+      dueDate,
+      priority:q.priority||"normal",
+      totalAmount:safeNum(q.totalAmount),
+      deliveredQty:0,
+      deliveries:[],
+      status:"approved",
+      createdBy:currentUser.id,
+      updatedAt:new Date().toISOString(),
+    };
+    const id=await window.DB.addDoc("salesOrders",payload);
+    if(!id){alert("Siparis olusturulamadi.");return;}
+    await window.DB.updateDoc("salesQuotes",q.id,{status:"converted",orderId:id,orderCode:orderCode,updatedAt:new Date().toISOString()});
+    await addAuditLog(currentUser.id,"salesOrder",id,"create_from_quote",{quoteId:q.id},{...payload,id},{module:"sales"});
+    setSalesOrders(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
+    setQuotes(prev=>prev.map(x=>x.id===q.id?{...x,status:"converted",orderId:id,orderCode}:x));
+    setView("orders");
+  }
+
+  function openPrintableDoc(title,rows,footer=""){
+    const html=`<!doctype html><html><head><meta charset="utf-8"/><title>${title}</title>
+      <style>body{font-family:Arial,sans-serif;padding:24px;color:#111}h1{font-size:20px}table{border-collapse:collapse;width:100%;margin-top:16px}
+      th,td{border:1px solid #ccc;padding:8px;text-align:left;font-size:12px}th{background:#f5f5f5}.ft{margin-top:16px;font-size:12px;color:#444}</style></head>
+      <body><h1>${title}</h1><table><thead><tr><th>Parca No</th><th>Aciklama</th><th>Miktar</th><th>Birim Fiyat</th><th>Iskonto%</th><th>Tutar</th><th>Termin</th></tr></thead><tbody>
+      ${rows.map(r=>`<tr><td>${r.partNo||""}</td><td>${r.partName||""}</td><td>${safeNum(r.qty)}</td><td>${safeNum(r.unitPrice).toFixed(2)}</td><td>${safeNum(r.discountPct).toFixed(2)}</td><td>${(safeNum(r.qty)*safeNum(r.unitPrice)*(1-safeNum(r.discountPct)/100)).toFixed(2)}</td><td>${r.dueDate||""}</td></tr>`).join("")}
+      </tbody></table><div class="ft">${footer}</div></body></html>`;
+    const w=window.open("","_blank","width=980,height=720");
+    if(!w) return;
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(()=>w.print(),250);
+  }
+
+  function printQuote(q){
+    openPrintableDoc(`Proforma Teklif - ${q.code||""}`,q.lines||[],`Musteri: ${q.customerName||"-"} · Gecerlilik: ${q.validUntil||"-"} · Toplam: ${safeNum(q.totalAmount).toFixed(2)} TRY`);
+  }
+  function printOrder(o){
+    openPrintableDoc(`Siparis Onay Formu - ${o.code||""}`,o.lines||[],`Musteri: ${o.customerName||"-"} · Termin: ${o.dueDate||"-"} · Toplam: ${safeNum(o.totalAmount).toFixed(2)} TRY`);
+  }
+
+  async function addDelivery(order){
+    const qtyInput=prompt("Teslim edilecek miktar:");
+    if(qtyInput===null) return;
+    const qty=Math.max(0,safeNum(qtyInput));
+    if(!qty){alert("Gecerli miktar girin.");return;}
+    const note=prompt("Teslim notu (opsiyonel):")||"";
+    const deliveries=[...(order.deliveries||[]),{date:todayStr(),qty,note,createdBy:currentUser.id}];
+    const deliveredQty=safeNum(order.deliveredQty)+qty;
+    const totalQty=safeNum(order.qty);
+    const status=deliveredQty>=totalQty&&totalQty>0?"delivered":"in_production";
+    const patch={deliveries,deliveredQty,status,updatedAt:new Date().toISOString(),updatedBy:currentUser.id};
+    const ok=await window.DB.updateDoc("salesOrders",order.id,patch);
+    if(!ok){alert("Teslim kaydi eklenemedi.");return;}
+    await addAuditLog(currentUser.id,"salesOrder",order.id,"delivery_add",order,{...order,...patch},{module:"sales"});
+    setSalesOrders(prev=>prev.map(x=>x.id===order.id?{...x,...patch}:x));
+  }
+
+  async function convertOrderToWorkOrders(order){
+    if(order.workOrderIds&&order.workOrderIds.length>0){alert("Bu siparis icin is emri olusturulmus.");return;}
+    if(!order.lines||order.lines.length===0){alert("Siparis satiri bulunamadi.");return;}
+    const createdIds=[];
+    const createdCodes=[];
+    let seed=[...workOrders];
+    for(const line of order.lines){
+      const code=nextCode("IE",seed,/^IE-(\d+)$/);
+      const woPayload={
+        code,
+        name:line.partName||line.partNo||order.code,
+        customerId:order.customerId||"",
+        customerName:order.customerName||"",
+        material:line.material||"",
+        partNo:line.partNo||"",
+        revision:line.revision||"",
+        qty:Math.max(0,safeNum(line.qty)),
+        dueDate:line.dueDate||order.dueDate||"",
+        priority:order.priority||"normal",
+        partSec:Math.max(1,safeNum(line.partSec)||60),
+        machines:[line.machine||machines[0]||"CNC-1"],
+        notes:`Siparis ${order.code} otomatik olusturma`,
+        files:[],
+        status:"planned",
+        sourceType:"sales_auto",
+        sourceSalesOrderId:order.id,
+        sourceSalesOrderCode:order.code||"",
+        dependencies:[],
+        createdBy:currentUser.id,
+        updatedAt:new Date().toISOString(),
+      };
+      const id=await window.DB.addDoc("orders",woPayload);
+      if(!id) continue;
+      seed=[{id,...woPayload,createdAt:new Date().toISOString()},...seed];
+      createdIds.push(id);
+      createdCodes.push(code);
+      await addAuditLog(currentUser.id,"workOrder",id,"create_from_sales_order",null,woPayload,{orderId:order.id,module:"sales"});
+    }
+    if(createdIds.length===0){alert("Is emri olusturulamadi.");return;}
+    const patch={workOrderIds:createdIds,workOrderCodes:createdCodes,status:"in_production",updatedAt:new Date().toISOString(),updatedBy:currentUser.id};
+    await window.DB.updateDoc("salesOrders",order.id,patch);
+    setSalesOrders(prev=>prev.map(x=>x.id===order.id?{...x,...patch}:x));
+    setWorkOrders(seed);
+    if(onOpenWorkOrders) onOpenWorkOrders();
+  }
+
+  const q=search.trim().toLowerCase();
+  const filteredQuotes=quotes.filter(x=>!q||(x.code||"").toLowerCase().includes(q)||(x.customerName||"").toLowerCase().includes(q)||(x.status||"").toLowerCase().includes(q));
+  const filteredOrders=salesOrders.filter(x=>!q||(x.code||"").toLowerCase().includes(q)||(x.customerName||"").toLowerCase().includes(q)||(x.status||"").toLowerCase().includes(q));
+  const statusLabel=s=>getSalesStatusMeta(s).label;
+  const statusColor=s=>getSalesStatusMeta(s).color;
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+
+  return (
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <button onClick={()=>setView("orders")} style={chip(view==="orders",C.accent)}>Siparisler</button>
+        <button onClick={()=>setView("quotes")} style={chip(view==="quotes",C.warn)}>Teklifler</button>
+        <button onClick={()=>setView("pricing")} style={chip(view==="pricing",C.green)}>Musteri/Fiyat</button>
+      </div>
+
+      {view==="pricing"&&(
+        <>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+            <div style={{fontWeight:700,color:C.text,marginBottom:10}}>Musteri Karti</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div><span style={labelSt}>Musteri Adi *</span><input style={inputSt} value={customerForm.name} onChange={e=>setCustomerForm(f=>({...f,name:e.target.value}))}/></div>
+              <div><span style={labelSt}>Kod</span><input style={inputSt} value={customerForm.code} onChange={e=>setCustomerForm(f=>({...f,code:e.target.value}))}/></div>
+              <div><span style={labelSt}>Yetkili</span><input style={inputSt} value={customerForm.contact} onChange={e=>setCustomerForm(f=>({...f,contact:e.target.value}))}/></div>
+              <div><span style={labelSt}>Telefon</span><input style={inputSt} value={customerForm.phone} onChange={e=>setCustomerForm(f=>({...f,phone:e.target.value}))}/></div>
+              <div><span style={labelSt}>E-Posta</span><input style={inputSt} value={customerForm.email} onChange={e=>setCustomerForm(f=>({...f,email:e.target.value}))}/></div>
+              <div><span style={labelSt}>Varsayilan Iskonto %</span><input style={inputSt} type="number" min="0" max="100" value={customerForm.discountPct} onChange={e=>setCustomerForm(f=>({...f,discountPct:e.target.value}))}/></div>
+            </div>
+            <div style={{marginTop:10,display:"flex",justifyContent:"flex-end"}}><button onClick={saveCustomer} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Musteri Kaydet</button></div>
+          </div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+            <div style={{fontWeight:700,color:C.text,marginBottom:10}}>Musteri Bazli Fiyat Listesi</div>
+            <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr 1fr 1fr 0.8fr",gap:8}}>
+              <div><span style={labelSt}>Musteri</span><select style={inputSt} value={priceForm.customerId} onChange={e=>setPriceForm(f=>({...f,customerId:e.target.value}))}><option value="">Secin</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+              <div><span style={labelSt}>Parca No</span><input style={inputSt} value={priceForm.partNo} onChange={e=>setPriceForm(f=>({...f,partNo:e.target.value}))}/></div>
+              <div><span style={labelSt}>Birim Fiyat</span><input style={inputSt} type="number" min="0" value={priceForm.price} onChange={e=>setPriceForm(f=>({...f,price:e.target.value}))}/></div>
+              <div><span style={labelSt}>Iskonto %</span><input style={inputSt} type="number" min="0" max="100" value={priceForm.discountPct} onChange={e=>setPriceForm(f=>({...f,discountPct:e.target.value}))}/></div>
+              <div><span style={labelSt}>Para</span><select style={inputSt} value={priceForm.currency} onChange={e=>setPriceForm(f=>({...f,currency:e.target.value}))}><option value="TRY">TRY</option><option value="EUR">EUR</option><option value="USD">USD</option></select></div>
+            </div>
+            <div style={{marginTop:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <div style={{fontSize:12,color:C.muted2}}>Kayitli fiyat satiri: {customerPrices.length}</div>
+              <button onClick={savePrice} style={{...btnSt("green"),padding:"8px 12px",fontSize:12}}>Fiyat Kaydet</button>
+            </div>
+            {customerPrices.slice(0,30).map(p=>{
+              const cust=customers.find(c=>c.id===p.customerId);
+              return <div key={p.id} style={{marginTop:8,padding:"8px 10px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,fontSize:12,color:C.muted2}}>{cust?.name||"-"} · {p.partNo} · {safeNum(p.price).toFixed(2)} {p.currency||"TRY"} · Iskonto %{safeNum(p.discountPct)}</div>;
+            })}
+          </div>
+          {customerStats.length>0&&(
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+              <div style={{fontWeight:700,color:C.text,marginBottom:10}}>Musteri Siparis Istatistikleri</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8}}>
+                {customerStats.map(s=>(
+                  <div key={s.id} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px"}}>
+                    <div style={{fontWeight:700,color:C.text,fontSize:13}}>{s.name}</div>
+                    <div style={{fontSize:11,color:C.muted2,marginTop:2}}>Siparis: {s.totalOrders} · Acik: {s.open}</div>
+                    <div style={{fontSize:13,color:C.accent,marginTop:4,fontWeight:700}}>{safeNum(s.totalAmount).toFixed(2)} TRY</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {view==="quotes"&&(
+        <>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <div style={{fontWeight:700,color:C.text}}>Teklif Olustur</div>
+              <Badge label={quoteForm.code||"-"} color={C.warn}/>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+              <div><span style={labelSt}>Musteri</span><select style={inputSt} value={quoteForm.customerId} onChange={e=>setQ("customerId",e.target.value)}><option value="">Secin</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+              <div><span style={labelSt}>Gecerlilik</span><input style={inputSt} type="date" value={quoteForm.validUntil} onChange={e=>setQ("validUntil",e.target.value||todayStr())}/></div>
+              <div><span style={labelSt}>Oncelik</span><select style={inputSt} value={quoteForm.priority} onChange={e=>setQ("priority",e.target.value)}><option value="acil">Acil</option><option value="normal">Normal</option><option value="dusuk">Dusuk</option></select></div>
+            </div>
+            <div style={{marginTop:10}}>
+              <span style={labelSt}>Teklif Satirlari</span>
+              {quoteForm.lines.map((line,idx)=>(
+                <div key={idx} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10,marginBottom:8}}>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr .7fr .7fr .7fr .9fr .7fr .8fr auto",gap:6}}>
+                    <input style={{...inputSt,padding:"7px 9px",fontSize:12}} placeholder="Parca No" value={line.partNo} onChange={e=>{setLine(idx,"partNo",e.target.value);applyCustomerPrice(idx,e.target.value);}}/>
+                    <input style={{...inputSt,padding:"7px 9px",fontSize:12}} placeholder="Parca Adi" value={line.partName} onChange={e=>setLine(idx,"partName",e.target.value)}/>
+                    <input style={{...inputSt,padding:"7px 9px",fontSize:12}} placeholder="Rev" value={line.revision} onChange={e=>setLine(idx,"revision",e.target.value)}/>
+                    <input style={{...inputSt,padding:"7px 9px",fontSize:12}} type="number" min="1" placeholder="Adet" value={line.qty} onChange={e=>setLine(idx,"qty",e.target.value)}/>
+                    <input style={{...inputSt,padding:"7px 9px",fontSize:12}} type="number" min="0" placeholder="Fiyat" value={line.unitPrice} onChange={e=>setLine(idx,"unitPrice",e.target.value)}/>
+                    <input style={{...inputSt,padding:"7px 9px",fontSize:12}} type="number" min="0" max="100" placeholder="Iskonto%" value={line.discountPct} onChange={e=>setLine(idx,"discountPct",e.target.value)}/>
+                    <input style={{...inputSt,padding:"7px 9px",fontSize:12}} type="date" value={line.dueDate} onChange={e=>setLine(idx,"dueDate",e.target.value||todayStr())}/>
+                    <input style={{...inputSt,padding:"7px 9px",fontSize:12}} type="number" min="1" placeholder="Parca sn" value={line.partSec} onChange={e=>setLine(idx,"partSec",e.target.value)}/>
+                    <button onClick={()=>removeLine(idx)} style={{...btnSt("danger"),padding:"7px 9px",fontSize:12}}>Sil</button>
+                  </div>
+                  <div style={{fontSize:11,color:C.muted2,marginTop:6}}>
+                    Satir Net: {lineTotal(line).net.toFixed(2)} TRY
+                  </div>
+                </div>
+              ))}
+              <button onClick={addLine} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>+ Satir Ekle</button>
+            </div>
+            <div style={{marginTop:10}}><span style={labelSt}>Not</span><textarea style={{...inputSt,minHeight:64,resize:"vertical"}} value={quoteForm.note} onChange={e=>setQ("note",e.target.value)}/></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:10}}>
+              <div style={{fontSize:12,color:C.muted2}}>Brut: {quoteTotals.gross.toFixed(2)} · Iskonto: {quoteTotals.discount.toFixed(2)} · Net: <span style={{color:C.text,fontWeight:700}}>{quoteTotals.net.toFixed(2)} TRY</span></div>
+              <button onClick={saveQuote} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Teklif Kaydet</button>
+            </div>
+          </div>
+
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <div style={{fontSize:12,color:C.muted2}}>Teklifler ({quotes.length})</div>
+            <input style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:220}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod / musteri / durum ara..."/>
+          </div>
+          {filteredQuotes.map(qr=>(
+            <div key={qr.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"12px 14px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+                <div>
+                  <div style={{display:"flex",gap:7,alignItems:"center",flexWrap:"wrap"}}>
+                    <span style={{fontWeight:800,fontFamily:"monospace",fontSize:14,color:C.text}}>{qr.code}</span>
+                    <Badge label={statusLabel(qr.status)} color={statusColor(qr.status)}/>
+                  </div>
+                  <div style={{fontSize:13,color:C.text,marginTop:3}}>{qr.customerName||"-"}</div>
+                  <div style={{fontSize:11,color:C.muted2,marginTop:2}}>Satir: {(qr.lines||[]).length} · Gecerlilik: {qr.validUntil||"-"} · Net: {safeNum(qr.totalAmount).toFixed(2)} TRY</div>
+                </div>
+                <div style={{display:"flex",gap:7,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                  <button onClick={()=>printQuote(qr)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>PDF/Yazdir</button>
+                  <button onClick={()=>setQuoteStatus(qr,"approved")} style={{...btnSt("green"),padding:"6px 10px",fontSize:12}}>Onayla</button>
+                  <button onClick={()=>convertQuoteToOrder(qr)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}>Siparise Donustur</button>
+                  <button onClick={()=>setQuoteStatus(qr,"cancelled")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Iptal</button>
+                </div>
+              </div>
+            </div>
+          ))}
+          {filteredQuotes.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"24px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Teklif bulunamadi</div>}
+        </>
+      )}
+
+      {view==="orders"&&(
+        <>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <div style={{fontSize:12,color:C.muted2}}>Siparisler ({salesOrders.length})</div>
+            <input style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:220}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod / musteri / durum ara..."/>
+          </div>
+          {filteredOrders.map(o=>{
+            const remaining=Math.max(0,safeNum(o.qty)-safeNum(o.deliveredQty));
+            const progress=safeNum(o.qty)>0?Math.round((safeNum(o.deliveredQty)/safeNum(o.qty))*100):0;
+            return (
+              <div key={o.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"12px 14px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+                  <div>
+                    <div style={{display:"flex",gap:7,alignItems:"center",flexWrap:"wrap"}}>
+                      <span style={{fontWeight:800,fontFamily:"monospace",fontSize:14,color:C.text}}>{o.code||"-"}</span>
+                      <Badge label={statusLabel(o.status)} color={statusColor(o.status)}/>
+                      {o.sourceQuoteCode&&<Badge label={`Teklif ${o.sourceQuoteCode}`} color={C.warn}/>}
+                    </div>
+                    <div style={{fontSize:13,color:C.text,marginTop:3}}>{o.customerName||"-"}</div>
+                    <div style={{fontSize:11,color:C.muted2,marginTop:2}}>Termin: {o.dueDate||"-"} · Toplam Adet: {safeNum(o.qty)} · Teslim: {safeNum(o.deliveredQty)} · Kalan: {remaining}</div>
+                    <div style={{marginTop:6,background:C.border,borderRadius:99,height:6,overflow:"hidden",maxWidth:260}}>
+                      <div style={{width:`${Math.min(100,progress)}%`,height:"100%",background:progress>=100?C.green:C.accent,borderRadius:99}}/>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:7,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                    <button onClick={()=>printOrder(o)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Onay/PDF</button>
+                    <button onClick={()=>addDelivery(o)} style={{...btnSt("green"),padding:"6px 10px",fontSize:12}}>Kismi Teslim</button>
+                    <button onClick={()=>convertOrderToWorkOrders(o)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}>Is Emri Olustur</button>
+                  </div>
+                </div>
+                {(o.deliveries||[]).length>0&&(
+                  <div style={{marginTop:8,fontSize:11,color:C.muted2}}>
+                    Son teslimler: {(o.deliveries||[]).slice(-3).map(d=>`${d.date}: ${safeNum(d.qty)}`).join(" · ")}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {filteredOrders.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"24px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Siparis bulunamadi</div>}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
 // ============================================
 //  SALES ORDERS
 // ============================================
@@ -1270,9 +1790,13 @@ function SalesOrders({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders}) {
       machines:s.machines||[],
       notes:[s.note?`Siparis Notu: ${s.note}`:"",s.qty?`Siparis Adedi: ${s.qty}`:"",s.dueDate?`Termin: ${s.dueDate}`:""].filter(Boolean).join(" | "),
       files:[],
-      status:"active",
+      status:"planned",
+      sourceType:"sales_auto",
       sourceSalesOrderId:s.id||"",
       sourceSalesOrderCode:s.code||"",
+      dueDate:s.dueDate||"",
+      qty:Number(s.qty)||0,
+      priority:"normal",
       createdBy:currentUser.id,
       updatedAt:new Date().toISOString(),
     };
@@ -1425,7 +1949,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   const [previewFile,setPreviewFile]=useState(null);
   const [uploading,setUploading]=useState(false);
   const fileRef=useRef();
-  const emptyForm={code:"",name:"",customerId:"",material:"",partSec:"",machines:[],notes:"",files:[]};
+  const emptyForm={code:"",name:"",partNo:"",revision:"A",customerId:"",material:"",qty:"1",dueDate:todayStr(),priority:"normal",dependencies:[],partSec:"",machines:[],notes:"",files:[],status:"planned",sourceType:"manual"};
   const [form,setForm]=useState(emptyForm);
   const nextOrderCode=useCallback((list=orders)=>{
     const nums=list.map(o=>{
@@ -1489,7 +2013,26 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
     if(form.machines.length===0){alert("En az bir tezgah seçin!");return;}
     const finalCode=editId?form.code:(form.code||nextOrderCode());
     const pickedCustomer=customers.find(c=>c.id===form.customerId);
-    const data={code:finalCode.toUpperCase(),name:form.name,customerId:pickedCustomer?.id||"",customerName:pickedCustomer?.name||"",material:form.material,partSec:Number(form.partSec),machines:form.machines,notes:form.notes,files:form.files,status:"active",updatedAt:new Date().toISOString()};
+    const data={
+      code:finalCode.toUpperCase(),
+      name:form.name,
+      partNo:(form.partNo||"").trim().toUpperCase(),
+      revision:(form.revision||"A").trim().toUpperCase(),
+      customerId:pickedCustomer?.id||"",
+      customerName:pickedCustomer?.name||"",
+      material:form.material,
+      qty:Math.max(0,safeNum(form.qty)||0),
+      dueDate:form.dueDate||"",
+      priority:form.priority||"normal",
+      dependencies:(form.dependencies||[]).filter(Boolean),
+      partSec:Number(form.partSec),
+      machines:form.machines,
+      notes:form.notes,
+      files:form.files,
+      sourceType:form.sourceType||"manual",
+      status:editId?(form.status||"planned"):"planned",
+      updatedAt:new Date().toISOString(),
+    };
     if(editId){
       await window.DB.updateDoc("orders",editId,data);
       setOrders(o=>o.map(x=>x.id===editId?{...x,...data}:x));
@@ -1549,7 +2092,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
           <div><div style={{fontWeight:800,fontSize:18,fontFamily:"monospace",color:C.text}}>{viewOrder.code}</div><div style={{fontSize:15,fontWeight:600,marginTop:2,color:C.text}}>{viewOrder.name}</div></div>
           <Badge label={getOrderStatusMeta(viewOrder.status).label} color={getOrderStatusMeta(viewOrder.status).color}/>
         </div>
-        {[["Müşteri",viewOrder.customerName],["Malzeme",viewOrder.material],["Parça Süresi",fmtSec(viewOrder.partSec)],["Maks Üretim/Gün",viewOrder.partSec?Math.floor(EFFECTIVE_SECONDS/viewOrder.partSec)+" adet":"-"],["Tezgahlar",(viewOrder.machines||[]).join(", ")],["Notlar",viewOrder.notes]].map(([l,v])=>v?(
+        {[["Musteri",viewOrder.customerName],["Parca No",viewOrder.partNo],["Revizyon",viewOrder.revision],["Malzeme",viewOrder.material],["Miktar",safeNum(viewOrder.qty)>0?`${safeNum(viewOrder.qty)} adet`:""],["Termin",viewOrder.dueDate],["Oncelik",(PRIORITY_OPTIONS.find(p=>p.id===viewOrder.priority)||{}).label],["Kaynak",viewOrder.sourceType==="sales_auto"?"Siparisten Otomatik":"Manuel"],["Bagimliliklar",(viewOrder.dependencies||[]).join(", ")],["Parca Suresi",fmtSec(viewOrder.partSec)],["Maks Uretim/Gun",viewOrder.partSec?Math.floor(EFFECTIVE_SECONDS/viewOrder.partSec)+" adet":"-"],["Tezgahlar",(viewOrder.machines||[]).join(", ")],["Notlar",viewOrder.notes]].map(([l,v])=>v?(
           <div key={l} style={{marginBottom:10}}><div style={{color:C.muted2,fontSize:11,letterSpacing:.8,textTransform:"uppercase",marginBottom:2}}>{l}</div><div style={{fontSize:14,color:C.text}}>{v}</div></div>
         ):null)}
         <div style={{marginBottom:2}}>
@@ -1662,7 +2205,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   return (
     <div style={{padding:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-        <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>İş Emirleri · {orders.filter(o=>o.status==="active").length} aktif</div>
+        <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>İş Emirleri · {orders.filter(o=>isOpenOrderStatus(o.status)).length} acik</div>
         <button onClick={()=>{setEditId(null);setForm({...emptyForm,code:nextOrderCode()});setShowForm(true);}} style={{...btnSt("primary"),padding:"8px 14px",fontSize:12}}>+ Yeni</button>
       </div>
       <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
@@ -1731,7 +2274,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
 
   useEffect(()=>{
     Promise.all([window.DB.getAll("orders"),window.DB.getAll("toolStock"),window.DB.getAll("plans")]).then(([o,t,p])=>{
-      setOrders(o.filter(x=>x.status==="active"));
+      setOrders(o.filter(x=>isOpenOrderStatus(x.status)));
       setTools(t);
       setPlans(p||[]);
     });
@@ -2422,7 +2965,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   useEffect(()=>{
     async function load(){
       const [o,p]=await Promise.all([window.DB.getAll("orders"),window.DB.getAll("plans")]);
-      setOrders(o.filter(x=>x.status==="active"));
+      setOrders(o.filter(x=>isOpenOrderStatus(x.status)));
       setPlans(p.sort((a,b)=>(b.date||"").localeCompare(a.date||"")));
       setLoading(false);
     }
@@ -3504,7 +4047,7 @@ function App() {
     if(tab==="machineprep") return <MachineConnectivityPrep currentUser={currentUser} machines={machines}/>;
     if(tab==="customers") return <Customers/>;
     if(tab==="materials") return <MaterialLibrary/>;
-    if(tab==="sales") return <SalesOrders currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")}/>;
+    if(tab==="sales") return <SalesManagement currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")} defaultView="orders"/>;
     if(tab==="rapor") return <Report currentUser={currentUser} machines={machines}/>;
     if(tab==="tools") return <ToolStock currentUser={currentUser} machines={machines}/>;
     if(tab==="orders") return <WorkOrders currentUser={currentUser} machines={machines}/>;
@@ -3512,7 +4055,7 @@ function App() {
     if(tab==="dashboard") return <ModulePlaceholder title="MRP Ana Panel" desc="Bu ekran siparis, kapasite, malzeme riskleri ve tedarik istisnalarini tek panelde birlestirecek." items={["Geciken is emri ve termin riski","Kritik stok ve satin alma alarm listesi","Makina doluluk ve vardiya bazli kapasite ozetleri","Bugun tamamlanacak is emirleri"]}/>;
     if(tab==="mps") return <ModulePlaceholder title="MPS (Master Production Schedule)" desc="Haftalik/aylik ana uretim plani, talep ve kapasiteyi tek tabloda optimize eder." items={["Urun bazli zaman kovasi planlama","Frozen/slushy horizon yonetimi","Talep senaryosu karsilastirmasi"]}/>;
     if(tab==="mrp") return <ModulePlaceholder title="MRP Run" desc="Net ihtiyac hesaplama, lot kurallari ve lead-time etkisini dikkate alarak planli siparis onerisi uretir." items={["Gross/Net requirement hesaplama","Safety stock ve reorder point kontrolu","Otomatik malzeme rezervasyon oneri listesi"]}/>;
-    if(tab==="quotes") return <ModulePlaceholder title="Teklif Yonetimi" desc="Teklif olusturma, musteri onayi ve siparise donusum akisi bu moduldedir." items={["Musteri bazli fiyat ve iskonto listesi","Teklif -> Onay -> Siparis donusumu","Proforma ve siparis onay PDF ciktilari"]}/>;
+    if(tab==="quotes") return <SalesManagement currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")} defaultView="quotes"/>;
     if(tab==="purchase") return <ModulePlaceholder title="Satin Alma Planlama" desc="MRP ciktilarini satin alma taleplerine donusturur ve tedarik surecine aktarir." items={["PR/PO taslak olusturma","Tedarikci lead-time ve termin kontrolu","Hizlandir/yavaslat (expedite/de-expedite) oneri listesi"]}/>;
     if(tab==="downtime") return <ModulePlaceholder title="Durus Yonetimi" desc="Durus tipleri, operator girisleri ve otomatik durus analizi bu moduldedir." items={["Durus nedeni zorunlu giris kurallari","Sure-neden kaydi ve tekrar eden hata analizi","Bakim ekibine ariza bildirimi"]}/>;
     if(tab==="quality") return <ModulePlaceholder title="Kalite ve Izlenebilirlik" desc="Parca bazli seri no izi, inspeksiyon sonucu, scrap ve FAI akisini yonetir." items={["WO-Makina-Operator-Program versiyon zinciri","Olcum sonucu ve pass/fail kaydi","Scrap neden kodu ve maliyet etkisi"]}/>;
