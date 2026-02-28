@@ -967,6 +967,10 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
   const [search,setSearch]=useState("");
   const [showPicker,setShowPicker]=useState(false);
   const [editId,setEditId]=useState(null);
+  const [showToolModal,setShowToolModal]=useState(false);
+  const [showShiftModal,setShowShiftModal]=useState(false);
+  const [toolDraft,setToolDraft]=useState({machineToolId:"",machineToolQty:"1",orderToolId:"",orderToolQty:"1"});
+  const [shiftDraft,setShiftDraft]=useState({correct:"",wrong:""});
   const [form,setForm]=useState({
     entryDate:todayStr(),
     machine:machines[0]||"CNC-1",
@@ -1061,9 +1065,11 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
     orderToolQty:"1",
   }));
 
-  async function submit() {
-    if(!form.selectedOrder){alert("İş emri seçin!");return;}
-    if(!form.correct){alert("Doğru adet zorunlu!");return;}
+  async function submitShiftEnd(correctValue,wrongValue) {
+    if(!form.selectedOrder){alert("İş emri seçin!");return false;}
+    if(correctValue===""||Number(correctValue)<0){alert("Doğru adet zorunlu!");return false;}
+    const correctNum=Number(correctValue);
+    const wrongNum=Number(wrongValue)||0;
     const machineTool=tools.find(t=>t.id===form.machineToolId);
     const orderTool=tools.find(t=>t.id===form.orderToolId);
     const machineToolQty=form.machineToolId?Math.max(1,Number(form.machineToolQty)||1):0;
@@ -1075,7 +1081,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
       operatorId:currentUser.id, operatorName:currentUser.fullName,
       jobCode:form.selectedOrder.code, jobName:form.selectedOrder.name,
       partSec:Number(form.selectedOrder.partSec),
-      correct:Number(form.correct), wrong:Number(form.wrong)||0,
+      correct:correctNum, wrong:wrongNum,
       machineToolId:machineTool?.id||"",
       machineToolCode:machineTool?.code||"",
       machineToolName:machineTool?.name||"",
@@ -1090,7 +1096,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
     const prevEntry=editId?todayEntries.find(x=>x.id===editId):null;
     const stockDelta=getDeltaMap(prevEntry,entry);
     const stockOk=await applyToolStockDelta(stockDelta);
-    if(!stockOk) return;
+    if(!stockOk) return false;
     if(editId){
       const ok=await window.DB.updateDoc("entries",editId,entry);
       if(ok){
@@ -1098,18 +1104,23 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
         setEditId(null);
         setSaved(true); setTimeout(()=>setSaved(false),2000);
         resetEntryForm();
+        setShiftDraft({correct:"",wrong:""});
+        return true;
       }else{
         await applyToolStockDelta(invertDeltaMap(stockDelta));
+        return false;
       }
-      return;
     }
     const id=await window.DB.addDoc("entries",entry);
     if(id){
       setTodayEntries(e=>[{id,...entry},...e]);
       setSaved(true); setTimeout(()=>setSaved(false),2000);
       resetEntryForm();
+      setShiftDraft({correct:"",wrong:""});
+      return true;
     }else{
       await applyToolStockDelta(invertDeltaMap(stockDelta));
+      return false;
     }
   }
 
@@ -1130,6 +1141,10 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
       orderToolId:entry.orderToolId||"",
       orderToolQty:String(entry.orderToolQty??entry.orderToolChange??1),
     });
+    setShiftDraft({
+      correct:String(entry.correct??""),
+      wrong:String(entry.wrong??0),
+    });
   }
 
   async function removeEntry(entry){
@@ -1148,6 +1163,45 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
       resetEntryForm();
     }
   }
+
+  function openToolChangeModal(){
+    setToolDraft({
+      machineToolId:form.machineToolId||"",
+      machineToolQty:String(form.machineToolQty||"1"),
+      orderToolId:form.orderToolId||"",
+      orderToolQty:String(form.orderToolQty||"1"),
+    });
+    setShowToolModal(true);
+  }
+
+  function approveToolChange(){
+    const machineToolQty=toolDraft.machineToolId?String(Math.max(1,Number(toolDraft.machineToolQty)||1)):"1";
+    const orderToolQty=toolDraft.orderToolId?String(Math.max(1,Number(toolDraft.orderToolQty)||1)):"1";
+    setForm(p=>({
+      ...p,
+      machineToolId:toolDraft.machineToolId||"",
+      machineToolQty,
+      orderToolId:toolDraft.orderToolId||"",
+      orderToolQty,
+    }));
+    setShowToolModal(false);
+  }
+
+  function openShiftEndModal(){
+    setShiftDraft({
+      correct:String(form.correct||""),
+      wrong:String(form.wrong||0),
+    });
+    setShowShiftModal(true);
+  }
+
+  async function approveShiftEnd(){
+    const ok=await submitShiftEnd(shiftDraft.correct,shiftDraft.wrong);
+    if(ok) setShowShiftModal(false);
+  }
+
+  const machineToolPicked=tools.find(t=>t.id===form.machineToolId);
+  const orderToolPicked=tools.find(t=>t.id===form.orderToolId);
 
   return (
     <div style={{padding:16,display:"flex",flexDirection:"column",gap:14}}>
@@ -1206,34 +1260,71 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
           </>
         )}
       </div>
-      <div style={{display:"flex",gap:10}}>
-        <div style={{flex:1}}><span style={labelSt}>✅ Doğru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={form.correct} onChange={e=>fv("correct",e.target.value)}/></div>
-        <div style={{flex:1}}><span style={labelSt}>❌ Hatalı Adet</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={form.wrong} onChange={e=>fv("wrong",e.target.value)}/></div>
+      <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px"}}>
+        <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,marginBottom:8}}>Seçili Takım Değişimi</div>
+        {(machineToolPicked||orderToolPicked)?(
+          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+            {machineToolPicked&&<Badge label={`Tezgah: ${machineToolPicked.code||machineToolPicked.name} x${Math.max(1,Number(form.machineToolQty)||1)}`} color={C.warn}/>}
+            {orderToolPicked&&<Badge label={`İş Emri: ${orderToolPicked.code||orderToolPicked.name} x${Math.max(1,Number(form.orderToolQty)||1)}`} color={C.accent}/>}
+          </div>
+        ):(
+          <div style={{fontSize:12,color:C.muted2}}>Takım değişimi seçilmedi</div>
+        )}
       </div>
-      <div style={{display:"flex",gap:10}}>
-        <div style={{flex:1}}>
-          <span style={labelSt}>Tezgah Takım Değişimi</span>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 95px",gap:8}}>
-            <select style={inputSt} value={form.machineToolId} onChange={e=>fv("machineToolId",e.target.value)}>
-              <option value="">Takım seç (opsiyonel)</option>
-              {toolOptions.map(t=><option key={t.id} value={t.id}>{t.code} - {t.name} (Stok: {Number(t.qty)||0})</option>)}
-            </select>
-            <input style={inputSt} type="number" min="1" placeholder="Adet" disabled={!form.machineToolId} value={form.machineToolQty} onChange={e=>fv("machineToolQty",e.target.value)}/>
-          </div>
-        </div>
-        <div style={{flex:1}}>
-          <span style={labelSt}>İş Emri Takım Değişimi</span>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 95px",gap:8}}>
-            <select style={inputSt} value={form.orderToolId} onChange={e=>fv("orderToolId",e.target.value)}>
-              <option value="">Takım seç (opsiyonel)</option>
-              {toolOptions.map(t=><option key={t.id} value={t.id}>{t.code} - {t.name} (Stok: {Number(t.qty)||0})</option>)}
-            </select>
-            <input style={inputSt} type="number" min="1" placeholder="Adet" disabled={!form.orderToolId} value={form.orderToolQty} onChange={e=>fv("orderToolQty",e.target.value)}/>
-          </div>
-        </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <button onClick={openToolChangeModal} style={{...btnSt("ghost"),padding:14,fontSize:14,borderColor:C.warn+"55",color:C.warn}}>Takım Değişimi</button>
+        <button onClick={openShiftEndModal} style={{...btnSt(saved?"green":"primary"),padding:14,fontSize:14}}>{editId?"Vardiya Sonu Güncelle":"Vardiya Sonu"}</button>
       </div>
       {tools.length===0&&<div style={{fontSize:12,color:C.warn}}>Takım stoğunda kayıt yok. Önce Takım Stoğu ekranından takım ekleyin.</div>}
-      <button onClick={submit} style={{...btnSt(saved?"green":"primary"),width:"100%",padding:14,fontSize:15}}>{saved?"Kaydedildi!":editId?"Güncellemeyi Kaydet":"Kaydet"}</button>
+      <div style={{fontSize:12,color:C.muted2}}>Kayıt, yalnızca <strong>Vardiya Sonu</strong> onaylandığında oluşturulur.</div>
+      {showToolModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={()=>setShowToolModal(false)}>
+          <div style={{width:"100%",maxWidth:680,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>Takım Değişimi</div>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              <div style={{flex:"1 1 260px"}}>
+                <span style={labelSt}>Tezgah Takım Değişimi</span>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 95px",gap:8}}>
+                  <select style={inputSt} value={toolDraft.machineToolId} onChange={e=>setToolDraft(p=>({...p,machineToolId:e.target.value}))}>
+                    <option value="">Takım seç (opsiyonel)</option>
+                    {toolOptions.map(t=><option key={t.id} value={t.id}>{t.code} - {t.name} (Stok: {Number(t.qty)||0})</option>)}
+                  </select>
+                  <input style={inputSt} type="number" min="1" placeholder="Adet" disabled={!toolDraft.machineToolId} value={toolDraft.machineToolQty} onChange={e=>setToolDraft(p=>({...p,machineToolQty:e.target.value}))}/>
+                </div>
+              </div>
+              <div style={{flex:"1 1 260px"}}>
+                <span style={labelSt}>İş Emri Takım Değişimi</span>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 95px",gap:8}}>
+                  <select style={inputSt} value={toolDraft.orderToolId} onChange={e=>setToolDraft(p=>({...p,orderToolId:e.target.value}))}>
+                    <option value="">Takım seç (opsiyonel)</option>
+                    {toolOptions.map(t=><option key={t.id} value={t.id}>{t.code} - {t.name} (Stok: {Number(t.qty)||0})</option>)}
+                  </select>
+                  <input style={inputSt} type="number" min="1" placeholder="Adet" disabled={!toolDraft.orderToolId} value={toolDraft.orderToolQty} onChange={e=>setToolDraft(p=>({...p,orderToolQty:e.target.value}))}/>
+                </div>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
+              <button onClick={()=>setShowToolModal(false)} style={{...btnSt("ghost"),padding:"10px 14px"}}>İptal</button>
+              <button onClick={approveToolChange} style={{...btnSt("primary"),padding:"10px 14px"}}>Değişimi Onayla</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showShiftModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={()=>setShowShiftModal(false)}>
+          <div style={{width:"100%",maxWidth:560,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>Vardiya Sonu</div>
+            <div style={{display:"flex",gap:10}}>
+              <div style={{flex:1}}><span style={labelSt}>✅ Doğru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>
+              <div style={{flex:1}}><span style={labelSt}>❌ Hatalı Adet</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>
+            </div>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
+              <button onClick={()=>setShowShiftModal(false)} style={{...btnSt("ghost"),padding:"10px 14px"}}>İptal</button>
+              <button onClick={approveShiftEnd} style={{...btnSt(saved?"green":"primary"),padding:"10px 14px"}}>{editId?"Güncellemeyi Onayla":"Vardiyayı Onayla"}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {todayEntries.length>0&&(
         <div>
           <span style={{...labelSt,marginTop:4}}>Seçili Gün Girişlerim</span>
