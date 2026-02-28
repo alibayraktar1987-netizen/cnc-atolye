@@ -723,10 +723,138 @@ function ToolStock({currentUser,machines=DEFAULT_MACHINES}) {
 }
 
 // ════════════════════════════════════════════════════════════
+//  CUSTOMERS
+// ════════════════════════════════════════════════════════════
+function Customers() {
+  const emptyForm={name:"",code:"",contact:"",phone:"",email:"",notes:""};
+  const [customers,setCustomers]=useState([]);
+  const [form,setForm]=useState(emptyForm);
+  const [editId,setEditId]=useState(null);
+  const [search,setSearch]=useState("");
+  const [loading,setLoading]=useState(true);
+
+  useEffect(()=>{
+    window.DB.getAll("customers").then(list=>{
+      setCustomers(list.sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
+      setLoading(false);
+    });
+  },[]);
+
+  const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const q=search.trim().toLowerCase();
+  const filtered=customers.filter(c=>
+    !q ||
+    (c.name||"").toLowerCase().includes(q) ||
+    (c.code||"").toLowerCase().includes(q) ||
+    (c.contact||"").toLowerCase().includes(q) ||
+    (c.phone||"").toLowerCase().includes(q)
+  );
+
+  async function saveCustomer(){
+    if(!form.name.trim()){alert("Firma adı zorunlu!");return;}
+    const data={
+      name:form.name.trim(),
+      code:form.code.trim().toUpperCase(),
+      contact:form.contact.trim(),
+      phone:form.phone.trim(),
+      email:form.email.trim(),
+      notes:form.notes.trim(),
+      updatedAt:new Date().toISOString(),
+    };
+    if(editId){
+      const ok=await window.DB.updateDoc("customers",editId,data);
+      if(!ok){alert("Müşteri güncellenemedi.");return;}
+      setCustomers(prev=>prev.map(x=>x.id===editId?{...x,...data}:x).sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
+      setEditId(null);
+      setForm(emptyForm);
+      return;
+    }
+    const id=await window.DB.addDoc("customers",data);
+    if(!id){alert("Müşteri kaydedilemedi.");return;}
+    setCustomers(prev=>[{id,...data},...prev].sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
+    setForm(emptyForm);
+  }
+
+  function startEdit(c){
+    setEditId(c.id);
+    setForm({
+      name:c.name||"",
+      code:c.code||"",
+      contact:c.contact||"",
+      phone:c.phone||"",
+      email:c.email||"",
+      notes:c.notes||"",
+    });
+  }
+
+  async function removeCustomer(c){
+    if(!confirm(`Müşteri silinsin mi? (${c.name})`)) return;
+    const ok=await window.DB.deleteDoc("customers",c.id);
+    if(!ok){alert("Müşteri silinemedi.");return;}
+    setCustomers(prev=>prev.filter(x=>x.id!==c.id));
+    if(editId===c.id){
+      setEditId(null);
+      setForm(emptyForm);
+    }
+  }
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
+
+  return (
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={{fontWeight:700,color:C.text}}>Müşteriler</div>
+          {editId&&<Badge label="Düzenleme" color={C.warn}/>}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <div><span style={labelSt}>Firma Adı *</span><input style={inputSt} value={form.name} onChange={e=>fv("name",e.target.value)} placeholder="Firma adı"/></div>
+          <div><span style={labelSt}>Firma Kodu</span><input style={inputSt} value={form.code} onChange={e=>fv("code",e.target.value)} placeholder="FRM-001"/></div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginTop:8}}>
+          <div><span style={labelSt}>Yetkili</span><input style={inputSt} value={form.contact} onChange={e=>fv("contact",e.target.value)} placeholder="Ad Soyad"/></div>
+          <div><span style={labelSt}>Telefon</span><input style={inputSt} value={form.phone} onChange={e=>fv("phone",e.target.value)} placeholder="05xx xxx xx xx"/></div>
+          <div><span style={labelSt}>E-posta</span><input style={inputSt} value={form.email} onChange={e=>fv("email",e.target.value)} placeholder="mail@firma.com"/></div>
+        </div>
+        <div style={{marginTop:8}}><span style={labelSt}>Not</span><textarea rows={2} style={{...inputSt,minHeight:64,resize:"vertical"}} value={form.notes} onChange={e=>fv("notes",e.target.value)} placeholder="Opsiyonel not..."/></div>
+        <div style={{display:"flex",gap:8,marginTop:10}}>
+          <button onClick={saveCustomer} style={{...btnSt("primary"),flex:1,padding:12}}>{editId?"Müşteriyi Güncelle":"Müşteri Kaydet"}</button>
+          {editId&&<button onClick={()=>{setEditId(null);setForm(emptyForm);}} style={{...btnSt("ghost"),padding:"12px 14px"}}>İptal</button>}
+        </div>
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <div style={{fontSize:12,color:C.muted2}}>Kayıtlı Firma: {customers.length}</div>
+        <input style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:220}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Firma adı, kod veya yetkili ara..."/>
+      </div>
+
+      {filtered.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"28px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Müşteri bulunamadı</div>}
+      {filtered.map(c=>(
+        <div key={c.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"12px 14px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+            <div>
+              <div style={{fontWeight:700,color:C.text,fontSize:14}}>{c.name}</div>
+              <div style={{fontSize:12,color:C.muted2,marginTop:2}}>{c.code||"-"} {c.contact?`· ${c.contact}`:""}</div>
+              <div style={{fontSize:11,color:C.muted,marginTop:2}}>{c.phone||""} {c.email?`· ${c.email}`:""}</div>
+            </div>
+            <div style={{display:"flex",gap:7}}>
+              <button onClick={()=>startEdit(c)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Düzenle</button>
+              <button onClick={()=>removeCustomer(c)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
+            </div>
+          </div>
+          {c.notes&&<div style={{fontSize:12,color:C.muted2,marginTop:8}}>{c.notes}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
 //  WORK ORDERS
 // ════════════════════════════════════════════════════════════
 function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   const [orders,setOrders]=useState([]);
+  const [customers,setCustomers]=useState([]);
   const [toolMovements,setToolMovements]=useState([]);
   const [loading,setLoading]=useState(true);
   const [showForm,setShowForm]=useState(false);
@@ -738,7 +866,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   const [previewFile,setPreviewFile]=useState(null);
   const [uploading,setUploading]=useState(false);
   const fileRef=useRef();
-  const emptyForm={code:"",name:"",material:"",partSec:"",machines:[],notes:"",files:[]};
+  const emptyForm={code:"",name:"",customerId:"",material:"",partSec:"",machines:[],notes:"",files:[]};
   const [form,setForm]=useState(emptyForm);
   const nextOrderCode=useCallback((list=orders)=>{
     const nums=list.map(o=>{
@@ -750,9 +878,10 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   },[orders]);
 
   const load=useCallback(async()=>{
-    const [o,m]=await Promise.all([window.DB.getAll("orders"),window.DB.getAll("toolMovements")]);
+    const [o,m,c]=await Promise.all([window.DB.getAll("orders"),window.DB.getAll("toolMovements"),window.DB.getAll("customers")]);
     setOrders(o.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
     setToolMovements(m.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setCustomers(c.sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
@@ -781,7 +910,8 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
     if(!form.name||!form.partSec){alert("Parça adı ve süre zorunlu!");return;}
     if(form.machines.length===0){alert("En az bir tezgah seçin!");return;}
     const finalCode=editId?form.code:(form.code||nextOrderCode());
-    const data={code:finalCode.toUpperCase(),name:form.name,material:form.material,partSec:Number(form.partSec),machines:form.machines,notes:form.notes,files:form.files,status:"active",updatedAt:new Date().toISOString()};
+    const pickedCustomer=customers.find(c=>c.id===form.customerId);
+    const data={code:finalCode.toUpperCase(),name:form.name,customerId:pickedCustomer?.id||"",customerName:pickedCustomer?.name||"",material:form.material,partSec:Number(form.partSec),machines:form.machines,notes:form.notes,files:form.files,status:"active",updatedAt:new Date().toISOString()};
     if(editId){
       await window.DB.updateDoc("orders",editId,data);
       setOrders(o=>o.map(x=>x.id===editId?{...x,...data}:x));
@@ -810,7 +940,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   };
   const filteredOrders=orders.filter(o=>{
     const statusOk=statusFilters.length===0 ? true : statusFilters.includes(o.status||"passive");
-    const textOk=!q || (o.code||"").toLowerCase().includes(q) || (o.name||"").toLowerCase().includes(q) || (o.material||"").toLowerCase().includes(q);
+    const textOk=!q || (o.code||"").toLowerCase().includes(q) || (o.name||"").toLowerCase().includes(q) || (o.material||"").toLowerCase().includes(q) || (o.customerName||"").toLowerCase().includes(q);
     return statusOk&&textOk;
   });
 
@@ -824,7 +954,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
           <div><div style={{fontWeight:800,fontSize:18,fontFamily:"monospace",color:C.text}}>{viewOrder.code}</div><div style={{fontSize:15,fontWeight:600,marginTop:2,color:C.text}}>{viewOrder.name}</div></div>
           <Badge label={getOrderStatusMeta(viewOrder.status).label} color={getOrderStatusMeta(viewOrder.status).color}/>
         </div>
-        {[["Malzeme",viewOrder.material],["Parça Süresi",fmtSec(viewOrder.partSec)],["Maks Üretim/Gün",viewOrder.partSec?Math.floor(EFFECTIVE_SECONDS/viewOrder.partSec)+" adet":"-"],["Tezgahlar",(viewOrder.machines||[]).join(", ")],["Notlar",viewOrder.notes]].map(([l,v])=>v?(
+        {[["Müşteri",viewOrder.customerName],["Malzeme",viewOrder.material],["Parça Süresi",fmtSec(viewOrder.partSec)],["Maks Üretim/Gün",viewOrder.partSec?Math.floor(EFFECTIVE_SECONDS/viewOrder.partSec)+" adet":"-"],["Tezgahlar",(viewOrder.machines||[]).join(", ")],["Notlar",viewOrder.notes]].map(([l,v])=>v?(
           <div key={l} style={{marginBottom:10}}><div style={{color:C.muted2,fontSize:11,letterSpacing:.8,textTransform:"uppercase",marginBottom:2}}>{l}</div><div style={{fontSize:14,color:C.text}}>{v}</div></div>
         ):null)}
       </div>
@@ -880,6 +1010,13 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
         <div><span style={labelSt}>İş Emri Kodu *</span><input style={{...inputSt,background:editId?C.surface:C.card,color:editId?C.text:C.accent,fontWeight:700}} placeholder="IE-001" value={form.code} readOnly={!editId} onChange={e=>fv("code",e.target.value.toUpperCase())}/></div>
         <div><span style={labelSt}>Parça Adı *</span><input style={inputSt} placeholder="Parça adı" value={form.name} onChange={e=>fv("name",e.target.value)}/></div>
+        <div>
+          <span style={labelSt}>Müşteri</span>
+          <select style={inputSt} value={form.customerId||""} onChange={e=>fv("customerId",e.target.value)}>
+            <option value="">Müşteri seçin (opsiyonel)</option>
+            {customers.map(c=><option key={c.id} value={c.id}>{c.name}{c.code?` (${c.code})`:""}</option>)}
+          </select>
+        </div>
         <div><span style={labelSt}>Malzeme</span><input style={inputSt} placeholder="AISI 304, Alüminyum 6061..." value={form.material} onChange={e=>fv("material",e.target.value)}/></div>
         <div>
           <span style={labelSt}>Parça Süresi (saniye) *</span>
@@ -940,12 +1077,13 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
               {(usageCountByOrder[o.id]||usageCountByOrder[o.code])>0&&<Badge label={`${usageCountByOrder[o.id]||usageCountByOrder[o.code]} takım`} color={C.warn}/>}
             </div>
             <div style={{fontSize:13,color:C.muted2,marginTop:3}}>{o.name}</div>
+            {o.customerName&&<div style={{fontSize:11,color:C.accent,marginTop:1}}>🏢 {o.customerName}</div>}
             {o.material&&<div style={{fontSize:11,color:C.muted,marginTop:1}}>🔩 {o.material}</div>}
             <div style={{fontSize:11,color:C.muted,marginTop:1}}>⏱ {fmtSec(o.partSec)} · {(o.machines||[]).join(", ")}</div>
           </div>
           <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
             <button onClick={()=>setViewOrder(o)} style={{...btnSt("ghost"),padding:"6px 12px",fontSize:12}}>👁 Görüntüle</button>
-            <button onClick={()=>{setForm({code:o.code,name:o.name,material:o.material||"",partSec:o.partSec,machines:o.machines||[],notes:o.notes||"",files:o.files||[]});setEditId(o.id);setShowForm(true);}} style={{...btnSt(),padding:"6px 12px",fontSize:12}}>✏️ Düzenle</button>
+            <button onClick={()=>{setForm({code:o.code,name:o.name,customerId:o.customerId||"",material:o.material||"",partSec:o.partSec,machines:o.machines||[],notes:o.notes||"",files:o.files||[]});setEditId(o.id);setShowForm(true);}} style={{...btnSt(),padding:"6px 12px",fontSize:12}}>✏️ Düzenle</button>
             <select style={{...inputSt,width:150,padding:"6px 10px",fontSize:12}} value={o.status||"passive"} onChange={e=>setOrderStatus(o,e.target.value)}>
               {ORDER_STATUS_OPTIONS.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
             </select>
@@ -1716,7 +1854,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     return orderColorPalette[Math.abs(h)%orderColorPalette.length];
   }
   const monthOrderMap={};
-  monthPlans.forEach(p=>{if(p.orderId&&!monthOrderMap[p.orderId]) monthOrderMap[p.orderId]={id:p.orderId,code:p.orderCode,name:p.orderName,color:colorFromOrder(p.orderId)};});
+  monthPlans.forEach(p=>{if(p.orderId&&!monthOrderMap[p.orderId]) monthOrderMap[p.orderId]={id:p.orderId,code:p.orderCode,name:p.orderName,customer:p.orderCustomerName||"",color:colorFromOrder(p.orderId)};});
   const monthOrders=Object.values(monthOrderMap);
   function shiftGanttMonth(delta){
     const [y,m]=ganttMonth.split("-").map(Number);
@@ -1839,6 +1977,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       orderCode:picked.code,
       orderName:picked.name,
       orderPartSec:Number(picked.partSec)||0,
+      orderCustomerName:picked.customerName||"",
       note:form.note.trim(),
       status:"planned",
       updatedAt:new Date().toISOString(),
@@ -1918,7 +2057,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
           </div>
         </div>
         {monthOrders.length>0&&<div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:10}}>
-          {monthOrders.map(o=><span key={o.id} style={{display:"inline-flex",alignItems:"center",gap:6,background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px",fontSize:11,color:C.muted2}}><span style={{width:10,height:10,borderRadius:3,background:o.color,display:"inline-block"}}/>{o.code||"İş Emri"}</span>)}
+          {monthOrders.map(o=><span key={o.id} style={{display:"inline-flex",alignItems:"center",gap:6,background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px",fontSize:11,color:C.muted2}}><span style={{width:10,height:10,borderRadius:3,background:o.color,display:"inline-block"}}/>{o.code?`${o.code} - ${o.name||""}${o.customer?` - ${o.customer}`:""}`:(o.name||"İş Emri")}</span>)}
         </div>}
         <div style={{overflowX:"hidden"}} ref={ganttRef}>
           <div>
@@ -1939,7 +2078,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                   const col=colorFromOrder(p.orderId||p.orderCode||p.orderName);
                   return <div
                     key={d}
-                    title={`${d} · ${row.machine} · ${p.orderCode||""} ${p.orderName||""}`}
+                    title={`${d} · ${row.machine} · ${p.orderCode||""} ${p.orderName||""}${p.orderCustomerName?` · ${p.orderCustomerName}`:""}`}
                     draggable
                     onDragStart={e=>{setDragPlanId(p.id);e.dataTransfer.setData("text/plain",p.id);}}
                     onDragOver={e=>e.preventDefault()}
@@ -1962,6 +2101,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
               <div><strong>Tezgah:</strong> {selectedPlan.machine||"-"}</div>
               <div><strong>İş Emri:</strong> {selectedPlan.orderCode||"-"}</div>
               <div><strong>Ad:</strong> {selectedPlan.orderName||"-"}</div>
+              <div><strong>Firma:</strong> {selectedPlan.orderCustomerName||"-"}</div>
             </div>
             {selectedPlan.note&&<div style={{marginTop:10,fontSize:13,color:C.muted2}}>{selectedPlan.note}</div>}
             <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
@@ -2020,7 +2160,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
             <div>
               <div style={{fontWeight:800,fontFamily:"monospace",fontSize:14,color:C.text}}>{p.orderCode}</div>
-              <div style={{fontSize:12,color:C.muted2,marginTop:2}}>{p.orderName}</div>
+              <div style={{fontSize:12,color:C.muted2,marginTop:2}}>{p.orderName}{p.orderCustomerName?` - ${p.orderCustomerName}`:""}</div>
             </div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
               <Badge label={p.date||"-"} color={C.accent}/>
@@ -2100,22 +2240,25 @@ function App() {
   const canReport=hasPermission(currentUser,"view_reports");
   const canOrders=hasPermission(currentUser,"manage_orders")||isAdmin;
   const canPlanning=canOrders;
+  const canCustomers=canOrders;
   const canUsers=hasPermission(currentUser,"approve_users")||isAdmin;
   const canTools=true;
 
   const tabs=[
-    ...(canEntry?[{id:"giris",icon:"📝",label:"Giriş"}]:[]),
-    ...(canPlanning?[{id:"planning",icon:"📅",label:"Planlama"}]:[]),
-    ...(canReport?[{id:"rapor",icon:"📊",label:"Rapor"}]:[]),
-    ...(canTools?[{id:"tools",icon:"🧰",label:"Takım Stoğu"}]:[]),
-    ...(canOrders?[{id:"orders",icon:"📋",label:"İş Emirleri"}]:[]),
-    ...(canUsers?[{id:"users",icon:"👥",label:"Ayarlar"}]:[]),
+    ...(canEntry?[{id:"giris",icon:"??",label:"Giri�"}]:[]),
+    ...(canPlanning?[{id:"planning",icon:"??",label:"Planlama"}]:[]),
+    ...(canCustomers?[{id:"customers",icon:"??",label:"M��teriler"}]:[]),
+    ...(canReport?[{id:"rapor",icon:"??",label:"Rapor"}]:[]),
+    ...(canTools?[{id:"tools",icon:"??",label:"Tak�m Sto�u"}]:[]),
+    ...(canOrders?[{id:"orders",icon:"??",label:"�� Emirleri"}]:[]),
+    ...(canUsers?[{id:"users",icon:"??",label:"Ayarlar"}]:[]),
   ];
 
   const activeView=(
     <>
       {tab==="giris"&&<DataEntry currentUser={currentUser} machines={machines}/>}
       {tab==="planning"&&<Planning currentUser={currentUser} machines={machines}/>}
+      {tab==="customers"&&<Customers/>}
       {tab==="rapor"&&<Report currentUser={currentUser} machines={machines}/>} 
       {tab==="tools"&&<ToolStock currentUser={currentUser} machines={machines}/>} 
       {tab==="orders"&&<WorkOrders currentUser={currentUser} machines={machines}/>} 
