@@ -10,6 +10,7 @@ Bu kilavuz, mevcut ekranlari ve hedeflenen yeni modullerin temel kullanimini oze
 
 ## 2) Mevcut Ekranlar
 
+- `MRP Panel`: Genel MRP ozet paneli (roadmap gorunumu)
 - `Giris`: Vardiya bazli uretim verisi girisi
 - `Planlama`: Aylik Gantt, plan ekleme/duzenleme
 - `Makina Hazirlik`: Baglanti oncesi marka/protokol profili, IPC ayari ve simulasyon
@@ -21,7 +22,15 @@ Bu kilavuz, mevcut ekranlari ve hedeflenen yeni modullerin temel kullanimini oze
 - `Rapor`: KPI ve donemsel performans gorunumu
 - `Ayarlar`: Kullanici ve tezgah ayarlari
 
-## 3) Hedeflenen Yeni Ekranlar
+## 3) Uc Calisma Modu
+
+- `Planlama Modu`: Planlama + MPS/MRP + satin alma odakli menu
+- `Operasyon Modu`: Uretim, is emri, kalite, stok hareket odakli menu
+- `Yonetim Modu`: Tum moduller + sistem + guvenlik odakli menu
+
+Arayuz desktop/tablet/mobile icin farkli menu yerlesimleri ile calisir.
+
+## 4) Hedeflenen Yeni Ekranlar
 
 - `BOM`: Urun agaci ve revizyon yonetimi
 - `MPS`: Ana uretim plani (haftalik/aylik)
@@ -30,7 +39,7 @@ Bu kilavuz, mevcut ekranlari ve hedeflenen yeni modullerin temel kullanimini oze
 - `Maliyet`: Urun/is emri maliyet kartlari
 - `Audit`: Islem gunlugu inceleme
 
-## 4) Onerilen Is Akisi
+## 5) Onerilen Is Akisi
 
 1. Master data (item, supplier, BOM, routing) olustur
 2. MPS planini gir

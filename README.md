@@ -29,6 +29,7 @@ Mevcut uygulama su anda agirlikla is emri, siparis, stok, planlama ve raporlama 
 ## Kisa Durum Ozeti
 
 - Mevcut: Satis siparisleri, is emirleri, temel stok, planlama/Gantt, KPI raporlari, rol tabanli temel yetki, makina baglanti hazirlik modulu
+- Yeni UI: Planlama/Operasyon/Yonetim olmak uzere 3 calisma modu ve detayli MRP menu yapisi
 - Kismi: Kapasite/planlama, stok politikasi, guvenlik
 - Eksik: BOM/MPS/MRP, satin alma planlama, maliyetleme, audit log, entegrasyon katmani, otomatik test paketi
 
