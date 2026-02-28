@@ -4786,6 +4786,118 @@ function PurchasingModule({currentUser}){
         <button onClick={()=>setView("suppliers")} style={chip(view==="suppliers",C.green)}>Tedarikciler</button>
         <button onClick={()=>setView("quotes")} style={chip(view==="quotes",C.warn)}>Teklifler</button>
       </div>
+
+      {view==="suppliers"&&(
+        <>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+            <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Tedarikci Karti</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+              <div><span style={labelSt}>Unvan</span><input style={inputSt} value={supplierForm.name} onChange={e=>setSupplierForm(f=>({...f,name:e.target.value}))}/></div>
+              <div><span style={labelSt}>Kod</span><input style={inputSt} value={supplierForm.code} onChange={e=>setSupplierForm(f=>({...f,code:e.target.value}))}/></div>
+              <div><span style={labelSt}>Lead-Time</span><input style={inputSt} type="number" min="0" value={supplierForm.leadTimeDays} onChange={e=>setSupplierForm(f=>({...f,leadTimeDays:e.target.value}))}/></div>
+              <div><span style={labelSt}>E-Posta</span><input style={inputSt} value={supplierForm.email} onChange={e=>setSupplierForm(f=>({...f,email:e.target.value}))}/></div>
+              <div><span style={labelSt}>Telefon</span><input style={inputSt} value={supplierForm.phone} onChange={e=>setSupplierForm(f=>({...f,phone:e.target.value}))}/></div>
+              <div><span style={labelSt}>Para Birimi</span><select style={inputSt} value={supplierForm.currency} onChange={e=>setSupplierForm(f=>({...f,currency:e.target.value}))}><option value="TRY">TRY</option><option value="EUR">EUR</option><option value="USD">USD</option></select></div>
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}><button onClick={saveSupplier} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Kaydet</button></div>
+          </div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Tedarikci Performansi</div>
+            {supplierPerf.map(s=>(
+              <div key={s.id} style={{display:"grid",gridTemplateColumns:"1.4fr repeat(3,.8fr)",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
+                <div style={{color:C.text,fontWeight:700}}>{s.name}</div>
+                <div style={{color:C.muted2}}>PO: {s.po}</div>
+                <div style={{color:s.onTimePct<70?C.red:C.green}}>OTD %{s.onTimePct}</div>
+                <div style={{color:s.qualityPct<90?C.warn:C.green}}>Kalite %{s.qualityPct}</div>
+              </div>
+            ))}
+            {supplierPerf.length===0&&<div style={{fontSize:12,color:C.muted2}}>Kayitli tedarikci yok.</div>}
+          </div>
+        </>
+      )}
+
+      {view==="quotes"&&(
+        <>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+            <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Tedarikci Teklifi</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:8}}>
+              <div><span style={labelSt}>Talep</span><select style={inputSt} value={quoteForm.requestId} onChange={e=>setQuoteForm(f=>({...f,requestId:e.target.value}))}><option value="">Secin</option>{openReq.map(r=><option key={r.id} value={r.id}>{r.code} · {r.materialCode} · {r.qty}</option>)}</select></div>
+              <div><span style={labelSt}>Tedarikci</span><select style={inputSt} value={quoteForm.supplierId} onChange={e=>setQuoteForm(f=>({...f,supplierId:e.target.value}))}><option value="">Secin</option>{suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+              <div><span style={labelSt}>Birim Fiyat</span><input style={inputSt} type="number" min="0" value={quoteForm.unitPrice} onChange={e=>setQuoteForm(f=>({...f,unitPrice:e.target.value}))}/></div>
+              <div><span style={labelSt}>Lead-Time</span><input style={inputSt} type="number" min="0" value={quoteForm.leadTimeDays} onChange={e=>setQuoteForm(f=>({...f,leadTimeDays:e.target.value}))}/></div>
+              <div><span style={labelSt}>Para</span><select style={inputSt} value={quoteForm.currency} onChange={e=>setQuoteForm(f=>({...f,currency:e.target.value}))}><option value="TRY">TRY</option><option value="EUR">EUR</option><option value="USD">USD</option></select></div>
+            </div>
+            <div style={{marginTop:8}}><span style={labelSt}>Not</span><input style={inputSt} value={quoteForm.note} onChange={e=>setQuoteForm(f=>({...f,note:e.target.value}))}/></div>
+            <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}><button onClick={saveQuote} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Teklif Kaydet</button></div>
+          </div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Teklif Listesi</div>
+            {quotes.map(q=>(
+              <div key={q.id} style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr 1fr auto",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,alignItems:"center",fontSize:12}}>
+                <div style={{color:C.text,fontWeight:700}}>{q.requestCode} · {q.supplierName}</div>
+                <div style={{color:C.muted2}}>{moneyFmt(q.unitPrice)} / {q.currency}</div>
+                <div style={{color:C.muted2}}>Toplam {moneyFmt(q.total)}</div>
+                <div style={{color:C.muted2}}>LT {q.leadTimeDays}g</div>
+                <button onClick={()=>quoteToPo(q)} style={{...btnSt("green"),padding:"6px 8px",fontSize:11}}>PO Olustur</button>
+              </div>
+            ))}
+            {quotes.length===0&&<div style={{fontSize:12,color:C.muted2}}>Teklif yok.</div>}
+          </div>
+        </>
+      )}
+
+      {view==="requests"&&(
+        <>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+            <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Satin Alma Talebi (Manuel)</div>
+            <div style={{display:"grid",gridTemplateColumns:"1.2fr .8fr .8fr .8fr",gap:8}}>
+              <div><span style={labelSt}>Malzeme</span><select style={inputSt} value={reqForm.materialId} onChange={e=>setReqForm(f=>({...f,materialId:e.target.value}))}><option value="">Secin</option>{materials.map(m=><option key={m.id} value={m.id}>{m.code} · {m.name}</option>)}</select></div>
+              <div><span style={labelSt}>Miktar</span><input style={inputSt} type="number" min="0" value={reqForm.qty} onChange={e=>setReqForm(f=>({...f,qty:e.target.value}))}/></div>
+              <div><span style={labelSt}>Ihtiyac Tarihi</span><input style={inputSt} type="date" value={reqForm.needDate} onChange={e=>setReqForm(f=>({...f,needDate:e.target.value||todayStr()}))}/></div>
+              <div><span style={labelSt}>Oncelik</span><select style={inputSt} value={reqForm.priority} onChange={e=>setReqForm(f=>({...f,priority:e.target.value}))}><option value="high">Yuksek</option><option value="normal">Normal</option><option value="low">Dusuk</option></select></div>
+            </div>
+            <div style={{marginTop:8}}><span style={labelSt}>Not</span><input style={inputSt} value={reqForm.note} onChange={e=>setReqForm(f=>({...f,note:e.target.value}))}/></div>
+            <div style={{display:"flex",justifyContent:"space-between",marginTop:10,flexWrap:"wrap",gap:8}}>
+              <button onClick={saveRequest} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Talep Kaydet</button>
+              <button onClick={()=>downloadCsv(`purchase-requests-${todayStr()}.csv`,[{label:"Kod",key:"code"},{label:"Malzeme",key:"materialCode"},{label:"Ad",key:"materialName"},{label:"Miktar",key:"qty"},{label:"Ihtiyac",key:"needDate"},{label:"Durum",key:"status"}],requests)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>CSV Indir</button>
+            </div>
+          </div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Talep Listesi ({requests.length})</div>
+            {requests.map(r=>(
+              <div key={r.id} style={{display:"grid",gridTemplateColumns:"1.2fr 1fr .8fr .8fr auto auto",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,alignItems:"center",fontSize:12}}>
+                <div style={{color:C.text,fontWeight:700}}>{r.code} · {r.materialCode} · {r.materialName}</div>
+                <div style={{color:C.muted2}}>Qty {safeNum(r.qty)} · {r.needDate||"-"}</div>
+                <div style={{color:C.muted2}}>{r.priority||"normal"}</div>
+                <Badge label={r.status||"pending"} color={["pending","approved","ordered"].includes(r.status||"")?C.warn:C.green}/>
+                <button onClick={()=>setRequestStatus(r,"approved")} style={{...btnSt("ghost"),padding:"6px 8px",fontSize:11}}>Onayla</button>
+                <button onClick={()=>setRequestStatus(r,"cancelled")} style={{...btnSt("danger"),padding:"6px 8px",fontSize:11}}>Iptal</button>
+              </div>
+            ))}
+          </div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Purchase Orders ({orders.length})</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr .7fr .7fr .7fr",gap:8,marginBottom:8}}>
+              <div><span style={labelSt}>PO Sec</span><select style={inputSt} value={recvForm.poId} onChange={e=>setRecvForm(f=>({...f,poId:e.target.value}))}><option value="">Secin</option>{orders.filter(o=>o.status!=="received").map(o=><option key={o.id} value={o.id}>{o.code} · {o.materialCode} · Kalan {Math.max(0,safeNum(o.qty)-safeNum(o.receivedQty)-safeNum(o.rejectedQty))}</option>)}</select></div>
+              <div><span style={labelSt}>Kabul</span><input style={inputSt} type="number" min="0" value={recvForm.acceptedQty} onChange={e=>setRecvForm(f=>({...f,acceptedQty:e.target.value}))}/></div>
+              <div><span style={labelSt}>Red</span><input style={inputSt} type="number" min="0" value={recvForm.rejectedQty} onChange={e=>setRecvForm(f=>({...f,rejectedQty:e.target.value}))}/></div>
+              <div><span style={labelSt}>Giris Tarihi</span><input style={inputSt} type="date" value={recvForm.receiptDate} onChange={e=>setRecvForm(f=>({...f,receiptDate:e.target.value||todayStr()}))}/></div>
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end"}}><button onClick={receivePo} style={{...btnSt("green"),padding:"8px 12px",fontSize:12}}>Malzeme Girisi Isle</button></div>
+            {orders.map(o=>(
+              <div key={o.id} style={{padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.muted2,display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr .8fr",gap:8}}>
+                <div style={{color:C.text,fontWeight:700}}>{o.code} · {o.supplierName}</div>
+                <div>Malzeme: {o.materialCode} · {o.qty}</div>
+                <div>Alinan: {safeNum(o.receivedQty)} · Red: {safeNum(o.rejectedQty)}</div>
+                <Badge label={o.status||"ordered"} color={o.status==="received"?C.green:C.warn}/>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 function ModulePlaceholder({title,desc,items=[]}) {
   return (
     <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
