@@ -2382,7 +2382,7 @@ function App() {
       <div style={{width:"100%",maxWidth:isTablet?1040:480,margin:"0 auto",paddingBottom:isTablet?20:80}}>
         <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:isTablet?"14px 20px":"14px 16px",position:"sticky",top:0,zIndex:10}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <div style={{width:34,height:34,borderRadius:10,background:`linear-gradient(135deg,${C.accent},#7b5cf0)`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
+            <div style={{width:34,height:34,borderRadius:10,background:"transparent",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
               {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:16}}>⚙️</span>}
             </div>
             <div style={{flex:1}}><div style={{fontWeight:700,fontSize:14,color:C.text}}>CNC Atölye Takip</div><div style={{color:C.muted2,fontSize:11,display:"flex",alignItems:"center",gap:5}}><span>{currentUser.fullName}</span><Badge label={isAdmin?"Yönetici":"Operatör"} color={isAdmin?C.accent:C.muted2}/></div></div>
