@@ -1662,6 +1662,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const [editId,setEditId]=useState(null);
   const [loading,setLoading]=useState(true);
   const [dateFilter,setDateFilter]=useState(todayStr());
+  const [ganttMonth,setGanttMonth]=useState(monthStr());
 
   useEffect(()=>{
     async function load(){
@@ -1694,6 +1695,31 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const rangeEnd=startObj<=endObj?endObj:startObj;
   const rangeDays=Math.max(1,Math.floor((rangeEnd-rangeStart)/86400000)+1);
   const rangeLabel=`${ymdLocal(rangeStart)} - ${ymdLocal(rangeEnd)} (${rangeDays} gün)`;
+  const ganttDate=new Date(...ganttMonth.split("-").map((x,i)=>i===1?Number(x)-1:Number(x)),1);
+  const ganttDaysCount=new Date(ganttDate.getFullYear(),ganttDate.getMonth()+1,0).getDate();
+  const ganttDays=Array.from({length:ganttDaysCount},(_,i)=>`${ganttMonth}-${pad2(i+1)}`);
+  const monthPlans=plans.filter(p=>(p.date||"").startsWith(ganttMonth+"-"));
+  const ganttRows=machines.map(m=>{
+    const byDate={};
+    monthPlans.filter(p=>p.machine===m).forEach(p=>{byDate[p.date]=p;});
+    return {machine:m,byDate};
+  });
+  const orderColorPalette=["#4f8ef7","#00c896","#ffb830","#9b7ff4","#ff4d6d","#2dd4bf","#f97316","#38bdf8","#22c55e","#ef4444","#eab308","#14b8a6"];
+  function colorFromOrder(orderId){
+    const key=String(orderId||"");
+    let h=0;
+    for(let i=0;i<key.length;i++) h=((h<<5)-h)+key.charCodeAt(i);
+    return orderColorPalette[Math.abs(h)%orderColorPalette.length];
+  }
+  const monthOrderMap={};
+  monthPlans.forEach(p=>{if(p.orderId&&!monthOrderMap[p.orderId]) monthOrderMap[p.orderId]={id:p.orderId,code:p.orderCode,name:p.orderName,color:colorFromOrder(p.orderId)};});
+  const monthOrders=Object.values(monthOrderMap);
+  function shiftGanttMonth(delta){
+    const [y,m]=ganttMonth.split("-").map(Number);
+    const d=new Date(y,m-1+delta,1);
+    setGanttMonth(`${d.getFullYear()}-${pad2(d.getMonth()+1)}`);
+  }
+  const ganttMonthLabel=new Intl.DateTimeFormat("tr-TR",{month:"long",year:"numeric"}).format(new Date(ganttDate.getFullYear(),ganttDate.getMonth(),1));
 
   function getDateRange(startDate,endDate){
     const s=parseYmdLocal(startDate);
@@ -1793,6 +1819,43 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
 
   return (
     <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+          <div style={{fontWeight:700,color:C.text}}>Aylık Plan Gantt</div>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <button onClick={()=>shiftGanttMonth(-1)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>◀</button>
+            <div style={{fontSize:13,color:C.text,minWidth:140,textAlign:"center",textTransform:"capitalize"}}>{ganttMonthLabel}</div>
+            <button onClick={()=>shiftGanttMonth(1)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>▶</button>
+            <button onClick={()=>setGanttMonth(monthStr())} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Bu Ay</button>
+          </div>
+        </div>
+        {monthOrders.length>0&&<div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:10}}>
+          {monthOrders.map(o=><span key={o.id} style={{display:"inline-flex",alignItems:"center",gap:6,background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px",fontSize:11,color:C.muted2}}><span style={{width:10,height:10,borderRadius:3,background:o.color,display:"inline-block"}}/>{o.code||"İş Emri"}</span>)}
+        </div>}
+        <div style={{overflowX:"auto"}}>
+          <div style={{minWidth:Math.max(760,140+ganttDays.length*28)}}>
+            <div style={{display:"grid",gridTemplateColumns:`140px repeat(${ganttDays.length}, 28px)`,gap:4,alignItems:"center",marginBottom:6}}>
+              <div style={{fontSize:11,color:C.muted2,fontWeight:700,textTransform:"uppercase",letterSpacing:.7}}>Tezgah</div>
+              {ganttDays.map((d,i)=>{
+                const wd=parseYmdLocal(d).getDay();
+                const weekend=wd===0||wd===6;
+                return <div key={d} style={{fontSize:10,textAlign:"center",color:weekend?C.warn:C.muted2,opacity:weekend?0.95:0.85}}>{i+1}</div>;
+              })}
+            </div>
+            {ganttRows.map(row=>(
+              <div key={row.machine} style={{display:"grid",gridTemplateColumns:`140px repeat(${ganttDays.length}, 28px)`,gap:4,alignItems:"center",marginBottom:5}}>
+                <div style={{fontSize:12,fontWeight:700,color:C.text,paddingRight:6}}>{row.machine}</div>
+                {ganttDays.map(d=>{
+                  const p=row.byDate[d];
+                  if(!p) return <div key={d} style={{height:22,borderRadius:6,background:C.surface,border:`1px solid ${C.border}`}}/>;
+                  const col=colorFromOrder(p.orderId||p.orderCode||p.orderName);
+                  return <div key={d} title={`${d} · ${row.machine} · ${p.orderCode||""} ${p.orderName||""}`} style={{height:22,borderRadius:6,background:col,border:`1px solid ${col}99`,boxShadow:`inset 0 0 0 1px ${col}99`}}/>;
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <div style={{fontWeight:700,color:C.text}}>Planlama</div>
