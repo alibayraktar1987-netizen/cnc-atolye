@@ -2383,12 +2383,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const fv=(k,v)=>setForm(f=>({...f,[k]:v}));
   const selectedOrder=orders.find(o=>o.id===form.orderId)||null;
   const filteredPlans=plans.filter(p=>!dateFilter||p.date===dateFilter);
-  const sortedPlans=[...filteredPlans].sort((a,b)=>{
-    const da=(a.date||"").localeCompare(b.date||"");
-    if(da!==0) return da;
-    const ma=(a.machine||"").localeCompare(b.machine||"");
-    return ma;
-  });
+  const sortedPlanSegments=buildPlanSegments(filteredPlans);
   const startObj=parseYmdLocal(form.startDate||todayStr());
   const endObj=parseYmdLocal(form.endDate||form.startDate||todayStr());
   const rangeStart=startObj<=endObj?startObj:endObj;
@@ -2578,6 +2573,48 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     }
     return out;
   }
+  function samePlanOrder(a,b){
+    return String(a?.orderId||a?.orderCode||"")===String(b?.orderId||b?.orderCode||"");
+  }
+  function buildPlanSegments(list){
+    const byMachine={};
+    list.forEach(p=>{
+      const key=p.machine||"";
+      if(!byMachine[key]) byMachine[key]=[];
+      byMachine[key].push(p);
+    });
+    const out=[];
+    Object.keys(byMachine).forEach(machine=>{
+      const rows=[...byMachine[machine]].sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+      let cur=null;
+      rows.forEach(p=>{
+        if(!cur){
+          cur={machine,orderId:p.orderId||"",orderCode:p.orderCode||"",orderName:p.orderName||"",orderCustomerName:p.orderCustomerName||"",note:p.note||"",startDate:p.date||"",endDate:p.date||"",plans:[p]};
+          return;
+        }
+        const nextDate=ymdLocal(new Date(parseYmdLocal(cur.endDate).getFullYear(),parseYmdLocal(cur.endDate).getMonth(),parseYmdLocal(cur.endDate).getDate()+1));
+        if(samePlanOrder(cur,p)&&p.date===nextDate){
+          cur.endDate=p.date;
+          cur.plans.push(p);
+        }else{
+          out.push({...cur,id:`${cur.machine}|${cur.orderId||cur.orderCode||"x"}|${cur.startDate}|${cur.endDate}`});
+          cur={machine,orderId:p.orderId||"",orderCode:p.orderCode||"",orderName:p.orderName||"",orderCustomerName:p.orderCustomerName||"",note:p.note||"",startDate:p.date||"",endDate:p.date||"",plans:[p]};
+        }
+      });
+      if(cur) out.push({...cur,id:`${cur.machine}|${cur.orderId||cur.orderCode||"x"}|${cur.startDate}|${cur.endDate}`});
+    });
+    return out.sort((a,b)=>{
+      const da=(a.startDate||"").localeCompare(b.startDate||"");
+      if(da!==0) return da;
+      return (a.machine||"").localeCompare(b.machine||"");
+    });
+  }
+  function findSegmentForPlan(plan){
+    if(!plan) return null;
+    if(plan._segmentId&&segmentById[plan._segmentId]) return segmentById[plan._segmentId];
+    const all=buildPlanSegments(plans);
+    return all.find(seg=>(seg.plans||[]).some(x=>x.id===plan.id))||null;
+  }
 
   async function savePlan(){
     if(!form.startDate||!form.endDate){alert("Tarih aralığı seçin!");return;}
@@ -2650,11 +2687,17 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   }
 
   async function removePlan(plan){
-    if(!confirm(`Plan silinsin mi? (${plan.orderCode} / ${plan.machine})`)) return;
-    const ok=await window.DB.deleteDoc("plans",plan.id);
-    if(!ok){alert("Plan silinemedi.");return;}
-    setPlans(p=>p.filter(x=>x.id!==plan.id));
-    if(editId===plan.id){
+    const seedPlan=(plan&&plan.plans&&plan.plans.length)?plan.plans[0]:plan;
+    const segment=findSegmentForPlan(seedPlan)||(plan&&plan.plans&&plan.plans.length?plan:null);
+    if(!segment||!segment.plans||segment.plans.length===0){alert("Silinecek plan bulunamadı.");return;}
+    if(!confirm(`Plan silinsin mi? (${segment.orderCode||"-"} / ${segment.machine||"-"} / ${segment.startDate||"-"} - ${segment.endDate||"-"})`)) return;
+    for(const p of segment.plans){
+      const ok=await window.DB.deleteDoc("plans",p.id);
+      if(!ok){alert("Plan silinemedi.");await refreshPlans();return;}
+    }
+    const removedIds=new Set(segment.plans.map(x=>x.id));
+    setPlans(prev=>prev.filter(x=>!removedIds.has(x.id)));
+    if(editId&&removedIds.has(editId)){
       setEditId(null);
       setForm({...emptyForm,machine:form.machine,startDate:form.startDate,endDate:form.endDate});
     }
@@ -2778,30 +2821,30 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       </div>
 
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-        <div style={{fontSize:12,color:C.muted2}}>Planlar ({sortedPlans.length})</div>
+        <div style={{fontSize:12,color:C.muted2}}>Planlar ({sortedPlanSegments.length})</div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <input type="date" value={dateFilter} onChange={e=>setDateFilter(e.target.value)} style={{...inputSt,padding:"7px 9px",fontSize:12,minWidth:150}}/>
           {dateFilter&&<button onClick={()=>setDateFilter("")} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Tümü</button>}
         </div>
       </div>
 
-      {sortedPlans.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"28px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Plan bulunamadı</div>}
-      {sortedPlans.map(p=>(
-        <div key={p.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"12px 14px"}}>
+      {sortedPlanSegments.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"28px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Plan bulunamadı</div>}
+      {sortedPlanSegments.map(seg=>(
+        <div key={seg.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"12px 14px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
             <div>
-              <div style={{fontWeight:800,fontFamily:"monospace",fontSize:14,color:C.text}}>{p.orderCode}</div>
-              <div style={{fontSize:12,color:C.muted2,marginTop:2}}>{p.orderName}{p.orderCustomerName?` - ${p.orderCustomerName}`:""}</div>
+              <div style={{fontWeight:800,fontFamily:"monospace",fontSize:14,color:C.text}}>{seg.orderCode}</div>
+              <div style={{fontSize:12,color:C.muted2,marginTop:2}}>{seg.orderName}{seg.orderCustomerName?` - ${seg.orderCustomerName}`:""}</div>
             </div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
-              <Badge label={p.date||"-"} color={C.accent}/>
-              <Badge label={p.machine||"-"} color={C.warn}/>
+              <Badge label={`${seg.startDate||"-"}${seg.endDate&&seg.endDate!==seg.startDate?` - ${seg.endDate}`:""}`} color={C.accent}/>
+              <Badge label={seg.machine||"-"} color={C.warn}/>
             </div>
           </div>
-          {p.note&&<div style={{marginTop:8,fontSize:12,color:C.muted2}}>{p.note}</div>}
+          {seg.note&&<div style={{marginTop:8,fontSize:12,color:C.muted2}}>{seg.note}</div>}
           <div style={{marginTop:9,display:"flex",gap:8}}>
-            <button onClick={()=>startEdit(p)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Düzenle</button>
-            <button onClick={()=>removePlan(p)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
+            <button onClick={()=>startEdit((seg.plans&&seg.plans[0])||seg)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Düzenle</button>
+            <button onClick={()=>removePlan(seg)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
           </div>
         </div>
       ))}
