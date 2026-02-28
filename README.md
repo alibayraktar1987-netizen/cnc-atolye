@@ -27,7 +27,7 @@ Mevcut uygulama su anda agirlikla is emri, siparis, stok, planlama ve raporlama 
 
 ## Kisa Durum Ozeti
 
-- Mevcut: Satis siparisleri, is emirleri, temel stok, planlama/Gantt, KPI raporlari, rol tabanli temel yetki
+- Mevcut: Satis siparisleri, is emirleri, temel stok, planlama/Gantt, KPI raporlari, rol tabanli temel yetki, makina baglanti hazirlik modulu
 - Kismi: Kapasite/planlama, stok politikasi, guvenlik
 - Eksik: BOM/MPS/MRP, satin alma planlama, maliyetleme, audit log, entegrasyon katmani, otomatik test paketi
 
@@ -36,4 +36,3 @@ Mevcut uygulama su anda agirlikla is emri, siparis, stok, planlama ve raporlama 
 - Docker image: `Dockerfile`
 - Docker Compose: `docker-compose.yml`
 - CI pipeline: `.github/workflows/ci.yml`
-

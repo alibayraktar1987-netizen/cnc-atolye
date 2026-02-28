@@ -227,3 +227,53 @@ Bu model, mevcut Firestore temelli yapida yeni modulleri tutarli bicimde eklemek
 - `actorId` string
 - `createdAt` datetime
 
+## 10) Makina Baglanti Hazirlik Koleksiyonlari
+
+`machineConnectors`
+
+- `id` string
+- `code` string (`MC-001` gibi)
+- `machineName` string
+- `brand` enum: `Fanuc | Siemens | Heidenhain | Generic`
+- `protocol` enum: `FOCAS2 | OPC-UA | LSV2 | MTConnect | MQTT`
+- `connectionMode` enum: `not_connected | simulation | live`
+- `ip` string?
+- `port` string?
+- `pollingSec` number
+- `timezone` string
+- `edgeAgent` string (`IPC-01` gibi)
+- `ncTransfer` enum: `bidirectional`
+- `dataPoints` object (status/program/spindle/... boolean)
+- `lastHeartbeatAt` datetime?
+- `mockPartCounter` number?
+- `notes` string?
+
+`machineTelemetryMock`
+
+- `id` string
+- `machineId` string
+- `machineCode` string
+- `machineName` string
+- `status` string
+- `programName` string
+- `spindleLoad` number
+- `feedOverride` number
+- `cycleElapsedSec` number
+- `partCounter` number
+- `activeAlarms` string[]
+- `toolNumber` number
+- `toolLifeRemainPct` number
+- `operatorId` string
+- `collectedAtUtc` datetime
+- `machineLocalTime` datetime/string
+- `source` enum: `simulation`
+
+`config/edgeConnectivity`
+
+- `ipcName` string
+- `location` string
+- `defaultPollingSec` number
+- `maxBufferRows` number
+- `resendSec` number
+- `syncBatch` number
+- `timezone` string

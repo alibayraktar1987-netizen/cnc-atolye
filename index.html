@@ -107,6 +107,28 @@ const SALES_STATUS_OPTIONS = [
   { id:"cancelled", label:"Iptal", color:C.red },
   { id:"converted", label:"Donustu", color:C.green },
 ];
+const MACHINE_BRAND_OPTIONS = ["Fanuc","Siemens","Heidenhain","Generic"];
+const MACHINE_PROTOCOL_OPTIONS = {
+  Fanuc:["FOCAS2","MTConnect"],
+  Siemens:["OPC-UA"],
+  Heidenhain:["LSV2","OPC-UA"],
+  Generic:["MTConnect","MQTT"],
+};
+const MACHINE_DATA_POINTS = [
+  { id:"status", label:"Makina Durumu" },
+  { id:"program", label:"Aktif Program" },
+  { id:"spindleLoad", label:"Spindle Load %" },
+  { id:"feedOverride", label:"Feed Override %" },
+  { id:"cycleElapsed", label:"Cycle Time" },
+  { id:"partCounter", label:"Part Counter" },
+  { id:"alarms", label:"Alarmlar" },
+  { id:"toolLife", label:"Tool Life" },
+  { id:"operatorId", label:"Operator ID" },
+];
+const MACHINE_DEFAULT_POINTS = MACHINE_DATA_POINTS.reduce((acc,p)=>{
+  acc[p.id]=true;
+  return acc;
+},{});
 
 // ── HELPERS ──────────────────────────────────────────────────
 const pad2 = n => String(n).padStart(2,"0");
@@ -390,6 +412,9 @@ function NavIcon({name,size=18}) {
   );
   if(name==="users") return (
     <svg viewBox="0 0 24 24" style={st}><circle {...p} cx="12" cy="8" r="3.2"/><path {...p} d="M5 20a7 7 0 0 1 14 0"/></svg>
+  );
+  if(name==="machines") return (
+    <svg viewBox="0 0 24 24" style={st}><rect {...p} x="3" y="5" width="18" height="12" rx="2"/><path {...p} d="M7 17v2m10-2v2M6 9h12M8 13h2m4 0h2"/></svg>
   );
   return null;
 }
@@ -2879,6 +2904,405 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
 }
 
 // ════════════════════════════════════════════════════════════
+//  MACHINE CONNECTIVITY PREP
+// ════════════════════════════════════════════════════════════
+function MachineConnectivityPrep({currentUser,machines=DEFAULT_MACHINES}) {
+  const emptyForm={
+    code:"",
+    machineName:machines[0]||"CNC-1",
+    brand:"Fanuc",
+    protocol:"FOCAS2",
+    connectionMode:"not_connected",
+    ip:"",
+    port:"",
+    pollingSec:"10",
+    timezone:"Europe/Istanbul",
+    edgeAgent:"IPC-01",
+    ncTransfer:"bidirectional",
+    notes:"",
+    dataPoints:{...MACHINE_DEFAULT_POINTS},
+  };
+  const [profiles,setProfiles]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [showForm,setShowForm]=useState(false);
+  const [editId,setEditId]=useState(null);
+  const [form,setForm]=useState(emptyForm);
+  const [search,setSearch]=useState("");
+  const [simMap,setSimMap]=useState({});
+  const [savingEdge,setSavingEdge]=useState(false);
+  const [edgeConfig,setEdgeConfig]=useState({
+    ipcName:"IPC-01",
+    location:"Atolye A",
+    defaultPollingSec:10,
+    maxBufferRows:5000,
+    resendSec:5,
+    syncBatch:200,
+    timezone:"Europe/Istanbul",
+  });
+
+  const load=useCallback(async()=>{
+    const [rows,edgeDoc,mockRows]=await Promise.all([
+      window.DB.getAll("machineConnectors"),
+      window.DB.getDoc("config","edgeConnectivity"),
+      window.DB.getAll("machineTelemetryMock"),
+    ]);
+    setProfiles(rows.sort((a,b)=>(a.machineName||"").localeCompare(b.machineName||"","tr")));
+    if(edgeDoc){
+      setEdgeConfig(prev=>({
+        ...prev,
+        ipcName:edgeDoc.ipcName||prev.ipcName,
+        location:edgeDoc.location||prev.location,
+        defaultPollingSec:Number(edgeDoc.defaultPollingSec)||prev.defaultPollingSec,
+        maxBufferRows:Number(edgeDoc.maxBufferRows)||prev.maxBufferRows,
+        resendSec:Number(edgeDoc.resendSec)||prev.resendSec,
+        syncBatch:Number(edgeDoc.syncBatch)||prev.syncBatch,
+        timezone:edgeDoc.timezone||prev.timezone,
+      }));
+    }
+    const latest={};
+    mockRows
+      .sort((a,b)=>(b.collectedAtUtc||"").localeCompare(a.collectedAtUtc||""))
+      .forEach(r=>{
+        if(!r.machineId||latest[r.machineId]) return;
+        latest[r.machineId]=r;
+      });
+    setSimMap(latest);
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  useEffect(()=>{
+    const options=MACHINE_PROTOCOL_OPTIONS[form.brand]||[];
+    if(options.length===0||options.includes(form.protocol)) return;
+    setForm(f=>({...f,protocol:options[0]}));
+  },[form.brand,form.protocol]);
+
+  const protocolOptions=MACHINE_PROTOCOL_OPTIONS[form.brand]||[];
+  const fv=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const fp=(k,v)=>setForm(f=>({...f,dataPoints:{...f.dataPoints,[k]:v}}));
+  const fe=(k,v)=>setEdgeConfig(p=>({...p,[k]:v}));
+
+  function nextConnectorCode(list=profiles){
+    const nums=list.map(r=>{
+      const m=String(r.code||"").toUpperCase().match(/^MC-(\d+)$/);
+      return m?Number(m[1]):null;
+    }).filter(n=>n!==null);
+    const next=(nums.length?Math.max(...nums):0)+1;
+    return `MC-${String(next).padStart(3,"0")}`;
+  }
+
+  function modeMeta(mode){
+    if(mode==="live") return {label:"Canli",color:C.green};
+    if(mode==="simulation") return {label:"Simulasyon",color:C.warn};
+    return {label:"Bagli Degil",color:C.muted2};
+  }
+
+  async function saveEdgeConfig(){
+    setSavingEdge(true);
+    const payload={
+      ipcName:(edgeConfig.ipcName||"IPC-01").trim(),
+      location:(edgeConfig.location||"").trim(),
+      defaultPollingSec:Math.max(1,Number(edgeConfig.defaultPollingSec)||10),
+      maxBufferRows:Math.max(100,Number(edgeConfig.maxBufferRows)||5000),
+      resendSec:Math.max(1,Number(edgeConfig.resendSec)||5),
+      syncBatch:Math.max(1,Number(edgeConfig.syncBatch)||200),
+      timezone:(edgeConfig.timezone||"Europe/Istanbul").trim(),
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser.id,
+    };
+    const ok=await window.DB.setDoc("config","edgeConnectivity",payload);
+    setSavingEdge(false);
+    if(!ok){alert("IPC ayari kaydedilemedi.");return;}
+    setEdgeConfig(payload);
+  }
+
+  async function saveProfile(){
+    if(!form.machineName.trim()){alert("Makina adi zorunlu.");return;}
+    if(!form.brand||!form.protocol){alert("Marka ve protokol secin.");return;}
+    const payload={
+      code:(form.code||nextConnectorCode()).toUpperCase(),
+      machineName:form.machineName.trim(),
+      brand:form.brand,
+      protocol:form.protocol,
+      connectionMode:form.connectionMode||"not_connected",
+      ip:form.ip.trim(),
+      port:String(form.port||"").trim(),
+      pollingSec:Math.max(1,Number(form.pollingSec)||10),
+      timezone:(form.timezone||"Europe/Istanbul").trim(),
+      edgeAgent:(form.edgeAgent||edgeConfig.ipcName||"IPC-01").trim(),
+      ncTransfer:"bidirectional",
+      notes:form.notes.trim(),
+      dataPoints:{...MACHINE_DEFAULT_POINTS,...(form.dataPoints||{})},
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser.id,
+      ...(editId?{}:{createdBy:currentUser.id}),
+    };
+    if(editId){
+      const ok=await window.DB.updateDoc("machineConnectors",editId,payload);
+      if(!ok){alert("Makina profili guncellenemedi.");return;}
+      setProfiles(prev=>prev.map(x=>x.id===editId?{...x,...payload}:x).sort((a,b)=>(a.machineName||"").localeCompare(b.machineName||"","tr")));
+    }else{
+      const id=await window.DB.addDoc("machineConnectors",payload);
+      if(!id){alert("Makina profili kaydedilemedi.");return;}
+      setProfiles(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev].sort((a,b)=>(a.machineName||"").localeCompare(b.machineName||"","tr")));
+    }
+    setEditId(null);
+    setShowForm(false);
+    setForm({...emptyForm,code:nextConnectorCode(),edgeAgent:edgeConfig.ipcName||"IPC-01"});
+  }
+
+  function startCreate(){
+    setEditId(null);
+    setForm({...emptyForm,code:nextConnectorCode(),machineName:machines[0]||"CNC-1",edgeAgent:edgeConfig.ipcName||"IPC-01"});
+    setShowForm(true);
+  }
+
+  function startEdit(row){
+    const protocolList=MACHINE_PROTOCOL_OPTIONS[row.brand]||[];
+    setEditId(row.id);
+    setForm({
+      code:row.code||nextConnectorCode(),
+      machineName:row.machineName||machines[0]||"CNC-1",
+      brand:row.brand||"Fanuc",
+      protocol:(row.protocol&&protocolList.includes(row.protocol))?row.protocol:(protocolList[0]||"FOCAS2"),
+      connectionMode:row.connectionMode||"not_connected",
+      ip:row.ip||"",
+      port:row.port||"",
+      pollingSec:String(Number(row.pollingSec)||10),
+      timezone:row.timezone||"Europe/Istanbul",
+      edgeAgent:row.edgeAgent||edgeConfig.ipcName||"IPC-01",
+      ncTransfer:"bidirectional",
+      notes:row.notes||"",
+      dataPoints:{...MACHINE_DEFAULT_POINTS,...(row.dataPoints||{})},
+    });
+    setShowForm(true);
+  }
+
+  async function removeProfile(row){
+    if(!confirm(`"${row.machineName||row.code||"Makina"}" profili silinsin mi?`)) return;
+    const ok=await window.DB.deleteDoc("machineConnectors",row.id);
+    if(!ok){alert("Makina profili silinemedi.");return;}
+    setProfiles(prev=>prev.filter(x=>x.id!==row.id));
+    setSimMap(prev=>{const n={...prev};delete n[row.id];return n;});
+    if(editId===row.id){
+      setEditId(null);
+      setShowForm(false);
+      setForm({...emptyForm,code:nextConnectorCode()});
+    }
+  }
+
+  async function setConnectionMode(row,mode){
+    const patch={connectionMode:mode,updatedAt:new Date().toISOString(),updatedBy:currentUser.id};
+    const ok=await window.DB.updateDoc("machineConnectors",row.id,patch);
+    if(!ok){alert("Baglanti modu guncellenemedi.");return;}
+    setProfiles(prev=>prev.map(x=>x.id===row.id?{...x,...patch}:x));
+  }
+
+  async function simulateProfile(row){
+    const statePool=["running","idle","alarm","setup"];
+    const status=statePool[Math.floor(Math.random()*statePool.length)];
+    const nowIso=new Date().toISOString();
+    let machineLocalTime=nowIso;
+    try{
+      machineLocalTime=new Date().toLocaleString("sv-SE",{timeZone:row.timezone||"Europe/Istanbul",hour12:false}).replace(" ","T");
+    }catch{}
+    const nextPart=(Number(row.mockPartCounter)||0)+(status==="running"?Math.floor(Math.random()*2):0);
+    const sample={
+      machineId:row.id,
+      machineCode:row.code||"",
+      machineName:row.machineName||"",
+      status,
+      programName:`O${String(1000+Math.floor(Math.random()*9000))}`,
+      spindleLoad:status==="running"?Math.floor(45+Math.random()*45):Math.floor(Math.random()*20),
+      feedOverride:Math.floor(85+Math.random()*20),
+      cycleElapsedSec:status==="running"?Math.floor(20+Math.random()*260):0,
+      partCounter:nextPart,
+      activeAlarms:status==="alarm"?["A-102 OVERLOAD"]:[],
+      toolNumber:1+Math.floor(Math.random()*24),
+      toolLifeRemainPct:Math.floor(20+Math.random()*80),
+      operatorId:`OP-${String(1+Math.floor(Math.random()*8)).padStart(3,"0")}`,
+      collectedAtUtc:nowIso,
+      machineLocalTime,
+      source:"simulation",
+    };
+    await window.DB.addDoc("machineTelemetryMock",sample);
+    const patch={
+      connectionMode:"simulation",
+      status:"simulating",
+      mockPartCounter:nextPart,
+      lastHeartbeatAt:nowIso,
+      updatedAt:nowIso,
+      updatedBy:currentUser.id,
+    };
+    await window.DB.updateDoc("machineConnectors",row.id,patch);
+    setProfiles(prev=>prev.map(x=>x.id===row.id?{...x,...patch}:x));
+    setSimMap(prev=>({...prev,[row.id]:sample}));
+  }
+
+  const q=search.trim().toLowerCase();
+  const filtered=profiles.filter(r=>{
+    if(!q) return true;
+    return (r.machineName||"").toLowerCase().includes(q)||
+      (r.code||"").toLowerCase().includes(q)||
+      (r.brand||"").toLowerCase().includes(q)||
+      (r.protocol||"").toLowerCase().includes(q)||
+      (r.ip||"").toLowerCase().includes(q);
+  });
+  const plannedCount=profiles.filter(r=>(r.connectionMode||"not_connected")==="not_connected").length;
+  const simCount=profiles.filter(r=>r.connectionMode==="simulation").length;
+  const liveCount=profiles.filter(r=>r.connectionMode==="live").length;
+  const pilotTarget=5;
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+
+  return (
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+          <div style={{fontWeight:700,color:C.text}}>Makina Baglanti Hazirligi (Baglanti Yok Modu)</div>
+          <button onClick={startCreate} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>+ Makina Profili</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8}}>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:10,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Pilot Hedef</div><div style={{fontWeight:800,color:C.accent,fontSize:18}}>{pilotTarget}</div></div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:10,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Toplam Profil</div><div style={{fontWeight:800,color:C.text,fontSize:18}}>{profiles.length}</div></div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:10,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Bagli Degil</div><div style={{fontWeight:800,color:C.muted2,fontSize:18}}>{plannedCount}</div></div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:10,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Simulasyon</div><div style={{fontWeight:800,color:C.warn,fontSize:18}}>{simCount}</div></div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:10,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Canli</div><div style={{fontWeight:800,color:C.green,fontSize:18}}>{liveCount}</div></div>
+        </div>
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontWeight:700,color:C.text,marginBottom:10}}>IPC Edge Konfigurasyonu</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <div><span style={labelSt}>IPC Adi</span><input style={inputSt} value={edgeConfig.ipcName} onChange={e=>fe("ipcName",e.target.value)} placeholder="IPC-01"/></div>
+          <div><span style={labelSt}>Konum</span><input style={inputSt} value={edgeConfig.location} onChange={e=>fe("location",e.target.value)} placeholder="Atolye A"/></div>
+          <div><span style={labelSt}>Default Polling (sn)</span><input style={inputSt} type="number" min="1" value={edgeConfig.defaultPollingSec} onChange={e=>fe("defaultPollingSec",e.target.value)}/></div>
+          <div><span style={labelSt}>Maks Buffer Kaydi</span><input style={inputSt} type="number" min="100" value={edgeConfig.maxBufferRows} onChange={e=>fe("maxBufferRows",e.target.value)}/></div>
+          <div><span style={labelSt}>Resend Periyodu (sn)</span><input style={inputSt} type="number" min="1" value={edgeConfig.resendSec} onChange={e=>fe("resendSec",e.target.value)}/></div>
+          <div><span style={labelSt}>Sync Batch</span><input style={inputSt} type="number" min="1" value={edgeConfig.syncBatch} onChange={e=>fe("syncBatch",e.target.value)}/></div>
+          <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Timezone</span><input style={inputSt} value={edgeConfig.timezone} onChange={e=>fe("timezone",e.target.value)} placeholder="Europe/Istanbul"/></div>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:10}}>
+          <div style={{fontSize:12,color:C.muted2}}>Bu alanlar baglanti yapmadan once edge agent paketine aktarilacak hazir ayarlardir.</div>
+          <button onClick={saveEdgeConfig} disabled={savingEdge} style={{...btnSt("green"),padding:"8px 12px",fontSize:12,opacity:savingEdge?0.7:1}}>{savingEdge?"Kaydediliyor...":"IPC Ayarini Kaydet"}</button>
+        </div>
+      </div>
+
+      {showForm&&(
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:10}}>
+            <div style={{fontWeight:700,color:C.text}}>{editId?"Makina Profili Duzenle":"Yeni Makina Profili"}</div>
+            {form.ncTransfer==="bidirectional"&&<Badge label="NC Transfer Cift Yon" color={C.accent}/>}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div><span style={labelSt}>Profil Kodu</span><input style={{...inputSt,background:C.surface,color:C.muted2}} value={form.code||nextConnectorCode()} readOnly/></div>
+            <div>
+              <span style={labelSt}>Makina</span>
+              <select style={inputSt} value={form.machineName} onChange={e=>fv("machineName",e.target.value)}>
+                {machines.map(m=><option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div>
+              <span style={labelSt}>Marka</span>
+              <select style={inputSt} value={form.brand} onChange={e=>fv("brand",e.target.value)}>
+                {MACHINE_BRAND_OPTIONS.map(b=><option key={b} value={b}>{b}</option>)}
+              </select>
+            </div>
+            <div>
+              <span style={labelSt}>Protokol</span>
+              <select style={inputSt} value={form.protocol} onChange={e=>fv("protocol",e.target.value)}>
+                {protocolOptions.map(p=><option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+            <div>
+              <span style={labelSt}>Baglanti Modu</span>
+              <select style={inputSt} value={form.connectionMode} onChange={e=>fv("connectionMode",e.target.value)}>
+                <option value="not_connected">Bagli Degil</option>
+                <option value="simulation">Simulasyon</option>
+                <option value="live">Canli</option>
+              </select>
+            </div>
+            <div><span style={labelSt}>Polling (sn)</span><input style={inputSt} type="number" min="1" value={form.pollingSec} onChange={e=>fv("pollingSec",e.target.value)}/></div>
+            <div><span style={labelSt}>IP (Opsiyonel)</span><input style={inputSt} value={form.ip} onChange={e=>fv("ip",e.target.value)} placeholder="192.168.1.25"/></div>
+            <div><span style={labelSt}>Port (Opsiyonel)</span><input style={inputSt} value={form.port} onChange={e=>fv("port",e.target.value)} placeholder="8193 / 4840"/></div>
+            <div><span style={labelSt}>Edge Agent</span><input style={inputSt} value={form.edgeAgent} onChange={e=>fv("edgeAgent",e.target.value)} placeholder="IPC-01"/></div>
+            <div><span style={labelSt}>Timezone</span><input style={inputSt} value={form.timezone} onChange={e=>fv("timezone",e.target.value)} placeholder="Europe/Istanbul"/></div>
+            <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Not</span><textarea style={{...inputSt,minHeight:64,resize:"vertical"}} value={form.notes} onChange={e=>fv("notes",e.target.value)} placeholder="Kablo takildiginda canliya alinacak gibi notlar..."/></div>
+          </div>
+          <div style={{marginTop:10}}>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:7}}>Toplanacak Veriler</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:7}}>
+              {MACHINE_DATA_POINTS.map(dp=>{
+                const active=Boolean(form.dataPoints?.[dp.id]);
+                return (
+                  <button key={dp.id} onClick={()=>fp(dp.id,!active)} style={{...chip(active,active?C.accent:C.muted2),textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span>{dp.label}</span><span>{active?"On":"Off"}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8,marginTop:10}}>
+            <button onClick={saveProfile} style={{...btnSt("primary"),flex:1,padding:12}}>{editId?"Profili Guncelle":"Profili Kaydet"}</button>
+            <button onClick={()=>{setEditId(null);setShowForm(false);setForm({...emptyForm,code:nextConnectorCode()});}} style={{...btnSt("ghost"),padding:"12px 14px"}}>Iptal</button>
+          </div>
+        </div>
+      )}
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <div style={{fontSize:12,color:C.muted2}}>Makina Profilleri ({profiles.length})</div>
+        <input style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:220}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Makina, kod, marka, protokol ara..."/>
+      </div>
+
+      {filtered.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"28px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Makina profili bulunamadi</div>}
+      {filtered.map(row=>{
+        const mode=modeMeta(row.connectionMode||"not_connected");
+        const sample=simMap[row.id];
+        return (
+          <div key={row.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"12px 14px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+              <div>
+                <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+                  <span style={{fontWeight:800,fontFamily:"monospace",fontSize:13,color:C.text}}>{row.code||"-"}</span>
+                  <Badge label={mode.label} color={mode.color}/>
+                  <Badge label={`${row.brand||"-"} / ${row.protocol||"-"}`} color={C.muted2}/>
+                  <Badge label={`Polling ${Number(row.pollingSec)||10}s`} color={C.warn}/>
+                </div>
+                <div style={{fontSize:14,color:C.text,marginTop:3}}>{row.machineName||"-"}</div>
+                <div style={{fontSize:11,color:C.muted2,marginTop:2}}>
+                  {(row.edgeAgent||edgeConfig.ipcName||"IPC-01")} · {(row.timezone||"Europe/Istanbul")}
+                  {row.ip?` · ${row.ip}${row.port?`:${row.port}`:""}`:" · IP tanimsiz"}
+                </div>
+                <div style={{fontSize:11,color:C.muted,marginTop:2}}>NC Transfer: Cift Yon · Son heartbeat: {(row.lastHeartbeatAt||"-").slice(0,19).replace("T"," ")||"-"}</div>
+              </div>
+              <div style={{display:"flex",gap:7,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                <button onClick={()=>simulateProfile(row)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}>Simule Et</button>
+                <button onClick={()=>setConnectionMode(row,"not_connected")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Bagli Degil</button>
+                <button onClick={()=>setConnectionMode(row,"live")} style={{...btnSt("green"),padding:"6px 10px",fontSize:12}}>Canliya Hazir</button>
+                <button onClick={()=>startEdit(row)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
+                <button onClick={()=>removeProfile(row)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
+              </div>
+            </div>
+            {row.notes&&<div style={{fontSize:12,color:C.muted2,marginTop:8}}>{row.notes}</div>}
+            <div style={{marginTop:8,fontSize:11,color:C.muted2}}>
+              Veri noktasi: {MACHINE_DATA_POINTS.filter(p=>row.dataPoints?.[p.id]).map(p=>p.label).join(", ")||"Secilmemis"}
+            </div>
+            {sample&&(
+              <div style={{marginTop:8,background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px",fontSize:11,color:C.muted2}}>
+                <div style={{marginBottom:4,color:C.text,fontWeight:700}}>Son Simulasyon Ornegi</div>
+                <div>Durum: {sample.status} · Program: {sample.programName} · Spindle: %{sample.spindleLoad} · Feed: %{sample.feedOverride}</div>
+                <div>Cevrim: {sample.cycleElapsedSec}s · Parca: {sample.partCounter} · Takim: T{sample.toolNumber} (%{sample.toolLifeRemainPct})</div>
+                <div>Zaman UTC: {sample.collectedAtUtc?.slice(0,19).replace("T"," ")} · Lokal: {sample.machineLocalTime||"-"}</div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
 //  MAIN APP
 // ════════════════════════════════════════════════════════════
 function App() {
@@ -2955,6 +3379,7 @@ function App() {
   const canCustomers=canOrders;
   const canUsers=hasPermission(currentUser,"approve_users")||isAdmin;
   const canTools=true;
+  const canMachinePrep=canOrders;
   const contentMaxWidth=isDesktop?1320:(isTablet?1040:480);
   const headerPadding=isDesktop?"16px 24px":(isTablet?"14px 20px":"14px 16px");
   const sidebarWidth=isDesktop?260:220;
@@ -2962,6 +3387,7 @@ function App() {
   const tabs=[
     ...(canEntry?[{id:"giris",icon:"giris",label:"Giris"}]:[]),
     ...(canPlanning?[{id:"planning",icon:"planning",label:"Planlama"}]:[]),
+    ...(canMachinePrep?[{id:"machineprep",icon:"machines",label:"Makina Hazirlik"}]:[]),
     ...(canCustomers?[{id:"customers",icon:"customers",label:"Musteriler"}]:[]),
     ...(canOrders?[{id:"materials",icon:"materials",label:"Malzemeler"}]:[]),
     ...(canOrders?[{id:"sales",icon:"sales",label:"Siparisler"}]:[]),
@@ -2975,6 +3401,7 @@ function App() {
     <>
       {tab==="giris"&&<DataEntry currentUser={currentUser} machines={machines}/>}
       {tab==="planning"&&<Planning currentUser={currentUser} machines={machines}/>}
+      {tab==="machineprep"&&<MachineConnectivityPrep currentUser={currentUser} machines={machines}/>}
       {tab==="customers"&&<Customers/>}
       {tab==="materials"&&<MaterialLibrary/>}
       {tab==="sales"&&<SalesOrders currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")}/>}

@@ -12,6 +12,7 @@ Bu kilavuz, mevcut ekranlari ve hedeflenen yeni modullerin temel kullanimini oze
 
 - `Giris`: Vardiya bazli uretim verisi girisi
 - `Planlama`: Aylik Gantt, plan ekleme/duzenleme
+- `Makina Hazirlik`: Baglanti oncesi marka/protokol profili, IPC ayari ve simulasyon
 - `Musteriler`: Musteri kartlari
 - `Malzemeler`: Malzeme kutuphanesi ve stok adetleri
 - `Siparisler`: Satis siparisi olusturma, is emrine donusturme
@@ -38,4 +39,3 @@ Bu kilavuz, mevcut ekranlari ve hedeflenen yeni modullerin temel kullanimini oze
 5. Is emirlerini serbest birak
 6. Uretim veri girisi yap
 7. KPI + maliyet + audit raporlarini kontrol et
-

@@ -119,3 +119,11 @@ Durum etiketleri:
 | API dokumani (OpenAPI/Swagger) | Mevcut | `openapi.yaml` eklendi |
 | Kullanici kilavuzu | Mevcut | `docs/user-guide.md` eklendi |
 
+## 13) Makina Baglanti Hazirligi
+
+| Gereksinim | Durum | Not |
+|---|---|---|
+| Makina onboarding profili (marka/protokol) | Mevcut | UI'da eklendi (`Makina Hazirlik`) |
+| IPC edge konfigurasyonu | Mevcut | `config/edgeConnectivity` ile kayit |
+| Baglanti yok modunda simulasyon | Mevcut | `machineTelemetryMock` koleksiyonuna ornek veri |
+| Canli protokol baglantisi | Eksik | Kablo/lisans/protokol erisimi sonraki faz |
