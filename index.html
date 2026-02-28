@@ -966,7 +966,16 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
   const [search,setSearch]=useState("");
   const [showPicker,setShowPicker]=useState(false);
   const [editId,setEditId]=useState(null);
-  const [form,setForm]=useState({entryDate:todayStr(),machine:machines[0]||"CNC-1",shift:"sabah",selectedOrder:null,correct:"",wrong:""});
+  const [form,setForm]=useState({
+    entryDate:todayStr(),
+    machine:machines[0]||"CNC-1",
+    shift:"sabah",
+    selectedOrder:null,
+    correct:"",
+    wrong:"",
+    machineToolChange:"",
+    orderToolChange:"",
+  });
 
   useEffect(()=>{
     window.DB.getAll("orders").then(o=>setOrders(o.filter(x=>x.status==="active")));
@@ -977,7 +986,16 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
   const filtered=orders.filter(o=>o.code.toLowerCase().includes(search.toLowerCase())||o.name.toLowerCase().includes(search.toLowerCase()));
   const selectedDateObj=parseYmdLocal(form.entryDate);
   const selectedDateLabel=new Intl.DateTimeFormat("tr-TR",{weekday:"long",day:"2-digit",month:"long",year:"numeric"}).format(selectedDateObj);
-  const resetEntryForm=()=>setForm(p=>({entryDate:p.entryDate,machine:p.machine||machines[0]||"CNC-1",shift:p.shift||"sabah",selectedOrder:null,correct:"",wrong:""}));
+  const resetEntryForm=()=>setForm(p=>({
+    entryDate:p.entryDate,
+    machine:p.machine||machines[0]||"CNC-1",
+    shift:p.shift||"sabah",
+    selectedOrder:null,
+    correct:"",
+    wrong:"",
+    machineToolChange:"",
+    orderToolChange:"",
+  }));
 
   async function submit() {
     if(!form.selectedOrder){alert("İş emri seçin!");return;}
@@ -990,6 +1008,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
       jobCode:form.selectedOrder.code, jobName:form.selectedOrder.name,
       partSec:Number(form.selectedOrder.partSec),
       correct:Number(form.correct), wrong:Number(form.wrong)||0,
+      machineToolChange:Number(form.machineToolChange)||0,
+      orderToolChange:Number(form.orderToolChange)||0,
     };
     if(editId){
       const ok=await window.DB.updateDoc("entries",editId,entry);
@@ -1021,6 +1041,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
       selectedOrder,
       correct:String(entry.correct??""),
       wrong:String(entry.wrong??0),
+      machineToolChange:String(entry.machineToolChange??0),
+      orderToolChange:String(entry.orderToolChange??0),
     });
   }
 
@@ -1096,6 +1118,10 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
         <div style={{flex:1}}><span style={labelSt}>✅ Doğru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={form.correct} onChange={e=>fv("correct",e.target.value)}/></div>
         <div style={{flex:1}}><span style={labelSt}>❌ Hatalı Adet</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={form.wrong} onChange={e=>fv("wrong",e.target.value)}/></div>
       </div>
+      <div style={{display:"flex",gap:10}}>
+        <div style={{flex:1}}><span style={labelSt}>Tezgah Takım Değişimi</span><input style={inputSt} type="number" min="0" placeholder="0" value={form.machineToolChange} onChange={e=>fv("machineToolChange",e.target.value)}/></div>
+        <div style={{flex:1}}><span style={labelSt}>İş Emri Takım Değişimi</span><input style={inputSt} type="number" min="0" placeholder="0" value={form.orderToolChange} onChange={e=>fv("orderToolChange",e.target.value)}/></div>
+      </div>
       <button onClick={submit} style={{...btnSt(saved?"green":"primary"),width:"100%",padding:14,fontSize:15}}>{saved?"Kaydedildi!":editId?"Güncellemeyi Kaydet":"Kaydet"}</button>
       {todayEntries.length>0&&(
         <div>
@@ -1112,6 +1138,10 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
                   <span style={{color:C.green,fontWeight:600}}>✅ {e.correct}</span>
                   <span style={{color:C.red,fontWeight:600}}>❌ {e.wrong}</span>
                   {p&&<span style={{color:C.muted2}}>Maks/gün: {p.max}</span>}
+                </div>
+                <div style={{display:"flex",gap:8,marginTop:7,fontSize:12,color:C.muted2,flexWrap:"wrap"}}>
+                  <Badge label={"Tezgah Takım: "+(Number(e.machineToolChange)||0)} color={C.warn}/>
+                  <Badge label={"İş Emri Takım: "+(Number(e.orderToolChange)||0)} color={C.accent}/>
                 </div>
                 <div style={{marginTop:8,display:"flex",gap:8}}>
                   <button onClick={()=>startEdit(e)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Düzenle</button>
