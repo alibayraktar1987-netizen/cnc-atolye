@@ -906,11 +906,41 @@ function Customers() {
 }
 
 function MaterialLibrary() {
+  const DEFAULT_MATERIALS = [
+    {name:"Demir",density:7.87},
+    {name:"SS 303",density:7.93},
+    {name:"SS 304",density:8.00},
+    {name:"SS 316/321",density:8.00},
+    {name:"SS 420",density:7.75},
+    {name:"SS 410/430",density:7.75},
+    {name:"AL 7075",density:2.81},
+    {name:"Pirinç",density:8.50},
+    {name:"Bronz",density:8.80},
+    {name:"Bakır",density:8.96},
+    {name:"Titanyum",density:4.51},
+    {name:"50CrV4",density:7.85},
+    {name:"4340",density:7.85},
+    {name:"4140 - 42CrMo4",density:7.85},
+    {name:"C45",density:7.85},
+    {name:"45NiCrMo16",density:7.85},
+    {name:"41Cr4",density:7.85},
+    {name:"100Cr6",density:7.81},
+    {name:"POM ACETAL",density:1.41},
+    {name:"14NiCr14",density:7.85},
+    {name:"CK75",density:7.85},
+    {name:"CK45",density:7.85},
+    {name:"18NiCrMo5",density:7.85},
+    {name:"CK67",density:7.85},
+    {name:"8620",density:7.85},
+    {name:"OTOMAT - 1045",density:7.85},
+    {name:"OTOMAT - 1010 - C15",density:7.85},
+  ];
   const [materials,setMaterials]=useState([]);
   const [loading,setLoading]=useState(true);
   const [editId,setEditId]=useState(null);
   const [search,setSearch]=useState("");
-  const [form,setForm]=useState({name:"",code:"",note:""});
+  const [seedChecked,setSeedChecked]=useState(false);
+  const [form,setForm]=useState({name:"",code:"",density:"",note:""});
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
   const nextMaterialCode=useCallback((list=materials)=>{
     const nums=list.map(m=>{
@@ -935,9 +965,11 @@ function MaterialLibrary() {
   async function saveMaterial(){
     if(!form.name.trim()){alert("Malzeme adı zorunlu.");return;}
     const finalCode=editId?(form.code||nextMaterialCode()):nextMaterialCode();
+    const densityVal=Number(String(form.density).replace(",","."));
     const payload={
       name:form.name.trim(),
       code:String(finalCode).toUpperCase(),
+      density:densityVal>0?densityVal:0,
       note:form.note.trim(),
       updatedAt:new Date().toISOString(),
     };
@@ -946,14 +978,14 @@ function MaterialLibrary() {
       if(!ok){alert("Malzeme güncellenemedi.");return;}
       setMaterials(prev=>prev.map(x=>x.id===editId?{...x,...payload}:x).sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
       setEditId(null);
-      setForm({name:"",code:nextMaterialCode(),note:""});
+      setForm({name:"",code:nextMaterialCode(),density:"",note:""});
       return;
     }
     const id=await window.DB.addDoc("materials",payload);
     if(!id){alert("Malzeme kaydedilemedi.");return;}
     const nextList=[{id,...payload,createdAt:new Date().toISOString()},...materials];
     setMaterials(nextList.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
-    setForm({name:"",code:nextMaterialCode(nextList),note:""});
+    setForm({name:"",code:nextMaterialCode(nextList),density:"",note:""});
   }
 
   async function removeMaterial(m){
@@ -963,9 +995,42 @@ function MaterialLibrary() {
     setMaterials(prev=>prev.filter(x=>x.id!==m.id));
     if(editId===m.id){
       setEditId(null);
-      setForm({name:"",code:nextMaterialCode(materials.filter(x=>x.id!==m.id)),note:""});
+      setForm({name:"",code:nextMaterialCode(materials.filter(x=>x.id!==m.id)),density:"",note:""});
     }
   }
+  async function seedDefaultMaterials(showMessage=true){
+    const existing=await window.DB.getAll("materials");
+    const exists=new Set(existing.map(x=>String(x.name||"").trim().toLowerCase()));
+    const work=[...existing];
+    let added=0;
+    for(const item of DEFAULT_MATERIALS){
+      const key=String(item.name||"").trim().toLowerCase();
+      if(!key||exists.has(key)) continue;
+      const payload={
+        name:item.name,
+        code:nextMaterialCode(work),
+        density:Number(item.density)||0,
+        note:"",
+        updatedAt:new Date().toISOString(),
+        createdBy:"seed",
+      };
+      const id=await window.DB.addDoc("materials",payload);
+      if(id){
+        work.unshift({id,...payload,createdAt:new Date().toISOString()});
+        exists.add(key);
+        added++;
+      }
+    }
+    if(added===0){if(showMessage) alert("Listedeki malzemeler zaten ekli.");return;}
+    setMaterials(work.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    setForm(prev=>({...prev,code:nextMaterialCode(work)}));
+    if(showMessage) alert(`${added} malzeme eklendi.`);
+  }
+  useEffect(()=>{
+    if(loading||seedChecked) return;
+    setSeedChecked(true);
+    seedDefaultMaterials(false);
+  },[loading,seedChecked]);
 
   const q=search.trim().toLowerCase();
   const filtered=materials.filter(m=>{
@@ -982,11 +1047,15 @@ function MaterialLibrary() {
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <div style={{fontWeight:700,color:C.text}}>Malzeme Kutuphanesi</div>
-          {editId&&<Badge label="Duzenleme" color={C.warn}/>}
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {editId&&<Badge label="Duzenleme" color={C.warn}/>}
+            <button onClick={seedDefaultMaterials} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Hazir Listeyi Ekle</button>
+          </div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
           <div><span style={labelSt}>Malzeme Adi *</span><input style={inputSt} value={form.name} onChange={e=>fv("name",e.target.value)} placeholder="AISI 304"/></div>
           <div><span style={labelSt}>Kod (Otomatik)</span><input style={{...inputSt,background:C.surface,color:C.muted2}} value={form.code||nextMaterialCode()} readOnly/></div>
+          <div><span style={labelSt}>Ozgul Agirlik (g/cm3)</span><input style={inputSt} type="number" step="0.001" min="0" value={form.density} onChange={e=>fv("density",e.target.value)} placeholder="7.850"/></div>
         </div>
         <div style={{marginTop:8}}>
           <span style={labelSt}>Not</span>
@@ -994,7 +1063,7 @@ function MaterialLibrary() {
         </div>
         <div style={{display:"flex",gap:8,marginTop:10}}>
           <button onClick={saveMaterial} style={{...btnSt("primary"),flex:1,padding:12}}>{editId?"Malzemeyi Guncelle":"Malzeme Kaydet"}</button>
-          {editId&&<button onClick={()=>{setEditId(null);setForm({name:"",code:nextMaterialCode(),note:""});}} style={{...btnSt("ghost"),padding:"12px 14px"}}>Iptal</button>}
+          {editId&&<button onClick={()=>{setEditId(null);setForm({name:"",code:nextMaterialCode(),density:"",note:""});}} style={{...btnSt("ghost"),padding:"12px 14px"}}>Iptal</button>}
         </div>
       </div>
 
@@ -1009,10 +1078,10 @@ function MaterialLibrary() {
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
             <div>
               <div style={{fontWeight:700,color:C.text,fontSize:14}}>{m.name}</div>
-              <div style={{fontSize:12,color:C.muted2,marginTop:2}}>{m.code||"-"}</div>
+              <div style={{fontSize:12,color:C.muted2,marginTop:2}}>{m.code||"-"}{Number(m.density)>0?` · ${Number(m.density).toFixed(3)} g/cm3`:""}</div>
             </div>
             <div style={{display:"flex",gap:7}}>
-              <button onClick={()=>{setEditId(m.id);setForm({name:m.name||"",code:m.code||"",note:m.note||""});}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
+              <button onClick={()=>{setEditId(m.id);setForm({name:m.name||"",code:m.code||"",density:String(m.density??""),note:m.note||""});}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
               <button onClick={()=>removeMaterial(m)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
             </div>
           </div>
