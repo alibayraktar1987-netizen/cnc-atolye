@@ -2676,13 +2676,15 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   }
 
   function startEdit(plan){
-    setEditId(plan.id);
+    const seg=(plan&&plan.plans&&plan.plans.length)?plan:findSegmentForPlan(plan);
+    const firstPlan=(seg&&seg.plans&&seg.plans.length)?seg.plans[0]:plan;
+    setEditId(firstPlan?.id||null);
     setForm({
-      startDate:plan.date||todayStr(),
-      endDate:plan.date||todayStr(),
-      machine:plan.machine||machines[0]||"CNC-1",
-      orderId:plan.orderId||"",
-      note:plan.note||"",
+      startDate:seg?.startDate||firstPlan?.date||todayStr(),
+      endDate:seg?.endDate||firstPlan?.date||todayStr(),
+      machine:firstPlan?.machine||machines[0]||"CNC-1",
+      orderId:firstPlan?.orderId||"",
+      note:firstPlan?.note||"",
     });
   }
 
