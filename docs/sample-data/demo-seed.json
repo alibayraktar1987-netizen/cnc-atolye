@@ -1,0 +1,67 @@
+{
+  "items": [
+    {
+      "id": "itm_001",
+      "code": "PRD-001",
+      "name": "Flans Govde",
+      "itemType": "finished",
+      "uom": "adet",
+      "safetyStock": 20,
+      "reorderPoint": 50,
+      "standardCost": 120.5
+    },
+    {
+      "id": "itm_002",
+      "code": "RAW-001",
+      "name": "AISI 304 Cubuk",
+      "itemType": "raw_material",
+      "uom": "kg",
+      "safetyStock": 100,
+      "reorderPoint": 250,
+      "standardCost": 3.4
+    }
+  ],
+  "suppliers": [
+    {
+      "id": "sup_001",
+      "code": "SUP-ANK-01",
+      "name": "Anadolu Metal",
+      "leadTimeDays": 7,
+      "email": "satinalma@anadolumetal.example"
+    }
+  ],
+  "boms": [
+    {
+      "id": "bom_001",
+      "parentItemId": "itm_001",
+      "revision": "A",
+      "status": "active"
+    }
+  ],
+  "bomLines": [
+    {
+      "id": "boml_001",
+      "bomId": "bom_001",
+      "componentItemId": "itm_002",
+      "qtyPer": 1.2,
+      "scrapPct": 2
+    }
+  ],
+  "workCenters": [
+    {
+      "id": "wc_001",
+      "code": "CNC-1",
+      "name": "CNC Torna 1",
+      "capacityPerShiftMin": 480
+    }
+  ],
+  "mpsBuckets": [
+    {
+      "id": "mps_001",
+      "itemId": "itm_001",
+      "bucketDate": "2026-03-01",
+      "plannedQty": 300
+    }
+  ]
+}
+

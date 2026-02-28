@@ -1,0 +1,265 @@
+openapi: 3.1.0
+info:
+  title: CNC Atolye API
+  version: 0.1.0
+  description: >
+    BOM, MPS, MRP, stok, satin alma ve is emri modulleri icin referans API.
+servers:
+  - url: https://api.example.com
+    description: Production placeholder
+  - url: http://localhost:3000
+    description: Local
+security:
+  - bearerAuth: []
+tags:
+  - name: BOM
+  - name: MPS
+  - name: MRP
+  - name: Inventory
+  - name: Purchasing
+  - name: Work Orders
+  - name: Reports
+  - name: Audit
+paths:
+  /api/boms:
+    get:
+      tags: [BOM]
+      summary: List BOM headers
+      responses:
+        '200':
+          description: BOM list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BomHeader'
+    post:
+      tags: [BOM]
+      summary: Create BOM header
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BomHeader'
+      responses:
+        '201':
+          description: Created
+  /api/boms/{bomId}/lines:
+    parameters:
+      - $ref: '#/components/parameters/BomId'
+    get:
+      tags: [BOM]
+      summary: Get BOM lines
+      responses:
+        '200':
+          description: BOM lines
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BomLine'
+    post:
+      tags: [BOM]
+      summary: Add BOM line
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BomLine'
+      responses:
+        '201':
+          description: Created
+  /api/mps/buckets:
+    get:
+      tags: [MPS]
+      summary: List MPS buckets
+      responses:
+        '200':
+          description: MPS bucket list
+    post:
+      tags: [MPS]
+      summary: Create or update MPS bucket
+      responses:
+        '200':
+          description: Upserted
+  /api/mrp/runs:
+    post:
+      tags: [MRP]
+      summary: Start MRP run
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MrpRunRequest'
+      responses:
+        '202':
+          description: Run accepted
+    get:
+      tags: [MRP]
+      summary: List MRP runs
+      responses:
+        '200':
+          description: Runs
+  /api/mrp/runs/{runId}/results:
+    parameters:
+      - $ref: '#/components/parameters/RunId'
+    get:
+      tags: [MRP]
+      summary: Get MRP run results
+      responses:
+        '200':
+          description: Results
+  /api/inventory/items:
+    get:
+      tags: [Inventory]
+      summary: List inventory items
+      responses:
+        '200':
+          description: Items
+  /api/inventory/movements:
+    post:
+      tags: [Inventory]
+      summary: Post inventory movement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryMovement'
+      responses:
+        '201':
+          description: Movement posted
+  /api/purchase/recommendations:
+    get:
+      tags: [Purchasing]
+      summary: List purchasing recommendations
+      responses:
+        '200':
+          description: Recommendations
+  /api/work-orders:
+    get:
+      tags: [Work Orders]
+      summary: List work orders
+      responses:
+        '200':
+          description: Work orders
+    post:
+      tags: [Work Orders]
+      summary: Create work order
+      responses:
+        '201':
+          description: Created
+  /api/reports/material-requirements:
+    get:
+      tags: [Reports]
+      summary: Material requirements report
+      responses:
+        '200':
+          description: Report output
+  /api/reports/stock-aging:
+    get:
+      tags: [Reports]
+      summary: Stock aging report
+      responses:
+        '200':
+          description: Report output
+  /api/reports/production-kpis:
+    get:
+      tags: [Reports]
+      summary: Production KPI report
+      responses:
+        '200':
+          description: KPI output
+  /api/audit-logs:
+    get:
+      tags: [Audit]
+      summary: Query audit logs
+      responses:
+        '200':
+          description: Audit log list
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    BomId:
+      in: path
+      name: bomId
+      required: true
+      schema:
+        type: string
+    RunId:
+      in: path
+      name: runId
+      required: true
+      schema:
+        type: string
+  schemas:
+    BomHeader:
+      type: object
+      required: [parentItemId, revision]
+      properties:
+        id:
+          type: string
+        parentItemId:
+          type: string
+        revision:
+          type: string
+        status:
+          type: string
+          enum: [draft, active, obsolete]
+    BomLine:
+      type: object
+      required: [componentItemId, qtyPer]
+      properties:
+        id:
+          type: string
+        componentItemId:
+          type: string
+        qtyPer:
+          type: number
+        scrapPct:
+          type: number
+        sequence:
+          type: integer
+    MrpRunRequest:
+      type: object
+      required: [horizonStart, horizonEnd]
+      properties:
+        horizonStart:
+          type: string
+          format: date
+        horizonEnd:
+          type: string
+          format: date
+        itemIds:
+          type: array
+          items:
+            type: string
+    InventoryMovement:
+      type: object
+      required: [itemId, movementType, qty]
+      properties:
+        itemId:
+          type: string
+        movementType:
+          type: string
+          enum: [receipt, issue, transfer, adjust]
+        qty:
+          type: number
+        lotId:
+          type: string
+        serialId:
+          type: string
+        refType:
+          type: string
+        refId:
+          type: string
+
