@@ -2132,7 +2132,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
           <span style={labelSt}>Ä°ÅŸ Emri</span>
           <select value={form.orderId} onChange={e=>fv("orderId",e.target.value)} style={inputSt}>
             <option value="">Ä°ÅŸ emri seÃ§in...</option>
-            {orders.map(o=><option key={o.id} value={o.id}>{o.code} - {o.name} ({(o.machines||[]).join(", ")})</option>)}
+            {orders.map(o=><option key={o.id} value={o.id}>{o.code} - {o.name}{o.customerName?` - ${o.customerName}`:""} ({(o.machines||[]).join(", ")})</option>)}
           </select>
           {selectedOrder&&<div style={{fontSize:12,color:C.muted2,marginTop:6}}>ParÃ§a sÃ¼resi: {fmtSec(selectedOrder.partSec)} Â· Maks/gÃ¼n: {selectedOrder.partSec?Math.floor(EFFECTIVE_SECONDS/selectedOrder.partSec):"-"}</div>}
         </div>
@@ -2245,12 +2245,12 @@ function App() {
   const canTools=true;
 
   const tabs=[
-    ...(canEntry?[{id:"giris",icon:"??",label:"Giriþ"}]:[]),
+    ...(canEntry?[{id:"giris",icon:"??",label:"Giriï¿½"}]:[]),
     ...(canPlanning?[{id:"planning",icon:"??",label:"Planlama"}]:[]),
-    ...(canCustomers?[{id:"customers",icon:"??",label:"Müþteriler"}]:[]),
+    ...(canCustomers?[{id:"customers",icon:"CU",label:"Musteriler"}]:[]),
     ...(canReport?[{id:"rapor",icon:"??",label:"Rapor"}]:[]),
-    ...(canTools?[{id:"tools",icon:"??",label:"Takým Stoðu"}]:[]),
-    ...(canOrders?[{id:"orders",icon:"??",label:"Ýþ Emirleri"}]:[]),
+    ...(canTools?[{id:"tools",icon:"??",label:"Takï¿½m Stoï¿½u"}]:[]),
+    ...(canOrders?[{id:"orders",icon:"??",label:"ï¿½ï¿½ Emirleri"}]:[]),
     ...(canUsers?[{id:"users",icon:"??",label:"Ayarlar"}]:[]),
   ];
 
