@@ -961,6 +961,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
 // ════════════════════════════════════════════════════════════
 function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
   const [orders,setOrders]=useState([]);
+  const [tools,setTools]=useState([]);
   const [todayEntries,setTodayEntries]=useState([]);
   const [saved,setSaved]=useState(false);
   const [search,setSearch]=useState("");
@@ -973,17 +974,78 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
     selectedOrder:null,
     correct:"",
     wrong:"",
-    machineToolChange:"",
-    orderToolChange:"",
+    machineToolId:"",
+    machineToolQty:"1",
+    orderToolId:"",
+    orderToolQty:"1",
   });
 
   useEffect(()=>{
     window.DB.getAll("orders").then(o=>setOrders(o.filter(x=>x.status==="active")));
+    window.DB.getAll("tools").then(t=>setTools(t));
+  },[]);
+
+  useEffect(()=>{
     window.DB.getAll("entries").then(e=>setTodayEntries(e.filter(x=>x.date===form.entryDate&&x.operatorId===currentUser.id)));
   },[currentUser.id,form.entryDate]);
 
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
   const filtered=orders.filter(o=>o.code.toLowerCase().includes(search.toLowerCase())||o.name.toLowerCase().includes(search.toLowerCase()));
+  const toolOptions=[...tools].sort((a,b)=>(a.code||"").localeCompare(b.code||""));
+  const addUsage=(map,id,qty)=>{
+    if(!id) return;
+    const q=Number(qty)||0;
+    if(q<=0) return;
+    map.set(id,(map.get(id)||0)+q);
+  };
+  const getUsageMap=entry=>{
+    const map=new Map();
+    if(!entry) return map;
+    addUsage(map,entry.machineToolId,entry.machineToolQty??entry.machineToolChange??0);
+    addUsage(map,entry.orderToolId,entry.orderToolQty??entry.orderToolChange??0);
+    return map;
+  };
+  const getDeltaMap=(prevEntry,nextEntry)=>{
+    const delta=new Map();
+    getUsageMap(prevEntry).forEach((qty,id)=>delta.set(id,(delta.get(id)||0)+qty));
+    getUsageMap(nextEntry).forEach((qty,id)=>delta.set(id,(delta.get(id)||0)-qty));
+    return delta;
+  };
+  const invertDeltaMap=delta=>{
+    const inv=new Map();
+    delta.forEach((d,id)=>inv.set(id,-d));
+    return inv;
+  };
+  async function applyToolStockDelta(delta){
+    const changes=[...delta.entries()].filter(([,d])=>d!==0);
+    if(changes.length===0) return true;
+    for(const [id,d] of changes){
+      const tool=tools.find(t=>t.id===id);
+      if(!tool){
+        alert("Seçili takım stokta bulunamadı. Lütfen tekrar seçin.");
+        return false;
+      }
+      const nextQty=(Number(tool.qty)||0)+d;
+      if(nextQty<0){
+        alert(`Yetersiz stok: ${tool.code||tool.name||"Takım"}`);
+        return false;
+      }
+    }
+    for(const [id,d] of changes){
+      const tool=tools.find(t=>t.id===id);
+      const nextQty=(Number(tool.qty)||0)+d;
+      const ok=await window.DB.updateDoc("tools",id,{qty:nextQty,updatedAt:new Date().toISOString()});
+      if(!ok){
+        alert("Takım stoğu güncellenemedi.");
+        return false;
+      }
+    }
+    setTools(prev=>prev.map(t=>{
+      const d=delta.get(t.id)||0;
+      return d===0?t:{...t,qty:(Number(t.qty)||0)+d};
+    }));
+    return true;
+  }
   const selectedDateObj=parseYmdLocal(form.entryDate);
   const selectedDateLabel=new Intl.DateTimeFormat("tr-TR",{weekday:"long",day:"2-digit",month:"long",year:"numeric"}).format(selectedDateObj);
   const resetEntryForm=()=>setForm(p=>({
@@ -993,13 +1055,19 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
     selectedOrder:null,
     correct:"",
     wrong:"",
-    machineToolChange:"",
-    orderToolChange:"",
+    machineToolId:"",
+    machineToolQty:"1",
+    orderToolId:"",
+    orderToolQty:"1",
   }));
 
   async function submit() {
     if(!form.selectedOrder){alert("İş emri seçin!");return;}
     if(!form.correct){alert("Doğru adet zorunlu!");return;}
+    const machineTool=tools.find(t=>t.id===form.machineToolId);
+    const orderTool=tools.find(t=>t.id===form.orderToolId);
+    const machineToolQty=form.machineToolId?Math.max(1,Number(form.machineToolQty)||1):0;
+    const orderToolQty=form.orderToolId?Math.max(1,Number(form.orderToolQty)||1):0;
     const d=parseYmdLocal(form.entryDate);
     const entry={
       date:ymdLocal(d), week:weekStart(d), month:monthStr(d),
@@ -1008,9 +1076,21 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
       jobCode:form.selectedOrder.code, jobName:form.selectedOrder.name,
       partSec:Number(form.selectedOrder.partSec),
       correct:Number(form.correct), wrong:Number(form.wrong)||0,
-      machineToolChange:Number(form.machineToolChange)||0,
-      orderToolChange:Number(form.orderToolChange)||0,
+      machineToolId:machineTool?.id||"",
+      machineToolCode:machineTool?.code||"",
+      machineToolName:machineTool?.name||"",
+      machineToolQty,
+      machineToolChange:machineToolQty,
+      orderToolId:orderTool?.id||"",
+      orderToolCode:orderTool?.code||"",
+      orderToolName:orderTool?.name||"",
+      orderToolQty,
+      orderToolChange:orderToolQty,
     };
+    const prevEntry=editId?todayEntries.find(x=>x.id===editId):null;
+    const stockDelta=getDeltaMap(prevEntry,entry);
+    const stockOk=await applyToolStockDelta(stockDelta);
+    if(!stockOk) return;
     if(editId){
       const ok=await window.DB.updateDoc("entries",editId,entry);
       if(ok){
@@ -1018,6 +1098,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
         setEditId(null);
         setSaved(true); setTimeout(()=>setSaved(false),2000);
         resetEntryForm();
+      }else{
+        await applyToolStockDelta(invertDeltaMap(stockDelta));
       }
       return;
     }
@@ -1026,6 +1108,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
       setTodayEntries(e=>[{id,...entry},...e]);
       setSaved(true); setTimeout(()=>setSaved(false),2000);
       resetEntryForm();
+    }else{
+      await applyToolStockDelta(invertDeltaMap(stockDelta));
     }
   }
 
@@ -1041,15 +1125,23 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
       selectedOrder,
       correct:String(entry.correct??""),
       wrong:String(entry.wrong??0),
-      machineToolChange:String(entry.machineToolChange??0),
-      orderToolChange:String(entry.orderToolChange??0),
+      machineToolId:entry.machineToolId||"",
+      machineToolQty:String(entry.machineToolQty??entry.machineToolChange??1),
+      orderToolId:entry.orderToolId||"",
+      orderToolQty:String(entry.orderToolQty??entry.orderToolChange??1),
     });
   }
 
   async function removeEntry(entry){
     if(!confirm(`Bu girisi silmek istiyor musunuz? (${entry.jobCode})`)) return;
+    const stockDelta=getDeltaMap(entry,null);
+    const stockOk=await applyToolStockDelta(stockDelta);
+    if(!stockOk) return;
     const ok=await window.DB.deleteDoc("entries",entry.id);
-    if(!ok) return;
+    if(!ok){
+      await applyToolStockDelta(invertDeltaMap(stockDelta));
+      return;
+    }
     setTodayEntries(e=>e.filter(x=>x.id!==entry.id));
     if(editId===entry.id){
       setEditId(null);
@@ -1119,15 +1211,36 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
         <div style={{flex:1}}><span style={labelSt}>❌ Hatalı Adet</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={form.wrong} onChange={e=>fv("wrong",e.target.value)}/></div>
       </div>
       <div style={{display:"flex",gap:10}}>
-        <div style={{flex:1}}><span style={labelSt}>Tezgah Takım Değişimi</span><input style={inputSt} type="number" min="0" placeholder="0" value={form.machineToolChange} onChange={e=>fv("machineToolChange",e.target.value)}/></div>
-        <div style={{flex:1}}><span style={labelSt}>İş Emri Takım Değişimi</span><input style={inputSt} type="number" min="0" placeholder="0" value={form.orderToolChange} onChange={e=>fv("orderToolChange",e.target.value)}/></div>
+        <div style={{flex:1}}>
+          <span style={labelSt}>Tezgah Takım Değişimi</span>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 95px",gap:8}}>
+            <select style={inputSt} value={form.machineToolId} onChange={e=>fv("machineToolId",e.target.value)}>
+              <option value="">Takım seç (opsiyonel)</option>
+              {toolOptions.map(t=><option key={t.id} value={t.id}>{t.code} - {t.name} (Stok: {Number(t.qty)||0})</option>)}
+            </select>
+            <input style={inputSt} type="number" min="1" placeholder="Adet" disabled={!form.machineToolId} value={form.machineToolQty} onChange={e=>fv("machineToolQty",e.target.value)}/>
+          </div>
+        </div>
+        <div style={{flex:1}}>
+          <span style={labelSt}>İş Emri Takım Değişimi</span>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 95px",gap:8}}>
+            <select style={inputSt} value={form.orderToolId} onChange={e=>fv("orderToolId",e.target.value)}>
+              <option value="">Takım seç (opsiyonel)</option>
+              {toolOptions.map(t=><option key={t.id} value={t.id}>{t.code} - {t.name} (Stok: {Number(t.qty)||0})</option>)}
+            </select>
+            <input style={inputSt} type="number" min="1" placeholder="Adet" disabled={!form.orderToolId} value={form.orderToolQty} onChange={e=>fv("orderToolQty",e.target.value)}/>
+          </div>
+        </div>
       </div>
+      {tools.length===0&&<div style={{fontSize:12,color:C.warn}}>Takım stoğunda kayıt yok. Önce Takım Stoğu ekranından takım ekleyin.</div>}
       <button onClick={submit} style={{...btnSt(saved?"green":"primary"),width:"100%",padding:14,fontSize:15}}>{saved?"Kaydedildi!":editId?"Güncellemeyi Kaydet":"Kaydet"}</button>
       {todayEntries.length>0&&(
         <div>
           <span style={{...labelSt,marginTop:4}}>Seçili Gün Girişlerim</span>
           {todayEntries.slice(0,5).map(e=>{
             const p=calcPerf(e.correct,e.wrong,e.partSec);
+            const machineToolQty=Number(e.machineToolQty??e.machineToolChange??0);
+            const orderToolQty=Number(e.orderToolQty??e.orderToolChange??0);
             return (
               <div key={e.id} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",marginBottom:8}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -1139,10 +1252,10 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
                   <span style={{color:C.red,fontWeight:600}}>❌ {e.wrong}</span>
                   {p&&<span style={{color:C.muted2}}>Maks/gün: {p.max}</span>}
                 </div>
-                <div style={{display:"flex",gap:8,marginTop:7,fontSize:12,color:C.muted2,flexWrap:"wrap"}}>
-                  <Badge label={"Tezgah Takım: "+(Number(e.machineToolChange)||0)} color={C.warn}/>
-                  <Badge label={"İş Emri Takım: "+(Number(e.orderToolChange)||0)} color={C.accent}/>
-                </div>
+                {(machineToolQty>0||orderToolQty>0)&&<div style={{display:"flex",gap:8,marginTop:7,fontSize:12,color:C.muted2,flexWrap:"wrap"}}>
+                  {machineToolQty>0&&<Badge label={"Tezgah: "+((e.machineToolCode||e.machineToolName)?`${e.machineToolCode||e.machineToolName} x${machineToolQty}`:`${machineToolQty}`)} color={C.warn}/>}
+                  {orderToolQty>0&&<Badge label={"İş Emri: "+((e.orderToolCode||e.orderToolName)?`${e.orderToolCode||e.orderToolName} x${orderToolQty}`:`${orderToolQty}`)} color={C.accent}/>}
+                </div>}
                 <div style={{marginTop:8,display:"flex",gap:8}}>
                   <button onClick={()=>startEdit(e)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Düzenle</button>
                   <button onClick={()=>removeEntry(e)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
