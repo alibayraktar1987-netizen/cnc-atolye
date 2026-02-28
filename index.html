@@ -1920,22 +1920,22 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
         {monthOrders.length>0&&<div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:10}}>
           {monthOrders.map(o=><span key={o.id} style={{display:"inline-flex",alignItems:"center",gap:6,background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px",fontSize:11,color:C.muted2}}><span style={{width:10,height:10,borderRadius:3,background:o.color,display:"inline-block"}}/>{o.code||"İş Emri"}</span>)}
         </div>}
-        <div style={{overflowX:"auto"}} ref={ganttRef}>
-          <div style={{minWidth:Math.max(760,140+ganttDays.length*28)}}>
-            <div style={{display:"grid",gridTemplateColumns:`140px repeat(${ganttDays.length}, 28px)`,gap:4,alignItems:"center",marginBottom:6}}>
-              <div style={{fontSize:11,color:C.muted2,fontWeight:700,textTransform:"uppercase",letterSpacing:.7}}>Tezgah</div>
+        <div style={{overflowX:"hidden"}} ref={ganttRef}>
+          <div>
+            <div style={{display:"grid",gridTemplateColumns:`92px repeat(${ganttDays.length}, minmax(0,1fr))`,columnGap:1,rowGap:2,alignItems:"center",marginBottom:6}}>
+              <div style={{fontSize:10,color:C.muted2,fontWeight:700,textTransform:"uppercase",letterSpacing:.6}}>Tezgah</div>
               {ganttDays.map((d,i)=>{
                 const wd=parseYmdLocal(d).getDay();
                 const weekend=wd===0||wd===6;
-                return <div key={d} style={{fontSize:10,textAlign:"center",color:weekend?C.warn:C.muted2,opacity:weekend?0.95:0.85}}>{i+1}</div>;
+                return <div key={d} style={{fontSize:9,textAlign:"center",color:weekend?C.warn:C.muted2,opacity:weekend?0.95:0.85,lineHeight:1}}>{i+1}</div>;
               })}
             </div>
             {ganttRows.map(row=>(
-              <div key={row.machine} style={{display:"grid",gridTemplateColumns:`140px repeat(${ganttDays.length}, 28px)`,gap:4,alignItems:"center",marginBottom:5}}>
-                <div style={{fontSize:12,fontWeight:700,color:C.text,paddingRight:6}}>{row.machine}</div>
+              <div key={row.machine} style={{display:"grid",gridTemplateColumns:`92px repeat(${ganttDays.length}, minmax(0,1fr))`,columnGap:1,rowGap:2,alignItems:"center",marginBottom:4}}>
+                <div style={{fontSize:11,fontWeight:700,color:C.text,paddingRight:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{row.machine}</div>
                 {ganttDays.map(d=>{
                   const p=row.byDate[d];
-                  if(!p) return <div key={d} onDragOver={e=>e.preventDefault()} onDrop={async e=>{e.preventDefault();const id=e.dataTransfer.getData("text/plain")||dragPlanId;const plan=getPlanById(id);if(plan) await movePlan(plan,d,row.machine);setDragPlanId(null);}} style={{height:22,borderRadius:6,background:C.surface,border:`1px solid ${C.border}`}}/>;
+                  if(!p) return <div key={d} onDragOver={e=>e.preventDefault()} onDrop={async e=>{e.preventDefault();const id=e.dataTransfer.getData("text/plain")||dragPlanId;const plan=getPlanById(id);if(plan) await movePlan(plan,d,row.machine);setDragPlanId(null);}} style={{height:16,borderRadius:3,background:C.surface,border:`1px solid ${C.border}`}}/>;
                   const col=colorFromOrder(p.orderId||p.orderCode||p.orderName);
                   return <div
                     key={d}
@@ -1945,7 +1945,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                     onDragOver={e=>e.preventDefault()}
                     onDrop={async e=>{e.preventDefault();const id=e.dataTransfer.getData("text/plain")||dragPlanId;const plan=getPlanById(id);if(plan) await movePlan(plan,d,row.machine);setDragPlanId(null);}}
                     onClick={()=>setSelectedPlan(p)}
-                    style={{height:22,borderRadius:6,background:col,border:`1px solid ${col}99`,boxShadow:`inset 0 0 0 1px ${col}99`,cursor:"grab"}}
+                    style={{height:16,borderRadius:3,background:col,border:`1px solid ${col}99`,boxShadow:`inset 0 0 0 1px ${col}99`,cursor:"grab"}}
                   />;
                 })}
               </div>
