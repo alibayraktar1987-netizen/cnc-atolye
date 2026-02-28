@@ -5439,21 +5439,19 @@ function App() {
   }
   async function logout(){window.Session.clear();setCurrentUser(null);setTab("dashboard");}
 
-  if(loading) return <div style={{background:C.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12}}><div style={{width:40,height:40,border:`3px solid ${C.border}`,borderTop:`3px solid ${C.accent}`,borderRadius:"50%",animation:"spin 1s linear infinite"}}/><div style={{color:C.muted2,fontSize:13}}>Bağlanıyor...</div><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>;
-  if(!currentUser) return <AuthScreen onLogin={u=>setCurrentUser(u)} logoSrc={logoSrc}/>;
-
-  const isAdmin=currentUser.role==="admin";
-  const canEntry=hasPermission(currentUser,"data_entry");
-  const canReport=hasPermission(currentUser,"view_reports");
-  const canOrders=hasPermission(currentUser,"manage_orders")||isAdmin;
-  const canSales=hasPermission(currentUser,"manage_sales")||canOrders;
-  const canPurchasing=hasPermission(currentUser,"manage_purchasing")||canOrders;
-  const canQuality=hasPermission(currentUser,"manage_quality")||canOrders||canReport;
-  const canDowntime=hasPermission(currentUser,"manage_downtime")||canEntry||canReport;
-  const canNotifications=hasPermission(currentUser,"manage_notifications")||canReport;
+  const userForPerm=currentUser||{role:"viewer",permissions:[],fullName:""};
+  const isAdmin=userForPerm.role==="admin";
+  const canEntry=hasPermission(userForPerm,"data_entry");
+  const canReport=hasPermission(userForPerm,"view_reports");
+  const canOrders=hasPermission(userForPerm,"manage_orders")||isAdmin;
+  const canSales=hasPermission(userForPerm,"manage_sales")||canOrders;
+  const canPurchasing=hasPermission(userForPerm,"manage_purchasing")||canOrders;
+  const canQuality=hasPermission(userForPerm,"manage_quality")||canOrders||canReport;
+  const canDowntime=hasPermission(userForPerm,"manage_downtime")||canEntry||canReport;
+  const canNotifications=hasPermission(userForPerm,"manage_notifications")||canReport;
   const canPlanning=canOrders;
   const canCustomers=canOrders;
-  const canUsers=hasPermission(currentUser,"approve_users")||isAdmin;
+  const canUsers=hasPermission(userForPerm,"approve_users")||isAdmin;
   const canTools=canOrders||canPurchasing||canEntry;
   const canMachinePrep=canOrders;
   const MODE_GROUPS={
@@ -5505,7 +5503,7 @@ function App() {
   },[tabs]);
   const groupOrder=["Planlama","Operasyon","Tedarik ve Stok","Analiz ve Yonetim","Sistem"];
   const visibleGroups=groupOrder.filter(g=>groupedTabs[g]&&groupedTabs[g].length>0);
-  const currentRoleLabel=(USER_ROLES.find(r=>r.id===currentUser.role)||{label:currentUser.role||"-"}).label;
+  const currentRoleLabel=(USER_ROLES.find(r=>r.id===userForPerm.role)||{label:userForPerm.role||"-"}).label;
 
   useEffect(()=>{
     if(tabs.length===0) return;
@@ -5544,6 +5542,8 @@ function App() {
     if(tab==="integrations") return <IntegrationsReadinessModule/>;
     return <ModulePlaceholder title="Modul" desc="Secili modul tanimli degil." items={[]}/>;
   }
+  if(loading) return <div style={{background:C.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12}}><div style={{width:40,height:40,border:`3px solid ${C.border}`,borderTop:`3px solid ${C.accent}`,borderRadius:"50%",animation:"spin 1s linear infinite"}}/><div style={{color:C.muted2,fontSize:13}}>Bağlanıyor...</div><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>;
+  if(!currentUser) return <AuthScreen onLogin={u=>setCurrentUser(u)} logoSrc={logoSrc}/>;
   const activeView=getActiveView();
 
   const modeSwitch=(
