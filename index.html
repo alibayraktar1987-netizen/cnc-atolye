@@ -52,7 +52,18 @@ window.DB = {
 // ── SESSION ─────────────────────────────────────────────────
 window.Session = {
   get() { try { const s = localStorage.getItem("cnc_session"); return s ? JSON.parse(s) : null; } catch { return null; } },
-  set(u) { localStorage.setItem("cnc_session", JSON.stringify(u)); },
+  set(u) {
+    localStorage.setItem("cnc_session", JSON.stringify({
+      ...u,
+      createdAt:Date.now(),
+      touchedAt:Date.now(),
+    }));
+  },
+  touch() {
+    const curr=this.get();
+    if(!curr) return;
+    localStorage.setItem("cnc_session",JSON.stringify({...curr,touchedAt:Date.now()}));
+  },
   clear() { localStorage.removeItem("cnc_session"); }
 };
 
@@ -100,6 +111,16 @@ const PERMISSIONS = [
   { id:"manage_downtime", label:"Durus Yonetimi", icon:"⏱️", desc:"Durus nedeni ve kaydi girebilir" },
   { id:"manage_notifications", label:"Bildirim Kurallari", icon:"🔔", desc:"Uyari kurallari duzenleyebilir" },
 ];
+const ROLE_PERMISSION_DEFAULTS = {
+  admin: PERMISSIONS.map(p=>p.id),
+  sales:["manage_sales","view_reports"],
+  planner:["manage_orders","view_reports","manage_sales"],
+  purchasing:["manage_purchasing","view_reports"],
+  supervisor:["data_entry","view_reports","manage_downtime","manage_notifications"],
+  operator:["data_entry"],
+  quality:["manage_quality","view_reports"],
+  viewer:["view_reports"],
+};
 
 const C = {
   bg:"#0a0c12", surface:"#12151f", card:"#181b28", border:"#252837",
@@ -184,9 +205,11 @@ function fmtSec(s) {
   const m=Math.floor(s/60),sec=s%60;
   return m>0?(sec>0?m+"dk "+sec+"sn":m+"dk"):sec+"sn";
 }
+const moneyFmt = n => `${safeNum(n).toFixed(2)} TRY`;
 function hasPermission(user,perm) {
   if(user.role==="admin") return true;
-  return (user.permissions||[]).includes(perm);
+  const rolePerms=ROLE_PERMISSION_DEFAULTS[user.role]||[];
+  return (user.permissions||[]).includes(perm)||rolePerms.includes(perm);
 }
 function isOpenOrderStatus(status) {
   return !["completed","cancelled","passive","liquidation","shipped"].includes(status||"");
@@ -230,6 +253,41 @@ function getOrderStatusMeta(status) {
 }
 function getSalesStatusMeta(status) {
   return SALES_STATUS_OPTIONS.find(s=>s.id===status) || SALES_STATUS_OPTIONS.find(s=>s.id==="new");
+}
+function addDays(baseYmd,days){
+  const d=parseYmdLocal(baseYmd||todayStr());
+  d.setDate(d.getDate()+Number(days||0));
+  return ymdLocal(d);
+}
+function dayDiff(fromYmd,toYmd){
+  const a=parseYmdLocal(fromYmd||todayStr());
+  const b=parseYmdLocal(toYmd||todayStr());
+  return Math.floor((b-a)/86400000);
+}
+function startOfWeekYmd(s){
+  const d=parseYmdLocal(s||todayStr());
+  const day=d.getDay()||7;
+  d.setDate(d.getDate()-(day-1));
+  return ymdLocal(d);
+}
+function csvEscape(value){
+  const raw=String(value??"");
+  if(/[",\n;]/.test(raw)) return `"${raw.replace(/"/g,'""')}"`;
+  return raw;
+}
+function downloadCsv(filename,columns,rows){
+  const sep=";";
+  const header=columns.map(c=>csvEscape(c.label)).join(sep);
+  const body=rows.map(r=>columns.map(c=>csvEscape(typeof c.value==="function"?c.value(r):(r[c.key]??""))).join(sep)).join("\n");
+  const blob=new Blob([`\uFEFF${header}\n${body}`],{type:"text/csv;charset=utf-8;"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;
+  a.download=filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 // ── STYLE ATOMS ──────────────────────────────────────────────
@@ -277,6 +335,26 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC}) {
     setErr(""); setOk("");
   },[portal,mode]);
   useEffect(()=>{setLogoError(false);},[logoSrc]);
+  useEffect(()=>{
+    if(!currentUser) return;
+    const updateTouch=()=>window.Session.touch();
+    const evts=["click","keydown","mousemove","touchstart","scroll"];
+    evts.forEach(evt=>window.addEventListener(evt,updateTouch,{passive:true}));
+    const timer=setInterval(()=>{
+      const s=window.Session.get();
+      if(!s) return;
+      const idleMin=(Date.now()-Number(s.touchedAt||s.createdAt||Date.now()))/60000;
+      if(idleMin>=SESSION_TIMEOUT_MIN){
+        window.Session.clear();
+        setCurrentUser(null);
+        setTab("dashboard");
+      }
+    },15000);
+    return ()=>{
+      clearInterval(timer);
+      evts.forEach(evt=>window.removeEventListener(evt,updateTouch));
+    };
+  },[currentUser]);
 
   const loadAdminStats=useCallback(async()=>{
     setAdminStats(s=>({...s,loading:true}));
@@ -324,17 +402,21 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC}) {
     setErr(""); setOk("");
     if(!form.username||!form.password||!form.fullName){setErr("Tüm alanlar zorunlu.");return;}
     if(form.password!==form.confirm){setErr("Şifreler eşleşmiyor.");return;}
-    if(form.password.length<4){setErr("Şifre en az 4 karakter.");return;}
+    if(form.password.length<8){setErr("Sifre en az 8 karakter olmali.");return;}
+    if(!/[A-Z]/.test(form.password)||!/[a-z]/.test(form.password)||!/[0-9]/.test(form.password)){setErr("Sifre buyuk-kucuk harf ve rakam icermeli.");return;}
     setLoading(true);
     const key=form.username.toLowerCase().trim();
     const existing=await window.DB.getDoc("users",key);
     if(existing){setErr("Bu kullanıcı adı alınmış.");setLoading(false);return;}
     const allUsers=await window.DB.getAll("users");
     const isFirst=allUsers.length===0;
+    const role=isFirst?"admin":"operator";
     const saved=await window.DB.setDoc("users",key,{
       username:key, fullName:form.fullName, password:hashPass(form.password),
-      role:isFirst?"admin":"operator", status:isFirst?"active":"pending",
-      permissions:["data_entry","view_reports"]
+      role, status:isFirst?"active":"pending",
+      permissions:[...(ROLE_PERMISSION_DEFAULTS[role]||[])],
+      createdAt:new Date().toISOString(),
+      updatedAt:new Date().toISOString(),
     });
     if(!saved){setErr("Kullanici kaydi olusturulamadi. Veritabani yetkilerini (Firestore Rules) kontrol edin.");setLoading(false);return;}
     setOk(isFirst?"İlk kullanıcı → otomatik Yönetici! Giriş yapabilirsiniz.":"Kayıt başarılı! Yönetici onayını bekleyin.");
@@ -570,6 +652,15 @@ function AdminUsers({currentUser,machines,onMachinesUpdate,currentLogo,onLogoUpd
     if(idx>=0) perms.splice(idx,1); else perms.push(permId);
     await update(id,{permissions:perms});
   }
+  async function changeRole(user,newRole){
+    const patch={
+      role:newRole,
+      permissions:[...(ROLE_PERMISSION_DEFAULTS[newRole]||[])],
+      updatedAt:new Date().toISOString(),
+    };
+    await update(user.id,patch);
+  }
+  const roleLabel=roleId=>(USER_ROLES.find(r=>r.id===roleId)||{label:roleId||"-"}).label;
 
   const list=[...users].sort((a,b)=>{const o={pending:0,active:1,rejected:2};return(o[a.status]??3)-(o[b.status]??3);});
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
@@ -611,7 +702,7 @@ function AdminUsers({currentUser,machines,onMachinesUpdate,currentLogo,onLogoUpd
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
             <div><div style={{fontWeight:700,fontSize:14}}>{u.fullName}</div><div style={{color:C.muted2,fontSize:12,marginTop:1}}>@{u.username||u.id}</div></div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
-              <Badge label={u.role==="admin"?"Yönetici":"Operatör"} color={u.role==="admin"?C.accent:C.muted2}/>
+              <Badge label={u.role==="admin"?"Yönetici":roleLabel(u.role)} color={u.role==="admin"?C.accent:C.muted2}/>
               <Badge label={u.status==="active"?"Aktif":u.status==="pending"?"Bekliyor":"Askıda"} color={u.status==="active"?C.green:u.status==="pending"?C.warn:C.red}/>
             </div>
           </div>
@@ -619,11 +710,16 @@ function AdminUsers({currentUser,machines,onMachinesUpdate,currentLogo,onLogoUpd
             <>
               <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:8}}>
                 {u.status==="pending"&&<><button onClick={()=>update(u.id,{status:"active"})} style={{...btnSt("green"),padding:"7px 13px",fontSize:12}}>✓ Onayla</button><button onClick={()=>update(u.id,{status:"rejected"})} style={{...btnSt("danger"),padding:"7px 13px",fontSize:12}}>✕ Reddet</button></>}
-                {u.status==="active"&&<><button onClick={()=>update(u.id,{role:u.role==="admin"?"operator":"admin"})} style={{...btnSt(),padding:"7px 13px",fontSize:12}}>{u.role==="admin"?"👷 Operatör Yap":"👑 Yönetici Yap"}</button><button onClick={()=>update(u.id,{status:"rejected"})} style={{...btnSt("danger"),padding:"7px 13px",fontSize:12}}>Askıya Al</button></>}
+                {u.status==="active"&&<>
+                  <select value={u.role||"operator"} onChange={e=>changeRole(u,e.target.value)} style={{...inputSt,padding:"7px 10px",fontSize:12,maxWidth:190}}>
+                    {USER_ROLES.map(r=><option key={r.id} value={r.id}>{r.label}</option>)}
+                  </select>
+                  <button onClick={()=>update(u.id,{status:"rejected"})} style={{...btnSt("danger"),padding:"7px 13px",fontSize:12}}>Askıya Al</button>
+                </>}
                 {u.status==="rejected"&&<button onClick={()=>update(u.id,{status:"active"})} style={{...btnSt("green"),padding:"7px 13px",fontSize:12}}>Aktifleştir</button>}
-                {u.role==="operator"&&<button onClick={()=>setExpanded(expanded===u.id?null:u.id)} style={{...btnSt("ghost"),padding:"7px 13px",fontSize:12}}>{expanded===u.id?"▲ Gizle":"⚙️ Yetkiler"}</button>}
+                {u.role!=="admin"&&<button onClick={()=>setExpanded(expanded===u.id?null:u.id)} style={{...btnSt("ghost"),padding:"7px 13px",fontSize:12}}>{expanded===u.id?"▲ Gizle":"⚙️ Yetkiler"}</button>}
               </div>
-              {expanded===u.id&&u.role==="operator"&&(
+              {expanded===u.id&&u.role!=="admin"&&(
                 <div style={{background:C.surface,borderRadius:10,padding:12,border:`1px solid ${C.border}`}}>
                   <div style={{color:C.muted2,fontSize:11,letterSpacing:.8,textTransform:"uppercase",marginBottom:10,fontWeight:600}}>Kullanıcı Yetkileri</div>
                   {PERMISSIONS.map(p=>{
@@ -655,7 +751,7 @@ function ToolStock({currentUser}) {
   const [search,setSearch]=useState("");
   const [showForm,setShowForm]=useState(false);
   const [editId,setEditId]=useState(null);
-  const [form,setForm]=useState({code:"",name:"",category:"",qty:"",minQty:"",location:"",notes:""});
+  const [form,setForm]=useState({code:"",name:"",category:"",qty:"",minQty:"",location:"",geometry:"",toolMaterial:"",expectedLife:"",remainingLifePct:"100",assignedProgram:"",assignedWorkOrder:"",presetterOffset:"",notes:""});
   const [orders,setOrders]=useState([]);
   const [movements,setMovements]=useState([]);
   const [moveOpenId,setMoveOpenId]=useState(null);
@@ -674,7 +770,7 @@ function ToolStock({currentUser}) {
   },[]);
   useEffect(()=>{load();},[load]);
 
-  const resetForm=()=>setForm({code:"",name:"",category:"",qty:"",minQty:"",location:"",notes:""});
+  const resetForm=()=>setForm({code:"",name:"",category:"",qty:"",minQty:"",location:"",geometry:"",toolMaterial:"",expectedLife:"",remainingLifePct:"100",assignedProgram:"",assignedWorkOrder:"",presetterOffset:"",notes:""});
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
   const nextToolCode=useCallback((list=tools)=>{
     const nums=list.map(t=>{
@@ -694,6 +790,13 @@ function ToolStock({currentUser}) {
       qty:Number(form.qty)||0,
       minQty:Number(form.minQty)||0,
       location:form.location.trim(),
+      geometry:form.geometry.trim(),
+      toolMaterial:form.toolMaterial.trim(),
+      expectedLife:Math.max(0,Number(form.expectedLife)||0),
+      remainingLifePct:Math.max(0,Math.min(100,Number(form.remainingLifePct)||0)),
+      assignedProgram:form.assignedProgram.trim(),
+      assignedWorkOrder:form.assignedWorkOrder.trim(),
+      presetterOffset:form.presetterOffset.trim(),
       notes:form.notes.trim(),
       updatedAt:new Date().toISOString(),
     };
@@ -759,9 +862,12 @@ function ToolStock({currentUser}) {
     return (t.name||"").toLowerCase().includes(q)||
       (t.code||"").toLowerCase().includes(q)||
       (t.category||"").toLowerCase().includes(q)||
-      (t.location||"").toLowerCase().includes(q);
+      (t.location||"").toLowerCase().includes(q)||
+      (t.assignedProgram||"").toLowerCase().includes(q)||
+      (t.assignedWorkOrder||"").toLowerCase().includes(q);
   });
   const lowCount=tools.filter(t=>(Number(t.qty)||0)<=Math.max(Number(t.minQty)||0,0)).length;
+  const lowLifeCount=tools.filter(t=>Math.max(0,Number(t.remainingLifePct)||0)<=20).length;
   const stockedTools=[...tools].filter(t=>(Number(t.qty)||0)>0).sort((a,b)=>(Number(b.qty)||0)-(Number(a.qty)||0));
   const categoryOptions=(form.category&& !TOOL_CATEGORY_OPTIONS.includes(form.category))
     ? [...TOOL_CATEGORY_OPTIONS,form.category]
@@ -792,6 +898,13 @@ function ToolStock({currentUser}) {
             <div><span style={labelSt}>Stok Adedi</span><input style={inputSt} type="number" min="0" value={form.qty} onChange={e=>fv("qty",e.target.value)} placeholder="0"/></div>
             <div><span style={labelSt}>Minimum Adet</span><input style={inputSt} type="number" min="0" value={form.minQty} onChange={e=>fv("minQty",e.target.value)} placeholder="0"/></div>
             <div><span style={labelSt}>Konum</span><input style={inputSt} value={form.location} onChange={e=>fv("location",e.target.value)} placeholder="Raf A2"/></div>
+            <div><span style={labelSt}>Geometri</span><input style={inputSt} value={form.geometry} onChange={e=>fv("geometry",e.target.value)} placeholder="D12 L75"/></div>
+            <div><span style={labelSt}>Takim Malzemesi</span><input style={inputSt} value={form.toolMaterial} onChange={e=>fv("toolMaterial",e.target.value)} placeholder="Carbide / HSS"/></div>
+            <div><span style={labelSt}>Beklenen Omur (cevrim)</span><input style={inputSt} type="number" min="0" value={form.expectedLife} onChange={e=>fv("expectedLife",e.target.value)} placeholder="1200"/></div>
+            <div><span style={labelSt}>Kalan Omur %</span><input style={inputSt} type="number" min="0" max="100" value={form.remainingLifePct} onChange={e=>fv("remainingLifePct",e.target.value)} placeholder="100"/></div>
+            <div><span style={labelSt}>Atanmis NC Program</span><input style={inputSt} value={form.assignedProgram} onChange={e=>fv("assignedProgram",e.target.value)} placeholder="O2345"/></div>
+            <div><span style={labelSt}>Atanmis Is Emri</span><input style={inputSt} value={form.assignedWorkOrder} onChange={e=>fv("assignedWorkOrder",e.target.value)} placeholder="IE-012"/></div>
+            <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Presetter Offset (ops.)</span><input style={inputSt} value={form.presetterOffset} onChange={e=>fv("presetterOffset",e.target.value)} placeholder="X:0.012 / Z:-0.004"/></div>
             <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Not</span><textarea style={{...inputSt,resize:"vertical",minHeight:70}} value={form.notes} onChange={e=>fv("notes",e.target.value)} placeholder="Aciklama..."/></div>
             <div style={{gridColumn:"1 / -1",display:"flex",gap:8}}>
               <button onClick={saveTool} style={{...btnSt("primary"),padding:"10px 14px"}}>Kaydet</button>
@@ -810,7 +923,7 @@ function ToolStock({currentUser}) {
         )}
       </div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:8,flexWrap:"wrap"}}>
-        <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>Takim Stogu · {tools.length} kayit · {lowCount} kritik</div>
+        <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>Takim Stogu · {tools.length} kayit · {lowCount} kritik stok · {lowLifeCount} kritik omur</div>
       </div>
       <div style={{marginBottom:12}}>
         <input style={{...inputSt,padding:"9px 12px",fontSize:13}} placeholder="Takim adi, kod, kategori veya konum ara..." value={search} onChange={e=>setSearch(e.target.value)}/>
@@ -841,7 +954,7 @@ function ToolStock({currentUser}) {
               <div style={{display:"flex",gap:7}}>
                 <button onClick={()=>openMovement(t.id,"in")} style={{...btnSt("green"),padding:"6px 10px",fontSize:12}}>Stok Girisi</button>
                 <button onClick={()=>openMovement(t.id,"out")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Stok Cikisi</button>
-                <button onClick={()=>{setEditId(t.id);setForm({code:t.code||"",name:t.name||"",category:t.category||"",qty:String(qty),minQty:String(min),location:t.location||"",notes:t.notes||""});setShowForm(true);}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
+                <button onClick={()=>{setEditId(t.id);setForm({code:t.code||"",name:t.name||"",category:t.category||"",qty:String(qty),minQty:String(min),location:t.location||"",geometry:t.geometry||"",toolMaterial:t.toolMaterial||"",expectedLife:String(t.expectedLife??""),remainingLifePct:String(t.remainingLifePct??"100"),assignedProgram:t.assignedProgram||"",assignedWorkOrder:t.assignedWorkOrder||"",presetterOffset:t.presetterOffset||"",notes:t.notes||""});setShowForm(true);}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
                 <button onClick={()=>removeTool(t.id,t.name||"Takim")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
               </div>
             )}
