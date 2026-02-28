@@ -52,6 +52,46 @@
     </section>
   </div>
 
+  <script type="module">
+    import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyA6BAv57T-M_oeg5c0-irynYThqQv0s1xI",
+      authDomain: "cnc-atolye.firebaseapp.com",
+      projectId: "cnc-atolye",
+      storageBucket: "cnc-atolye.firebasestorage.app",
+      messagingSenderId: "1059210834667",
+      appId: "1:1059210834667:web:1e506c41567b4e273784ae"
+    };
+
+    try {
+      const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+      const db = getFirestore(app);
+      window.DB = {
+        async getDoc(col, id) {
+          try { const s = await getDoc(doc(db, col, id)); return s.exists() ? { id: s.id, ...s.data() } : null; } catch { return null; }
+        },
+        async setDoc(col, id, data) {
+          try { await setDoc(doc(db, col, id), data, { merge: true }); return true; } catch { return false; }
+        },
+        async getAll(col) {
+          try { const s = await getDocs(collection(db, col)); return s.docs.map(d => ({ id: d.id, ...d.data() })); } catch { return []; }
+        },
+        async addDoc(col, data) {
+          try { const r = await addDoc(collection(db, col), { ...data, createdAt: new Date().toISOString() }); return r.id; } catch { return null; }
+        },
+        async updateDoc(col, id, data) {
+          try { await updateDoc(doc(db, col, id), data); return true; } catch { return false; }
+        },
+        async deleteDoc(col, id) {
+          try { await deleteDoc(doc(db, col, id)); return true; } catch { return false; }
+        }
+      };
+    } catch (e) {
+      console.error("Firebase init error:", e);
+    }
+  </script>
   <script src="js/orders.js"></script>
 </body>
 </html>

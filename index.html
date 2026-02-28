@@ -1654,6 +1654,8 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   const [loading,setLoading]=useState(true);
   const [view,setView]=useState(defaultView==="quotes"?"quotes":"orders");
   const [search,setSearch]=useState("");
+  const [customerEditId,setCustomerEditId]=useState("");
+  const [priceEditId,setPriceEditId]=useState("");
   const [customerForm,setCustomerForm]=useState({name:"",code:"",contact:"",phone:"",email:"",discountPct:"0"});
   const [priceForm,setPriceForm]=useState({customerId:"",partNo:"",price:"",discountPct:"0",currency:"TRY"});
   const [quoteForm,setQuoteForm]=useState({
@@ -1693,6 +1695,10 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   useEffect(()=>{load();},[load]);
   useEffect(()=>{setView(defaultView==="quotes"?"quotes":"orders");},[defaultView]);
 
+  const resetCustomerForm=()=>{ setCustomerEditId(""); setCustomerForm({name:"",code:"",contact:"",phone:"",email:"",discountPct:"0"}); };
+  const resetPriceForm=()=>{ setPriceEditId(""); setPriceForm({customerId:"",partNo:"",price:"",discountPct:"0",currency:"TRY"}); };
+  const activeCustomerEdit=customers.find(c=>c.id===customerEditId)||null;
+  const activePriceEdit=customerPrices.find(p=>p.id===priceEditId)||null;
   const selectedCustomer=customers.find(c=>c.id===quoteForm.customerId)||null;
   const customerStats=customers.map(c=>{
     const rows=salesOrders.filter(s=>s.customerId===c.id);
@@ -1738,28 +1744,70 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       discountPct:Math.max(0,Math.min(100,safeNum(customerForm.discountPct))),
       updatedAt:new Date().toISOString(),
     };
+    if(customerEditId){
+      const ok=await window.DB.updateDoc("customers",customerEditId,payload);
+      if(!ok){alert("Musteri guncellenemedi.");return;}
+      const after={...(activeCustomerEdit||{}),...payload};
+      await addAuditLog(currentUser.id,"customer",customerEditId,"update",activeCustomerEdit,after,{module:"sales"});
+      setCustomers(prev=>prev.map(c=>c.id===customerEditId?{...c,...payload}:c).sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+      resetCustomerForm();
+      return;
+    }
     const id=await window.DB.addDoc("customers",payload);
     if(!id){alert("Musteri kaydedilemedi.");return;}
     await addAuditLog(currentUser.id,"customer",id,"create",null,payload,{module:"sales"});
     setCustomers(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev].sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
-    setCustomerForm({name:"",code:"",contact:"",phone:"",email:"",discountPct:"0"});
+    resetCustomerForm();
   }
 
   async function savePrice(){
     if(!priceForm.customerId||!priceForm.partNo.trim()){alert("Musteri ve parca no zorunlu.");return;}
+    const normalizedPart=priceForm.partNo.trim().toUpperCase();
     const payload={
       customerId:priceForm.customerId,
-      partNo:priceForm.partNo.trim().toUpperCase(),
+      partNo:normalizedPart,
       price:Math.max(0,safeNum(priceForm.price)),
       discountPct:Math.max(0,Math.min(100,safeNum(priceForm.discountPct))),
       currency:priceForm.currency||"TRY",
       updatedAt:new Date().toISOString(),
       updatedBy:currentUser.id,
     };
+    const duplicate=customerPrices.find(p=>p.customerId===payload.customerId&&String(p.partNo||"").trim().toUpperCase()===normalizedPart);
+    const targetId=priceEditId||duplicate?.id||"";
+    if(targetId){
+      const ok=await window.DB.updateDoc("customerPrices",targetId,payload);
+      if(!ok){alert("Fiyat kaydi guncellenemedi.");return;}
+      setCustomerPrices(prev=>prev.map(p=>p.id===targetId?{...p,...payload}:p).sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||"")));
+      resetPriceForm();
+      return;
+    }
     const id=await window.DB.addDoc("customerPrices",payload);
     if(!id){alert("Fiyat kaydi olusturulamadi.");return;}
-    setCustomerPrices(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
-    setPriceForm({customerId:"",partNo:"",price:"",discountPct:"0",currency:"TRY"});
+    setCustomerPrices(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev].sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||"")));
+    resetPriceForm();
+  }
+
+  function startEditCustomer(c){
+    setCustomerEditId(c.id);
+    setCustomerForm({
+      name:c.name||"",
+      code:c.code||"",
+      contact:c.contact||"",
+      phone:c.phone||"",
+      email:c.email||"",
+      discountPct:String(safeNum(c.discountPct)),
+    });
+  }
+
+  function startEditPrice(p){
+    setPriceEditId(p.id);
+    setPriceForm({
+      customerId:p.customerId||"",
+      partNo:p.partNo||"",
+      price:String(safeNum(p.price)),
+      discountPct:String(safeNum(p.discountPct)),
+      currency:p.currency||"TRY",
+    });
   }
 
   async function saveQuote(){
@@ -1817,6 +1865,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
 
   async function convertQuoteToOrder(q){
     if(!q.lines||q.lines.length===0){alert("Teklif satiri yok.");return;}
+    if((q.status||"")!=="approved"){alert("Siparise donusum icin teklif once onaylanmali.");return;}
     const existing=salesOrders.find(s=>s.sourceQuoteId===q.id);
     if(existing){alert(`Bu teklif zaten siparise donustu: ${existing.code}`);return;}
     const orderCode=nextCode("SIP",salesOrders,/^SIP-(\d+)$/);
@@ -1887,6 +1936,27 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     setSalesOrders(prev=>prev.map(x=>x.id===order.id?{...x,...patch}:x));
   }
 
+  async function setOrderStatus(order,status){
+    if((order.status||"")===status) return;
+    const patch={status,updatedAt:new Date().toISOString(),updatedBy:currentUser.id};
+    const ok=await window.DB.updateDoc("salesOrders",order.id,patch);
+    if(!ok){alert("Siparis durumu guncellenemedi.");return;}
+    await addAuditLog(currentUser.id,"salesOrder",order.id,"status_update",order,{...order,...patch},{module:"sales"});
+    setSalesOrders(prev=>prev.map(x=>x.id===order.id?{...x,...patch}:x));
+  }
+
+  async function markExternalDoc(order,type){
+    const now=new Date().toISOString();
+    const suffix=String(Date.now()).slice(-6);
+    const patch=type==="dispatch"
+      ? {dispatchRef:`IRS-${suffix}`,dispatchAt:now,shipmentStatus:"prepared",integrationStatus:"pending_external",updatedAt:now,updatedBy:currentUser.id}
+      : {invoiceRef:`FTR-${suffix}`,invoiceAt:now,billingStatus:"prepared",integrationStatus:"pending_external",updatedAt:now,updatedBy:currentUser.id};
+    const ok=await window.DB.updateDoc("salesOrders",order.id,patch);
+    if(!ok){alert("Belge kaydi olusturulamadi.");return;}
+    await addAuditLog(currentUser.id,"salesOrder",order.id,type==="dispatch"?"dispatch_prepare":"invoice_prepare",order,{...order,...patch},{module:"sales"});
+    setSalesOrders(prev=>prev.map(x=>x.id===order.id?{...x,...patch}:x));
+  }
+
   async function convertOrderToWorkOrders(order){
     if(order.workOrderIds&&order.workOrderIds.length>0){alert("Bu siparis icin is emri olusturulmus.");return;}
     if(!order.lines||order.lines.length===0){alert("Siparis satiri bulunamadi.");return;}
@@ -1952,7 +2022,10 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       {view==="pricing"&&(
         <>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-            <div style={{fontWeight:700,color:C.text,marginBottom:10}}>Musteri Karti</div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+              <div style={{fontWeight:700,color:C.text}}>Musteri Karti</div>
+              {customerEditId&&<Badge label={`Duzenleniyor: ${activeCustomerEdit?.name||customerEditId}`} color={C.warn}/>}
+            </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
               <div><span style={labelSt}>Musteri Adi *</span><input style={inputSt} value={customerForm.name} onChange={e=>setCustomerForm(f=>({...f,name:e.target.value}))}/></div>
               <div><span style={labelSt}>Kod</span><input style={inputSt} value={customerForm.code} onChange={e=>setCustomerForm(f=>({...f,code:e.target.value}))}/></div>
@@ -1961,10 +2034,27 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
               <div><span style={labelSt}>E-Posta</span><input style={inputSt} value={customerForm.email} onChange={e=>setCustomerForm(f=>({...f,email:e.target.value}))}/></div>
               <div><span style={labelSt}>Varsayilan Iskonto %</span><input style={inputSt} type="number" min="0" max="100" value={customerForm.discountPct} onChange={e=>setCustomerForm(f=>({...f,discountPct:e.target.value}))}/></div>
             </div>
-            <div style={{marginTop:10,display:"flex",justifyContent:"flex-end"}}><button onClick={saveCustomer} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Musteri Kaydet</button></div>
+            <div style={{marginTop:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <div style={{fontSize:12,color:C.muted2}}>Kayitli musteri: {customers.length}</div>
+              <div style={{display:"flex",gap:8}}>
+                {customerEditId&&<button onClick={resetCustomerForm} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Vazgec</button>}
+                <button onClick={saveCustomer} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>{customerEditId?"Musteri Guncelle":"Musteri Kaydet"}</button>
+              </div>
+            </div>
+            {customers.slice(0,20).map(c=>(
+              <div key={c.id} style={{marginTop:8,padding:"8px 10px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <div style={{fontSize:12,color:C.text}}>
+                  <strong>{c.name||"-"}</strong> · {(c.code||"-")} · {c.contact||"-"} · Iskonto %{safeNum(c.discountPct).toFixed(2)}
+                </div>
+                <button onClick={()=>startEditCustomer(c)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11}}>Duzenle</button>
+              </div>
+            ))}
           </div>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-            <div style={{fontWeight:700,color:C.text,marginBottom:10}}>Musteri Bazli Fiyat Listesi</div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+              <div style={{fontWeight:700,color:C.text}}>Musteri Bazli Fiyat Listesi</div>
+              {priceEditId&&<Badge label={`Satir Duzenleme: ${activePriceEdit?.partNo||priceEditId}`} color={C.warn}/>}
+            </div>
             <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr 1fr 1fr 0.8fr",gap:8}}>
               <div><span style={labelSt}>Musteri</span><select style={inputSt} value={priceForm.customerId} onChange={e=>setPriceForm(f=>({...f,customerId:e.target.value}))}><option value="">Secin</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
               <div><span style={labelSt}>Parca No</span><input style={inputSt} value={priceForm.partNo} onChange={e=>setPriceForm(f=>({...f,partNo:e.target.value}))}/></div>
@@ -1974,11 +2064,19 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
             </div>
             <div style={{marginTop:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
               <div style={{fontSize:12,color:C.muted2}}>Kayitli fiyat satiri: {customerPrices.length}</div>
-              <button onClick={savePrice} style={{...btnSt("green"),padding:"8px 12px",fontSize:12}}>Fiyat Kaydet</button>
+              <div style={{display:"flex",gap:8}}>
+                {priceEditId&&<button onClick={resetPriceForm} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Vazgec</button>}
+                <button onClick={savePrice} style={{...btnSt("green"),padding:"8px 12px",fontSize:12}}>{priceEditId?"Fiyat Guncelle":"Fiyat Kaydet"}</button>
+              </div>
             </div>
             {customerPrices.slice(0,30).map(p=>{
               const cust=customers.find(c=>c.id===p.customerId);
-              return <div key={p.id} style={{marginTop:8,padding:"8px 10px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,fontSize:12,color:C.muted2}}>{cust?.name||"-"} · {p.partNo} · {safeNum(p.price).toFixed(2)} {p.currency||"TRY"} · Iskonto %{safeNum(p.discountPct)}</div>;
+              return (
+                <div key={p.id} style={{marginTop:8,padding:"8px 10px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <div style={{fontSize:12,color:C.muted2}}>{cust?.name||"-"} · {p.partNo} · {safeNum(p.price).toFixed(2)} {p.currency||"TRY"} · Iskonto %{safeNum(p.discountPct)}</div>
+                  <button onClick={()=>startEditPrice(p)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11}}>Duzenle</button>
+                </div>
+              );
             })}
           </div>
           {customerStats.length>0&&(
@@ -2056,8 +2154,8 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                 </div>
                 <div style={{display:"flex",gap:7,flexWrap:"wrap",justifyContent:"flex-end"}}>
                   <button onClick={()=>printQuote(qr)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>PDF/Yazdir</button>
-                  <button onClick={()=>setQuoteStatus(qr,"approved")} style={{...btnSt("green"),padding:"6px 10px",fontSize:12}}>Onayla</button>
-                  <button onClick={()=>convertQuoteToOrder(qr)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}>Siparise Donustur</button>
+                  <button onClick={()=>setQuoteStatus(qr,"approved")} style={{...btnSt("green"),padding:"6px 10px",fontSize:12,opacity:(qr.status||"")==="approved"?0.7:1}} disabled={(qr.status||"")==="approved"}>{(qr.status||"")==="approved"?"Onayli":"Musteri Onayi"}</button>
+                  <button onClick={()=>convertQuoteToOrder(qr)} disabled={(qr.status||"")!=="approved"} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12,opacity:(qr.status||"")==="approved"?1:0.6,cursor:(qr.status||"")==="approved"?"pointer":"not-allowed"}}>Siparise Donustur</button>
                   <button onClick={()=>setQuoteStatus(qr,"cancelled")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Iptal</button>
                 </div>
               </div>
@@ -2093,13 +2191,22 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                   </div>
                   <div style={{display:"flex",gap:7,flexWrap:"wrap",justifyContent:"flex-end"}}>
                     <button onClick={()=>printOrder(o)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Onay/PDF</button>
+                    <button onClick={()=>setOrderStatus(o,"in_production")} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12,opacity:(o.status||"")==="in_production"?0.7:1}} disabled={(o.status||"")==="in_production"}>Uretimde</button>
                     <button onClick={()=>addDelivery(o)} style={{...btnSt("green"),padding:"6px 10px",fontSize:12}}>Kismi Teslim</button>
                     <button onClick={()=>convertOrderToWorkOrders(o)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}>Is Emri Olustur</button>
+                    <button onClick={()=>markExternalDoc(o,"dispatch")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Sevk Irsaliye</button>
+                    <button onClick={()=>markExternalDoc(o,"invoice")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Fatura Hazirla</button>
+                    <button onClick={()=>setOrderStatus(o,"cancelled")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12,opacity:(o.status||"")==="cancelled"?0.7:1}} disabled={(o.status||"")==="cancelled"}>Iptal</button>
                   </div>
                 </div>
                 {(o.deliveries||[]).length>0&&(
                   <div style={{marginTop:8,fontSize:11,color:C.muted2}}>
                     Son teslimler: {(o.deliveries||[]).slice(-3).map(d=>`${d.date}: ${safeNum(d.qty)}`).join(" · ")}
+                  </div>
+                )}
+                {(o.dispatchRef||o.invoiceRef||o.integrationStatus)&&(
+                  <div style={{marginTop:6,fontSize:11,color:C.muted2}}>
+                    {o.dispatchRef?`Irsaliye: ${o.dispatchRef}`:""}{o.dispatchRef&&o.invoiceRef?" · ":""}{o.invoiceRef?`Fatura: ${o.invoiceRef}`:""}{(o.dispatchRef||o.invoiceRef)&&o.integrationStatus?" · ":""}{o.integrationStatus?`Entegrasyon: ${o.integrationStatus}`:""}
                   </div>
                 )}
               </div>
