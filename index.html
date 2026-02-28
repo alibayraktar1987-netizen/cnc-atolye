@@ -657,6 +657,7 @@ function ToolStock({currentUser}) {
       (t.location||"").toLowerCase().includes(q);
   });
   const lowCount=tools.filter(t=>(Number(t.qty)||0)<=Math.max(Number(t.minQty)||0,0)).length;
+  const stockedTools=[...tools].filter(t=>(Number(t.qty)||0)>0).sort((a,b)=>(Number(b.qty)||0)-(Number(a.qty)||0));
   const categoryOptions=(form.category&& !TOOL_CATEGORY_OPTIONS.includes(form.category))
     ? [...TOOL_CATEGORY_OPTIONS,form.category]
     : TOOL_CATEGORY_OPTIONS;
@@ -693,6 +694,14 @@ function ToolStock({currentUser}) {
 
   return (
     <div style={{padding:16}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",marginBottom:12}}>
+        <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Stokdaki Urunler ({stockedTools.length})</div>
+        {stockedTools.length===0?<div style={{fontSize:12,color:C.muted}}>Stokta takim yok</div>:(
+          <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+            {stockedTools.map(t=><span key={t.id} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px",fontSize:11,color:C.muted2}}>{t.code||"-"} · {t.name||"-"} · <span style={{color:C.text,fontWeight:700}}>{Number(t.qty)||0}</span></span>)}
+          </div>
+        )}
+      </div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:8,flexWrap:"wrap"}}>
         <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>Takim Stogu · {tools.length} kayit · {lowCount} kritik</div>
         {isAdmin&&<button onClick={()=>{resetForm();setEditId(null);setForm(p=>({...p,code:nextToolCode()}));setShowForm(true);}} style={{...btnSt("primary"),padding:"8px 14px",fontSize:12}}>+ Yeni Takim</button>}
@@ -940,7 +949,7 @@ function MaterialLibrary() {
   const [editId,setEditId]=useState(null);
   const [search,setSearch]=useState("");
   const [seedChecked,setSeedChecked]=useState(false);
-  const [form,setForm]=useState({name:"",code:"",density:"",note:""});
+  const [form,setForm]=useState({name:"",code:"",density:"",stock:"",note:""});
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
   const nextMaterialCode=useCallback((list=materials)=>{
     const nums=list.map(m=>{
@@ -970,6 +979,7 @@ function MaterialLibrary() {
       name:form.name.trim(),
       code:String(finalCode).toUpperCase(),
       density:densityVal>0?densityVal:0,
+      stock:Math.max(0,Number(form.stock)||0),
       note:form.note.trim(),
       updatedAt:new Date().toISOString(),
     };
@@ -978,14 +988,14 @@ function MaterialLibrary() {
       if(!ok){alert("Malzeme güncellenemedi.");return;}
       setMaterials(prev=>prev.map(x=>x.id===editId?{...x,...payload}:x).sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
       setEditId(null);
-      setForm({name:"",code:nextMaterialCode(),density:"",note:""});
+      setForm({name:"",code:nextMaterialCode(),density:"",stock:"",note:""});
       return;
     }
     const id=await window.DB.addDoc("materials",payload);
     if(!id){alert("Malzeme kaydedilemedi.");return;}
     const nextList=[{id,...payload,createdAt:new Date().toISOString()},...materials];
     setMaterials(nextList.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
-    setForm({name:"",code:nextMaterialCode(nextList),density:"",note:""});
+    setForm({name:"",code:nextMaterialCode(nextList),density:"",stock:"",note:""});
   }
 
   async function removeMaterial(m){
@@ -995,7 +1005,7 @@ function MaterialLibrary() {
     setMaterials(prev=>prev.filter(x=>x.id!==m.id));
     if(editId===m.id){
       setEditId(null);
-      setForm({name:"",code:nextMaterialCode(materials.filter(x=>x.id!==m.id)),density:"",note:""});
+      setForm({name:"",code:nextMaterialCode(materials.filter(x=>x.id!==m.id)),density:"",stock:"",note:""});
     }
   }
   async function seedDefaultMaterials(showMessage=true){
@@ -1010,6 +1020,7 @@ function MaterialLibrary() {
         name:item.name,
         code:nextMaterialCode(work),
         density:Number(item.density)||0,
+        stock:0,
         note:"",
         updatedAt:new Date().toISOString(),
         createdBy:"seed",
@@ -1033,6 +1044,7 @@ function MaterialLibrary() {
   },[loading,seedChecked]);
 
   const q=search.trim().toLowerCase();
+  const stockedMaterials=[...materials].filter(m=>(Number(m.stock)||0)>0).sort((a,b)=>(Number(b.stock)||0)-(Number(a.stock)||0));
   const filtered=materials.filter(m=>{
     if(!q) return true;
     return (m.name||"").toLowerCase().includes(q)||
@@ -1044,6 +1056,14 @@ function MaterialLibrary() {
 
   return (
     <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}>
+        <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Stokdaki Urunler ({stockedMaterials.length})</div>
+        {stockedMaterials.length===0?<div style={{fontSize:12,color:C.muted}}>Stokta malzeme yok</div>:(
+          <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+            {stockedMaterials.map(m=><span key={m.id} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px",fontSize:11,color:C.muted2}}>{m.code||"-"} · {m.name||"-"} · <span style={{color:C.text,fontWeight:700}}>{Number(m.stock)||0}</span></span>)}
+          </div>
+        )}
+      </div>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <div style={{fontWeight:700,color:C.text}}>Malzeme Kutuphanesi</div>
@@ -1056,6 +1076,7 @@ function MaterialLibrary() {
           <div><span style={labelSt}>Malzeme Adi *</span><input style={inputSt} value={form.name} onChange={e=>fv("name",e.target.value)} placeholder="AISI 304"/></div>
           <div><span style={labelSt}>Kod (Otomatik)</span><input style={{...inputSt,background:C.surface,color:C.muted2}} value={form.code||nextMaterialCode()} readOnly/></div>
           <div><span style={labelSt}>Ozgul Agirlik (g/cm3)</span><input style={inputSt} type="number" step="0.001" min="0" value={form.density} onChange={e=>fv("density",e.target.value)} placeholder="7.850"/></div>
+          <div><span style={labelSt}>Stok</span><input style={inputSt} type="number" min="0" value={form.stock} onChange={e=>fv("stock",e.target.value)} placeholder="0"/></div>
         </div>
         <div style={{marginTop:8}}>
           <span style={labelSt}>Not</span>
@@ -1063,7 +1084,7 @@ function MaterialLibrary() {
         </div>
         <div style={{display:"flex",gap:8,marginTop:10}}>
           <button onClick={saveMaterial} style={{...btnSt("primary"),flex:1,padding:12}}>{editId?"Malzemeyi Guncelle":"Malzeme Kaydet"}</button>
-          {editId&&<button onClick={()=>{setEditId(null);setForm({name:"",code:nextMaterialCode(),density:"",note:""});}} style={{...btnSt("ghost"),padding:"12px 14px"}}>Iptal</button>}
+          {editId&&<button onClick={()=>{setEditId(null);setForm({name:"",code:nextMaterialCode(),density:"",stock:"",note:""});}} style={{...btnSt("ghost"),padding:"12px 14px"}}>Iptal</button>}
         </div>
       </div>
 
@@ -1078,10 +1099,10 @@ function MaterialLibrary() {
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
             <div>
               <div style={{fontWeight:700,color:C.text,fontSize:14}}>{m.name}</div>
-              <div style={{fontSize:12,color:C.muted2,marginTop:2}}>{m.code||"-"}{Number(m.density)>0?` · ${Number(m.density).toFixed(3)} g/cm3`:""}</div>
+              <div style={{fontSize:12,color:C.muted2,marginTop:2}}>{m.code||"-"}{Number(m.density)>0?` · ${Number(m.density).toFixed(3)} g/cm3`:""} · Stok: {Number(m.stock)||0}</div>
             </div>
             <div style={{display:"flex",gap:7}}>
-              <button onClick={()=>{setEditId(m.id);setForm({name:m.name||"",code:m.code||"",density:String(m.density??""),note:m.note||""});}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
+              <button onClick={()=>{setEditId(m.id);setForm({name:m.name||"",code:m.code||"",density:String(m.density??""),stock:String(m.stock??""),note:m.note||""});}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
               <button onClick={()=>removeMaterial(m)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
             </div>
           </div>
