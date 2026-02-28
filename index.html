@@ -341,7 +341,7 @@ function PerfBar({perf,small}) {
 // ════════════════════════════════════════════════════════════
 //  AUTH SCREEN
 // ════════════════════════════════════════════════════════════
-function AuthScreen({onLogin,logoSrc=LOGO_SRC}) {
+function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) {
   const [portal,setPortal]=useState("operator");
   const [mode,setMode]=useState("login");
   const [form,setForm]=useState({username:"",password:"",confirm:"",fullName:""});
@@ -426,6 +426,11 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC}) {
   return (
     <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div style={{width:"100%",maxWidth:portal==="admin"?980:380}}>
+        <div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}>
+          <button onClick={onThemeToggle} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:98}}>
+            {themeMode==="dark"?"Acik Tema":"Koyu Tema"}
+          </button>
+        </div>
         <div style={{display:"flex",background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:4,margin:"0 auto 22px",maxWidth:420}}>
           {[["operator","Operatör Girişi"],["admin","Yönetici Girişi"]].map(([id,lbl])=>(
             <button key={id} onClick={()=>setPortal(id)} style={{flex:1,padding:"10px 0",border:"none",borderRadius:9,cursor:"pointer",background:portal===id?C.card:"transparent",color:portal===id?C.text:C.muted2,fontWeight:portal===id?700:500,fontSize:13,fontFamily:"inherit"}}>{lbl}</button>
@@ -5818,6 +5823,7 @@ function App() {
   const [loading,setLoading]=useState(true);
   const [tab,setTab]=useState("dashboard");
   const [workMode,setWorkMode]=useState("planlama");
+  const [themeMode,setThemeMode]=useState("light");
   const [machines,setMachines]=useState(DEFAULT_MACHINES);
   const [logoSrc,setLogoSrc]=useState(LOGO_SRC);
   const [isTablet,setIsTablet]=useState(()=>typeof window!=="undefined"?window.matchMedia("(min-width: 768px)").matches:false);
@@ -5831,6 +5837,7 @@ function App() {
       if(mc&&mc.list&&mc.list.length>0) setMachines(mc.list);
       const branding=await window.DB.getDoc("config","branding");
       if(branding&&branding.logo) setLogoSrc(branding.logo);
+      if(branding&&["light","dark"].includes(branding.themeMode||"")) setThemeMode(branding.themeMode);
       const session=window.Session.get();
       if(session){
         const u=await window.DB.getDoc("users",session.username);
@@ -5896,7 +5903,15 @@ function App() {
     setLogoSrc(next);
     await window.DB.setDoc("config","branding",{logo:logoData||""});
   }
+  async function updateTheme(mode){
+    const next=mode==="dark"?"dark":"light";
+    setThemeMode(next);
+    await window.DB.setDoc("config","branding",{themeMode:next});
+  }
   async function logout(){window.Session.clear();setCurrentUser(null);setTab("dashboard");}
+
+  applyThemeMode(themeMode);
+  if(typeof document!=="undefined") document.body.style.background=C.bg;
 
   const userForPerm=currentUser||{role:"viewer",permissions:[],fullName:""};
   const isAdmin=userForPerm.role==="admin";
@@ -6007,7 +6022,7 @@ function App() {
     return <ModulePlaceholder title="Modul" desc="Secili modul tanimli degil." items={[]}/>;
   }
   if(loading) return <div style={{background:C.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12}}><div style={{width:40,height:40,border:`3px solid ${C.border}`,borderTop:`3px solid ${C.accent}`,borderRadius:"50%",animation:"spin 1s linear infinite"}}/><div style={{color:C.muted2,fontSize:13}}>Bağlanıyor...</div><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>;
-  if(!currentUser) return <AuthScreen onLogin={u=>setCurrentUser(u)} logoSrc={logoSrc}/>;
+  if(!currentUser) return <AuthScreen onLogin={u=>setCurrentUser(u)} logoSrc={logoSrc} themeMode={themeMode} onThemeToggle={()=>updateTheme(themeMode==="dark"?"light":"dark")}/>;
   const activeView=getActiveView();
 
   const modeSwitch=(
@@ -6056,6 +6071,9 @@ function App() {
                 <Badge label={layoutMode==="desktop"?"Desktop":(layoutMode==="tablet"?"Tablet":"Mobil")} color={C.muted2}/>
               </div>
             </div>
+            <button onClick={()=>updateTheme(themeMode==="dark"?"light":"dark")} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:98}}>
+              {themeMode==="dark"?"Acik Tema":"Koyu Tema"}
+            </button>
             <button onClick={logout} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12}}>Cikis</button>
           </div>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
