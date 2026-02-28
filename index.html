@@ -527,14 +527,14 @@ function AdminUsers({currentUser,machines,onMachinesUpdate,currentLogo,onLogoUpd
   );
 }
 
-function ToolStock({currentUser,machines=DEFAULT_MACHINES}) {
+function ToolStock({currentUser}) {
   const isAdmin=currentUser.role==="admin";
   const [tools,setTools]=useState([]);
   const [loading,setLoading]=useState(true);
   const [search,setSearch]=useState("");
   const [showForm,setShowForm]=useState(false);
   const [editId,setEditId]=useState(null);
-  const [form,setForm]=useState({code:"",name:"",category:"",machine:"",qty:"",minQty:"",location:"",notes:""});
+  const [form,setForm]=useState({code:"",name:"",category:"",qty:"",minQty:"",location:"",notes:""});
   const [orders,setOrders]=useState([]);
   const [movements,setMovements]=useState([]);
   const [moveOpenId,setMoveOpenId]=useState(null);
@@ -553,7 +553,7 @@ function ToolStock({currentUser,machines=DEFAULT_MACHINES}) {
   },[]);
   useEffect(()=>{load();},[load]);
 
-  const resetForm=()=>setForm({code:"",name:"",category:"",machine:"",qty:"",minQty:"",location:"",notes:""});
+  const resetForm=()=>setForm({code:"",name:"",category:"",qty:"",minQty:"",location:"",notes:""});
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
   const nextToolCode=useCallback((list=tools)=>{
     const nums=list.map(t=>{
@@ -570,7 +570,6 @@ function ToolStock({currentUser,machines=DEFAULT_MACHINES}) {
       code:(form.code.trim()||nextToolCode()).toUpperCase(),
       name:form.name.trim(),
       category:form.category.trim(),
-      machine:form.machine.trim(),
       qty:Number(form.qty)||0,
       minQty:Number(form.minQty)||0,
       location:form.location.trim(),
@@ -639,7 +638,6 @@ function ToolStock({currentUser,machines=DEFAULT_MACHINES}) {
     return (t.name||"").toLowerCase().includes(q)||
       (t.code||"").toLowerCase().includes(q)||
       (t.category||"").toLowerCase().includes(q)||
-      (t.machine||"").toLowerCase().includes(q)||
       (t.location||"").toLowerCase().includes(q);
   });
   const lowCount=tools.filter(t=>(Number(t.qty)||0)<=Math.max(Number(t.minQty)||0,0)).length;
@@ -655,7 +653,6 @@ function ToolStock({currentUser,machines=DEFAULT_MACHINES}) {
           <div><span style={labelSt}>Kod</span><input style={inputSt} value={form.code} onChange={e=>fv("code",e.target.value)} placeholder="TKM-001"/></div>
           <div><span style={labelSt}>Takim Adi *</span><input style={inputSt} value={form.name} onChange={e=>fv("name",e.target.value)} placeholder="12mm Parmak Freze"/></div>
           <div><span style={labelSt}>Kategori</span><input style={inputSt} value={form.category} onChange={e=>fv("category",e.target.value)} placeholder="Freze, Matkap..."/></div>
-          <div><span style={labelSt}>Ilgili Tezgah</span><input style={inputSt} value={form.machine} onChange={e=>fv("machine",e.target.value)} list="tool-stock-machines" placeholder="CNC-1"/></div>
           <div><span style={labelSt}>Stok Adedi</span><input style={inputSt} type="number" min="0" value={form.qty} onChange={e=>fv("qty",e.target.value)} placeholder="0"/></div>
           <div><span style={labelSt}>Minimum Adet</span><input style={inputSt} type="number" min="0" value={form.minQty} onChange={e=>fv("minQty",e.target.value)} placeholder="0"/></div>
           <div><span style={labelSt}>Konum</span><input style={inputSt} value={form.location} onChange={e=>fv("location",e.target.value)} placeholder="Raf A2"/></div>
@@ -665,9 +662,6 @@ function ToolStock({currentUser,machines=DEFAULT_MACHINES}) {
             <button onClick={()=>{setShowForm(false);setEditId(null);resetForm();}} style={{...btnSt("ghost"),padding:"10px 14px"}}>Iptal</button>
           </div>
         </div>
-        <datalist id="tool-stock-machines">
-          {machines.map(m=><option key={m} value={m}/>)}
-        </datalist>
       </div>
     );
   }
@@ -679,7 +673,7 @@ function ToolStock({currentUser,machines=DEFAULT_MACHINES}) {
         {isAdmin&&<button onClick={()=>{resetForm();setEditId(null);setForm(p=>({...p,code:nextToolCode()}));setShowForm(true);}} style={{...btnSt("primary"),padding:"8px 14px",fontSize:12}}>+ Yeni Takim</button>}
       </div>
       <div style={{marginBottom:12}}>
-        <input style={{...inputSt,padding:"9px 12px",fontSize:13}} placeholder="Takim adi, kod, kategori, tezgah veya konum ara..." value={search} onChange={e=>setSearch(e.target.value)}/>
+        <input style={{...inputSt,padding:"9px 12px",fontSize:13}} placeholder="Takim adi, kod, kategori veya konum ara..." value={search} onChange={e=>setSearch(e.target.value)}/>
       </div>
       {filtered.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"30px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Sonuc yok</div>}
       {filtered.map(t=>{
@@ -699,7 +693,6 @@ function ToolStock({currentUser,machines=DEFAULT_MACHINES}) {
               </div>
             </div>
             <div style={{display:"flex",gap:7,flexWrap:"wrap",fontSize:11,color:C.muted2,marginBottom:8}}>
-              {t.machine&&<span style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"3px 8px"}}>Tezgah: {t.machine}</span>}
               {t.location&&<span style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"3px 8px"}}>Konum: {t.location}</span>}
               {critical&&<span style={{background:C.redDim,border:`1px solid ${C.red}44`,borderRadius:8,padding:"3px 8px",color:C.red}}>Stok kritik</span>}
             </div>
@@ -708,7 +701,7 @@ function ToolStock({currentUser,machines=DEFAULT_MACHINES}) {
               <div style={{display:"flex",gap:7}}>
                 <button onClick={()=>openMovement(t.id,"in")} style={{...btnSt("green"),padding:"6px 10px",fontSize:12}}>Stok Girisi</button>
                 <button onClick={()=>openMovement(t.id,"out")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Stok Cikisi</button>
-                <button onClick={()=>{setEditId(t.id);setForm({code:t.code||"",name:t.name||"",category:t.category||"",machine:t.machine||"",qty:String(qty),minQty:String(min),location:t.location||"",notes:t.notes||""});setShowForm(true);}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
+                <button onClick={()=>{setEditId(t.id);setForm({code:t.code||"",name:t.name||"",category:t.category||"",qty:String(qty),minQty:String(min),location:t.location||"",notes:t.notes||""});setShowForm(true);}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
                 <button onClick={()=>removeTool(t.id,t.name||"Takim")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
               </div>
             )}
@@ -1160,7 +1153,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
   });
 
   useEffect(()=>{
-    Promise.all([window.DB.getAll("orders"),window.DB.getAll("tools"),window.DB.getAll("plans")]).then(([o,t,p])=>{
+    Promise.all([window.DB.getAll("orders"),window.DB.getAll("toolStock"),window.DB.getAll("plans")]).then(([o,t,p])=>{
       setOrders(o.filter(x=>x.status==="active"));
       setTools(t);
       setPlans(p||[]);
@@ -1216,7 +1209,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
     for(const [id,d] of changes){
       const tool=tools.find(t=>t.id===id);
       const nextQty=(Number(tool.qty)||0)+d;
-      const ok=await window.DB.updateDoc("tools",id,{qty:nextQty,updatedAt:new Date().toISOString()});
+      const ok=await window.DB.updateDoc("toolStock",id,{qty:nextQty,updatedAt:new Date().toISOString()});
       if(!ok){
         alert("Takım stoğu güncellenemedi.");
         return false;
