@@ -914,11 +914,11 @@ function MaterialLibrary() {
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
   const nextMaterialCode=useCallback((list=materials)=>{
     const nums=list.map(m=>{
-      const mm=String(m.code||"").toUpperCase().match(/^M-(\d+)$/);
+      const mm=String(m.code||"").toUpperCase().match(/^(?:MLZ|M)-(\d+)$/);
       return mm?Number(mm[1]):null;
     }).filter(n=>n!==null);
     const next=(nums.length?Math.max(...nums):0)+1;
-    return `M-${String(next).padStart(3,"0")}`;
+    return `MLZ-${String(next).padStart(3,"0")}`;
   },[materials]);
 
   const load=useCallback(async()=>{
