@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Siparişler - CNC Atölye</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Sipariş Yönetimi</h1>
+      <p>Kullanıcı dostu sipariş formu — siparişleri iş emrine dönüştürebilirsiniz.</p>
+      <div class="nav-actions"><a href="index.html">Geri Ana Sayfa</a></div>
+    </header>
+
+    <section class="card">
+      <h2>Yeni Sipariş Oluştur</h2>
+      <form id="orderForm">
+        <div class="row">
+          <label>Müşteri</label>
+          <input name="customer" required />
+        </div>
+        <div class="row">
+          <label>Ürün / Parça</label>
+          <input name="product" required />
+        </div>
+        <div class="row">
+          <label>Adet</label>
+          <input name="qty" type="number" min="1" value="1" required />
+        </div>
+        <div class="row">
+          <label>Teslim Tarihi</label>
+          <input name="due" type="date" value="" />
+        </div>
+        <div class="row actions">
+          <button type="submit" class="primary">Sipariş Ekle</button>
+          <button type="button" id="clearAll" class="ghost">Tümünü Temizle</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card two-col">
+      <div>
+        <h2>Bekleyen Siparişler</h2>
+        <div id="ordersList"></div>
+      </div>
+      <div>
+        <h2>İş Emirleri</h2>
+        <div id="workList"></div>
+      </div>
+    </section>
+  </div>
+
+  <script src="js/orders.js"></script>
+</body>
+</html>
