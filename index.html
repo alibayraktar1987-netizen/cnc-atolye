@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
 <title>CNC Atölye Takip</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
-<style>*{box-sizing:border-box;margin:0;padding:0;}body{background:#0a0c12;}</style>
+<style>*{box-sizing:border-box;margin:0;padding:0;}body{background:#f3f2f1;}</style>
 </head>
 <body>
 <div id="root"></div>
@@ -125,13 +125,14 @@ const ROLE_PERMISSION_DEFAULTS = {
 };
 
 const C = {
-  bg:"#0a0c12", surface:"#12151f", card:"#181b28", border:"#252837",
-  accent:"#4f8ef7", accentDim:"#4f8ef715",
-  green:"#00c896", greenDim:"#00c89615",
-  red:"#ff4d6d", redDim:"#ff4d6d15",
-  warn:"#ffb830", warnDim:"#ffb83015",
-  purple:"#9b7ff4",
-  text:"#e2e5f0", muted:"#5a5f75", muted2:"#8b90a8",
+  bg:"#f3f2f1", bgAlt:"#faf9f8",
+  surface:"#ffffff", surface2:"#f8f8f8", card:"#ffffff", border:"#e1dfdd",
+  accent:"#0f6cbd", accentDim:"#deecf9", brandTint:"#eff6fc",
+  green:"#107c10", greenDim:"#dff6dd",
+  red:"#d13438", redDim:"#fde7e9",
+  warn:"#ca5010", warnDim:"#fff4ce",
+  purple:"#5c2e91",
+  text:"#201f1e", muted:"#605e5c", muted2:"#8a8886",
 };
 const ORDER_STATUS_OPTIONS = [
   { id:"planned", label:"Planlandi", color:C.accent },
@@ -293,18 +294,18 @@ function downloadCsv(filename,columns,rows){
 }
 
 // ── STYLE ATOMS ──────────────────────────────────────────────
-const labelSt={color:C.muted2,fontSize:11,letterSpacing:.8,textTransform:"uppercase",fontWeight:600,marginBottom:6,display:"block"};
-const inputSt={width:"100%",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 14px",color:C.text,fontSize:14,outline:"none",boxSizing:"border-box",fontFamily:"inherit"};
-const chip=(active,color=C.accent)=>({padding:"8px 13px",borderRadius:9,border:`1px solid ${active?color:C.border}`,background:active?color+"18":C.surface,color:active?color:C.muted2,fontSize:12,fontWeight:active?700:400,cursor:"pointer",fontFamily:"inherit"});
-const btnSt=(v="primary")=>({border:"none",borderRadius:10,padding:"11px 18px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",transition:"opacity .15s",
-  ...(v==="primary"?{background:C.accent,color:"#fff",boxShadow:`0 4px 18px ${C.accent}30`}:
+const labelSt={color:C.muted,fontSize:11,letterSpacing:.2,textTransform:"none",fontWeight:600,marginBottom:6,display:"block"};
+const inputSt={width:"100%",background:C.surface,border:`1px solid ${C.border}`,borderRadius:6,padding:"10px 12px",color:C.text,fontSize:14,outline:"none",boxSizing:"border-box",fontFamily:"inherit"};
+const chip=(active,color=C.accent)=>({padding:"8px 12px",borderRadius:6,border:`1px solid ${active?color:C.border}`,background:active?color:C.surface2,color:active?"#fff":C.text,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"});
+const btnSt=(v="primary")=>({border:`1px solid ${v==="primary"?C.accent:v==="danger"?C.red:v==="green"?C.green:C.border}`,borderRadius:6,padding:"10px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",transition:"opacity .15s",
+  ...(v==="primary"?{background:C.accent,color:"#fff"}:
      v==="danger"?{background:C.red,color:"#fff"}:
-     v==="green"?{background:C.green,color:"#0a0c12",boxShadow:`0 4px 18px ${C.green}30`}:
-     v==="ghost"?{background:"transparent",color:C.muted2,border:`1px solid ${C.border}`}:
-     {background:C.surface,color:C.text,border:`1px solid ${C.border}`})});
+     v==="green"?{background:C.green,color:"#fff"}:
+     v==="ghost"?{background:C.surface,color:C.text}:
+     {background:C.surface2,color:C.text})});
 
 function Badge({label:l,color=C.muted2}) {
-  return <span style={{background:color+"20",color,border:`1px solid ${color}40`,borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700,letterSpacing:.5,textTransform:"uppercase"}}>{l}</span>;
+  return <span style={{background:color+"18",color,border:`1px solid ${color}40`,borderRadius:999,padding:"2px 8px",fontSize:10,fontWeight:700,letterSpacing:.3,textTransform:"uppercase"}}>{l}</span>;
 }
 function PerfBar({perf,small}) {
   const col=perf>=85?C.green:perf>=60?C.warn:C.red;
@@ -5624,6 +5625,7 @@ function App() {
   const desktopSidebarW=300;
   const tabletSidebarW=240;
   const mobilePrimary=tabs.slice(0,4);
+  const activeTabMeta=tabs.find(t=>t.id===tab)||null;
 
   function getActiveView() {
     if(tab==="giris") return <DataEntry currentUser={currentUser} machines={machines}/>;
@@ -5654,23 +5656,23 @@ function App() {
   const activeView=getActiveView();
 
   const modeSwitch=(
-    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-      {MODE_OPTIONS.map(m=>(
-        <button key={m.id} onClick={()=>setWorkMode(m.id)} style={{...chip(workMode===m.id,m.color),padding:"7px 10px",fontSize:11}}>
-          {m.label}
+    <div style={{display:"inline-flex",border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden",background:C.surface}}>
+      {MODE_OPTIONS.map((m,idx)=>(
+        <button key={m.id} onClick={()=>setWorkMode(m.id)} style={{border:"none",background:workMode===m.id?C.accent:C.surface,color:workMode===m.id?"#fff":C.text,padding:"7px 12px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",borderLeft:idx===0?"none":`1px solid ${C.border}`}}>
+          {m.label.replace(" Modu","")}
         </button>
       ))}
     </div>
   );
 
   const menuSection=compact=>(
-    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
       {visibleGroups.map(g=>(
         <div key={g}>
-          <div style={{fontSize:10,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:6,padding:compact?"0 2px":"0 4px"}}>{g}</div>
+          <div style={{fontSize:10,color:C.muted,letterSpacing:.3,textTransform:"uppercase",marginBottom:6,padding:compact?"0 2px":"0 6px",fontWeight:700}}>{g}</div>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
             {groupedTabs[g].map(t=>(
-              <button key={t.id} onClick={()=>setTab(t.id)} style={{display:"flex",alignItems:"center",gap:10,textAlign:"left",padding:compact?"9px 10px":"10px 12px",borderRadius:10,border:`1px solid ${tab===t.id?C.accent:C.border}`,background:tab===t.id?C.accent+"18":C.card,color:tab===t.id?C.accent:C.text,cursor:"pointer",fontFamily:"inherit"}}>
+              <button key={t.id} onClick={()=>setTab(t.id)} style={{display:"flex",alignItems:"center",gap:10,textAlign:"left",padding:compact?"9px 10px":"10px 12px",borderRadius:7,border:`1px solid ${tab===t.id?C.accent+"55":"transparent"}`,borderLeft:`3px solid ${tab===t.id?C.accent:"transparent"}`,background:tab===t.id?C.brandTint:"transparent",color:tab===t.id?C.accent:C.text,cursor:"pointer",fontFamily:"inherit"}}>
                 <span style={{width:22,display:"inline-flex",justifyContent:"center",alignItems:"center"}}><NavIcon name={t.icon}/></span>
                 <span style={{fontSize:compact?12:13,fontWeight:tab===t.id?700:500}}>{t.label}</span>
               </button>
@@ -5682,30 +5684,38 @@ function App() {
   );
 
   return (
-    <div style={{background:C.bg,minHeight:"100vh",color:C.text,fontFamily:"'DM Sans','Segoe UI',sans-serif"}}>
+    <div style={{background:C.bg,minHeight:"100vh",color:C.text,fontFamily:"'Segoe UI','Segoe UI Variable Text',Tahoma,Arial,sans-serif"}}>
       <div style={{width:"100%",maxWidth:contentMaxWidth,margin:"0 auto",paddingBottom:layoutMode==="mobile"?76:20}}>
-        <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:headerPadding,position:"sticky",top:0,zIndex:10}}>
-          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-            <div style={{width:34,height:34,borderRadius:10,background:"transparent",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
+        <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:headerPadding,position:"sticky",top:0,zIndex:10,boxShadow:"0 1px 0 rgba(0,0,0,.03)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:10}}>
+            <div style={{width:34,height:34,borderRadius:8,background:C.surface2,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",border:`1px solid ${C.border}`}}>
               {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:16}}>⚙️</span>}
             </div>
             <div style={{flex:1,minWidth:220}}>
-              <div style={{fontWeight:700,fontSize:14,color:C.text}}>CNC Atolye MRP Platformu</div>
+              <div style={{fontWeight:700,fontSize:14,color:C.text}}>CNC Atolye MRP</div>
               <div style={{color:C.muted2,fontSize:11,display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+                <span>{activeTabMeta?.label||"Modul"}</span>
+                <span>•</span>
                 <span>{currentUser.fullName}</span>
                 <Badge label={currentRoleLabel} color={isAdmin?C.accent:C.muted2}/>
                 <Badge label={layoutMode==="desktop"?"Desktop":(layoutMode==="tablet"?"Tablet":"Mobil")} color={C.muted2}/>
               </div>
             </div>
-            {modeSwitch}
             <button onClick={logout} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12}}>Cikis</button>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            {modeSwitch}
+            <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:C.muted}}>
+              <span>Calisma Alani</span>
+              <Badge label={(MODE_OPTIONS.find(m=>m.id===workMode)?.label||"").replace(" Modu","")} color={C.accent}/>
+            </div>
           </div>
         </div>
 
         {layoutMode==="desktop"&&(
           <div style={{display:"grid",gridTemplateColumns:`${desktopSidebarW}px minmax(0,1fr)`,gap:14,alignItems:"start",padding:"12px 10px"}}>
-            <div style={{position:"sticky",top:76}}>
-              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:10,maxHeight:"calc(100vh - 100px)",overflowY:"auto"}}>
+            <div style={{position:"sticky",top:92}}>
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:10,maxHeight:"calc(100vh - 118px)",overflowY:"auto"}}>
                 {menuSection(false)}
               </div>
             </div>
@@ -5715,8 +5725,8 @@ function App() {
         {layoutMode==="tablet"&&(
           <div style={{display:"grid",gridTemplateColumns:`minmax(0,1fr) ${tabletSidebarW}px`,gap:14,alignItems:"start",padding:"10px"}}>
             <div style={{minWidth:0}}>{activeView}</div>
-            <div style={{position:"sticky",top:76}}>
-              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:8,maxHeight:"calc(100vh - 100px)",overflowY:"auto"}}>
+            <div style={{position:"sticky",top:92}}>
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:8,maxHeight:"calc(100vh - 118px)",overflowY:"auto"}}>
                 {menuSection(true)}
               </div>
             </div>
@@ -5727,12 +5737,12 @@ function App() {
             {activeView}
             <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:520,background:C.surface,borderTop:`1px solid ${C.border}`,display:"flex",overflowX:"auto",overflowY:"hidden",WebkitOverflowScrolling:"touch",zIndex:20}}>
               {mobilePrimary.map(t=>(
-                <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:"1 0 86px",minWidth:86,padding:"12px 10px 10px",border:"none",background:"transparent",cursor:"pointer",color:tab===t.id?C.accent:C.muted,borderTop:`2px solid ${tab===t.id?C.accent:"transparent"}`,fontFamily:"inherit"}}>
+                <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:"1 0 86px",minWidth:86,padding:"12px 10px 10px",border:"none",background:tab===t.id?C.brandTint:"transparent",cursor:"pointer",color:tab===t.id?C.accent:C.muted,borderTop:`2px solid ${tab===t.id?C.accent:"transparent"}`,fontFamily:"inherit"}}>
                   <div style={{display:"inline-flex",justifyContent:"center",alignItems:"center",height:20}}><NavIcon name={t.icon} size={19}/></div>
                   <div style={{fontSize:10,fontWeight:tab===t.id?700:400,marginTop:2}}>{t.label}</div>
                 </button>
               ))}
-              <button onClick={()=>setMobileMenuOpen(true)} style={{flex:"0 0 82px",minWidth:82,padding:"12px 10px 10px",border:"none",background:"transparent",cursor:"pointer",color:mobileMenuOpen?C.accent:C.muted,borderTop:`2px solid ${mobileMenuOpen?C.accent:"transparent"}`,fontFamily:"inherit"}}>
+              <button onClick={()=>setMobileMenuOpen(true)} style={{flex:"0 0 82px",minWidth:82,padding:"12px 10px 10px",border:"none",background:mobileMenuOpen?C.brandTint:"transparent",cursor:"pointer",color:mobileMenuOpen?C.accent:C.muted,borderTop:`2px solid ${mobileMenuOpen?C.accent:"transparent"}`,fontFamily:"inherit"}}>
                 <div style={{display:"inline-flex",justifyContent:"center",alignItems:"center",height:20}}><NavIcon name="users" size={19}/></div>
                 <div style={{fontSize:10,fontWeight:mobileMenuOpen?700:400,marginTop:2}}>Menu</div>
               </button>
