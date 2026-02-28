@@ -912,6 +912,14 @@ function MaterialLibrary() {
   const [search,setSearch]=useState("");
   const [form,setForm]=useState({name:"",code:"",note:""});
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const nextMaterialCode=useCallback((list=materials)=>{
+    const nums=list.map(m=>{
+      const mm=String(m.code||"").toUpperCase().match(/^M-(\d+)$/);
+      return mm?Number(mm[1]):null;
+    }).filter(n=>n!==null);
+    const next=(nums.length?Math.max(...nums):0)+1;
+    return `M-${String(next).padStart(3,"0")}`;
+  },[materials]);
 
   const load=useCallback(async()=>{
     const rows=await window.DB.getAll("materials");
@@ -919,12 +927,17 @@ function MaterialLibrary() {
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    if(editId) return;
+    setForm(prev=>({...prev,code:nextMaterialCode()}));
+  },[editId,nextMaterialCode]);
 
   async function saveMaterial(){
     if(!form.name.trim()){alert("Malzeme adı zorunlu.");return;}
+    const finalCode=editId?(form.code||nextMaterialCode()):nextMaterialCode();
     const payload={
       name:form.name.trim(),
-      code:form.code.trim().toUpperCase(),
+      code:String(finalCode).toUpperCase(),
       note:form.note.trim(),
       updatedAt:new Date().toISOString(),
     };
@@ -933,13 +946,14 @@ function MaterialLibrary() {
       if(!ok){alert("Malzeme güncellenemedi.");return;}
       setMaterials(prev=>prev.map(x=>x.id===editId?{...x,...payload}:x).sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
       setEditId(null);
-      setForm({name:"",code:"",note:""});
+      setForm({name:"",code:nextMaterialCode(),note:""});
       return;
     }
     const id=await window.DB.addDoc("materials",payload);
     if(!id){alert("Malzeme kaydedilemedi.");return;}
-    setMaterials(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev].sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
-    setForm({name:"",code:"",note:""});
+    const nextList=[{id,...payload,createdAt:new Date().toISOString()},...materials];
+    setMaterials(nextList.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    setForm({name:"",code:nextMaterialCode(nextList),note:""});
   }
 
   async function removeMaterial(m){
@@ -949,7 +963,7 @@ function MaterialLibrary() {
     setMaterials(prev=>prev.filter(x=>x.id!==m.id));
     if(editId===m.id){
       setEditId(null);
-      setForm({name:"",code:"",note:""});
+      setForm({name:"",code:nextMaterialCode(materials.filter(x=>x.id!==m.id)),note:""});
     }
   }
 
@@ -972,7 +986,7 @@ function MaterialLibrary() {
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
           <div><span style={labelSt}>Malzeme Adi *</span><input style={inputSt} value={form.name} onChange={e=>fv("name",e.target.value)} placeholder="AISI 304"/></div>
-          <div><span style={labelSt}>Kod</span><input style={inputSt} value={form.code} onChange={e=>fv("code",e.target.value)} placeholder="M-001"/></div>
+          <div><span style={labelSt}>Kod (Otomatik)</span><input style={{...inputSt,background:C.surface,color:C.muted2}} value={form.code||nextMaterialCode()} readOnly/></div>
         </div>
         <div style={{marginTop:8}}>
           <span style={labelSt}>Not</span>
@@ -980,7 +994,7 @@ function MaterialLibrary() {
         </div>
         <div style={{display:"flex",gap:8,marginTop:10}}>
           <button onClick={saveMaterial} style={{...btnSt("primary"),flex:1,padding:12}}>{editId?"Malzemeyi Guncelle":"Malzeme Kaydet"}</button>
-          {editId&&<button onClick={()=>{setEditId(null);setForm({name:"",code:"",note:""});}} style={{...btnSt("ghost"),padding:"12px 14px"}}>Iptal</button>}
+          {editId&&<button onClick={()=>{setEditId(null);setForm({name:"",code:nextMaterialCode(),note:""});}} style={{...btnSt("ghost"),padding:"12px 14px"}}>Iptal</button>}
         </div>
       </div>
 
@@ -2792,9 +2806,9 @@ function App() {
         ):( 
           <>
             {activeView}
-            <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:480,background:C.surface,borderTop:`1px solid ${C.border}`,display:"flex",zIndex:20}}>
+            <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:480,background:C.surface,borderTop:`1px solid ${C.border}`,display:"flex",overflowX:"auto",overflowY:"hidden",WebkitOverflowScrolling:"touch",zIndex:20}}>
               {tabs.map(t=>( 
-                <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:"12px 0 10px",border:"none",background:"transparent",cursor:"pointer",color:tab===t.id?C.accent:C.muted,borderTop:`2px solid ${tab===t.id?C.accent:"transparent"}`,fontFamily:"inherit"}}>
+                <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:"0 0 auto",minWidth:86,padding:"12px 10px 10px",border:"none",background:"transparent",cursor:"pointer",color:tab===t.id?C.accent:C.muted,borderTop:`2px solid ${tab===t.id?C.accent:"transparent"}`,fontFamily:"inherit"}}>
                   <div style={{display:"inline-flex",justifyContent:"center",alignItems:"center",height:20}}><NavIcon name={t.icon} size={19}/></div>
                   <div style={{fontSize:10,fontWeight:tab===t.id?700:400,marginTop:2}}>{t.label}</div>
                 </button>
