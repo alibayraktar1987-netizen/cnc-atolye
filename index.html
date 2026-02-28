@@ -124,16 +124,33 @@ const ROLE_PERMISSION_DEFAULTS = {
   viewer:["view_reports"],
 };
 
-const C = {
-  bg:"#f3f2f1", bgAlt:"#faf9f8",
-  surface:"#ffffff", surface2:"#f8f8f8", card:"#ffffff", border:"#e1dfdd",
-  accent:"#0f6cbd", accentDim:"#deecf9", brandTint:"#eff6fc",
-  green:"#107c10", greenDim:"#dff6dd",
-  red:"#d13438", redDim:"#fde7e9",
-  warn:"#ca5010", warnDim:"#fff4ce",
-  purple:"#5c2e91",
-  text:"#201f1e", muted:"#605e5c", muted2:"#8a8886",
+const THEME_PRESETS = {
+  light:{
+    bg:"#f3f2f1", bgAlt:"#faf9f8",
+    surface:"#ffffff", surface2:"#f8f8f8", card:"#ffffff", border:"#e1dfdd",
+    accent:"#0f6cbd", accentDim:"#deecf9", brandTint:"#eff6fc",
+    green:"#107c10", greenDim:"#dff6dd",
+    red:"#d13438", redDim:"#fde7e9",
+    warn:"#ca5010", warnDim:"#fff4ce",
+    purple:"#5c2e91",
+    text:"#201f1e", muted:"#605e5c", muted2:"#8a8886",
+  },
+  dark:{
+    bg:"#0f1116", bgAlt:"#151922",
+    surface:"#1b1f2a", surface2:"#151923", card:"#1b1f2a", border:"#2b3141",
+    accent:"#4ea1ff", accentDim:"#102c4a", brandTint:"#1a2d46",
+    green:"#22c55e", greenDim:"#113022",
+    red:"#ff6b6b", redDim:"#40202a",
+    warn:"#f6ad55", warnDim:"#3a2d1a",
+    purple:"#b794f4",
+    text:"#eef3ff", muted:"#b3bdd4", muted2:"#8b97b3",
+  },
 };
+const C = { ...THEME_PRESETS.light };
+function applyThemeMode(mode){
+  const next=THEME_PRESETS[mode]||THEME_PRESETS.light;
+  Object.assign(C,next);
+}
 const ORDER_STATUS_OPTIONS = [
   { id:"planned", label:"Planlandi", color:C.accent },
   { id:"in_production", label:"Uretimde", color:C.green },
