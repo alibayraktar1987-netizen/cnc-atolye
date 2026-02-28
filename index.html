@@ -1063,7 +1063,6 @@ function MaterialLibrary() {
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
         <div style={{fontWeight:700,color:C.text}}>Malzeme Kutuphanesi</div>
         <div style={{display:"flex",gap:8}}>
-          <button onClick={seedDefaultMaterials} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Hazir Listeyi Ekle</button>
           <button onClick={()=>{if(showForm){setShowForm(false);setEditId(null);setForm({name:"",code:nextMaterialCode(),density:"",stock:"",note:""});}else{setEditId(null);setForm({name:"",code:nextMaterialCode(),density:"",stock:"",note:""});setShowForm(true);}}} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>{showForm?"Kapat":"+ Yeni Ekle"}</button>
         </div>
       </div>
