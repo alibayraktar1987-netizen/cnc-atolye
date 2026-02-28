@@ -4335,6 +4335,216 @@ function MachineConnectivityPrep({currentUser,machines=DEFAULT_MACHINES}) {
   );
 }
 
+function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
+  const [loading,setLoading]=useState(true);
+  const [data,setData]=useState({orders:[],sales:[],materials:[],prs:[],connectors:[],telemetry:[],downtimes:[],entries:[],notifs:[],tools:[]});
+  const load=useCallback(async()=>{
+    const [orders,sales,materials,prs,connectors,telemetry,downtimes,entries,notifs,tools]=await Promise.all([
+      window.DB.getAll("orders"),
+      window.DB.getAll("salesOrders"),
+      window.DB.getAll("materials"),
+      window.DB.getAll("purchaseRequests"),
+      window.DB.getAll("machineConnectors"),
+      window.DB.getAll("machineTelemetryMock"),
+      window.DB.getAll("downtimeEvents"),
+      window.DB.getAll("entries"),
+      window.DB.getAll("notifications"),
+      window.DB.getAll("toolStock"),
+    ]);
+    setData({orders,sales,materials,prs,connectors,telemetry,downtimes,entries,notifs,tools});
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  const today=todayStr();
+  const openOrders=data.orders.filter(o=>isOpenOrderStatus(o.status));
+  const lateOrders=openOrders.filter(o=>o.dueDate&&o.dueDate<today);
+  const nearSales=data.sales.filter(s=>{
+    if(["delivered","cancelled"].includes(s.status||"")) return false;
+    const due=s.dueDate||"";
+    if(!due) return false;
+    return dayDiff(today,due)>=0&&dayDiff(today,due)<=3;
+  });
+  const lowStocks=data.materials.filter(m=>(safeNum(m.stock)<=Math.max(safeNum(m.reorderPoint),safeNum(m.safetyStock),0)));
+  const pendingPr=data.prs.filter(r=>!["received","cancelled","closed"].includes(r.status||""));
+  const unresolvedNotifs=data.notifs.filter(n=>!["resolved","closed"].includes(n.status||""));
+  const lowLifeTools=data.tools.filter(t=>safeNum(t.remainingLifePct)<=20);
+
+  const latestTelemetry={};
+  [...data.telemetry].sort((a,b)=>(b.collectedAtUtc||"").localeCompare(a.collectedAtUtc||"")).forEach(t=>{
+    if(!t.machineId||latestTelemetry[t.machineId]) return;
+    latestTelemetry[t.machineId]=t;
+  });
+  const machineRows=(data.connectors.length?data.connectors:machines.map((m,idx)=>({id:`virt_${idx}`,machineName:m,connectionMode:"not_connected"}))).map(mc=>{
+    const t=latestTelemetry[mc.id]||null;
+    const machineName=mc.machineName||mc.code||mc.id;
+    const rows=data.entries.filter(e=>e.machine===machineName&&e.date===today);
+    const stopMin=data.downtimes.filter(d=>d.machine===machineName&&d.date===today).reduce((s,d)=>s+safeNum(d.durationMin),0);
+    const planned=EFFECTIVE_SECONDS;
+    const up=Math.max(0,planned-stopMin*60);
+    const produced=rows.reduce((s,e)=>s+safeNum(e.correct)+safeNum(e.wrong),0);
+    const correct=rows.reduce((s,e)=>s+safeNum(e.correct),0);
+    const cycleSecAvg=rows.length?rows.reduce((s,e)=>s+safeNum(e.partSec||0),0)/rows.length:60;
+    const runSec=produced*Math.max(1,cycleSecAvg);
+    const availability=planned>0?up/planned:0;
+    const performance=up>0?Math.min(1,runSec/up):0;
+    const quality=produced>0?correct/produced:1;
+    const oee=Math.round(availability*performance*quality*100);
+    return {
+      id:mc.id,
+      machineName,
+      status:t?.status||(mc.connectionMode==="simulation"?"simulation":"offline"),
+      program:t?.programName||"-",
+      partCounter:safeNum(t?.partCounter),
+      alarms:(t?.activeAlarms||[]).length,
+      oee,
+      availability:Math.round(availability*100),
+      performance:Math.round(performance*100),
+      quality:Math.round(quality*100),
+    };
+  });
+  const statusColor=s=>{
+    if(["running","live"].includes(s)) return C.green;
+    if(["alarm"].includes(s)) return C.red;
+    if(["idle","setup","simulation"].includes(s)) return C.warn;
+    return C.muted2;
+  };
+
+  return (
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
+        {[["Acik Is Emri",openOrders.length,C.accent],["Geciken Is",lateOrders.length,lateOrders.length?C.red:C.green],["Kritik Stok",lowStocks.length,lowStocks.length?C.warn:C.green],["Acil Satin Alma",pendingPr.length,pendingPr.length?C.warn:C.green],["Bekleyen Bildirim",unresolvedNotifs.length,unresolvedNotifs.length?C.red:C.green],["Kritik Takim Omru",lowLifeTools.length,lowLifeTools.length?C.red:C.green]].map(([l,v,col])=>(
+          <div key={l} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>{l}</div>
+            <div style={{fontSize:26,color:col,fontWeight:800,fontFamily:"monospace",marginTop:4}}>{v}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+          <div style={{fontWeight:700,color:C.text}}>Canli Atolye Gorunumu</div>
+          <button onClick={load} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Yenile</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8}}>
+          {machineRows.map(m=>(
+            <div key={m.id} style={{background:C.surface,border:`1px solid ${statusColor(m.status)}55`,borderRadius:10,padding:"10px 12px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",gap:6,alignItems:"center"}}>
+                <div style={{fontWeight:700,color:C.text}}>{m.machineName}</div>
+                <Badge label={m.status||"offline"} color={statusColor(m.status)}/>
+              </div>
+              <div style={{fontSize:11,color:C.muted2,marginTop:3}}>Program: {m.program}</div>
+              <div style={{fontSize:11,color:C.muted2}}>Parca: {m.partCounter} · Alarm: {m.alarms}</div>
+              <div style={{fontSize:12,color:C.text,marginTop:6}}>OEE %{m.oee} (A %{m.availability} / P %{m.performance} / Q %{m.quality})</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Termin Riski Olan Is Emirleri</div>
+          {lateOrders.slice(0,8).map(o=>(
+            <div key={o.id} style={{padding:"7px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.muted2}}>
+              <span style={{color:C.text,fontWeight:700,fontFamily:"monospace"}}>{o.code}</span> · {o.name||"-"} · {o.dueDate||"-"}
+            </div>
+          ))}
+          {lateOrders.length===0&&<div style={{fontSize:12,color:C.muted2}}>Geciken is emri yok.</div>}
+        </div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Yaklasan Satis Terminleri (3 Gun)</div>
+          {nearSales.slice(0,8).map(s=>(
+            <div key={s.id} style={{padding:"7px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.muted2}}>
+              <span style={{color:C.text,fontWeight:700,fontFamily:"monospace"}}>{s.code||"-"}</span> · {s.customerName||"-"} · {s.dueDate||"-"}
+            </div>
+          ))}
+          {nearSales.length===0&&<div style={{fontSize:12,color:C.muted2}}>Yaklasan termin bulunmuyor.</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MPSModule(){
+  const [loading,setLoading]=useState(true);
+  const [sales,setSales]=useState([]);
+  const [orders,setOrders]=useState([]);
+  const [mpsPlans,setMpsPlans]=useState([]);
+  const [form,setForm]=useState({partNo:"",weekStart:startOfWeekYmd(todayStr()),plannedQty:"0",note:""});
+  const setF=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const load=useCallback(async()=>{
+    const [s,o,m]=await Promise.all([window.DB.getAll("salesOrders"),window.DB.getAll("orders"),window.DB.getAll("mpsPlans")]);
+    setSales(s); setOrders(o); setMpsPlans(m);
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  async function savePlan(){
+    if(!form.partNo.trim()){alert("Parca no zorunlu.");return;}
+    const payload={
+      partNo:form.partNo.trim().toUpperCase(),
+      weekStart:startOfWeekYmd(form.weekStart||todayStr()),
+      plannedQty:Math.max(0,safeNum(form.plannedQty)),
+      note:form.note.trim(),
+      updatedAt:new Date().toISOString(),
+    };
+    const id=await window.DB.addDoc("mpsPlans",payload);
+    if(!id){alert("MPS kaydi olusturulamadi.");return;}
+    setMpsPlans(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
+    setForm({partNo:"",weekStart:startOfWeekYmd(todayStr()),plannedQty:"0",note:""});
+  }
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  const base=startOfWeekYmd(todayStr());
+  const buckets=Array.from({length:8},(_,i)=>{
+    const start=addDays(base,i*7);
+    const end=addDays(start,6);
+    const demand=sales.reduce((sum,s)=>{
+      if(["cancelled","delivered"].includes(s.status||"")) return sum;
+      if(s.lines&&s.lines.length){
+        return sum+s.lines.filter(l=>l.dueDate>=start&&l.dueDate<=end).reduce((x,l)=>x+safeNum(l.qty),0);
+      }
+      if(s.dueDate>=start&&s.dueDate<=end) return sum+safeNum(s.qty);
+      return sum;
+    },0);
+    const wo=orders.filter(o=>o.dueDate>=start&&o.dueDate<=end).reduce((s,o)=>s+safeNum(o.qty),0);
+    const mps=mpsPlans.filter(p=>p.weekStart===start).reduce((s,p)=>s+safeNum(p.plannedQty),0);
+    const balance=(wo+mps)-demand;
+    return {start,end,demand,wo,mps,balance};
+  });
+  const exportRows=buckets.map(b=>({hafta:`${b.start} - ${b.end}`,talep:b.demand,isEmriArz:b.wo,mpsPlan:b.mps,bakiye:b.balance}));
+
+  return (
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontWeight:700,color:C.text,marginBottom:10}}>MPS Plan Girdisi</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+          <div><span style={labelSt}>Parca No</span><input style={inputSt} value={form.partNo} onChange={e=>setF("partNo",e.target.value)} placeholder="PRT-001"/></div>
+          <div><span style={labelSt}>Hafta Baslangic</span><input style={inputSt} type="date" value={form.weekStart} onChange={e=>setF("weekStart",e.target.value||todayStr())}/></div>
+          <div><span style={labelSt}>Planlanan Adet</span><input style={inputSt} type="number" min="0" value={form.plannedQty} onChange={e=>setF("plannedQty",e.target.value)}/></div>
+        </div>
+        <div style={{marginTop:8}}><span style={labelSt}>Not</span><textarea rows={2} style={{...inputSt,minHeight:62,resize:"vertical"}} value={form.note} onChange={e=>setF("note",e.target.value)}/></div>
+        <div style={{display:"flex",gap:8,justifyContent:"space-between",marginTop:10,flexWrap:"wrap"}}>
+          <button onClick={savePlan} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>MPS Kaydet</button>
+          <button onClick={()=>downloadCsv(`mps-${todayStr()}.csv`,[{label:"Hafta",key:"hafta"},{label:"Talep",key:"talep"},{label:"Is Emri Arz",key:"isEmriArz"},{label:"MPS Plan",key:"mpsPlan"},{label:"Bakiye",key:"bakiye"}],exportRows)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>CSV Indir</button>
+        </div>
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>8 Haftalik Ana Uretim Plani</div>
+        {buckets.map(b=>(
+          <div key={b.start} style={{display:"grid",gridTemplateColumns:"1.3fr repeat(4,.8fr)",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,alignItems:"center"}}>
+            <div style={{color:C.text,fontWeight:700}}>{b.start} - {b.end}</div>
+            <div style={{color:C.muted2}}>Talep: {b.demand}</div>
+            <div style={{color:C.muted2}}>WO: {b.wo}</div>
+            <div style={{color:C.muted2}}>MPS: {b.mps}</div>
+            <div style={{color:b.balance<0?C.red:C.green,fontWeight:700}}>Bakiye: {b.balance}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ModulePlaceholder({title,desc,items=[]}) {
   return (
     <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
