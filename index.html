@@ -1359,6 +1359,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   const [customers,setCustomers]=useState([]);
   const [materials,setMaterials]=useState([]);
   const [toolMovements,setToolMovements]=useState([]);
+  const [entries,setEntries]=useState([]);
   const [loading,setLoading]=useState(true);
   const [showForm,setShowForm]=useState(false);
   const [editId,setEditId]=useState(null);
@@ -1381,18 +1382,36 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   },[orders]);
 
   const load=useCallback(async()=>{
-    const [o,m,c,ml]=await Promise.all([window.DB.getAll("orders"),window.DB.getAll("toolMovements"),window.DB.getAll("customers"),window.DB.getAll("materials")]);
+    const [o,m,c,ml,en]=await Promise.all([window.DB.getAll("orders"),window.DB.getAll("toolMovements"),window.DB.getAll("customers"),window.DB.getAll("materials"),window.DB.getAll("entries")]);
     setOrders(o.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
     setToolMovements(m.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
     setCustomers(c.sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
     setMaterials(ml.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    setEntries(en.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
+  const entryToolChanges=entries
+    .filter(e=>(Number(e.machineToolQty??e.machineToolChange??0)>0)&&(e.jobCode||""))
+    .map(e=>({
+      id:`entry_${e.id||Math.random().toString(36).slice(2,7)}`,
+      orderId:"",
+      orderCode:e.jobCode||"",
+      toolCode:e.machineToolCode||"",
+      toolName:e.machineToolName||"Takım",
+      type:"change",
+      qty:Number(e.machineToolQty??e.machineToolChange??0)||0,
+      createdAt:e.createdAt||`${e.date||todayStr()}T00:00:00`,
+      userName:e.operatorName||e.operatorId||"",
+      note:[e.shift?`Vardiya: ${e.shift}`:"",e.machine?`Tezgah: ${e.machine}`:""].filter(Boolean).join(" · "),
+      date:e.date||"",
+    }));
   useEffect(()=>{
     if(!viewOrder){ setViewOrderMoves([]); return; }
-    setViewOrderMoves(toolMovements.filter(m=>(m.orderId&&m.orderId===viewOrder.id)||(!m.orderId&&m.orderCode===viewOrder.code)));
-  },[viewOrder,toolMovements]);
+    const stockMoves=toolMovements.filter(m=>(m.orderId&&m.orderId===viewOrder.id)||(!m.orderId&&m.orderCode===viewOrder.code));
+    const entryMoves=entryToolChanges.filter(m=>m.orderCode===viewOrder.code);
+    setViewOrderMoves([...stockMoves,...entryMoves].sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+  },[viewOrder,toolMovements,entryToolChanges]);
 
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
   const toggleMachine=m=>fv("machines",form.machines.includes(m)?form.machines.filter(x=>x!==m):[...form.machines,m]);
@@ -1439,6 +1458,11 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
     if(!key) return;
     usageCountByOrder[key]=(usageCountByOrder[key]||0)+1;
   });
+  entryToolChanges.forEach(m=>{
+    const key=m.orderCode;
+    if(!key) return;
+    usageCountByOrder[key]=(usageCountByOrder[key]||0)+1;
+  });
   const toggleStatusFilter=statusId=>{
     setStatusFilters(prev=>prev.includes(statusId)?prev.filter(x=>x!==statusId):[...prev,statusId]);
   };
@@ -1476,7 +1500,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
                 <div style={{fontSize:13,color:C.text,fontWeight:700}}>{m.toolCode?`${m.toolCode} · `:""}{m.toolName||"Takım"}</div>
                 <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{(m.createdAt||"").slice(0,16).replace("T"," ")} {m.userName?`· ${m.userName}`:""} {m.note?`· ${m.note}`:""}</div>
               </div>
-              <Badge label={`${m.type==="in"?"Giriş":"Çıkış"} ${m.qty}`} color={m.type==="in"?C.green:C.red}/>
+              <Badge label={`${m.type==="in"?"Giriş":(m.type==="out"?"Çıkış":"Degisim")} ${m.qty}`} color={m.type==="in"?C.green:(m.type==="out"?C.red:C.warn)}/>
             </div>
           ))}
         </div>
