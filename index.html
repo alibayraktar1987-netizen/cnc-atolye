@@ -3209,6 +3209,340 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
 }
 
 // ════════════════════════════════════════════════════════════
+//  OPERATOR WORKSPACE (TABLET-FIRST SINGLE PAGE)
+// ════════════════════════════════════════════════════════════
+function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule}) {
+  const [loading,setLoading]=useState(true);
+  const [isWide,setIsWide]=useState(()=>typeof window!=="undefined"?window.matchMedia("(min-width: 920px)").matches:false);
+  const [orders,setOrders]=useState([]);
+  const [entries,setEntries]=useState([]);
+  const [downtimeTypes,setDowntimeTypes]=useState([]);
+  const [downtimeEvents,setDowntimeEvents]=useState([]);
+  const [telemetryRows,setTelemetryRows]=useState([]);
+  const [inspections,setInspections]=useState([]);
+  const [selectedMachine,setSelectedMachine]=useState(machines[0]||"CNC-1");
+  const [selectedShift,setSelectedShift]=useState("sabah");
+  const [selectedOrderId,setSelectedOrderId]=useState("");
+  const [entryForm,setEntryForm]=useState({correct:"",wrong:""});
+  const [downtimeForm,setDowntimeForm]=useState({typeId:"",minutes:"10",reason:""});
+  const [qualityForm,setQualityForm]=useState({result:"pass",serialNo:"",measurements:"",scrapQty:"0",scrapReason:""});
+  const [busy,setBusy]=useState({entry:false,downtime:false,quality:false});
+  const [flash,setFlash]=useState({type:"",msg:""});
+
+  const showFlash=useCallback((type,msg)=>{
+    setFlash({type,msg});
+    setTimeout(()=>setFlash({type:"",msg:""}),2600);
+  },[]);
+
+  useEffect(()=>{
+    const mq=window.matchMedia("(min-width: 920px)");
+    const onChange=e=>setIsWide(e.matches);
+    setIsWide(mq.matches);
+    if(mq.addEventListener) mq.addEventListener("change",onChange);
+    else mq.addListener(onChange);
+    return ()=>{
+      if(mq.removeEventListener) mq.removeEventListener("change",onChange);
+      else mq.removeListener(onChange);
+    };
+  },[]);
+
+  const load=useCallback(async()=>{
+    const [o,e,dt,de,tel,ins]=await Promise.all([
+      window.DB.getAll("orders"),
+      window.DB.getAll("entries"),
+      window.DB.getAll("downtimeTypes"),
+      window.DB.getAll("downtimeEvents"),
+      window.DB.getAll("machineTelemetryMock"),
+      window.DB.getAll("qualityInspections"),
+    ]);
+    const activeOrders=o.filter(x=>isOpenOrderStatus(x.status));
+    setOrders(activeOrders);
+    setEntries(e.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    let typeRows=dt;
+    if(typeRows.length===0){
+      const seeds=[["DT-ARIZA","Ariza","ariza"],["DT-MAT","Malzeme Yok","malzeme"],["DT-PROG","Program Hatasi","program"],["DT-MOLA","Mola","mola"],["DT-TEM","Temizlik","temizlik"]];
+      for(const [code,name,cat] of seeds){
+        await window.DB.addDoc("downtimeTypes",{code,name,category:cat,requireReason:true,notifyMaintenance:cat==="ariza",updatedAt:new Date().toISOString()});
+      }
+      typeRows=await window.DB.getAll("downtimeTypes");
+    }
+    setDowntimeTypes(typeRows);
+    setDowntimeEvents(de.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setTelemetryRows(tel.sort((a,b)=>(b.collectedAtUtc||"").localeCompare(a.collectedAtUtc||"")));
+    setInspections(ins.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setLoading(false);
+  },[]);
+
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    if(!machines.includes(selectedMachine)) setSelectedMachine(machines[0]||"CNC-1");
+  },[machines.join("|"),selectedMachine]);
+
+  const machineOrders=orders.filter(o=>{
+    const m=o.machines||[];
+    return m.length===0||m.includes(selectedMachine);
+  });
+  useEffect(()=>{
+    if(machineOrders.length===0){setSelectedOrderId("");return;}
+    if(!machineOrders.some(o=>o.id===selectedOrderId)) setSelectedOrderId(machineOrders[0].id);
+  },[machineOrders.map(o=>o.id).join("|"),selectedOrderId]);
+
+  const latestByMachine={};
+  telemetryRows.forEach(r=>{
+    const key=r.machineName||r.machineCode||"";
+    if(!key||latestByMachine[key]) return;
+    latestByMachine[key]=r;
+  });
+  const selectedTelemetry=latestByMachine[selectedMachine]||null;
+  const selectedOrder=machineOrders.find(o=>o.id===selectedOrderId)||null;
+  const today=todayStr();
+  const todayEntries=entries.filter(e=>e.date===today&&e.operatorId===currentUser.id&&e.machine===selectedMachine);
+  const todayGood=todayEntries.reduce((s,e)=>s+safeNum(e.correct),0);
+  const todayScrap=todayEntries.reduce((s,e)=>s+safeNum(e.wrong),0);
+  const todayDowntimeRows=downtimeEvents.filter(e=>e.date===today&&e.machine===selectedMachine&&(e.operatorId===currentUser.id||e.createdBy===currentUser.id));
+  const todayDowntimeMin=todayDowntimeRows.reduce((s,e)=>s+safeNum(e.durationMin),0);
+  const todayQualityRows=inspections.filter(i=>String(i.createdAt||"").slice(0,10)===today);
+  const todayQualityFail=todayQualityRows.filter(i=>i.result==="fail").length;
+  const todayQualityPass=todayQualityRows.filter(i=>i.result==="pass").length;
+  const qualityPct=(todayQualityPass+todayQualityFail)>0?Math.round((todayQualityPass/(todayQualityPass+todayQualityFail))*100):100;
+
+  function statusMeta(status){
+    if(status==="running") return {label:"Calisiyor",color:C.green};
+    if(status==="idle") return {label:"Bosta",color:C.warn};
+    if(status==="alarm") return {label:"Alarm",color:C.red};
+    if(status==="setup") return {label:"Kurulum",color:C.accent};
+    return {label:"Offline",color:C.muted2};
+  }
+
+  async function saveEntryQuick(){
+    if(!selectedOrder){showFlash("err","Is emri secin.");return;}
+    const correct=Math.max(0,safeNum(entryForm.correct));
+    const wrong=Math.max(0,safeNum(entryForm.wrong));
+    if(correct===0&&wrong===0){showFlash("err","Uretim adedi girin.");return;}
+    setBusy(b=>({...b,entry:true}));
+    const d=parseYmdLocal(today);
+    const payload={
+      date:today,
+      week:weekStart(d),
+      month:monthStr(d),
+      machine:selectedMachine,
+      shift:selectedShift,
+      operatorId:currentUser.id,
+      operatorName:currentUser.fullName||currentUser.id,
+      jobCode:selectedOrder.code||"",
+      jobName:selectedOrder.name||selectedOrder.partNo||"",
+      partSec:Math.max(1,safeNum(selectedOrder.partSec)||60),
+      correct,
+      wrong,
+      machineToolId:"",
+      machineToolCode:"",
+      machineToolName:"",
+      machineToolQty:0,
+      machineToolChange:0,
+    };
+    const id=await window.DB.addDoc("entries",payload);
+    setBusy(b=>({...b,entry:false}));
+    if(!id){showFlash("err","Uretim kaydi olusturulamadi.");return;}
+    setEntries(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
+    setEntryForm({correct:"",wrong:""});
+    showFlash("ok","Uretim kaydi alindi.");
+  }
+
+  async function saveDowntimeQuick(){
+    const type=downtimeTypes.find(t=>t.id===downtimeForm.typeId);
+    if(!type){showFlash("err","Durus tipi secin.");return;}
+    const minutes=Math.max(1,safeNum(downtimeForm.minutes));
+    if(type.requireReason&&!downtimeForm.reason.trim()){showFlash("err","Durus nedeni zorunlu.");return;}
+    setBusy(b=>({...b,downtime:true}));
+    const endDate=new Date();
+    const startDate=new Date(endDate.getTime()-(minutes*60000));
+    const payload={
+      machine:selectedMachine,
+      typeId:type.id,
+      typeCode:type.code||"",
+      typeName:type.name||"",
+      category:type.category||"",
+      startAt:startDate.toISOString(),
+      endAt:endDate.toISOString(),
+      durationMin:minutes,
+      date:today,
+      operatorId:currentUser.id,
+      reason:downtimeForm.reason.trim(),
+      shift:selectedShift,
+      createdBy:currentUser.id,
+      updatedAt:new Date().toISOString(),
+    };
+    const id=await window.DB.addDoc("downtimeEvents",payload);
+    if(id&&type.notifyMaintenance){
+      await window.DB.addDoc("notifications",{type:"maintenance",title:"Bakim Bildirimi",message:`${selectedMachine} icin ${type.name} durusu girildi.`,severity:"high",status:"new",sourceKey:id,createdAt:new Date().toISOString()});
+    }
+    setBusy(b=>({...b,downtime:false}));
+    if(!id){showFlash("err","Durus kaydi olusturulamadi.");return;}
+    setDowntimeEvents(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
+    setDowntimeForm(f=>({...f,reason:""}));
+    showFlash("ok","Durus kaydi alindi.");
+  }
+
+  async function saveQualityQuick(){
+    if(!selectedOrder){showFlash("err","Kalite icin is emri secin.");return;}
+    const result=qualityForm.result||"pass";
+    const serialNo=qualityForm.serialNo.trim()||`${selectedOrder.code||"WO"}-${String(Date.now()).slice(-6)}`;
+    if(result==="fail"&&Math.max(0,safeNum(qualityForm.scrapQty))<=0){showFlash("err","Fail icin scrap adedi girin.");return;}
+    setBusy(b=>({...b,quality:true}));
+    const tracePayload={
+      orderId:selectedOrder.id,
+      orderCode:selectedOrder.code||"",
+      partNo:selectedOrder.partNo||"",
+      revision:selectedOrder.revision||"",
+      machine:selectedMachine,
+      operatorId:currentUser.id,
+      programVersion:selectedTelemetry?.programName||"V1",
+      serialNo,
+      timestamp:new Date().toISOString(),
+      complaintRef:"",
+      createdBy:currentUser.id,
+      updatedAt:new Date().toISOString(),
+    };
+    const traceId=await window.DB.addDoc("partTraceability",tracePayload);
+    if(!traceId){setBusy(b=>({...b,quality:false}));showFlash("err","Izlenebilirlik kaydi olusturulamadi.");return;}
+    const inspectionPayload={
+      traceId,
+      orderId:selectedOrder.id,
+      orderCode:selectedOrder.code||"",
+      partNo:selectedOrder.partNo||"",
+      result,
+      measurements:qualityForm.measurements.trim(),
+      scrapQty:Math.max(0,safeNum(qualityForm.scrapQty)),
+      scrapReason:qualityForm.scrapReason.trim(),
+      scrapCost:0,
+      createdBy:currentUser.id,
+      createdAt:new Date().toISOString(),
+    };
+    const inspectionId=await window.DB.addDoc("qualityInspections",inspectionPayload);
+    if(inspectionId&&result==="fail"){
+      await window.DB.addDoc("notifications",{type:"quality",title:"Kalite Sapmasi",message:`${selectedOrder.code||"-"} icin fail kaydi olustu.`,severity:"high",status:"new",sourceKey:inspectionId,createdAt:new Date().toISOString()});
+    }
+    setBusy(b=>({...b,quality:false}));
+    if(!inspectionId){showFlash("err","Kalite kaydi olusturulamadi.");return;}
+    setInspections(prev=>[{id:inspectionId,...inspectionPayload},...prev]);
+    setQualityForm(f=>({...f,serialNo:"",measurements:"",scrapQty:"0",scrapReason:"",result:"pass"}));
+    showFlash("ok","Kalite kaydi alindi.");
+  }
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  const currentStatus=statusMeta(selectedTelemetry?.status||"offline");
+  const activeAlarms=selectedTelemetry?.activeAlarms||[];
+
+  return (
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      {flash.msg&&(
+        <div style={{background:flash.type==="ok"?C.greenDim:C.redDim,border:`1px solid ${flash.type==="ok"?C.green:C.red}55`,borderRadius:8,padding:"10px 12px",fontSize:13,color:flash.type==="ok"?C.green:C.red,fontWeight:600}}>
+          {flash.msg}
+        </div>
+      )}
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:10}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.text}}>Operator Tek Sayfa Ekrani</div>
+          <Badge label={currentStatus.label} color={currentStatus.color}/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:isWide?"1fr auto":"1fr",gap:10,alignItems:"center"}}>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {machines.map(m=>{
+              const tel=latestByMachine[m];
+              const st=statusMeta(tel?.status||"offline");
+              return (
+                <button key={m} onClick={()=>setSelectedMachine(m)} style={{...chip(selectedMachine===m,selectedMachine===m?C.accent:C.muted2),padding:"10px 12px",fontSize:12,minWidth:120,textAlign:"left"}}>
+                  <div style={{fontWeight:700}}>{m}</div>
+                  <div style={{fontSize:11,color:selectedMachine===m?"#fff":st.color}}>{st.label}</div>
+                </button>
+              );
+            })}
+          </div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:isWide?"flex-end":"flex-start"}}>
+            {SHIFTS.map(s=><button key={s.id} onClick={()=>setSelectedShift(s.id)} style={{...chip(selectedShift===s.id,C.accent),padding:"8px 10px",fontSize:12}}>{s.label}</button>)}
+          </div>
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Bugun Dogru</div><div style={{fontSize:24,fontWeight:800,color:C.green}}>{todayGood}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Bugun Scrap</div><div style={{fontSize:24,fontWeight:800,color:C.red}}>{todayScrap}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Durus (dk)</div><div style={{fontSize:24,fontWeight:800,color:C.warn}}>{todayDowntimeMin}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Kalite Orani</div><div style={{fontSize:24,fontWeight:800,color:qualityPct<90?C.warn:C.green}}>%{qualityPct}</div></div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:isWide?"1.1fr .9fr":"1fr",gap:12}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Uretim Girisi</div>
+          <div><span style={labelSt}>Is Emri</span><select style={{...inputSt,padding:"11px 12px",fontSize:14}} value={selectedOrderId} onChange={e=>setSelectedOrderId(e.target.value)}><option value="">{machineOrders.length===0?"Uygun is emri yok":"Is emri secin"}</option>{machineOrders.map(o=><option key={o.id} value={o.id}>{o.code} · {o.name||o.partNo||"-"}</option>)}</select></div>
+          {selectedOrder&&<div style={{fontSize:12,color:C.muted2,marginTop:6}}>Parca sure: {fmtSec(selectedOrder.partSec)} · Termin: {selectedOrder.dueDate||"-"} · Oncelik: {selectedOrder.priority||"normal"}</div>}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
+            <div><span style={labelSt}>Dogru Adet</span><input style={{...inputSt,padding:"13px 12px",fontSize:18,fontWeight:700,textAlign:"center"}} type="number" min="0" value={entryForm.correct} onChange={e=>setEntryForm(f=>({...f,correct:e.target.value}))}/></div>
+            <div><span style={labelSt}>Scrap Adet</span><input style={{...inputSt,padding:"13px 12px",fontSize:18,fontWeight:700,textAlign:"center"}} type="number" min="0" value={entryForm.wrong} onChange={e=>setEntryForm(f=>({...f,wrong:e.target.value}))}/></div>
+          </div>
+          <button onClick={saveEntryQuick} disabled={busy.entry} style={{...btnSt("primary"),width:"100%",padding:"13px 12px",marginTop:12,fontSize:15,opacity:busy.entry?0.7:1}}>{busy.entry?"Kaydediliyor...":"Uretim Kaydet"}</button>
+          <div style={{marginTop:10,fontSize:12,color:C.muted2}}>
+            Son kayitlar: {todayEntries.slice(0,3).map(e=>`${e.jobCode} (${safeNum(e.correct)}/${safeNum(e.wrong)})`).join(" · ")||"-"}
+          </div>
+        </div>
+
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Makina Durumu ve Alarm</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Program</div><div style={{fontWeight:700,color:C.text}}>{selectedTelemetry?.programName||"-"}</div></div>
+            <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Part Counter</div><div style={{fontWeight:700,color:C.text}}>{safeNum(selectedTelemetry?.partCounter)}</div></div>
+            <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Spindle %</div><div style={{fontWeight:700,color:C.text}}>{safeNum(selectedTelemetry?.spindleLoad)}</div></div>
+            <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Feed %</div><div style={{fontWeight:700,color:C.text}}>{safeNum(selectedTelemetry?.feedOverride)}</div></div>
+          </div>
+          <div style={{marginTop:10,padding:"10px 11px",border:`1px solid ${activeAlarms.length?C.red+"55":C.border}`,borderRadius:8,background:activeAlarms.length?C.redDim:C.surface2}}>
+            <div style={{fontSize:11,color:C.muted2,marginBottom:4}}>Aktif Alarm</div>
+            <div style={{fontSize:13,color:activeAlarms.length?C.red:C.muted2,fontWeight:activeAlarms.length?700:500}}>{activeAlarms.length?activeAlarms.join(" · "):"Aktif alarm yok"}</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:isWide?"1fr 1fr":"1fr",gap:12}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Durus Girisi</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 110px",gap:8}}>
+            <div><span style={labelSt}>Durus Tipi</span><select style={inputSt} value={downtimeForm.typeId} onChange={e=>setDowntimeForm(f=>({...f,typeId:e.target.value}))}><option value="">Secin</option>{downtimeTypes.map(t=><option key={t.id} value={t.id}>{t.code} · {t.name}</option>)}</select></div>
+            <div><span style={labelSt}>Dakika</span><input style={inputSt} type="number" min="1" value={downtimeForm.minutes} onChange={e=>setDowntimeForm(f=>({...f,minutes:e.target.value}))}/></div>
+          </div>
+          <div style={{marginTop:8}}><span style={labelSt}>Neden</span><input style={inputSt} value={downtimeForm.reason} onChange={e=>setDowntimeForm(f=>({...f,reason:e.target.value}))} placeholder="Malzeme yok / ariza detayi vb."/></div>
+          <button onClick={saveDowntimeQuick} disabled={busy.downtime} style={{...btnSt("danger"),width:"100%",padding:"12px 12px",marginTop:10,fontSize:14,opacity:busy.downtime?0.7:1}}>{busy.downtime?"Kaydediliyor...":"Durus Kaydet"}</button>
+          <div style={{marginTop:8,fontSize:12,color:C.muted2}}>
+            Son duruslar: {todayDowntimeRows.slice(0,3).map(r=>`${r.typeName} (${safeNum(r.durationMin)}dk)`).join(" · ")||"-"}
+          </div>
+        </div>
+
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Kalite Kontrol</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div><span style={labelSt}>Sonuc</span><select style={inputSt} value={qualityForm.result} onChange={e=>setQualityForm(f=>({...f,result:e.target.value}))}><option value="pass">Pass</option><option value="fail">Fail</option></select></div>
+            <div><span style={labelSt}>Seri/Lot</span><input style={inputSt} value={qualityForm.serialNo} onChange={e=>setQualityForm(f=>({...f,serialNo:e.target.value}))} placeholder="Otomatik olusturulur"/></div>
+            <div><span style={labelSt}>Scrap Adet</span><input style={inputSt} type="number" min="0" value={qualityForm.scrapQty} onChange={e=>setQualityForm(f=>({...f,scrapQty:e.target.value}))}/></div>
+            <div><span style={labelSt}>Scrap Nedeni</span><input style={inputSt} value={qualityForm.scrapReason} onChange={e=>setQualityForm(f=>({...f,scrapReason:e.target.value}))}/></div>
+            <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Olcum</span><input style={inputSt} value={qualityForm.measurements} onChange={e=>setQualityForm(f=>({...f,measurements:e.target.value}))} placeholder="Opsiyonel olcum degeri"/></div>
+          </div>
+          <button onClick={saveQualityQuick} disabled={busy.quality} style={{...btnSt("green"),width:"100%",padding:"12px 12px",marginTop:10,fontSize:14,opacity:busy.quality?0.7:1}}>{busy.quality?"Kaydediliyor...":"Kalite Kaydet"}</button>
+          <div style={{marginTop:8,fontSize:12,color:C.muted2}}>Bugun pass/fail: <span style={{color:C.green,fontWeight:700}}>{todayQualityPass}</span> / <span style={{color:C.red,fontWeight:700}}>{todayQualityFail}</span></div>
+        </div>
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:12,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <div style={{fontSize:12,color:C.muted2}}>Detayli ekranlara gecis</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <button onClick={()=>onOpenModule&&onOpenModule("giris")} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Uretim Detay</button>
+          <button onClick={()=>onOpenModule&&onOpenModule("downtime")} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Durus Detay</button>
+          <button onClick={()=>onOpenModule&&onOpenModule("quality")} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Kalite Detay</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
 //  REPORT
 // ════════════════════════════════════════════════════════════
 function Report({currentUser,machines=DEFAULT_MACHINES}) {
@@ -5566,11 +5900,13 @@ function App() {
     planlama:["Planlama","Tedarik ve Stok"],
     operasyon:["Operasyon","Tedarik ve Stok","Analiz ve Yonetim"],
     yonetim:["Planlama","Operasyon","Tedarik ve Stok","Analiz ve Yonetim","Sistem"],
+    operator:["Operasyon"],
   };
   const MODE_OPTIONS=[
     {id:"planlama",label:"Planlama Modu",color:C.accent},
     {id:"operasyon",label:"Operasyon Modu",color:C.green},
     {id:"yonetim",label:"Yonetim Modu",color:C.warn},
+    {id:"operator",label:"Operator Modu",color:C.purple},
   ];
   const allTabs=useMemo(()=>[
     {id:"dashboard",icon:"dashboard",label:"MRP Panel",group:"Planlama",enabled:(canEntry||canOrders||canReport||canSales||canPurchasing)},
@@ -5626,6 +5962,8 @@ function App() {
   const tabletSidebarW=240;
   const mobilePrimary=tabs.slice(0,4);
   const activeTabMeta=tabs.find(t=>t.id===tab)||null;
+  const isOperatorMode=workMode==="operator";
+  const activeContextLabel=isOperatorMode?"Operator Tek Sayfa":(activeTabMeta?.label||"Modul");
 
   function getActiveView() {
     if(tab==="giris") return <DataEntry currentUser={currentUser} machines={machines}/>;
@@ -5658,7 +5996,7 @@ function App() {
   const modeSwitch=(
     <div style={{display:"inline-flex",border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden",background:C.surface}}>
       {MODE_OPTIONS.map((m,idx)=>(
-        <button key={m.id} onClick={()=>setWorkMode(m.id)} style={{border:"none",background:workMode===m.id?C.accent:C.surface,color:workMode===m.id?"#fff":C.text,padding:"7px 12px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",borderLeft:idx===0?"none":`1px solid ${C.border}`}}>
+        <button key={m.id} onClick={()=>setWorkMode(m.id)} style={{border:"none",background:workMode===m.id?m.color:C.surface,color:workMode===m.id?"#fff":C.text,padding:"7px 12px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",borderLeft:idx===0?"none":`1px solid ${C.border}`}}>
           {m.label.replace(" Modu","")}
         </button>
       ))}
@@ -5694,7 +6032,7 @@ function App() {
             <div style={{flex:1,minWidth:220}}>
               <div style={{fontWeight:700,fontSize:14,color:C.text}}>CNC Atolye MRP</div>
               <div style={{color:C.muted2,fontSize:11,display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
-                <span>{activeTabMeta?.label||"Modul"}</span>
+                <span>{activeContextLabel}</span>
                 <span>•</span>
                 <span>{currentUser.fullName}</span>
                 <Badge label={currentRoleLabel} color={isAdmin?C.accent:C.muted2}/>
@@ -5712,7 +6050,13 @@ function App() {
           </div>
         </div>
 
-        {layoutMode==="desktop"&&(
+        {isOperatorMode&&(
+          <div style={{padding:layoutMode==="mobile"?"6px 0 70px":"12px 10px"}}>
+            <OperatorWorkspace currentUser={currentUser} machines={machines} onOpenModule={nextTab=>{setTab(nextTab);setWorkMode("operasyon");}}/>
+          </div>
+        )}
+
+        {!isOperatorMode&&layoutMode==="desktop"&&(
           <div style={{display:"grid",gridTemplateColumns:`${desktopSidebarW}px minmax(0,1fr)`,gap:14,alignItems:"start",padding:"12px 10px"}}>
             <div style={{position:"sticky",top:92}}>
               <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:10,maxHeight:"calc(100vh - 118px)",overflowY:"auto"}}>
@@ -5722,7 +6066,7 @@ function App() {
             <div style={{minWidth:0}}>{activeView}</div>
           </div>
         )}
-        {layoutMode==="tablet"&&(
+        {!isOperatorMode&&layoutMode==="tablet"&&(
           <div style={{display:"grid",gridTemplateColumns:`minmax(0,1fr) ${tabletSidebarW}px`,gap:14,alignItems:"start",padding:"10px"}}>
             <div style={{minWidth:0}}>{activeView}</div>
             <div style={{position:"sticky",top:92}}>
@@ -5732,7 +6076,7 @@ function App() {
             </div>
           </div>
         )}
-        {layoutMode==="mobile"&&(
+        {!isOperatorMode&&layoutMode==="mobile"&&(
           <>
             {activeView}
             <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:520,background:C.surface,borderTop:`1px solid ${C.border}`,display:"flex",overflowX:"auto",overflowY:"hidden",WebkitOverflowScrolling:"touch",zIndex:20}}>
