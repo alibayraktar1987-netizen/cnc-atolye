@@ -1652,6 +1652,182 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
 }
 
 // ════════════════════════════════════════════════════════════
+//  PLANNING
+// ════════════════════════════════════════════════════════════
+function Planning({currentUser,machines=DEFAULT_MACHINES}) {
+  const emptyForm={date:todayStr(),machine:machines[0]||"CNC-1",shift:"sabah",orderId:"",note:""};
+  const [form,setForm]=useState(emptyForm);
+  const [orders,setOrders]=useState([]);
+  const [plans,setPlans]=useState([]);
+  const [editId,setEditId]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const [dateFilter,setDateFilter]=useState(todayStr());
+
+  useEffect(()=>{
+    async function load(){
+      const [o,p]=await Promise.all([window.DB.getAll("orders"),window.DB.getAll("plans")]);
+      setOrders(o.filter(x=>x.status==="active"));
+      setPlans(p.sort((a,b)=>(b.date||"").localeCompare(a.date||"")));
+      setLoading(false);
+    }
+    load();
+  },[]);
+
+  useEffect(()=>{
+    if(!machines.includes(form.machine)){
+      setForm(f=>({...f,machine:machines[0]||"CNC-1"}));
+    }
+  },[machines.join(","),form.machine]);
+
+  const fv=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const selectedOrder=orders.find(o=>o.id===form.orderId)||null;
+  const filteredPlans=plans.filter(p=>!dateFilter||p.date===dateFilter);
+  const sortedPlans=[...filteredPlans].sort((a,b)=>{
+    const da=(a.date||"").localeCompare(b.date||"");
+    if(da!==0) return da;
+    const ma=(a.machine||"").localeCompare(b.machine||"");
+    if(ma!==0) return ma;
+    return (a.shift||"").localeCompare(b.shift||"");
+  });
+
+  async function savePlan(){
+    if(!form.date){alert("Tarih seçin!");return;}
+    if(!form.machine){alert("Tezgah seçin!");return;}
+    if(!form.orderId){alert("İş emri seçin!");return;}
+    const picked=orders.find(o=>o.id===form.orderId);
+    if(!picked){alert("Geçerli bir iş emri seçin!");return;}
+    const duplicate=plans.find(p=>
+      p.id!==editId &&
+      p.date===form.date &&
+      p.machine===form.machine &&
+      p.shift===form.shift
+    );
+    if(duplicate){
+      alert("Bu tarih/tezgah/vardiya için zaten plan var.");
+      return;
+    }
+    const data={
+      date:form.date,
+      week:weekStart(parseYmdLocal(form.date)),
+      month:monthStr(parseYmdLocal(form.date)),
+      machine:form.machine,
+      shift:form.shift,
+      orderId:picked.id,
+      orderCode:picked.code,
+      orderName:picked.name,
+      orderPartSec:Number(picked.partSec)||0,
+      note:form.note.trim(),
+      status:"planned",
+      updatedAt:new Date().toISOString(),
+      ...(editId?{}:{createdBy:currentUser.id}),
+    };
+    if(editId){
+      const ok=await window.DB.updateDoc("plans",editId,data);
+      if(!ok){alert("Plan güncellenemedi.");return;}
+      setPlans(p=>p.map(x=>x.id===editId?{...x,...data}:x));
+      setEditId(null);
+      setForm({...emptyForm,machine:form.machine,date:form.date,shift:form.shift});
+      return;
+    }
+    const id=await window.DB.addDoc("plans",data);
+    if(!id){alert("Plan kaydedilemedi.");return;}
+    setPlans(p=>[{id,...data},...p]);
+    setForm({...emptyForm,machine:form.machine,date:form.date,shift:form.shift});
+  }
+
+  function startEdit(plan){
+    setEditId(plan.id);
+    setForm({
+      date:plan.date||todayStr(),
+      machine:plan.machine||machines[0]||"CNC-1",
+      shift:plan.shift||"sabah",
+      orderId:plan.orderId||"",
+      note:plan.note||"",
+    });
+  }
+
+  async function removePlan(plan){
+    if(!confirm(`Plan silinsin mi? (${plan.orderCode} / ${plan.machine})`)) return;
+    const ok=await window.DB.deleteDoc("plans",plan.id);
+    if(!ok){alert("Plan silinemedi.");return;}
+    setPlans(p=>p.filter(x=>x.id!==plan.id));
+    if(editId===plan.id){
+      setEditId(null);
+      setForm({...emptyForm,machine:form.machine,date:form.date,shift:form.shift});
+    }
+  }
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
+
+  return (
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={{fontWeight:700,color:C.text}}>Planlama</div>
+          {editId&&<Badge label="Düzenleme" color={C.warn}/>}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <div><span style={labelSt}>Tarih</span><input type="date" value={form.date} onChange={e=>fv("date",e.target.value||todayStr())} style={{...inputSt,padding:"9px 10px",fontSize:13}}/></div>
+          <div><span style={labelSt}>Vardiya</span><select value={form.shift} onChange={e=>fv("shift",e.target.value)} style={{...inputSt,padding:"9px 10px",fontSize:13}}>{SHIFTS.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
+        </div>
+        <div style={{marginTop:9}}>
+          <span style={labelSt}>Tezgah</span>
+          <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+            {machines.map(m=><button key={m} onClick={()=>fv("machine",m)} style={chip(form.machine===m)}>{m}</button>)}
+          </div>
+        </div>
+        <div style={{marginTop:9}}>
+          <span style={labelSt}>İş Emri</span>
+          <select value={form.orderId} onChange={e=>fv("orderId",e.target.value)} style={inputSt}>
+            <option value="">İş emri seçin...</option>
+            {orders.map(o=><option key={o.id} value={o.id}>{o.code} - {o.name} ({(o.machines||[]).join(", ")})</option>)}
+          </select>
+          {selectedOrder&&<div style={{fontSize:12,color:C.muted2,marginTop:6}}>Parça süresi: {fmtSec(selectedOrder.partSec)} · Maks/gün: {selectedOrder.partSec?Math.floor(EFFECTIVE_SECONDS/selectedOrder.partSec):"-"}</div>}
+        </div>
+        <div style={{marginTop:9}}>
+          <span style={labelSt}>Not</span>
+          <textarea value={form.note} onChange={e=>fv("note",e.target.value)} rows={2} style={{...inputSt,minHeight:64,resize:"vertical"}} placeholder="Opsiyonel not..."/>
+        </div>
+        <div style={{display:"flex",gap:8,marginTop:10}}>
+          <button onClick={savePlan} style={{...btnSt("primary"),flex:1,padding:12}}>{editId?"Planı Güncelle":"Planı Kaydet"}</button>
+          {editId&&<button onClick={()=>{setEditId(null);setForm({...emptyForm,machine:form.machine,date:form.date,shift:form.shift});}} style={{...btnSt("ghost"),padding:"12px 14px"}}>İptal</button>}
+        </div>
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <div style={{fontSize:12,color:C.muted2}}>Planlar ({sortedPlans.length})</div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <input type="date" value={dateFilter} onChange={e=>setDateFilter(e.target.value)} style={{...inputSt,padding:"7px 9px",fontSize:12,minWidth:150}}/>
+          {dateFilter&&<button onClick={()=>setDateFilter("")} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Tümü</button>}
+        </div>
+      </div>
+
+      {sortedPlans.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"28px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Plan bulunamadı</div>}
+      {sortedPlans.map(p=>(
+        <div key={p.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"12px 14px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+            <div>
+              <div style={{fontWeight:800,fontFamily:"monospace",fontSize:14,color:C.text}}>{p.orderCode}</div>
+              <div style={{fontSize:12,color:C.muted2,marginTop:2}}>{p.orderName}</div>
+            </div>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
+              <Badge label={p.date||"-"} color={C.accent}/>
+              <Badge label={p.machine||"-"} color={C.warn}/>
+              <Badge label={(SHIFTS.find(s=>s.id===p.shift)?.label)||p.shift||"-"} color={C.muted2}/>
+            </div>
+          </div>
+          {p.note&&<div style={{marginTop:8,fontSize:12,color:C.muted2}}>{p.note}</div>}
+          <div style={{marginTop:9,display:"flex",gap:8}}>
+            <button onClick={()=>startEdit(p)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Düzenle</button>
+            <button onClick={()=>removePlan(p)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
 //  MAIN APP
 // ════════════════════════════════════════════════════════════
 function App() {
@@ -1712,11 +1888,13 @@ function App() {
   const canEntry=hasPermission(currentUser,"data_entry");
   const canReport=hasPermission(currentUser,"view_reports");
   const canOrders=hasPermission(currentUser,"manage_orders")||isAdmin;
+  const canPlanning=canOrders;
   const canUsers=hasPermission(currentUser,"approve_users")||isAdmin;
   const canTools=true;
 
   const tabs=[
     ...(canEntry?[{id:"giris",icon:"📝",label:"Giriş"}]:[]),
+    ...(canPlanning?[{id:"planning",icon:"📅",label:"Planlama"}]:[]),
     ...(canReport?[{id:"rapor",icon:"📊",label:"Rapor"}]:[]),
     ...(canTools?[{id:"tools",icon:"🧰",label:"Takım Stoğu"}]:[]),
     ...(canOrders?[{id:"orders",icon:"📋",label:"İş Emirleri"}]:[]),
@@ -1726,6 +1904,7 @@ function App() {
   const activeView=(
     <>
       {tab==="giris"&&<DataEntry currentUser={currentUser} machines={machines}/>}
+      {tab==="planning"&&<Planning currentUser={currentUser} machines={machines}/>}
       {tab==="rapor"&&<Report currentUser={currentUser} machines={machines}/>} 
       {tab==="tools"&&<ToolStock currentUser={currentUser} machines={machines}/>} 
       {tab==="orders"&&<WorkOrders currentUser={currentUser} machines={machines}/>} 
