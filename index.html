@@ -50,22 +50,24 @@ window.DB = {
 };
 
 // ── SESSION ─────────────────────────────────────────────────
-window.Session = {
-  get() { try { const s = localStorage.getItem("cnc_session"); return s ? JSON.parse(s) : null; } catch { return null; } },
-  set(u) {
-    localStorage.setItem("cnc_session", JSON.stringify({
-      ...u,
-      createdAt:Date.now(),
-      touchedAt:Date.now(),
-    }));
-  },
-  touch() {
-    const curr=this.get();
-    if(!curr) return;
-    localStorage.setItem("cnc_session",JSON.stringify({...curr,touchedAt:Date.now()}));
-  },
-  clear() { localStorage.removeItem("cnc_session"); }
-};
+window.Session = (() => {
+  let mem = null;
+  return {
+    get() { return mem; },
+    set(u) {
+      mem = {
+        ...u,
+        createdAt:Date.now(),
+        touchedAt:Date.now(),
+      };
+    },
+    touch() {
+      if(!mem) return;
+      mem = { ...mem, touchedAt:Date.now() };
+    },
+    clear() { mem = null; }
+  };
+})();
 
 // Signal that Firebase is ready
 window.FB_READY = true;
