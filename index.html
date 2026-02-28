@@ -335,26 +335,6 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC}) {
     setErr(""); setOk("");
   },[portal,mode]);
   useEffect(()=>{setLogoError(false);},[logoSrc]);
-  useEffect(()=>{
-    if(!currentUser) return;
-    const updateTouch=()=>window.Session.touch();
-    const evts=["click","keydown","mousemove","touchstart","scroll"];
-    evts.forEach(evt=>window.addEventListener(evt,updateTouch,{passive:true}));
-    const timer=setInterval(()=>{
-      const s=window.Session.get();
-      if(!s) return;
-      const idleMin=(Date.now()-Number(s.touchedAt||s.createdAt||Date.now()))/60000;
-      if(idleMin>=SESSION_TIMEOUT_MIN){
-        window.Session.clear();
-        setCurrentUser(null);
-        setTab("dashboard");
-      }
-    },15000);
-    return ()=>{
-      clearInterval(timer);
-      evts.forEach(evt=>window.removeEventListener(evt,updateTouch));
-    };
-  },[currentUser]);
 
   const loadAdminStats=useCallback(async()=>{
     setAdminStats(s=>({...s,loading:true}));
@@ -5425,6 +5405,26 @@ function App() {
     };
   },[]);
   useEffect(()=>{setLogoError(false);},[logoSrc]);
+  useEffect(()=>{
+    if(!currentUser) return;
+    const updateTouch=()=>window.Session.touch();
+    const evts=["click","keydown","mousemove","touchstart","scroll"];
+    evts.forEach(evt=>window.addEventListener(evt,updateTouch,{passive:true}));
+    const timer=setInterval(()=>{
+      const s=window.Session.get();
+      if(!s) return;
+      const idleMin=(Date.now()-Number(s.touchedAt||s.createdAt||Date.now()))/60000;
+      if(idleMin>=SESSION_TIMEOUT_MIN){
+        window.Session.clear();
+        setCurrentUser(null);
+        setTab("dashboard");
+      }
+    },15000);
+    return ()=>{
+      clearInterval(timer);
+      evts.forEach(evt=>window.removeEventListener(evt,updateTouch));
+    };
+  },[currentUser]);
 
   async function updateMachines(list){
     setMachines(list);
