@@ -740,6 +740,15 @@ function Customers() {
     });
   },[]);
 
+  function nextCustomerCode(list=customers){
+    const nums=list.map(c=>{
+      const m=(c.code||"").toUpperCase().match(/^FRM-(\d+)$/);
+      return m?Number(m[1]):null;
+    }).filter(n=>n!==null);
+    const next=(nums.length?Math.max(...nums):0)+1;
+    return `FRM-${String(next).padStart(3,"0")}`;
+  }
+
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
   const q=search.trim().toLowerCase();
   const filtered=customers.filter(c=>
@@ -752,9 +761,10 @@ function Customers() {
 
   async function saveCustomer(){
     if(!form.name.trim()){alert("Firma adı zorunlu!");return;}
+    const autoCode=editId?(form.code||""):nextCustomerCode();
     const data={
       name:form.name.trim(),
-      code:form.code.trim().toUpperCase(),
+      code:autoCode,
       contact:form.contact.trim(),
       phone:form.phone.trim(),
       email:form.email.trim(),
@@ -766,13 +776,14 @@ function Customers() {
       if(!ok){alert("Müşteri güncellenemedi.");return;}
       setCustomers(prev=>prev.map(x=>x.id===editId?{...x,...data}:x).sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
       setEditId(null);
-      setForm(emptyForm);
+      setForm({...emptyForm,code:nextCustomerCode()});
       return;
     }
     const id=await window.DB.addDoc("customers",data);
     if(!id){alert("Müşteri kaydedilemedi.");return;}
-    setCustomers(prev=>[{id,...data},...prev].sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
-    setForm(emptyForm);
+    const nextCustomers=[{id,...data},...customers];
+    setCustomers(nextCustomers.sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
+    setForm({...emptyForm,code:nextCustomerCode(nextCustomers)});
   }
 
   function startEdit(c){
@@ -794,7 +805,7 @@ function Customers() {
     setCustomers(prev=>prev.filter(x=>x.id!==c.id));
     if(editId===c.id){
       setEditId(null);
-      setForm(emptyForm);
+      setForm({...emptyForm,code:nextCustomerCode(customers.filter(x=>x.id!==c.id))});
     }
   }
 
@@ -809,7 +820,7 @@ function Customers() {
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
           <div><span style={labelSt}>Firma Adı *</span><input style={inputSt} value={form.name} onChange={e=>fv("name",e.target.value)} placeholder="Firma adı"/></div>
-          <div><span style={labelSt}>Firma Kodu</span><input style={inputSt} value={form.code} onChange={e=>fv("code",e.target.value)} placeholder="FRM-001"/></div>
+          <div><span style={labelSt}>Firma Kodu (Otomatik)</span><input style={{...inputSt,background:C.surface,color:C.muted2}} value={editId?(form.code||"-"):nextCustomerCode()} readOnly/></div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginTop:8}}>
           <div><span style={labelSt}>Yetkili</span><input style={inputSt} value={form.contact} onChange={e=>fv("contact",e.target.value)} placeholder="Ad Soyad"/></div>
@@ -819,7 +830,7 @@ function Customers() {
         <div style={{marginTop:8}}><span style={labelSt}>Not</span><textarea rows={2} style={{...inputSt,minHeight:64,resize:"vertical"}} value={form.notes} onChange={e=>fv("notes",e.target.value)} placeholder="Opsiyonel not..."/></div>
         <div style={{display:"flex",gap:8,marginTop:10}}>
           <button onClick={saveCustomer} style={{...btnSt("primary"),flex:1,padding:12}}>{editId?"Müşteriyi Güncelle":"Müşteri Kaydet"}</button>
-          {editId&&<button onClick={()=>{setEditId(null);setForm(emptyForm);}} style={{...btnSt("ghost"),padding:"12px 14px"}}>İptal</button>}
+          {editId&&<button onClick={()=>{setEditId(null);setForm({...emptyForm,code:nextCustomerCode()});}} style={{...btnSt("ghost"),padding:"12px 14px"}}>İptal</button>}
         </div>
       </div>
 
