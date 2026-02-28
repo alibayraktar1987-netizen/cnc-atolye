@@ -30,10 +30,11 @@ Mevcut uygulama su anda agirlikla is emri, siparis, stok, planlama ve raporlama 
 
 ## Kisa Durum Ozeti
 
-- Mevcut: Satis siparisleri, is emirleri, temel stok, planlama/Gantt, KPI raporlari, rol tabanli temel yetki, makina baglanti hazirlik modulu
+- Mevcut: Satis + teklif akisi, is emri yonetimi, parca/BOM/rota tanimlari, planlama/Gantt, MPS ve MRP run ekranlari
+- Mevcut: Satin alma (tedarikci, talep, teklif, PO, malzeme girisi), durus yonetimi, kalite-izlenebilirlik, bildirim merkezi, maliyetleme
+- Mevcut: Rol tabanli erisim, audit log yardimci fonksiyonlari, makina baglanti hazirlik modulu (canli baglanti oncesi)
 - Yeni UI: Planlama/Operasyon/Yonetim olmak uzere 3 calisma modu ve detayli MRP menu yapisi
-- Kismi: Kapasite/planlama, stok politikasi, guvenlik
-- Eksik: BOM/MPS/MRP, satin alma planlama, maliyetleme, audit log, entegrasyon katmani, otomatik test paketi
+- Sonraya: Dis ERP/muhasebe/CAM entegrasyonlari (hazirlik modulu mevcut, canli baglanti kapali)
 
 ## Deployment
 

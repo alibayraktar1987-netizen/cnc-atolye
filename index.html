@@ -393,7 +393,7 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC}) {
     if(u.status==="pending"){setErr("Hesabınız onay bekliyor.");setLoading(false);return;}
     if(u.status==="rejected"){setErr("Hesabınız reddedildi.");setLoading(false);return;}
     if(portal==="admin"&&u.role!=="admin"){setErr("Bu giriş ekranı yalnızca yönetici hesapları içindir.");setLoading(false);return;}
-    if(portal==="operator"&&u.role!=="operator"){setErr("Yönetici hesabı ile Yönetici Girişi ekranını kullanın.");setLoading(false);return;}
+    if(portal==="operator"&&u.role==="admin"){setErr("Yönetici hesabı ile Yönetici Girişi ekranını kullanın.");setLoading(false);return;}
     window.Session.set({username:u.id});
     onLogin(u); setLoading(false);
   }
@@ -556,6 +556,9 @@ function NavIcon({name,size=18}) {
   );
   if(name==="customers") return (
     <svg viewBox="0 0 24 24" style={st}><rect {...p} x="3" y="3" width="18" height="18" rx="2"/><path {...p} d="M8 21V8h8v13M10 12h4M10 16h4"/></svg>
+  );
+  if(name==="parts") return (
+    <svg viewBox="0 0 24 24" style={st}><path {...p} d="M4 8l8-4 8 4-8 4z"/><path {...p} d="M4 8v8l8 4 8-4V8"/></svg>
   );
   if(name==="materials") return (
     <svg viewBox="0 0 24 24" style={st}><path {...p} d="M4 6h16M4 12h16M4 18h10"/><circle {...p} cx="18" cy="18" r="2"/></svg>
@@ -5074,6 +5077,59 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Fail Muayene</div><div style={{fontSize:23,color:failCount?C.red:C.green,fontWeight:800}}>{failCount}</div></div>
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Scrap Maliyeti</div><div style={{fontSize:23,color:C.red,fontWeight:800}}>{moneyFmt(scrapCost)}</div></div>
       </div>
+
+      {view==="trace"&&(
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Parca Iz Kaydi</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
+            <div><span style={labelSt}>Is Emri</span><select style={inputSt} value={traceForm.orderId} onChange={e=>setTraceForm(f=>({...f,orderId:e.target.value}))}><option value="">Secin</option>{orders.map(o=><option key={o.id} value={o.id}>{o.code} · {o.partNo||o.name}</option>)}</select></div>
+            <div><span style={labelSt}>Tezgah</span><select style={inputSt} value={traceForm.machine} onChange={e=>setTraceForm(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+            <div><span style={labelSt}>Operator</span><input style={inputSt} value={traceForm.operatorId} onChange={e=>setTraceForm(f=>({...f,operatorId:e.target.value}))}/></div>
+            <div><span style={labelSt}>NC Versiyon</span><input style={inputSt} value={traceForm.programVersion} onChange={e=>setTraceForm(f=>({...f,programVersion:e.target.value}))}/></div>
+            <div><span style={labelSt}>Seri/Lot No</span><input style={inputSt} value={traceForm.serialNo} onChange={e=>setTraceForm(f=>({...f,serialNo:e.target.value}))}/></div>
+            <div><span style={labelSt}>Zaman</span><input style={inputSt} type="datetime-local" value={traceForm.timestamp} onChange={e=>setTraceForm(f=>({...f,timestamp:e.target.value}))}/></div>
+            <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Musteri Sikayet Referansi (ops.)</span><input style={inputSt} value={traceForm.complaintRef} onChange={e=>setTraceForm(f=>({...f,complaintRef:e.target.value}))}/></div>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:10,flexWrap:"wrap",gap:8}}>
+            <button onClick={saveTrace} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Iz Kaydi Olustur</button>
+            <div style={{fontSize:12,color:C.muted2}}>Son kayit: {traces[0]?.serialNo||"-"}</div>
+          </div>
+        </div>
+      )}
+
+      {view==="inspect"&&(
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Muayene ve Scrap Girisi</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            <div><span style={labelSt}>Iz Kaydi</span><select style={inputSt} value={inspForm.traceId} onChange={e=>setInspForm(f=>({...f,traceId:e.target.value}))}><option value="">Secin</option>{traces.slice(0,120).map(t=><option key={t.id} value={t.id}>{t.orderCode} · {t.serialNo}</option>)}</select></div>
+            <div><span style={labelSt}>Sonuc</span><select style={inputSt} value={inspForm.result} onChange={e=>setInspForm(f=>({...f,result:e.target.value}))}><option value="pass">Pass</option><option value="fail">Fail</option></select></div>
+            <div><span style={labelSt}>Scrap Adedi</span><input style={inputSt} type="number" min="0" value={inspForm.scrapQty} onChange={e=>setInspForm(f=>({...f,scrapQty:e.target.value}))}/></div>
+            <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Olcumler</span><input style={inputSt} value={inspForm.measurements} onChange={e=>setInspForm(f=>({...f,measurements:e.target.value}))}/></div>
+            <div><span style={labelSt}>Scrap Nedeni</span><input style={inputSt} value={inspForm.scrapReason} onChange={e=>setInspForm(f=>({...f,scrapReason:e.target.value}))}/></div>
+            <div><span style={labelSt}>Scrap Maliyeti</span><input style={inputSt} type="number" min="0" value={inspForm.scrapCost} onChange={e=>setInspForm(f=>({...f,scrapCost:e.target.value}))}/></div>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:10,flexWrap:"wrap",gap:8}}>
+            <button onClick={saveInspection} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Muayene Kaydet</button>
+            <div style={{fontSize:12,color:C.muted2}}>Kayit: {inspections.length}</div>
+          </div>
+        </div>
+      )}
+
+      {view==="fai"&&(
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>FAI Akisi</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            <div><span style={labelSt}>Is Emri</span><select style={inputSt} value={faiForm.orderId} onChange={e=>setFaiForm(f=>({...f,orderId:e.target.value}))}><option value="">Secin</option>{orders.map(o=><option key={o.id} value={o.id}>{o.code}</option>)}</select></div>
+            <div><span style={labelSt}>Parca No</span><input style={inputSt} value={faiForm.partNo} onChange={e=>setFaiForm(f=>({...f,partNo:e.target.value}))}/></div>
+            <div><span style={labelSt}>Durum</span><select style={inputSt} value={faiForm.status} onChange={e=>setFaiForm(f=>({...f,status:e.target.value}))}><option value="draft">Taslak</option><option value="pending">Beklemede</option><option value="approved">Onayli</option><option value="rejected">Reddedildi</option></select></div>
+            <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Not</span><textarea rows={2} style={{...inputSt,minHeight:62,resize:"vertical"}} value={faiForm.note} onChange={e=>setFaiForm(f=>({...f,note:e.target.value}))}/></div>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:10,flexWrap:"wrap",gap:8}}>
+            <button onClick={saveFai} style={{...btnSt("green"),padding:"8px 12px",fontSize:12}}>FAI Kaydet</button>
+            <div style={{fontSize:12,color:C.muted2}}>FAI kaydi: {fai.length}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -5388,10 +5444,15 @@ function App() {
   const canEntry=hasPermission(currentUser,"data_entry");
   const canReport=hasPermission(currentUser,"view_reports");
   const canOrders=hasPermission(currentUser,"manage_orders")||isAdmin;
+  const canSales=hasPermission(currentUser,"manage_sales")||canOrders;
+  const canPurchasing=hasPermission(currentUser,"manage_purchasing")||canOrders;
+  const canQuality=hasPermission(currentUser,"manage_quality")||canOrders||canReport;
+  const canDowntime=hasPermission(currentUser,"manage_downtime")||canEntry||canReport;
+  const canNotifications=hasPermission(currentUser,"manage_notifications")||canReport;
   const canPlanning=canOrders;
   const canCustomers=canOrders;
   const canUsers=hasPermission(currentUser,"approve_users")||isAdmin;
-  const canTools=true;
+  const canTools=canOrders||canPurchasing||canEntry;
   const canMachinePrep=canOrders;
   const MODE_GROUPS={
     planlama:["Planlama","Tedarik ve Stok"],
@@ -5404,27 +5465,28 @@ function App() {
     {id:"yonetim",label:"Yonetim Modu",color:C.warn},
   ];
   const allTabs=useMemo(()=>[
-    {id:"dashboard",icon:"dashboard",label:"MRP Panel",group:"Planlama",enabled:(canEntry||canOrders||canReport)},
+    {id:"dashboard",icon:"dashboard",label:"MRP Panel",group:"Planlama",enabled:(canEntry||canOrders||canReport||canSales||canPurchasing)},
     {id:"planning",icon:"planning",label:"Cizelgeleme",group:"Planlama",enabled:canPlanning},
     {id:"mps",icon:"mps",label:"MPS",group:"Planlama",enabled:canPlanning},
     {id:"mrp",icon:"mrp",label:"MRP Run",group:"Planlama",enabled:canPlanning},
-    {id:"quotes",icon:"quotes",label:"Teklif Yonetimi",group:"Planlama",enabled:canOrders},
-    {id:"sales",icon:"sales",label:"Satis Siparisleri",group:"Planlama",enabled:canOrders},
+    {id:"parts",icon:"parts",label:"Parca ve BOM",group:"Planlama",enabled:canPlanning},
+    {id:"quotes",icon:"quotes",label:"Teklif Yonetimi",group:"Planlama",enabled:canSales},
+    {id:"sales",icon:"sales",label:"Satis Siparisleri",group:"Planlama",enabled:canSales},
     {id:"orders",icon:"orders",label:"Is Emirleri",group:"Operasyon",enabled:canOrders},
     {id:"giris",icon:"giris",label:"Uretim Girisi",group:"Operasyon",enabled:canEntry},
-    {id:"downtime",icon:"downtime",label:"Durus Yonetimi",group:"Operasyon",enabled:(canEntry||canReport||canOrders)},
-    {id:"quality",icon:"quality",label:"Kalite ve Izlenebilirlik",group:"Operasyon",enabled:(canOrders||canReport)},
+    {id:"downtime",icon:"downtime",label:"Durus Yonetimi",group:"Operasyon",enabled:canDowntime},
+    {id:"quality",icon:"quality",label:"Kalite ve Izlenebilirlik",group:"Operasyon",enabled:canQuality},
     {id:"materials",icon:"materials",label:"Malzeme Kutuphanesi",group:"Tedarik ve Stok",enabled:canOrders},
     {id:"tools",icon:"tools",label:"Takim Yonetimi",group:"Tedarik ve Stok",enabled:canTools},
-    {id:"purchase",icon:"purchase",label:"Satin Alma Planlama",group:"Tedarik ve Stok",enabled:canOrders},
+    {id:"purchase",icon:"purchase",label:"Satin Alma Planlama",group:"Tedarik ve Stok",enabled:canPurchasing},
     {id:"customers",icon:"customers",label:"Musteriler",group:"Tedarik ve Stok",enabled:canCustomers},
     {id:"rapor",icon:"rapor",label:"Raporlar",group:"Analiz ve Yonetim",enabled:canReport},
-    {id:"notifications",icon:"notifications",label:"Bildirim Merkezi",group:"Analiz ve Yonetim",enabled:(canUsers||canOrders||canReport)},
-    {id:"cost",icon:"cost",label:"Maliyetleme",group:"Analiz ve Yonetim",enabled:(canOrders||canReport)},
+    {id:"notifications",icon:"notifications",label:"Bildirim Merkezi",group:"Analiz ve Yonetim",enabled:(canNotifications||canUsers||canSales||canPurchasing)},
+    {id:"cost",icon:"cost",label:"Maliyetleme",group:"Analiz ve Yonetim",enabled:(canOrders||canReport||canSales)},
     {id:"machineprep",icon:"machines",label:"Makina Hazirlik",group:"Sistem",enabled:canMachinePrep},
     {id:"integrations",icon:"integration",label:"Entegrasyonlar",group:"Sistem",enabled:(canUsers||isAdmin)},
     {id:"users",icon:"users",label:"Ayarlar ve Guvenlik",group:"Sistem",enabled:canUsers},
-  ],[canEntry,canOrders,canReport,canPlanning,canTools,canCustomers,canMachinePrep,canUsers,isAdmin]);
+  ],[canEntry,canOrders,canSales,canPurchasing,canQuality,canDowntime,canNotifications,canReport,canPlanning,canTools,canCustomers,canMachinePrep,canUsers,isAdmin]);
   const enabledTabs=useMemo(()=>allTabs.filter(t=>t.enabled),[allTabs]);
   const activeGroups=MODE_GROUPS[workMode]||MODE_GROUPS.planlama;
   const tabs=useMemo(()=>{
@@ -5441,6 +5503,7 @@ function App() {
   },[tabs]);
   const groupOrder=["Planlama","Operasyon","Tedarik ve Stok","Analiz ve Yonetim","Sistem"];
   const visibleGroups=groupOrder.filter(g=>groupedTabs[g]&&groupedTabs[g].length>0);
+  const currentRoleLabel=(USER_ROLES.find(r=>r.id===currentUser.role)||{label:currentUser.role||"-"}).label;
 
   useEffect(()=>{
     if(tabs.length===0) return;
@@ -5461,21 +5524,22 @@ function App() {
     if(tab==="machineprep") return <MachineConnectivityPrep currentUser={currentUser} machines={machines}/>;
     if(tab==="customers") return <Customers/>;
     if(tab==="materials") return <MaterialLibrary/>;
+    if(tab==="parts") return <PartProductManagement currentUser={currentUser} machines={machines}/>;
     if(tab==="sales") return <SalesManagement currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")} defaultView="orders"/>;
     if(tab==="rapor") return <Report currentUser={currentUser} machines={machines}/>;
     if(tab==="tools") return <ToolStock currentUser={currentUser} machines={machines}/>;
     if(tab==="orders") return <WorkOrders currentUser={currentUser} machines={machines}/>;
     if(tab==="users") return <AdminUsers currentUser={currentUser} machines={machines} onMachinesUpdate={updateMachines} currentLogo={logoSrc} onLogoUpdate={updateLogo}/>;
-    if(tab==="dashboard") return <ModulePlaceholder title="MRP Ana Panel" desc="Bu ekran siparis, kapasite, malzeme riskleri ve tedarik istisnalarini tek panelde birlestirecek." items={["Geciken is emri ve termin riski","Kritik stok ve satin alma alarm listesi","Makina doluluk ve vardiya bazli kapasite ozetleri","Bugun tamamlanacak is emirleri"]}/>;
-    if(tab==="mps") return <ModulePlaceholder title="MPS (Master Production Schedule)" desc="Haftalik/aylik ana uretim plani, talep ve kapasiteyi tek tabloda optimize eder." items={["Urun bazli zaman kovasi planlama","Frozen/slushy horizon yonetimi","Talep senaryosu karsilastirmasi"]}/>;
-    if(tab==="mrp") return <ModulePlaceholder title="MRP Run" desc="Net ihtiyac hesaplama, lot kurallari ve lead-time etkisini dikkate alarak planli siparis onerisi uretir." items={["Gross/Net requirement hesaplama","Safety stock ve reorder point kontrolu","Otomatik malzeme rezervasyon oneri listesi"]}/>;
+    if(tab==="dashboard") return <MRPDashboard currentUser={currentUser} machines={machines}/>;
+    if(tab==="mps") return <MPSModule/>;
+    if(tab==="mrp") return <MRPRunModule currentUser={currentUser}/>;
     if(tab==="quotes") return <SalesManagement currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")} defaultView="quotes"/>;
-    if(tab==="purchase") return <ModulePlaceholder title="Satin Alma Planlama" desc="MRP ciktilarini satin alma taleplerine donusturur ve tedarik surecine aktarir." items={["PR/PO taslak olusturma","Tedarikci lead-time ve termin kontrolu","Hizlandir/yavaslat (expedite/de-expedite) oneri listesi"]}/>;
-    if(tab==="downtime") return <ModulePlaceholder title="Durus Yonetimi" desc="Durus tipleri, operator girisleri ve otomatik durus analizi bu moduldedir." items={["Durus nedeni zorunlu giris kurallari","Sure-neden kaydi ve tekrar eden hata analizi","Bakim ekibine ariza bildirimi"]}/>;
-    if(tab==="quality") return <ModulePlaceholder title="Kalite ve Izlenebilirlik" desc="Parca bazli seri no izi, inspeksiyon sonucu, scrap ve FAI akisini yonetir." items={["WO-Makina-Operator-Program versiyon zinciri","Olcum sonucu ve pass/fail kaydi","Scrap neden kodu ve maliyet etkisi"]}/>;
-    if(tab==="notifications") return <ModulePlaceholder title="Bildirim Merkezi" desc="Sistem alarmlari ve operasyonel uyarilar burada yonetilir." items={["Tezgah alarmi ve gecikme uyarilari","Stok kritik seviye bildirimleri","Takim omru ve cevrim sapma bildirimleri"]}/>;
-    if(tab==="cost") return <ModulePlaceholder title="Maliyetleme" desc="Parca ve is emri bazli maliyetleri planlanan ve gerceklesen olarak karsilastirir." items={["Malzeme + iscilik + makina sure maliyeti","Scrap/rework maliyet analizi","Musteri ve urun bazli karlilik"]}/>;
-    if(tab==="integrations") return <ModulePlaceholder title="Entegrasyonlar" desc="ERP, CAM ve bildirim sistemleri ile cift yon veri senkronu bu moduldedir." items={["ERP siparis/BOM/routing sync","CAM program versiyon baglama","Webhook + email + SMS alarm akislari"]}/>;
+    if(tab==="purchase") return <PurchasingModule currentUser={currentUser}/>;
+    if(tab==="downtime") return <DowntimeModule currentUser={currentUser} machines={machines}/>;
+    if(tab==="quality") return <QualityTraceabilityModule currentUser={currentUser} machines={machines}/>;
+    if(tab==="notifications") return <NotificationCenterModule currentUser={currentUser}/>;
+    if(tab==="cost") return <CostingModule/>;
+    if(tab==="integrations") return <IntegrationsReadinessModule/>;
     return <ModulePlaceholder title="Modul" desc="Secili modul tanimli degil." items={[]}/>;
   }
   const activeView=getActiveView();
@@ -5520,7 +5584,7 @@ function App() {
               <div style={{fontWeight:700,fontSize:14,color:C.text}}>CNC Atolye MRP Platformu</div>
               <div style={{color:C.muted2,fontSize:11,display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
                 <span>{currentUser.fullName}</span>
-                <Badge label={isAdmin?"Yonetici":"Operator"} color={isAdmin?C.accent:C.muted2}/>
+                <Badge label={currentRoleLabel} color={isAdmin?C.accent:C.muted2}/>
                 <Badge label={layoutMode==="desktop"?"Desktop":(layoutMode==="tablet"?"Tablet":"Mobil")} color={C.muted2}/>
               </div>
             </div>
