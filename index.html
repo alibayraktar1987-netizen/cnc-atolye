@@ -1138,6 +1138,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
 function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
   const [orders,setOrders]=useState([]);
   const [tools,setTools]=useState([]);
+  const [plans,setPlans]=useState([]);
   const [todayEntries,setTodayEntries]=useState([]);
   const [saved,setSaved]=useState(false);
   const [search,setSearch]=useState("");
@@ -1159,8 +1160,11 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
   });
 
   useEffect(()=>{
-    window.DB.getAll("orders").then(o=>setOrders(o.filter(x=>x.status==="active")));
-    window.DB.getAll("tools").then(t=>setTools(t));
+    Promise.all([window.DB.getAll("orders"),window.DB.getAll("tools"),window.DB.getAll("plans")]).then(([o,t,p])=>{
+      setOrders(o.filter(x=>x.status==="active"));
+      setTools(t);
+      setPlans(p||[]);
+    });
   },[]);
 
   useEffect(()=>{
@@ -1226,6 +1230,39 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
   }
   const selectedDateObj=parseYmdLocal(form.entryDate);
   const selectedDateLabel=new Intl.DateTimeFormat("tr-TR",{weekday:"long",day:"2-digit",month:"long",year:"numeric"}).format(selectedDateObj);
+  function getPlannedOrder(machine,date){
+    if(!machine||!date) return null;
+    const planned=plans.find(p=>p.machine===machine&&p.date===date);
+    if(!planned) return null;
+    const activeOrder=orders.find(o=>o.id===planned.orderId);
+    if(activeOrder) return activeOrder;
+    if(planned.orderCode||planned.orderName){
+      return {
+        id:planned.orderId||"",
+        code:planned.orderCode||"",
+        name:planned.orderName||"",
+        partSec:Number(planned.orderPartSec)||0,
+        material:"",
+      };
+    }
+    return null;
+  }
+  function selectMachine(machine){
+    const plannedOrder=getPlannedOrder(machine,form.entryDate);
+    setForm(p=>({...p,machine,selectedOrder:plannedOrder||null}));
+    setShowPicker(false);
+    setSearch("");
+  }
+  useEffect(()=>{
+    if(editId) return;
+    const plannedOrder=getPlannedOrder(form.machine,form.entryDate);
+    setForm(prev=>{
+      const prevKey=(prev.selectedOrder?.id||prev.selectedOrder?.code||"");
+      const nextKey=(plannedOrder?.id||plannedOrder?.code||"");
+      if(prevKey===nextKey) return prev;
+      return {...prev,selectedOrder:plannedOrder||null};
+    });
+  },[editId,form.machine,form.entryDate,plans,orders]);
   const resetEntryForm=()=>setForm(p=>({
     entryDate:p.entryDate,
     machine:p.machine||machines[0]||"CNC-1",
@@ -1377,7 +1414,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
       <div>
         <span style={labelSt}>Tezgah</span>
         <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-          {machines.map(m=><button key={m} onClick={()=>fv("machine",m)} style={chip(form.machine===m)}>{m}</button>)}
+          {machines.map(m=><button key={m} onClick={()=>selectMachine(m)} style={chip(form.machine===m)}>{m}</button>)}
         </div>
       </div>
       <div>
@@ -1392,7 +1429,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
           <div style={{background:C.surface,border:`1px solid ${C.accent}50`,borderRadius:10,padding:"12px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <div>
               <div style={{fontWeight:700,fontFamily:"monospace",fontSize:14,color:C.text}}>{form.selectedOrder.code}</div>
-              <div style={{fontSize:12,color:C.muted2,marginTop:1}}>{form.selectedOrder.name} · {fmtSec(form.selectedOrder.partSec)} · Maks: {Math.floor(EFFECTIVE_SECONDS/form.selectedOrder.partSec)} adet/gün</div>
+              <div style={{fontSize:12,color:C.muted2,marginTop:1}}>{form.selectedOrder.name} · {fmtSec(form.selectedOrder.partSec)} · Maks: {Number(form.selectedOrder.partSec)>0?Math.floor(EFFECTIVE_SECONDS/form.selectedOrder.partSec):"-"} adet/gün</div>
               {form.selectedOrder.material&&<div style={{fontSize:11,color:C.muted,marginTop:1}}>🔩 {form.selectedOrder.material}</div>}
             </div>
             <button onClick={()=>fv("selectedOrder",null)} style={{background:"transparent",border:"none",color:C.red,fontSize:20,cursor:"pointer"}}>×</button>
