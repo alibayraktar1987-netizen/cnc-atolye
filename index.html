@@ -1655,7 +1655,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
 //  PLANNING
 // ════════════════════════════════════════════════════════════
 function Planning({currentUser,machines=DEFAULT_MACHINES}) {
-  const emptyForm={date:todayStr(),machine:machines[0]||"CNC-1",shift:"sabah",orderId:"",note:""};
+  const emptyForm={startDate:todayStr(),endDate:todayStr(),machine:machines[0]||"CNC-1",orderId:"",note:""};
   const [form,setForm]=useState(emptyForm);
   const [orders,setOrders]=useState([]);
   const [plans,setPlans]=useState([]);
@@ -1686,32 +1686,43 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     const da=(a.date||"").localeCompare(b.date||"");
     if(da!==0) return da;
     const ma=(a.machine||"").localeCompare(b.machine||"");
-    if(ma!==0) return ma;
-    return (a.shift||"").localeCompare(b.shift||"");
+    return ma;
   });
+  const startObj=parseYmdLocal(form.startDate||todayStr());
+  const endObj=parseYmdLocal(form.endDate||form.startDate||todayStr());
+  const rangeStart=startObj<=endObj?startObj:endObj;
+  const rangeEnd=startObj<=endObj?endObj:startObj;
+  const rangeDays=Math.max(1,Math.floor((rangeEnd-rangeStart)/86400000)+1);
+  const rangeLabel=`${ymdLocal(rangeStart)} - ${ymdLocal(rangeEnd)} (${rangeDays} gün)`;
+
+  function getDateRange(startDate,endDate){
+    const s=parseYmdLocal(startDate);
+    const e=parseYmdLocal(endDate);
+    const from=s<=e?s:e;
+    const to=s<=e?e:s;
+    const out=[];
+    const d=new Date(from);
+    while(d<=to){
+      out.push(ymdLocal(d));
+      d.setDate(d.getDate()+1);
+    }
+    return out;
+  }
 
   async function savePlan(){
-    if(!form.date){alert("Tarih seçin!");return;}
+    if(!form.startDate||!form.endDate){alert("Tarih aralığı seçin!");return;}
     if(!form.machine){alert("Tezgah seçin!");return;}
     if(!form.orderId){alert("İş emri seçin!");return;}
     const picked=orders.find(o=>o.id===form.orderId);
     if(!picked){alert("Geçerli bir iş emri seçin!");return;}
-    const duplicate=plans.find(p=>
-      p.id!==editId &&
-      p.date===form.date &&
-      p.machine===form.machine &&
-      p.shift===form.shift
-    );
-    if(duplicate){
-      alert("Bu tarih/tezgah/vardiya için zaten plan var.");
+    const planDates=editId?[form.startDate]:getDateRange(form.startDate,form.endDate);
+    const duplicateDates=planDates.filter(dt=>plans.some(p=>p.id!==editId&&p.date===dt&&p.machine===form.machine));
+    if(duplicateDates.length>0){
+      alert(`Bu tezgah için plan zaten var: ${duplicateDates.slice(0,5).join(", ")}${duplicateDates.length>5?" ...":""}`);
       return;
     }
-    const data={
-      date:form.date,
-      week:weekStart(parseYmdLocal(form.date)),
-      month:monthStr(parseYmdLocal(form.date)),
+    const baseData={
       machine:form.machine,
-      shift:form.shift,
       orderId:picked.id,
       orderCode:picked.code,
       orderName:picked.name,
@@ -1722,25 +1733,46 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       ...(editId?{}:{createdBy:currentUser.id}),
     };
     if(editId){
+      const data={
+        ...baseData,
+        date:form.startDate,
+        week:weekStart(parseYmdLocal(form.startDate)),
+        month:monthStr(parseYmdLocal(form.startDate)),
+      };
       const ok=await window.DB.updateDoc("plans",editId,data);
       if(!ok){alert("Plan güncellenemedi.");return;}
       setPlans(p=>p.map(x=>x.id===editId?{...x,...data}:x));
       setEditId(null);
-      setForm({...emptyForm,machine:form.machine,date:form.date,shift:form.shift});
+      setForm({...emptyForm,machine:form.machine,startDate:form.startDate,endDate:form.endDate});
       return;
     }
-    const id=await window.DB.addDoc("plans",data);
-    if(!id){alert("Plan kaydedilemedi.");return;}
-    setPlans(p=>[{id,...data},...p]);
-    setForm({...emptyForm,machine:form.machine,date:form.date,shift:form.shift});
+    const created=[];
+    for(const dt of planDates){
+      const data={
+        ...baseData,
+        date:dt,
+        week:weekStart(parseYmdLocal(dt)),
+        month:monthStr(parseYmdLocal(dt)),
+      };
+      const id=await window.DB.addDoc("plans",data);
+      if(!id){
+        alert(`Plan kaydı sırasında hata oluştu. Oluşan kayıt: ${created.length}/${planDates.length}`);
+        break;
+      }
+      created.push({id,...data});
+    }
+    if(created.length>0){
+      setPlans(p=>[...created.reverse(),...p]);
+      setForm({...emptyForm,machine:form.machine,startDate:form.startDate,endDate:form.endDate});
+    }
   }
 
   function startEdit(plan){
     setEditId(plan.id);
     setForm({
-      date:plan.date||todayStr(),
+      startDate:plan.date||todayStr(),
+      endDate:plan.date||todayStr(),
       machine:plan.machine||machines[0]||"CNC-1",
-      shift:plan.shift||"sabah",
       orderId:plan.orderId||"",
       note:plan.note||"",
     });
@@ -1753,7 +1785,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     setPlans(p=>p.filter(x=>x.id!==plan.id));
     if(editId===plan.id){
       setEditId(null);
-      setForm({...emptyForm,machine:form.machine,date:form.date,shift:form.shift});
+      setForm({...emptyForm,machine:form.machine,startDate:form.startDate,endDate:form.endDate});
     }
   }
 
@@ -1767,9 +1799,10 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
           {editId&&<Badge label="Düzenleme" color={C.warn}/>}
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-          <div><span style={labelSt}>Tarih</span><input type="date" value={form.date} onChange={e=>fv("date",e.target.value||todayStr())} style={{...inputSt,padding:"9px 10px",fontSize:13}}/></div>
-          <div><span style={labelSt}>Vardiya</span><select value={form.shift} onChange={e=>fv("shift",e.target.value)} style={{...inputSt,padding:"9px 10px",fontSize:13}}>{SHIFTS.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
+          <div><span style={labelSt}>Başlangıç</span><input type="date" value={form.startDate} onChange={e=>fv("startDate",e.target.value||todayStr())} style={{...inputSt,padding:"9px 10px",fontSize:13}}/></div>
+          <div><span style={labelSt}>Bitiş</span><input type="date" value={form.endDate} onChange={e=>fv("endDate",e.target.value||form.startDate||todayStr())} style={{...inputSt,padding:"9px 10px",fontSize:13}}/></div>
         </div>
+        <div style={{fontSize:12,color:C.muted2,marginTop:6}}>{editId?`Düzenlenen gün: ${form.startDate}`:`Uygulanacak aralık: ${rangeLabel}`}</div>
         <div style={{marginTop:9}}>
           <span style={labelSt}>Tezgah</span>
           <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
@@ -1789,8 +1822,8 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
           <textarea value={form.note} onChange={e=>fv("note",e.target.value)} rows={2} style={{...inputSt,minHeight:64,resize:"vertical"}} placeholder="Opsiyonel not..."/>
         </div>
         <div style={{display:"flex",gap:8,marginTop:10}}>
-          <button onClick={savePlan} style={{...btnSt("primary"),flex:1,padding:12}}>{editId?"Planı Güncelle":"Planı Kaydet"}</button>
-          {editId&&<button onClick={()=>{setEditId(null);setForm({...emptyForm,machine:form.machine,date:form.date,shift:form.shift});}} style={{...btnSt("ghost"),padding:"12px 14px"}}>İptal</button>}
+          <button onClick={savePlan} style={{...btnSt("primary"),flex:1,padding:12}}>{editId?"Planı Güncelle":"Aralığı Planla"}</button>
+          {editId&&<button onClick={()=>{setEditId(null);setForm({...emptyForm,machine:form.machine,startDate:form.startDate,endDate:form.endDate});}} style={{...btnSt("ghost"),padding:"12px 14px"}}>İptal</button>}
         </div>
       </div>
 
@@ -1813,7 +1846,6 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
             <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
               <Badge label={p.date||"-"} color={C.accent}/>
               <Badge label={p.machine||"-"} color={C.warn}/>
-              <Badge label={(SHIFTS.find(s=>s.id===p.shift)?.label)||p.shift||"-"} color={C.muted2}/>
             </div>
           </div>
           {p.note&&<div style={{marginTop:8,fontSize:12,color:C.muted2}}>{p.note}</div>}
