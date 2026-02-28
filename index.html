@@ -1841,10 +1841,43 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const ganttDaysCount=new Date(ganttDate.getFullYear(),ganttDate.getMonth()+1,0).getDate();
   const ganttDays=Array.from({length:ganttDaysCount},(_,i)=>`${ganttMonth}-${pad2(i+1)}`);
   const monthPlans=plans.filter(p=>(p.date||"").startsWith(ganttMonth+"-"));
-  const ganttRows=machines.map(m=>{
+  const segmentById={};
+  const ganttRows=machines.map(machine=>{
     const byDate={};
-    monthPlans.filter(p=>p.machine===m).forEach(p=>{byDate[p.date]=p;});
-    return {machine:m,byDate};
+    const machinePlans=monthPlans
+      .filter(p=>p.machine===machine)
+      .sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+    let current=null;
+    machinePlans.forEach(p=>{
+      if(!current){
+        current={machine,orderId:p.orderId,orderCode:p.orderCode,orderName:p.orderName,orderCustomerName:p.orderCustomerName,note:p.note,startDate:p.date,endDate:p.date,plans:[p]};
+        return;
+      }
+      const prevDate=current.endDate;
+      const nextDate=ymdLocal(new Date(parseYmdLocal(prevDate).getFullYear(),parseYmdLocal(prevDate).getMonth(),parseYmdLocal(prevDate).getDate()+1));
+      const sameOrder=(current.orderId||"")===(p.orderId||"");
+      if(sameOrder&&p.date===nextDate){
+        current.endDate=p.date;
+        current.plans.push(p);
+      }else{
+        const segId=`${current.machine}|${current.orderId||current.orderCode||"x"}|${current.startDate}|${current.endDate}`;
+        const seg={...current,id:segId};
+        segmentById[segId]=seg;
+        current.plans.forEach(cp=>{
+          byDate[cp.date]={...cp,_segmentId:segId,_isStart:cp.date===seg.startDate,_isEnd:cp.date===seg.endDate};
+        });
+        current={machine,orderId:p.orderId,orderCode:p.orderCode,orderName:p.orderName,orderCustomerName:p.orderCustomerName,note:p.note,startDate:p.date,endDate:p.date,plans:[p]};
+      }
+    });
+    if(current){
+      const segId=`${current.machine}|${current.orderId||current.orderCode||"x"}|${current.startDate}|${current.endDate}`;
+      const seg={...current,id:segId};
+      segmentById[segId]=seg;
+      current.plans.forEach(cp=>{
+        byDate[cp.date]={...cp,_segmentId:segId,_isStart:cp.date===seg.startDate,_isEnd:cp.date===seg.endDate};
+      });
+    }
+    return {machine,byDate};
   });
   const orderColorPalette=["#4f8ef7","#00c896","#ffb830","#9b7ff4","#ff4d6d","#2dd4bf","#f97316","#38bdf8","#22c55e","#ef4444","#eab308","#14b8a6"];
   function colorFromOrder(orderId){
@@ -1863,31 +1896,60 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   }
   const ganttMonthLabel=new Intl.DateTimeFormat("tr-TR",{month:"long",year:"numeric"}).format(new Date(ganttDate.getFullYear(),ganttDate.getMonth(),1));
 
-  function getPlanById(id){
-    return plans.find(p=>p.id===id)||null;
+  async function refreshPlans(){
+    const p=await window.DB.getAll("plans");
+    setPlans(p.sort((a,b)=>(b.date||"").localeCompare(a.date||"")));
   }
 
-  async function movePlan(plan,targetDate,targetMachine){
-    if(!plan||!targetDate||!targetMachine) return;
-    if(plan.date===targetDate&&plan.machine===targetMachine) return;
-    const duplicate=plans.some(p=>p.id!==plan.id&&p.date===targetDate&&p.machine===targetMachine);
-    if(duplicate){
-      alert("Hedef gün/tezgah için zaten plan var.");
+  async function resizeSegment(segmentId,targetDate,edge){
+    const seg=segmentById[segmentId];
+    if(!seg||!targetDate) return;
+    const oldStart=seg.startDate;
+    const oldEnd=seg.endDate;
+    const nextStart=edge==="start"?(targetDate<=oldEnd?targetDate:oldEnd):oldStart;
+    const nextEnd=edge==="end"?(targetDate>=oldStart?targetDate:oldStart):oldEnd;
+    if(nextStart===oldStart&&nextEnd===oldEnd) return;
+    const oldDates=getDateRange(oldStart,oldEnd);
+    const nextDates=getDateRange(nextStart,nextEnd);
+    const oldSet=new Set(oldDates);
+    const nextSet=new Set(nextDates);
+    const toRemove=oldDates.filter(d=>!nextSet.has(d));
+    const toAdd=nextDates.filter(d=>!oldSet.has(d));
+    const segPlanByDate={};
+    seg.plans.forEach(p=>{segPlanByDate[p.date]=p;});
+    const duplicateAdd=toAdd.filter(d=>plans.some(p=>p.machine===seg.machine&&p.date===d&&!segPlanByDate[d]));
+    if(duplicateAdd.length>0){
+      alert(`Çakışma var: ${duplicateAdd.slice(0,4).join(", ")}`);
       return;
     }
-    const data={
-      date:targetDate,
-      week:weekStart(parseYmdLocal(targetDate)),
-      month:monthStr(parseYmdLocal(targetDate)),
-      machine:targetMachine,
-      updatedAt:new Date().toISOString(),
-    };
-    const ok=await window.DB.updateDoc("plans",plan.id,data);
-    if(!ok){alert("Plan taşınamadı.");return;}
-    setPlans(prev=>prev.map(x=>x.id===plan.id?{...x,...data}:x));
-    if(selectedPlan&&selectedPlan.id===plan.id){
-      setSelectedPlan(s=>s?{...s,...data}:s);
+    const base=seg.plans[0];
+    for(const d of toRemove){
+      const p=segPlanByDate[d];
+      if(p){
+        const ok=await window.DB.deleteDoc("plans",p.id);
+        if(!ok){alert("Plan güncellenemedi (silme).");await refreshPlans();return;}
+      }
     }
+    for(const d of toAdd){
+      const data={
+        machine:seg.machine,
+        orderId:base.orderId||"",
+        orderCode:base.orderCode||"",
+        orderName:base.orderName||"",
+        orderPartSec:base.orderPartSec||0,
+        orderCustomerName:base.orderCustomerName||"",
+        note:base.note||"",
+        status:base.status||"planned",
+        createdBy:base.createdBy||"",
+        date:d,
+        week:weekStart(parseYmdLocal(d)),
+        month:monthStr(parseYmdLocal(d)),
+        updatedAt:new Date().toISOString(),
+      };
+      const id=await window.DB.addDoc("plans",data);
+      if(!id){alert("Plan güncellenemedi (ekleme).");await refreshPlans();return;}
+    }
+    await refreshPlans();
   }
 
   async function loadScriptOnce(src,globalName){
@@ -2074,18 +2136,29 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                 <div style={{fontSize:11,fontWeight:700,color:C.text,paddingRight:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{row.machine}</div>
                 {ganttDays.map(d=>{
                   const p=row.byDate[d];
-                  if(!p) return <div key={d} onDragOver={e=>e.preventDefault()} onDrop={async e=>{e.preventDefault();const id=e.dataTransfer.getData("text/plain")||dragPlanId;const plan=getPlanById(id);if(plan) await movePlan(plan,d,row.machine);setDragPlanId(null);}} style={{height:16,borderRadius:3,background:C.surface,border:`1px solid ${C.border}`}}/>;
+                  if(!p) return <div key={d} onDragOver={e=>e.preventDefault()} onDrop={async e=>{e.preventDefault();const raw=e.dataTransfer.getData("text/plain")||dragPlanId;if(!raw) return;let payload=null;try{payload=JSON.parse(raw);}catch{}if(payload&&payload.type&&payload.segmentId){await resizeSegment(payload.segmentId,d,payload.type);}setDragPlanId(null);}} style={{height:16,borderRadius:3,background:C.surface,border:`1px solid ${C.border}`}}/>;
                   const col=colorFromOrder(p.orderId||p.orderCode||p.orderName);
                   return <div
                     key={d}
                     title={`${d} · ${row.machine} · ${p.orderCode||""} ${p.orderName||""}${p.orderCustomerName?` · ${p.orderCustomerName}`:""}`}
-                    draggable
-                    onDragStart={e=>{setDragPlanId(p.id);e.dataTransfer.setData("text/plain",p.id);}}
                     onDragOver={e=>e.preventDefault()}
-                    onDrop={async e=>{e.preventDefault();const id=e.dataTransfer.getData("text/plain")||dragPlanId;const plan=getPlanById(id);if(plan) await movePlan(plan,d,row.machine);setDragPlanId(null);}}
+                    onDrop={async e=>{e.preventDefault();const raw=e.dataTransfer.getData("text/plain")||dragPlanId;if(!raw) return;let payload=null;try{payload=JSON.parse(raw);}catch{}if(payload&&payload.type&&payload.segmentId){await resizeSegment(payload.segmentId,d,payload.type);}setDragPlanId(null);}}
                     onClick={()=>setSelectedPlan(p)}
-                    style={{height:16,borderRadius:3,background:col,border:`1px solid ${col}99`,boxShadow:`inset 0 0 0 1px ${col}99`,cursor:"grab"}}
-                  />;
+                    style={{height:16,borderRadius:3,background:col,border:`1px solid ${col}99`,boxShadow:`inset 0 0 0 1px ${col}99`,cursor:"pointer",position:"relative"}}
+                  >
+                    {p._isStart&&<span
+                      draggable
+                      onDragStart={e=>{const payload=JSON.stringify({type:"start",segmentId:p._segmentId});setDragPlanId(payload);e.dataTransfer.setData("text/plain",payload);}}
+                      title="Başlangıcı sürükle"
+                      style={{position:"absolute",left:0,top:0,bottom:0,width:5,background:"rgba(0,0,0,.35)",cursor:"ew-resize"}}
+                    />}
+                    {p._isEnd&&<span
+                      draggable
+                      onDragStart={e=>{const payload=JSON.stringify({type:"end",segmentId:p._segmentId});setDragPlanId(payload);e.dataTransfer.setData("text/plain",payload);}}
+                      title="Bitişi sürükle"
+                      style={{position:"absolute",right:0,top:0,bottom:0,width:5,background:"rgba(0,0,0,.35)",cursor:"ew-resize"}}
+                    />}
+                  </div>;
                 })}
               </div>
             ))}
