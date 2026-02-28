@@ -1663,6 +1663,10 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const [loading,setLoading]=useState(true);
   const [dateFilter,setDateFilter]=useState(todayStr());
   const [ganttMonth,setGanttMonth]=useState(monthStr());
+  const [selectedPlan,setSelectedPlan]=useState(null);
+  const [dragPlanId,setDragPlanId]=useState(null);
+  const [exporting,setExporting]=useState(false);
+  const ganttRef=useRef(null);
 
   useEffect(()=>{
     async function load(){
@@ -1720,6 +1724,88 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     setGanttMonth(`${d.getFullYear()}-${pad2(d.getMonth()+1)}`);
   }
   const ganttMonthLabel=new Intl.DateTimeFormat("tr-TR",{month:"long",year:"numeric"}).format(new Date(ganttDate.getFullYear(),ganttDate.getMonth(),1));
+
+  function getPlanById(id){
+    return plans.find(p=>p.id===id)||null;
+  }
+
+  async function movePlan(plan,targetDate,targetMachine){
+    if(!plan||!targetDate||!targetMachine) return;
+    if(plan.date===targetDate&&plan.machine===targetMachine) return;
+    const duplicate=plans.some(p=>p.id!==plan.id&&p.date===targetDate&&p.machine===targetMachine);
+    if(duplicate){
+      alert("Hedef gün/tezgah için zaten plan var.");
+      return;
+    }
+    const data={
+      date:targetDate,
+      week:weekStart(parseYmdLocal(targetDate)),
+      month:monthStr(parseYmdLocal(targetDate)),
+      machine:targetMachine,
+      updatedAt:new Date().toISOString(),
+    };
+    const ok=await window.DB.updateDoc("plans",plan.id,data);
+    if(!ok){alert("Plan taşınamadı.");return;}
+    setPlans(prev=>prev.map(x=>x.id===plan.id?{...x,...data}:x));
+    if(selectedPlan&&selectedPlan.id===plan.id){
+      setSelectedPlan(s=>s?{...s,...data}:s);
+    }
+  }
+
+  async function loadScriptOnce(src,globalName){
+    if(globalName&&window[globalName]) return true;
+    if(document.querySelector(`script[data-src="${src}"]`)) return true;
+    const s=document.createElement("script");
+    s.src=src;
+    s.async=true;
+    s.dataset.src=src;
+    document.head.appendChild(s);
+    await new Promise((res,rej)=>{s.onload=res;s.onerror=rej;});
+    return true;
+  }
+
+  async function exportGanttPng(){
+    if(!ganttRef.current) return;
+    try{
+      setExporting(true);
+      await loadScriptOnce("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js","html2canvas");
+      const canvas=await window.html2canvas(ganttRef.current,{backgroundColor:"#12151f",scale:2});
+      const a=document.createElement("a");
+      a.href=canvas.toDataURL("image/png");
+      a.download=`gantt-${ganttMonth}.png`;
+      a.click();
+    }catch{
+      alert("PNG dışa aktarma başarısız.");
+    }finally{
+      setExporting(false);
+    }
+  }
+
+  async function exportGanttPdf(){
+    if(!ganttRef.current) return;
+    try{
+      setExporting(true);
+      await loadScriptOnce("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js","html2canvas");
+      await loadScriptOnce("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js","jspdf");
+      const canvas=await window.html2canvas(ganttRef.current,{backgroundColor:"#12151f",scale:2});
+      const imgData=canvas.toDataURL("image/png");
+      const {jsPDF}=window.jspdf;
+      const pdf=new jsPDF({orientation:"landscape",unit:"pt",format:"a4"});
+      const w=pdf.internal.pageSize.getWidth();
+      const h=pdf.internal.pageSize.getHeight();
+      const ratio=Math.min(w/canvas.width,h/canvas.height);
+      const rw=canvas.width*ratio;
+      const rh=canvas.height*ratio;
+      const x=(w-rw)/2;
+      const y=(h-rh)/2;
+      pdf.addImage(imgData,"PNG",x,y,rw,rh);
+      pdf.save(`gantt-${ganttMonth}.pdf`);
+    }catch{
+      alert("PDF dışa aktarma başarısız.");
+    }finally{
+      setExporting(false);
+    }
+  }
 
   function getDateRange(startDate,endDate){
     const s=parseYmdLocal(startDate);
@@ -1822,17 +1908,19 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
           <div style={{fontWeight:700,color:C.text}}>Aylık Plan Gantt</div>
-          <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
             <button onClick={()=>shiftGanttMonth(-1)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>◀</button>
             <div style={{fontSize:13,color:C.text,minWidth:140,textAlign:"center",textTransform:"capitalize"}}>{ganttMonthLabel}</div>
             <button onClick={()=>shiftGanttMonth(1)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>▶</button>
             <button onClick={()=>setGanttMonth(monthStr())} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Bu Ay</button>
+            <button onClick={exportGanttPng} disabled={exporting} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,opacity:exporting?0.7:1}}>PNG</button>
+            <button onClick={exportGanttPdf} disabled={exporting} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,opacity:exporting?0.7:1}}>PDF</button>
           </div>
         </div>
         {monthOrders.length>0&&<div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:10}}>
           {monthOrders.map(o=><span key={o.id} style={{display:"inline-flex",alignItems:"center",gap:6,background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px",fontSize:11,color:C.muted2}}><span style={{width:10,height:10,borderRadius:3,background:o.color,display:"inline-block"}}/>{o.code||"İş Emri"}</span>)}
         </div>}
-        <div style={{overflowX:"auto"}}>
+        <div style={{overflowX:"auto"}} ref={ganttRef}>
           <div style={{minWidth:Math.max(760,140+ganttDays.length*28)}}>
             <div style={{display:"grid",gridTemplateColumns:`140px repeat(${ganttDays.length}, 28px)`,gap:4,alignItems:"center",marginBottom:6}}>
               <div style={{fontSize:11,color:C.muted2,fontWeight:700,textTransform:"uppercase",letterSpacing:.7}}>Tezgah</div>
@@ -1847,15 +1935,43 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                 <div style={{fontSize:12,fontWeight:700,color:C.text,paddingRight:6}}>{row.machine}</div>
                 {ganttDays.map(d=>{
                   const p=row.byDate[d];
-                  if(!p) return <div key={d} style={{height:22,borderRadius:6,background:C.surface,border:`1px solid ${C.border}`}}/>;
+                  if(!p) return <div key={d} onDragOver={e=>e.preventDefault()} onDrop={async e=>{e.preventDefault();const id=e.dataTransfer.getData("text/plain")||dragPlanId;const plan=getPlanById(id);if(plan) await movePlan(plan,d,row.machine);setDragPlanId(null);}} style={{height:22,borderRadius:6,background:C.surface,border:`1px solid ${C.border}`}}/>;
                   const col=colorFromOrder(p.orderId||p.orderCode||p.orderName);
-                  return <div key={d} title={`${d} · ${row.machine} · ${p.orderCode||""} ${p.orderName||""}`} style={{height:22,borderRadius:6,background:col,border:`1px solid ${col}99`,boxShadow:`inset 0 0 0 1px ${col}99`}}/>;
+                  return <div
+                    key={d}
+                    title={`${d} · ${row.machine} · ${p.orderCode||""} ${p.orderName||""}`}
+                    draggable
+                    onDragStart={e=>{setDragPlanId(p.id);e.dataTransfer.setData("text/plain",p.id);}}
+                    onDragOver={e=>e.preventDefault()}
+                    onDrop={async e=>{e.preventDefault();const id=e.dataTransfer.getData("text/plain")||dragPlanId;const plan=getPlanById(id);if(plan) await movePlan(plan,d,row.machine);setDragPlanId(null);}}
+                    onClick={()=>setSelectedPlan(p)}
+                    style={{height:22,borderRadius:6,background:col,border:`1px solid ${col}99`,boxShadow:`inset 0 0 0 1px ${col}99`,cursor:"grab"}}
+                  />;
                 })}
               </div>
             ))}
           </div>
         </div>
       </div>
+      {selectedPlan&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:14}} onClick={()=>setSelectedPlan(null)}>
+          <div style={{width:"100%",maxWidth:520,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>Plan Detayı</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,fontSize:13,color:C.muted2}}>
+              <div><strong>Tarih:</strong> {selectedPlan.date||"-"}</div>
+              <div><strong>Tezgah:</strong> {selectedPlan.machine||"-"}</div>
+              <div><strong>İş Emri:</strong> {selectedPlan.orderCode||"-"}</div>
+              <div><strong>Ad:</strong> {selectedPlan.orderName||"-"}</div>
+            </div>
+            {selectedPlan.note&&<div style={{marginTop:10,fontSize:13,color:C.muted2}}>{selectedPlan.note}</div>}
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
+              <button onClick={()=>setSelectedPlan(null)} style={{...btnSt("ghost"),padding:"9px 12px"}}>Kapat</button>
+              <button onClick={()=>{startEdit(selectedPlan);setSelectedPlan(null);}} style={{...btnSt("ghost"),padding:"9px 12px"}}>Düzenle</button>
+              <button onClick={async()=>{const p=selectedPlan;setSelectedPlan(null);await removePlan(p);}} style={{...btnSt("danger"),padding:"9px 12px"}}>Sil</button>
+            </div>
+          </div>
+        </div>
+      )}
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <div style={{fontWeight:700,color:C.text}}>Planlama</div>
