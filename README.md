@@ -21,6 +21,7 @@ Mevcut uygulama su anda agirlikla is emri, siparis, stok, planlama ve raporlama 
 - Gereksinim matrisi: `docs/requirements.md`
 - Uygulama yol haritasi: `docs/roadmap.md`
 - Veri modeli: `docs/data-models.md`
+- MRP master blueprint: `docs/mrp-master-blueprint.md`
 - Kullanici kilavuzu: `docs/user-guide.md`
 - Test stratejisi: `docs/test-strategy.md`
 - OpenAPI: `openapi.yaml`
