@@ -2299,6 +2299,7 @@ function App() {
   const [machines,setMachines]=useState(DEFAULT_MACHINES);
   const [logoSrc,setLogoSrc]=useState(LOGO_SRC);
   const [isTablet,setIsTablet]=useState(()=>typeof window!=="undefined"?window.matchMedia("(min-width: 768px)").matches:false);
+  const [isDesktop,setIsDesktop]=useState(()=>typeof window!=="undefined"?window.matchMedia("(min-width: 1200px)").matches:false);
   const [logoError,setLogoError]=useState(false);
 
   useEffect(()=>{
@@ -2330,6 +2331,17 @@ function App() {
       else mq.removeListener(onChange);
     };
   },[]);
+  useEffect(()=>{
+    const mq=window.matchMedia("(min-width: 1200px)");
+    const onChange=e=>setIsDesktop(e.matches);
+    setIsDesktop(mq.matches);
+    if(mq.addEventListener) mq.addEventListener("change",onChange);
+    else mq.addListener(onChange);
+    return ()=>{
+      if(mq.removeEventListener) mq.removeEventListener("change",onChange);
+      else mq.removeListener(onChange);
+    };
+  },[]);
   useEffect(()=>{setLogoError(false);},[logoSrc]);
 
   async function updateMachines(list){
@@ -2354,6 +2366,9 @@ function App() {
   const canCustomers=canOrders;
   const canUsers=hasPermission(currentUser,"approve_users")||isAdmin;
   const canTools=true;
+  const contentMaxWidth=isDesktop?1320:(isTablet?1040:480);
+  const headerPadding=isDesktop?"16px 24px":(isTablet?"14px 20px":"14px 16px");
+  const sidebarWidth=isDesktop?260:220;
 
   const tabs=[
     ...(canEntry?[{id:"giris",icon:"giris",label:"Giris"}]:[]),
@@ -2379,8 +2394,8 @@ function App() {
 
   return (
     <div style={{background:C.bg,minHeight:"100vh",color:C.text,fontFamily:"'DM Sans','Segoe UI',sans-serif"}}>
-      <div style={{width:"100%",maxWidth:isTablet?1040:480,margin:"0 auto",paddingBottom:isTablet?20:80}}>
-        <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:isTablet?"14px 20px":"14px 16px",position:"sticky",top:0,zIndex:10}}>
+      <div style={{width:"100%",maxWidth:contentMaxWidth,margin:"0 auto",paddingBottom:isTablet?20:80}}>
+        <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:headerPadding,position:"sticky",top:0,zIndex:10}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             <div style={{width:34,height:34,borderRadius:10,background:"transparent",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
               {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:16}}>⚙️</span>}
@@ -2391,7 +2406,7 @@ function App() {
         </div>
 
         {isTablet?(
-          <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 220px",gap:14,alignItems:"start"}}>
+          <div style={{display:"grid",gridTemplateColumns:`minmax(0,1fr) ${sidebarWidth}px`,gap:14,alignItems:"start"}}>
             <div style={{minWidth:0}}>{activeView}</div>
             <div style={{position:"sticky",top:74,padding:"12px 10px"}}>
               <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:8,display:"flex",flexDirection:"column",gap:8}}>
