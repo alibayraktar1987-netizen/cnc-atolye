@@ -4898,6 +4898,397 @@ function PurchasingModule({currentUser}){
     </div>
   );
 }
+
+function DowntimeModule({currentUser,machines=DEFAULT_MACHINES}){
+  const [loading,setLoading]=useState(true);
+  const [types,setTypes]=useState([]);
+  const [events,setEvents]=useState([]);
+  const [typeForm,setTypeForm]=useState({code:"",name:"",category:"ariza",requireReason:true,notifyMaintenance:true});
+  const [eventForm,setEventForm]=useState({machine:machines[0]||"CNC-1",typeId:"",startAt:`${todayStr()}T08:00`,endAt:`${todayStr()}T09:00`,operatorId:currentUser.id||"",reason:"",shift:"sabah"});
+
+  const load=useCallback(async()=>{
+    const [t,e]=await Promise.all([window.DB.getAll("downtimeTypes"),window.DB.getAll("downtimeEvents")]);
+    setTypes(t); setEvents(e);
+    if(t.length===0){
+      const seeds=[["DT-ARIZA","Ariza","ariza"],["DT-MAT","Malzeme Yok","malzeme"],["DT-PROG","Program Hatasi","program"],["DT-MOLA","Mola","mola"],["DT-TEM","Temizlik","temizlik"]];
+      for(const [code,name,cat] of seeds){
+        await window.DB.addDoc("downtimeTypes",{code,name,category:cat,requireReason:true,notifyMaintenance:cat==="ariza",updatedAt:new Date().toISOString()});
+      }
+      const again=await window.DB.getAll("downtimeTypes");
+      setTypes(again);
+    }
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  async function saveType(){
+    if(!typeForm.name.trim()){alert("Durus tipi adi zorunlu.");return;}
+    const payload={code:(typeForm.code||`DT-${Date.now().toString().slice(-4)}`).toUpperCase(),name:typeForm.name.trim(),category:typeForm.category||"ariza",requireReason:Boolean(typeForm.requireReason),notifyMaintenance:Boolean(typeForm.notifyMaintenance),updatedAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("downtimeTypes",payload);
+    if(!id){alert("Durus tipi kaydedilemedi.");return;}
+    setTypes(prev=>[{id,...payload},...prev]);
+    setTypeForm({code:"",name:"",category:"ariza",requireReason:true,notifyMaintenance:true});
+  }
+  async function saveEvent(){
+    const type=types.find(t=>t.id===eventForm.typeId);
+    if(!type){alert("Durus tipi secin.");return;}
+    if(type.requireReason&&!eventForm.reason.trim()){alert("Bu durus tipi icin neden girisi zorunlu.");return;}
+    const startIso=new Date(eventForm.startAt).toISOString();
+    const endIso=new Date(eventForm.endAt).toISOString();
+    const durationMin=Math.max(0,Math.round((new Date(endIso)-new Date(startIso))/60000));
+    if(durationMin<=0){alert("Bitis zamani baslangictan buyuk olmali.");return;}
+    const payload={machine:eventForm.machine,typeId:type.id,typeCode:type.code||"",typeName:type.name||"",category:type.category||"",startAt:startIso,endAt:endIso,durationMin,date:eventForm.startAt.slice(0,10),operatorId:eventForm.operatorId||"",reason:eventForm.reason.trim(),shift:eventForm.shift||"",createdBy:currentUser.id,updatedAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("downtimeEvents",payload);
+    if(!id){alert("Durus kaydedilemedi.");return;}
+    if(type.notifyMaintenance){
+      await window.DB.addDoc("notifications",{type:"maintenance",title:"Bakim Bildirimi",message:`${payload.machine} icin ${type.name} durusu girildi.`,severity:"high",status:"new",sourceKey:id,createdAt:new Date().toISOString()});
+    }
+    setEvents(prev=>[{id,...payload},...prev]);
+    setEventForm(f=>({...f,reason:""}));
+  }
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  const paretoMap={};
+  events.forEach(e=>{
+    const key=`${e.typeCode||"-"} ${e.typeName||"-"}`;
+    if(!paretoMap[key]) paretoMap[key]={key,count:0,min:0};
+    paretoMap[key].count+=1;
+    paretoMap[key].min+=safeNum(e.durationMin);
+  });
+  const pareto=Object.values(paretoMap).sort((a,b)=>b.min-a.min).slice(0,10);
+  return (
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Durus Kaydi</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
+          <div><span style={labelSt}>Tezgah</span><select style={inputSt} value={eventForm.machine} onChange={e=>setEventForm(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+          <div><span style={labelSt}>Durus Tipi</span><select style={inputSt} value={eventForm.typeId} onChange={e=>setEventForm(f=>({...f,typeId:e.target.value}))}><option value="">Secin</option>{types.map(t=><option key={t.id} value={t.id}>{t.code} · {t.name}</option>)}</select></div>
+          <div><span style={labelSt}>Baslangic</span><input style={inputSt} type="datetime-local" value={eventForm.startAt} onChange={e=>setEventForm(f=>({...f,startAt:e.target.value}))}/></div>
+          <div><span style={labelSt}>Bitis</span><input style={inputSt} type="datetime-local" value={eventForm.endAt} onChange={e=>setEventForm(f=>({...f,endAt:e.target.value}))}/></div>
+          <div><span style={labelSt}>Operator</span><input style={inputSt} value={eventForm.operatorId} onChange={e=>setEventForm(f=>({...f,operatorId:e.target.value}))}/></div>
+          <div><span style={labelSt}>Vardiya</span><select style={inputSt} value={eventForm.shift} onChange={e=>setEventForm(f=>({...f,shift:e.target.value}))}>{SHIFTS.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
+          <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Neden</span><input style={inputSt} value={eventForm.reason} onChange={e=>setEventForm(f=>({...f,reason:e.target.value}))} placeholder="Ariza detayi / malzeme yok vb."/></div>
+        </div>
+        <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}><button onClick={saveEvent} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Durus Kaydet</button></div>
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Durus Tipi Tanimi</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:8}}>
+          <input style={inputSt} value={typeForm.code} onChange={e=>setTypeForm(f=>({...f,code:e.target.value}))} placeholder="DT-KOD"/>
+          <input style={inputSt} value={typeForm.name} onChange={e=>setTypeForm(f=>({...f,name:e.target.value}))} placeholder="Tip Adi"/>
+          <select style={inputSt} value={typeForm.category} onChange={e=>setTypeForm(f=>({...f,category:e.target.value}))}><option value="ariza">Ariza</option><option value="malzeme">Malzeme</option><option value="program">Program</option><option value="mola">Mola</option><option value="temizlik">Temizlik</option><option value="diger">Diger</option></select>
+          <button onClick={saveType} style={{...btnSt("green"),padding:"8px 12px",fontSize:12}}>Ekle</button>
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Son Duruslar ({events.length})</div>
+          {events.slice(0,20).map(e=>(
+            <div key={e.id} style={{padding:"7px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.muted2}}>
+              <span style={{color:C.text,fontWeight:700}}>{e.machine}</span> · {e.typeName} · {e.durationMin} dk · {(e.date||"")}
+            </div>
+          ))}
+        </div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Top 10 Durus Nedeni (Pareto)</div>
+          {pareto.map((p,idx)=>(
+            <div key={p.key} style={{padding:"7px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,display:"flex",justifyContent:"space-between",gap:8}}>
+              <div style={{color:C.text}}>{idx+1}. {p.key}</div>
+              <div style={{color:C.muted2}}>{p.min} dk ({p.count})</div>
+            </div>
+          ))}
+          {pareto.length===0&&<div style={{fontSize:12,color:C.muted2}}>Durus kaydi yok.</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
+  const [loading,setLoading]=useState(true);
+  const [orders,setOrders]=useState([]);
+  const [traces,setTraces]=useState([]);
+  const [inspections,setInspections]=useState([]);
+  const [fai,setFai]=useState([]);
+  const [view,setView]=useState("trace");
+  const [traceForm,setTraceForm]=useState({orderId:"",machine:machines[0]||"CNC-1",operatorId:currentUser.id||"",programVersion:"V1",serialNo:"",timestamp:todayStr()+"T08:00",complaintRef:""});
+  const [inspForm,setInspForm]=useState({traceId:"",result:"pass",measurements:"",scrapQty:"0",scrapReason:"",scrapCost:"0"});
+  const [faiForm,setFaiForm]=useState({orderId:"",partNo:"",status:"draft",note:""});
+  const load=useCallback(async()=>{
+    const [o,t,i,f]=await Promise.all([window.DB.getAll("orders"),window.DB.getAll("partTraceability"),window.DB.getAll("qualityInspections"),window.DB.getAll("faiRecords")]);
+    setOrders(o); setTraces(t); setInspections(i); setFai(f); setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  const orderById=Object.fromEntries(orders.map(o=>[o.id,o]));
+
+  async function saveTrace(){
+    const wo=orderById[traceForm.orderId];
+    if(!wo){alert("Is emri secin.");return;}
+    if(!traceForm.serialNo.trim()){alert("Seri/lot no zorunlu.");return;}
+    const payload={orderId:wo.id,orderCode:wo.code||"",partNo:wo.partNo||"",revision:wo.revision||"",machine:traceForm.machine,operatorId:traceForm.operatorId||"",programVersion:traceForm.programVersion||"",serialNo:traceForm.serialNo.trim(),timestamp:new Date(traceForm.timestamp).toISOString(),complaintRef:traceForm.complaintRef.trim(),createdBy:currentUser.id,updatedAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("partTraceability",payload);
+    if(!id){alert("Iz kaydi olusturulamadi.");return;}
+    setTraces(prev=>[{id,...payload},...prev]);
+    setTraceForm(f=>({...f,serialNo:"",complaintRef:""}));
+  }
+  async function saveInspection(){
+    const tr=traces.find(t=>t.id===inspForm.traceId);
+    if(!tr){alert("Iz kaydi secin.");return;}
+    const payload={traceId:tr.id,orderId:tr.orderId,orderCode:tr.orderCode,partNo:tr.partNo||"",result:inspForm.result,measurements:inspForm.measurements.trim(),scrapQty:Math.max(0,safeNum(inspForm.scrapQty)),scrapReason:inspForm.scrapReason.trim(),scrapCost:Math.max(0,safeNum(inspForm.scrapCost)),createdBy:currentUser.id,createdAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("qualityInspections",payload);
+    if(!id){alert("Muayene kaydi eklenemedi.");return;}
+    if(payload.result==="fail"){
+      await window.DB.addDoc("notifications",{type:"quality",title:"Kalite Sapmasi",message:`${payload.orderCode} icin fail muayene kaydi olustu.`,severity:"high",status:"new",sourceKey:id,createdAt:new Date().toISOString()});
+    }
+    setInspections(prev=>[{id,...payload},...prev]);
+    setInspForm({traceId:"",result:"pass",measurements:"",scrapQty:"0",scrapReason:"",scrapCost:"0"});
+  }
+  async function saveFai(){
+    const wo=orderById[faiForm.orderId];
+    if(!wo){alert("Is emri secin.");return;}
+    const payload={orderId:wo.id,orderCode:wo.code||"",partNo:faiForm.partNo||wo.partNo||"",status:faiForm.status||"draft",note:faiForm.note.trim(),updatedAt:new Date().toISOString(),updatedBy:currentUser.id};
+    const id=await window.DB.addDoc("faiRecords",payload);
+    if(!id){alert("FAI kaydi olusturulamadi.");return;}
+    setFai(prev=>[{id,...payload},...prev]);
+    setFaiForm({orderId:"",partNo:"",status:"draft",note:""});
+  }
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  const failCount=inspections.filter(i=>i.result==="fail").length;
+  const scrapCost=inspections.reduce((s,i)=>s+safeNum(i.scrapCost),0);
+  const passCount=inspections.filter(i=>i.result==="pass").length;
+  const qualityPct=(passCount+failCount)>0?Math.round((passCount/(passCount+failCount))*100):100;
+
+  return (
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <button onClick={()=>setView("trace")} style={chip(view==="trace",C.accent)}>Iz Kaydi</button>
+        <button onClick={()=>setView("inspect")} style={chip(view==="inspect",C.warn)}>Muayene/Scrap</button>
+        <button onClick={()=>setView("fai")} style={chip(view==="fai",C.green)}>FAI</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Toplam Iz Kaydi</div><div style={{fontSize:23,color:C.text,fontWeight:800}}>{traces.length}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Kalite Orani</div><div style={{fontSize:23,color:qualityPct<90?C.warn:C.green,fontWeight:800}}>%{qualityPct}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Fail Muayene</div><div style={{fontSize:23,color:failCount?C.red:C.green,fontWeight:800}}>{failCount}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Scrap Maliyeti</div><div style={{fontSize:23,color:C.red,fontWeight:800}}>{moneyFmt(scrapCost)}</div></div>
+      </div>
+    </div>
+  );
+}
+
+function NotificationCenterModule({currentUser}){
+  const [loading,setLoading]=useState(true);
+  const [rules,setRules]=useState([]);
+  const [notifications,setNotifications]=useState([]);
+  const [orders,setOrders]=useState([]);
+  const [salesOrders,setSalesOrders]=useState([]);
+  const [materials,setMaterials]=useState([]);
+  const [telemetry,setTelemetry]=useState([]);
+  const [tools,setTools]=useState([]);
+  const [form,setForm]=useState({name:"",type:"late_work_order",threshold:"1",channels:["inapp"],active:true});
+  const load=useCallback(async()=>{
+    const [r,n,o,s,m,t,toolsRows]=await Promise.all([
+      window.DB.getAll("notificationRules"),
+      window.DB.getAll("notifications"),
+      window.DB.getAll("orders"),
+      window.DB.getAll("salesOrders"),
+      window.DB.getAll("materials"),
+      window.DB.getAll("machineTelemetryMock"),
+      window.DB.getAll("toolStock"),
+    ]);
+    setRules(r); setNotifications(n.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setOrders(o); setSalesOrders(s); setMaterials(m); setTelemetry(t); setTools(toolsRows);
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  const updateForm=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const hasRecent=(key)=>notifications.some(n=>n.sourceKey===key&&!["resolved","closed"].includes(n.status||""));
+  async function emit(n){
+    if(hasRecent(n.sourceKey)) return;
+    const id=await window.DB.addDoc("notifications",{...n,status:"new",createdAt:new Date().toISOString()});
+    if(id) setNotifications(prev=>[{id,...n,status:"new",createdAt:new Date().toISOString()},...prev]);
+  }
+  async function saveRule(){
+    if(!form.name.trim()){alert("Kural adi zorunlu.");return;}
+    const payload={name:form.name.trim(),type:form.type,threshold:safeNum(form.threshold),channels:form.channels,active:Boolean(form.active),updatedAt:new Date().toISOString(),updatedBy:currentUser.id};
+    const id=await window.DB.addDoc("notificationRules",payload);
+    if(!id){alert("Kural kaydedilemedi.");return;}
+    setRules(prev=>[{id,...payload},...prev]);
+    setForm({name:"",type:"late_work_order",threshold:"1",channels:["inapp"],active:true});
+  }
+  async function evaluate(){
+    const today=todayStr();
+    const latestByMachine={};
+    [...telemetry].sort((a,b)=>(b.collectedAtUtc||"").localeCompare(a.collectedAtUtc||"")).forEach(t=>{
+      if(!t.machineId||latestByMachine[t.machineId]) return;
+      latestByMachine[t.machineId]=t;
+    });
+    for(const r of rules.filter(x=>x.active)){
+      if(r.type==="late_work_order"){
+        const late=orders.filter(o=>isOpenOrderStatus(o.status)&&o.dueDate&&dayDiff(o.dueDate,today)>=safeNum(r.threshold));
+        for(const o of late) await emit({type:r.type,severity:"high",title:r.name,message:`${o.code} termin asimi`,sourceKey:`wo:${o.id}`,channels:r.channels||["inapp"]});
+      }
+      if(r.type==="due_sales_order"){
+        const due=salesOrders.filter(s=>!["delivered","cancelled"].includes(s.status||"")&&s.dueDate&&dayDiff(today,s.dueDate)<=safeNum(r.threshold)&&dayDiff(today,s.dueDate)>=0);
+        for(const s of due) await emit({type:r.type,severity:"medium",title:r.name,message:`${s.code||"-"} termin yaklasiyor`,sourceKey:`so:${s.id}`,channels:r.channels||["inapp"]});
+      }
+      if(r.type==="low_stock"){
+        const lows=materials.filter(m=>safeNum(m.stock)<=Math.max(safeNum(m.reorderPoint),safeNum(r.threshold)));
+        for(const m of lows) await emit({type:r.type,severity:"high",title:r.name,message:`${m.code||m.name} kritik stok`,sourceKey:`mat:${m.id}`,channels:r.channels||["inapp"]});
+      }
+      if(r.type==="tool_life"){
+        const lows=tools.filter(t=>safeNum(t.remainingLifePct)<=safeNum(r.threshold));
+        for(const t of lows) await emit({type:r.type,severity:"medium",title:r.name,message:`${t.code||t.name} takim omru dusuk`,sourceKey:`tool:${t.id}`,channels:r.channels||["inapp"]});
+      }
+      if(r.type==="machine_alarm"){
+        const alarms=Object.values(latestByMachine).filter(t=>(t.activeAlarms||[]).length>0);
+        for(const t of alarms) await emit({type:r.type,severity:"high",title:r.name,message:`${t.machineName||t.machineCode} alarm`,sourceKey:`alarm:${t.machineId}`,channels:r.channels||["inapp"]});
+      }
+      if(r.type==="cycle_deviation"){
+        const out=Object.values(latestByMachine).filter(t=>safeNum(t.cycleElapsedSec)>safeNum(r.threshold));
+        for(const t of out) await emit({type:r.type,severity:"medium",title:r.name,message:`${t.machineName||t.machineCode} cevrim sapmasi`,sourceKey:`cycle:${t.machineId}`,channels:r.channels||["inapp"]});
+      }
+    }
+  }
+  async function setStatus(n,status){
+    await window.DB.updateDoc("notifications",n.id,{status,updatedAt:new Date().toISOString(),updatedBy:currentUser.id});
+    setNotifications(prev=>prev.map(x=>x.id===n.id?{...x,status}:x));
+  }
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  return (
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Bildirim Kurali</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr .8fr .8fr",gap:8}}>
+          <div><span style={labelSt}>Kural Adi</span><input style={inputSt} value={form.name} onChange={e=>updateForm("name",e.target.value)} placeholder="Gecikme Uyarisi"/></div>
+          <div><span style={labelSt}>Tip</span><select style={inputSt} value={form.type} onChange={e=>updateForm("type",e.target.value)}><option value="late_work_order">Is Emri Gecikme</option><option value="due_sales_order">Satis Termin Yaklasiyor</option><option value="low_stock">Kritik Stok</option><option value="tool_life">Takim Omru</option><option value="machine_alarm">Makina Alarm</option><option value="cycle_deviation">Cevrim Sapma</option></select></div>
+          <div><span style={labelSt}>Esik</span><input style={inputSt} type="number" min="0" value={form.threshold} onChange={e=>updateForm("threshold",e.target.value)}/></div>
+          <div><span style={labelSt}>Kanal</span><select style={inputSt} value={form.channels[0]||"inapp"} onChange={e=>updateForm("channels",[e.target.value])}><option value="inapp">In-App</option><option value="email">Email</option><option value="sms">SMS</option></select></div>
+        </div>
+        <div style={{display:"flex",gap:8,justifyContent:"space-between",marginTop:10,flexWrap:"wrap"}}>
+          <button onClick={saveRule} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Kural Kaydet</button>
+          <button onClick={evaluate} style={{...btnSt("green"),padding:"8px 12px",fontSize:12}}>Kurallari Calistir</button>
+        </div>
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Bildirim Akisi ({notifications.length})</div>
+        {notifications.slice(0,80).map(n=>(
+          <div key={n.id} style={{display:"grid",gridTemplateColumns:"1.4fr 1fr auto auto",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,alignItems:"center"}}>
+            <div><span style={{color:C.text,fontWeight:700}}>{n.title}</span><div style={{fontSize:11,color:C.muted2}}>{n.message}</div></div>
+            <Badge label={n.status||"new"} color={n.status==="new"?C.warn:n.status==="ack"?C.accent:C.green}/>
+            <button onClick={()=>setStatus(n,"ack")} style={{...btnSt("ghost"),padding:"6px 8px",fontSize:11}}>Ack</button>
+            <button onClick={()=>setStatus(n,"resolved")} style={{...btnSt("green"),padding:"6px 8px",fontSize:11}}>Kapat</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CostingModule(){
+  const [loading,setLoading]=useState(true);
+  const [parts,setParts]=useState([]);
+  const [orders,setOrders]=useState([]);
+  const [entries,setEntries]=useState([]);
+  const [salesOrders,setSalesOrders]=useState([]);
+  const [inspections,setInspections]=useState([]);
+  const load=useCallback(async()=>{
+    const [p,o,e,s,i]=await Promise.all([window.DB.getAll("parts"),window.DB.getAll("orders"),window.DB.getAll("entries"),window.DB.getAll("salesOrders"),window.DB.getAll("qualityInspections")]);
+    setParts(p); setOrders(o); setEntries(e); setSalesOrders(s); setInspections(i); setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  const partByNo={};
+  parts.forEach(p=>{partByNo[String(p.partNo||"").toUpperCase()]=p;});
+  const orderCostRows=orders.map(o=>{
+    const p=partByNo[String(o.partNo||"").toUpperCase()]||null;
+    const produced=entries.filter(e=>e.jobCode===o.code).reduce((s,e)=>s+safeNum(e.correct)+safeNum(e.wrong),0);
+    const qty=Math.max(0,safeNum(o.qty));
+    const planQty=qty||produced;
+    const materialUnit=p?safeNum(p.costBreakdown?.materialCost||0):0;
+    const laborUnit=p?safeNum(p.costBreakdown?.laborCost||0):0;
+    const machineUnit=p?safeNum(p.costBreakdown?.machineCost||0):0;
+    const planned=planQty*(materialUnit+laborUnit+machineUnit);
+    const actualQty=produced||planQty;
+    const actual=actualQty*(materialUnit+laborUnit+machineUnit);
+    const scrap=inspections.filter(i=>i.orderId===o.id||i.orderCode===o.code).reduce((s,i)=>s+safeNum(i.scrapCost),0);
+    return {id:o.id,code:o.code||"-",partNo:o.partNo||"-",customerName:o.customerName||"-",plannedCost:planned,actualCost:actual+scrap,produced:actualQty,scrapCost:scrap};
+  });
+  const totalActual=orderCostRows.reduce((s,r)=>s+r.actualCost,0);
+  const totalPlanned=orderCostRows.reduce((s,r)=>s+r.plannedCost,0);
+  const totalRevenue=salesOrders.reduce((s,o)=>s+safeNum(o.totalAmount),0);
+  const margin=totalRevenue-totalActual;
+  const byCustomer={};
+  salesOrders.forEach(s=>{
+    const k=s.customerName||"-";
+    if(!byCustomer[k]) byCustomer[k]={customer:k,revenue:0,orders:0};
+    byCustomer[k].revenue+=safeNum(s.totalAmount);
+    byCustomer[k].orders+=1;
+  });
+  const customerRows=Object.values(byCustomer).sort((a,b)=>b.revenue-a.revenue);
+  return (
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Planlanan Maliyet</div><div style={{fontSize:23,color:C.muted2,fontWeight:800}}>{moneyFmt(totalPlanned)}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Gerceklesen Maliyet</div><div style={{fontSize:23,color:C.red,fontWeight:800}}>{moneyFmt(totalActual)}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Satis Geliri</div><div style={{fontSize:23,color:C.green,fontWeight:800}}>{moneyFmt(totalRevenue)}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Tahmini Marj</div><div style={{fontSize:23,color:margin<0?C.red:C.green,fontWeight:800}}>{moneyFmt(margin)}</div></div>
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Is Emri Bazli Maliyetler</div>
+          <button onClick={()=>downloadCsv(`costing-${todayStr()}.csv`,[{label:"Kod",key:"code"},{label:"Parca",key:"partNo"},{label:"Musteri",key:"customerName"},{label:"Uretim",key:"produced"},{label:"Plan",value:r=>r.plannedCost.toFixed(2)},{label:"Gercek",value:r=>r.actualCost.toFixed(2)},{label:"Scrap",value:r=>r.scrapCost.toFixed(2)}],orderCostRows)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>CSV Indir</button>
+        </div>
+        {orderCostRows.slice(0,80).map(r=>(
+          <div key={r.id} style={{display:"grid",gridTemplateColumns:"1.2fr 1fr .8fr .8fr .8fr .8fr",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
+            <div style={{color:C.text,fontWeight:700}}>{r.code} · {r.partNo}</div>
+            <div style={{color:C.muted2}}>{r.customerName}</div>
+            <div style={{color:C.muted2}}>Adet {r.produced}</div>
+            <div style={{color:C.muted2}}>Plan {moneyFmt(r.plannedCost)}</div>
+            <div style={{color:C.text}}>Gercek {moneyFmt(r.actualCost)}</div>
+            <div style={{color:C.red}}>Scrap {moneyFmt(r.scrapCost)}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Musteri Bazli Ciro</div>
+        {customerRows.map(c=>(
+          <div key={c.customer} style={{display:"grid",gridTemplateColumns:"1.5fr .8fr .8fr",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
+            <div style={{color:C.text,fontWeight:700}}>{c.customer}</div>
+            <div style={{color:C.muted2}}>Siparis {c.orders}</div>
+            <div style={{color:C.green}}>{moneyFmt(c.revenue)}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function IntegrationsReadinessModule(){
+  return (
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16}}>
+        <div style={{fontWeight:700,color:C.text,fontSize:16}}>Dis Entegrasyon Hazirligi (Sonraya Birakildi)</div>
+        <div style={{fontSize:13,color:C.muted2,marginTop:8}}>Sistem disa kapali calisacak. Bu modulde sadece ileride devreye alinacak alanlarin veri modeli hazirligi tutulur.</div>
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        {[
+          "ERP: Siparis/BOM/Routing cift yon senkron endpointleri",
+          "Muhasebe: e-fatura/e-irsaliye veri cikis sozlesmesi",
+          "CAM: NC program versiyon metadata baglantisi",
+          "REST API: Core entity endpoint backlogu ve webhook event listesi"
+        ].map((it,idx)=>(
+          <div key={idx} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"8px 0",borderBottom:idx===3?"none":`1px solid ${C.border}`}}>
+            <span style={{color:C.accent,fontWeight:800,fontSize:13,minWidth:18}}>{idx+1}.</span>
+            <span style={{fontSize:13,color:C.text}}>{it}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 function ModulePlaceholder({title,desc,items=[]}) {
   return (
     <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
