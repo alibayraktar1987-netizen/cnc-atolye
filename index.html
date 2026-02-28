@@ -4545,6 +4545,247 @@ function MPSModule(){
   );
 }
 
+function MRPRunModule({currentUser}){
+  const [loading,setLoading]=useState(true);
+  const [parts,setParts]=useState([]);
+  const [materials,setMaterials]=useState([]);
+  const [orders,setOrders]=useState([]);
+  const [purchaseRequests,setPurchaseRequests]=useState([]);
+  const [result,setResult]=useState([]);
+  const [running,setRunning]=useState(false);
+  const load=useCallback(async()=>{
+    const [p,m,o,r]=await Promise.all([window.DB.getAll("parts"),window.DB.getAll("materials"),window.DB.getAll("orders"),window.DB.getAll("purchaseRequests")]);
+    setParts(p); setMaterials(m); setOrders(o); setPurchaseRequests(r);
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  function runMrp(){
+    setRunning(true);
+    const partMap={};
+    parts.forEach(p=>{partMap[String(p.partNo||"").toUpperCase()]=p;});
+    const materialByCode={};
+    materials.forEach(m=>{
+      materialByCode[String(m.code||"").toUpperCase()]=m;
+      materialByCode[String(m.name||"").toUpperCase()]=m;
+    });
+    const agg={};
+    const activeOrders=orders.filter(o=>isOpenOrderStatus(o.status));
+    activeOrders.forEach(o=>{
+      const key=String(o.partNo||"").toUpperCase();
+      const part=partMap[key];
+      if(!part||(part.bomLines||[]).length===0) return;
+      (part.bomLines||[]).forEach(line=>{
+        const code=String(line.componentCode||"").toUpperCase();
+        if(!code) return;
+        const gross=safeNum(o.qty)*safeNum(line.qtyPer)*(1+safeNum(line.scrapPct)/100);
+        if(!agg[code]) agg[code]={componentCode:code,componentName:line.componentName||"",grossReq:0,orders:new Set()};
+        agg[code].grossReq+=gross;
+        agg[code].orders.add(o.code||o.id);
+      });
+    });
+    const rows=Object.values(agg).map(r=>{
+      const mat=materialByCode[r.componentCode]||null;
+      const onHand=safeNum(mat?.stock);
+      const safety=Math.max(safeNum(mat?.safetyStock),0);
+      const openPr=purchaseRequests.filter(x=>!["received","cancelled","closed"].includes(x.status||"")&&String(x.materialCode||x.materialName||"").toUpperCase()===r.componentCode).reduce((s,x)=>s+safeNum(x.qty),0);
+      const net=Math.max(0,Math.ceil((r.grossReq+safety)-(onHand+openPr)));
+      return {
+        componentCode:r.componentCode,
+        componentName:r.componentName||mat?.name||"-",
+        grossReq:Math.ceil(r.grossReq),
+        onHand,
+        openPr,
+        safety,
+        net,
+        leadTimeDays:Math.max(0,safeNum(mat?.leadTimeDays||5)),
+        orders:[...r.orders],
+        materialId:mat?.id||"",
+      };
+    }).sort((a,b)=>b.net-a.net);
+    setResult(rows);
+    setRunning(false);
+  }
+
+  async function createRequests(){
+    const shortages=result.filter(r=>r.net>0);
+    if(shortages.length===0){alert("Acik satin alma ihtiyaci bulunmuyor.");return;}
+    const now=new Date().toISOString();
+    for(const row of shortages){
+      const payload={
+        code:`PR-${Date.now().toString().slice(-6)}-${Math.floor(Math.random()*99)}`,
+        materialId:row.materialId||"",
+        materialCode:row.componentCode,
+        materialName:row.componentName,
+        qty:row.net,
+        needDate:addDays(todayStr(),row.leadTimeDays||0),
+        priority:"high",
+        source:"mrp_auto",
+        status:"pending",
+        orderRefs:row.orders,
+        createdBy:currentUser.id,
+        updatedAt:now,
+      };
+      await window.DB.addDoc("purchaseRequests",payload);
+      await addAuditLog(currentUser.id,"purchaseRequest","", "create_from_mrp",null,payload,{module:"mrp"});
+    }
+    await window.DB.addDoc("mrpRuns",{ranAt:now,createdBy:currentUser.id,rowCount:shortages.length,rows:result});
+    alert(`${shortages.length} satin alma talebi olusturuldu.`);
+    load();
+  }
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  const critical=result.filter(r=>r.net>0).length;
+  return (
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <div>
+          <div style={{fontWeight:700,color:C.text}}>MRP Net Ihtiyac Calistirma</div>
+          <div style={{fontSize:12,color:C.muted2,marginTop:3}}>BOM + acik is emirleri + mevcut stok + acik PR bazli hesap.</div>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={runMrp} disabled={running} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,opacity:running?0.7:1}}>{running?"Calisiyor...":"MRP Calistir"}</button>
+          <button onClick={createRequests} style={{...btnSt("green"),padding:"8px 12px",fontSize:12}}>Talep Olustur</button>
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>BOM Lu Parca</div><div style={{fontSize:23,color:C.accent,fontWeight:800}}>{parts.filter(p=>(p.bomLines||[]).length>0).length}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Acik Is Emri</div><div style={{fontSize:23,color:C.text,fontWeight:800}}>{orders.filter(o=>isOpenOrderStatus(o.status)).length}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Kritik Eksik</div><div style={{fontSize:23,color:critical?C.red:C.green,fontWeight:800}}>{critical}</div></div>
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Net Ihtiyac Sonucu ({result.length})</div>
+        {result.map(r=>(
+          <div key={r.componentCode} style={{padding:"8px 0",borderBottom:`1px solid ${C.border}`,display:"grid",gridTemplateColumns:"1.3fr repeat(5,.8fr)",gap:8,fontSize:12,alignItems:"center"}}>
+            <div style={{color:C.text,fontWeight:700}}>{r.componentCode} · {r.componentName}</div>
+            <div style={{color:C.muted2}}>Brut: {r.grossReq}</div>
+            <div style={{color:C.muted2}}>Stok: {r.onHand}</div>
+            <div style={{color:C.muted2}}>Acik PR: {r.openPr}</div>
+            <div style={{color:C.muted2}}>SS: {r.safety}</div>
+            <div style={{color:r.net>0?C.red:C.green,fontWeight:700}}>Net: {r.net}</div>
+          </div>
+        ))}
+        {result.length===0&&<div style={{fontSize:12,color:C.muted2}}>MRP henuz calistirilmadi.</div>}
+      </div>
+    </div>
+  );
+}
+
+function PurchasingModule({currentUser}){
+  const [loading,setLoading]=useState(true);
+  const [suppliers,setSuppliers]=useState([]);
+  const [materials,setMaterials]=useState([]);
+  const [requests,setRequests]=useState([]);
+  const [quotes,setQuotes]=useState([]);
+  const [orders,setOrders]=useState([]);
+  const [receipts,setReceipts]=useState([]);
+  const [view,setView]=useState("requests");
+  const [supplierForm,setSupplierForm]=useState({name:"",code:"",leadTimeDays:"7",email:"",phone:"",currency:"TRY"});
+  const [reqForm,setReqForm]=useState({materialId:"",qty:"",needDate:todayStr(),priority:"normal",note:""});
+  const [quoteForm,setQuoteForm]=useState({requestId:"",supplierId:"",unitPrice:"0",leadTimeDays:"7",currency:"TRY",note:""});
+  const [recvForm,setRecvForm]=useState({poId:"",acceptedQty:"",rejectedQty:"0",receiptDate:todayStr(),note:""});
+
+  const load=useCallback(async()=>{
+    const [s,m,r,q,p,gr]=await Promise.all([
+      window.DB.getAll("suppliers"),
+      window.DB.getAll("materials"),
+      window.DB.getAll("purchaseRequests"),
+      window.DB.getAll("supplierQuotes"),
+      window.DB.getAll("purchaseOrders"),
+      window.DB.getAll("goodsReceipts"),
+    ]);
+    setSuppliers(s); setMaterials(m); setRequests(r); setQuotes(q); setOrders(p); setReceipts(gr);
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  const matById=Object.fromEntries(materials.map(m=>[m.id,m]));
+  const reqById=Object.fromEntries(requests.map(r=>[r.id,r]));
+
+  async function saveSupplier(){
+    if(!supplierForm.name.trim()){alert("Tedarikci adi zorunlu.");return;}
+    const payload={name:supplierForm.name.trim(),code:(supplierForm.code||`TED-${Date.now().toString().slice(-4)}`).toUpperCase(),leadTimeDays:Math.max(0,safeNum(supplierForm.leadTimeDays)),email:supplierForm.email.trim(),phone:supplierForm.phone.trim(),currency:supplierForm.currency||"TRY",updatedAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("suppliers",payload);
+    if(!id){alert("Tedarikci kaydedilemedi.");return;}
+    setSuppliers(prev=>[{id,...payload},...prev]);
+    setSupplierForm({name:"",code:"",leadTimeDays:"7",email:"",phone:"",currency:"TRY"});
+  }
+  async function saveRequest(){
+    if(!reqForm.materialId||safeNum(reqForm.qty)<=0){alert("Malzeme ve miktar zorunlu.");return;}
+    const mat=matById[reqForm.materialId];
+    const payload={code:`PR-${String(Date.now()).slice(-6)}`,materialId:reqForm.materialId,materialCode:mat?.code||"",materialName:mat?.name||"",qty:Math.max(0,safeNum(reqForm.qty)),needDate:reqForm.needDate||todayStr(),priority:reqForm.priority||"normal",source:"manual",status:"pending",note:reqForm.note.trim(),createdBy:currentUser.id,updatedAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("purchaseRequests",payload);
+    if(!id){alert("Talep olusturulamadi.");return;}
+    setRequests(prev=>[{id,...payload},...prev]);
+    setReqForm({materialId:"",qty:"",needDate:todayStr(),priority:"normal",note:""});
+  }
+  async function setRequestStatus(r,status){
+    const patch={status,updatedAt:new Date().toISOString()};
+    const ok=await window.DB.updateDoc("purchaseRequests",r.id,patch);
+    if(!ok) return;
+    setRequests(prev=>prev.map(x=>x.id===r.id?{...x,...patch}:x));
+  }
+  async function saveQuote(){
+    if(!quoteForm.requestId||!quoteForm.supplierId){alert("Talep ve tedarikci secin.");return;}
+    const req=reqById[quoteForm.requestId];
+    const supplier=suppliers.find(s=>s.id===quoteForm.supplierId);
+    const payload={requestId:req.id,requestCode:req.code||"",supplierId:supplier.id,supplierName:supplier.name||"",unitPrice:Math.max(0,safeNum(quoteForm.unitPrice)),leadTimeDays:Math.max(0,safeNum(quoteForm.leadTimeDays)),currency:quoteForm.currency||supplier.currency||"TRY",total:Math.max(0,safeNum(quoteForm.unitPrice))*safeNum(req.qty),note:quoteForm.note.trim(),status:"new",updatedAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("supplierQuotes",payload);
+    if(!id){alert("Teklif kaydedilemedi.");return;}
+    setQuotes(prev=>[{id,...payload},...prev]);
+    setQuoteForm({requestId:"",supplierId:"",unitPrice:"0",leadTimeDays:"7",currency:"TRY",note:""});
+  }
+  async function quoteToPo(q){
+    const req=reqById[q.requestId];
+    if(!req){alert("Talep bulunamadi.");return;}
+    const payload={code:`PO-${String(Date.now()).slice(-6)}`,requestId:req.id,requestCode:req.code||"",supplierId:q.supplierId,supplierName:q.supplierName||"",materialId:req.materialId||"",materialCode:req.materialCode||"",materialName:req.materialName||"",qty:safeNum(req.qty),unitPrice:safeNum(q.unitPrice),currency:q.currency||"TRY",total:safeNum(req.qty)*safeNum(q.unitPrice),orderDate:todayStr(),expectedDate:addDays(todayStr(),safeNum(q.leadTimeDays)),receivedQty:0,rejectedQty:0,status:"ordered",createdBy:currentUser.id,updatedAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("purchaseOrders",payload);
+    if(!id){alert("PO olusturulamadi.");return;}
+    await setRequestStatus(req,"ordered");
+    setOrders(prev=>[{id,...payload},...prev]);
+  }
+  async function receivePo(){
+    const po=orders.find(o=>o.id===recvForm.poId);
+    if(!po){alert("PO secin.");return;}
+    const accepted=Math.max(0,safeNum(recvForm.acceptedQty));
+    const rejected=Math.max(0,safeNum(recvForm.rejectedQty));
+    if(accepted+rejected<=0){alert("Alinan miktar girin.");return;}
+    const payload={poId:po.id,poCode:po.code||"",materialId:po.materialId||"",materialCode:po.materialCode||"",materialName:po.materialName||"",acceptedQty:accepted,rejectedQty:rejected,receiptDate:recvForm.receiptDate||todayStr(),note:recvForm.note.trim(),createdBy:currentUser.id,createdAt:new Date().toISOString()};
+    const rid=await window.DB.addDoc("goodsReceipts",payload);
+    if(!rid){alert("Malzeme girisi kaydedilemedi.");return;}
+    const newAccepted=safeNum(po.receivedQty)+accepted;
+    const newRejected=safeNum(po.rejectedQty)+rejected;
+    const totalIn=newAccepted+newRejected;
+    const status=totalIn>=safeNum(po.qty)?"received":"partial";
+    await window.DB.updateDoc("purchaseOrders",po.id,{receivedQty:newAccepted,rejectedQty:newRejected,status,updatedAt:new Date().toISOString()});
+    if(po.materialId){
+      const mat=matById[po.materialId];
+      if(mat) await window.DB.updateDoc("materials",mat.id,{stock:safeNum(mat.stock)+accepted,updatedAt:new Date().toISOString()});
+    }
+    setRecvForm({poId:"",acceptedQty:"",rejectedQty:"0",receiptDate:todayStr(),note:""});
+    load();
+  }
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  const openReq=requests.filter(r=>!["received","cancelled","closed"].includes(r.status||""));
+  const supplierPerf=suppliers.map(s=>{
+    const pos=orders.filter(o=>o.supplierId===s.id);
+    const gr=receipts.filter(r=>pos.some(p=>p.id===r.poId));
+    const onTime=gr.filter(r=>{
+      const po=pos.find(p=>p.id===r.poId);
+      return po&&r.receiptDate<=po.expectedDate;
+    }).length;
+    const quality=gr.reduce((a,r)=>a+safeNum(r.acceptedQty),0);
+    const total=gr.reduce((a,r)=>a+safeNum(r.acceptedQty)+safeNum(r.rejectedQty),0);
+    return {id:s.id,name:s.name||"-",po:pos.length,onTimePct:gr.length?Math.round((onTime/gr.length)*100):0,qualityPct:total?Math.round((quality/total)*100):0};
+  });
+
+  return (
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <button onClick={()=>setView("requests")} style={chip(view==="requests",C.accent)}>Talep ve PO</button>
+        <button onClick={()=>setView("suppliers")} style={chip(view==="suppliers",C.green)}>Tedarikciler</button>
+        <button onClick={()=>setView("quotes")} style={chip(view==="quotes",C.warn)}>Teklifler</button>
+      </div>
 function ModulePlaceholder({title,desc,items=[]}) {
   return (
     <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
