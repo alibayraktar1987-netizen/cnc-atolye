@@ -1453,6 +1453,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
 
   const q=search.trim().toLowerCase();
   const usageCountByOrder={};
+  const productionByOrder={};
   toolMovements.forEach(m=>{
     const key=m.orderId||m.orderCode;
     if(!key) return;
@@ -1462,6 +1463,14 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
     const key=m.orderCode;
     if(!key) return;
     usageCountByOrder[key]=(usageCountByOrder[key]||0)+1;
+  });
+  entries.forEach(e=>{
+    const key=e.jobCode||"";
+    if(!key) return;
+    if(!productionByOrder[key]) productionByOrder[key]={correct:0,wrong:0,total:0};
+    productionByOrder[key].correct+=(Number(e.correct)||0);
+    productionByOrder[key].wrong+=(Number(e.wrong)||0);
+    productionByOrder[key].total+=(Number(e.correct)||0)+(Number(e.wrong)||0);
   });
   const toggleStatusFilter=statusId=>{
     setStatusFilters(prev=>prev.includes(statusId)?prev.filter(x=>x!==statusId):[...prev,statusId]);
@@ -1488,6 +1497,12 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
         {[["Müşteri",viewOrder.customerName],["Malzeme",viewOrder.material],["Parça Süresi",fmtSec(viewOrder.partSec)],["Maks Üretim/Gün",viewOrder.partSec?Math.floor(EFFECTIVE_SECONDS/viewOrder.partSec)+" adet":"-"],["Tezgahlar",(viewOrder.machines||[]).join(", ")],["Notlar",viewOrder.notes]].map(([l,v])=>v?(
           <div key={l} style={{marginBottom:10}}><div style={{color:C.muted2,fontSize:11,letterSpacing:.8,textTransform:"uppercase",marginBottom:2}}>{l}</div><div style={{fontSize:14,color:C.text}}>{v}</div></div>
         ):null)}
+        <div style={{marginBottom:2}}>
+          <div style={{color:C.muted2,fontSize:11,letterSpacing:.8,textTransform:"uppercase",marginBottom:2}}>Üretilen Adetler</div>
+          <div style={{fontSize:14,color:C.text}}>
+            Toplam: {(productionByOrder[viewOrder.code]?.total)||0} · Doğru: {(productionByOrder[viewOrder.code]?.correct)||0} · Hatalı: {(productionByOrder[viewOrder.code]?.wrong)||0}
+          </div>
+        </div>
       </div>
       <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>Takım Kullanımları ({viewOrderMoves.length})</div>
       {viewOrderMoves.length===0?(
@@ -1612,6 +1627,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
               <Badge label={getOrderStatusMeta(o.status).label} color={getOrderStatusMeta(o.status).color}/>
               {(o.files||[]).length>0&&<Badge label={`${o.files.length} dosya`} color={C.purple}/>}
               {(usageCountByOrder[o.id]||usageCountByOrder[o.code])>0&&<Badge label={`${usageCountByOrder[o.id]||usageCountByOrder[o.code]} takım`} color={C.warn}/>}
+              {(productionByOrder[o.code]?.total||0)>0&&<Badge label={`${productionByOrder[o.code].total} adet`} color={C.green}/>}
             </div>
             <div style={{fontSize:13,color:C.muted2,marginTop:3}}>{o.name}</div>
             {o.customerName&&<div style={{fontSize:11,color:C.accent,marginTop:1}}>🏢 {o.customerName}</div>}
