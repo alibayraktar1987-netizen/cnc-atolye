@@ -147,6 +147,9 @@ Bu dokuman, projeyi sifirdan kuruyormus gibi tam kapsamli MRP + MES + kalite + e
 
 ## 5) Delivery Roadmap (Recommended)
 
+Detayli V2 teslim plani icin:
+- `docs/roadmap-v2.md`
+
 1. Phase A: Foundation
 - Auth, RBAC, audit, localization, master data skeleton
 
@@ -164,6 +167,7 @@ Bu dokuman, projeyi sifirdan kuruyormus gibi tam kapsamli MRP + MES + kalite + e
 
 6. Phase F: Integrations + Hardening
 - ERP/CAM integrations, reporting automation, performance tuning
+- Not: Dis entegrasyon modulu guncel kapsamda "sonraya birakildi"
 
 ## 6) Definition of Done (Product Level)
 
@@ -178,4 +182,3 @@ Bu dokuman, projeyi sifirdan kuruyormus gibi tam kapsamli MRP + MES + kalite + e
 
 4. Operations readiness:
 - Plant can run with temporary network/server interruption
-

@@ -404,6 +404,15 @@ function NavIcon({name,size=18}) {
   if(name==="purchase") return (
     <svg viewBox="0 0 24 24" style={st}><path {...p} d="M4 7h16l-1.4 10H5.4z"/><path {...p} d="M9 7V5a3 3 0 0 1 6 0v2"/></svg>
   );
+  if(name==="quotes") return (
+    <svg viewBox="0 0 24 24" style={st}><path {...p} d="M5 4h14v16H5z"/><path {...p} d="M8 9h8M8 13h8M8 17h5"/><path {...p} d="M9 4v3M15 4v3"/></svg>
+  );
+  if(name==="downtime") return (
+    <svg viewBox="0 0 24 24" style={st}><circle {...p} cx="12" cy="12" r="8"/><path {...p} d="M12 8v5l3 2"/></svg>
+  );
+  if(name==="notifications") return (
+    <svg viewBox="0 0 24 24" style={st}><path {...p} d="M6 16h12l-1-2v-3a5 5 0 0 0-10 0v3z"/><path {...p} d="M10 18a2 2 0 0 0 4 0"/></svg>
+  );
   if(name==="quality") return (
     <svg viewBox="0 0 24 24" style={st}><path {...p} d="M12 3l8 4v5c0 5-3.3 8-8 9-4.7-1-8-4-8-9V7z"/><path {...p} d="M9 12l2 2 4-4"/></svg>
   );
@@ -3442,15 +3451,18 @@ function App() {
     {id:"planning",icon:"planning",label:"Cizelgeleme",group:"Planlama",enabled:canPlanning},
     {id:"mps",icon:"mps",label:"MPS",group:"Planlama",enabled:canPlanning},
     {id:"mrp",icon:"mrp",label:"MRP Run",group:"Planlama",enabled:canPlanning},
+    {id:"quotes",icon:"quotes",label:"Teklif Yonetimi",group:"Planlama",enabled:canOrders},
     {id:"sales",icon:"sales",label:"Satis Siparisleri",group:"Planlama",enabled:canOrders},
     {id:"orders",icon:"orders",label:"Is Emirleri",group:"Operasyon",enabled:canOrders},
     {id:"giris",icon:"giris",label:"Uretim Girisi",group:"Operasyon",enabled:canEntry},
+    {id:"downtime",icon:"downtime",label:"Durus Yonetimi",group:"Operasyon",enabled:(canEntry||canReport||canOrders)},
     {id:"quality",icon:"quality",label:"Kalite ve Izlenebilirlik",group:"Operasyon",enabled:(canOrders||canReport)},
     {id:"materials",icon:"materials",label:"Malzeme Kutuphanesi",group:"Tedarik ve Stok",enabled:canOrders},
     {id:"tools",icon:"tools",label:"Takim Yonetimi",group:"Tedarik ve Stok",enabled:canTools},
     {id:"purchase",icon:"purchase",label:"Satin Alma Planlama",group:"Tedarik ve Stok",enabled:canOrders},
     {id:"customers",icon:"customers",label:"Musteriler",group:"Tedarik ve Stok",enabled:canCustomers},
     {id:"rapor",icon:"rapor",label:"Raporlar",group:"Analiz ve Yonetim",enabled:canReport},
+    {id:"notifications",icon:"notifications",label:"Bildirim Merkezi",group:"Analiz ve Yonetim",enabled:(canUsers||canOrders||canReport)},
     {id:"cost",icon:"cost",label:"Maliyetleme",group:"Analiz ve Yonetim",enabled:(canOrders||canReport)},
     {id:"machineprep",icon:"machines",label:"Makina Hazirlik",group:"Sistem",enabled:canMachinePrep},
     {id:"integrations",icon:"integration",label:"Entegrasyonlar",group:"Sistem",enabled:(canUsers||isAdmin)},
@@ -3500,8 +3512,11 @@ function App() {
     if(tab==="dashboard") return <ModulePlaceholder title="MRP Ana Panel" desc="Bu ekran siparis, kapasite, malzeme riskleri ve tedarik istisnalarini tek panelde birlestirecek." items={["Geciken is emri ve termin riski","Kritik stok ve satin alma alarm listesi","Makina doluluk ve vardiya bazli kapasite ozetleri","Bugun tamamlanacak is emirleri"]}/>;
     if(tab==="mps") return <ModulePlaceholder title="MPS (Master Production Schedule)" desc="Haftalik/aylik ana uretim plani, talep ve kapasiteyi tek tabloda optimize eder." items={["Urun bazli zaman kovasi planlama","Frozen/slushy horizon yonetimi","Talep senaryosu karsilastirmasi"]}/>;
     if(tab==="mrp") return <ModulePlaceholder title="MRP Run" desc="Net ihtiyac hesaplama, lot kurallari ve lead-time etkisini dikkate alarak planli siparis onerisi uretir." items={["Gross/Net requirement hesaplama","Safety stock ve reorder point kontrolu","Otomatik malzeme rezervasyon oneri listesi"]}/>;
+    if(tab==="quotes") return <ModulePlaceholder title="Teklif Yonetimi" desc="Teklif olusturma, musteri onayi ve siparise donusum akisi bu moduldedir." items={["Musteri bazli fiyat ve iskonto listesi","Teklif -> Onay -> Siparis donusumu","Proforma ve siparis onay PDF ciktilari"]}/>;
     if(tab==="purchase") return <ModulePlaceholder title="Satin Alma Planlama" desc="MRP ciktilarini satin alma taleplerine donusturur ve tedarik surecine aktarir." items={["PR/PO taslak olusturma","Tedarikci lead-time ve termin kontrolu","Hizlandir/yavaslat (expedite/de-expedite) oneri listesi"]}/>;
+    if(tab==="downtime") return <ModulePlaceholder title="Durus Yonetimi" desc="Durus tipleri, operator girisleri ve otomatik durus analizi bu moduldedir." items={["Durus nedeni zorunlu giris kurallari","Sure-neden kaydi ve tekrar eden hata analizi","Bakim ekibine ariza bildirimi"]}/>;
     if(tab==="quality") return <ModulePlaceholder title="Kalite ve Izlenebilirlik" desc="Parca bazli seri no izi, inspeksiyon sonucu, scrap ve FAI akisini yonetir." items={["WO-Makina-Operator-Program versiyon zinciri","Olcum sonucu ve pass/fail kaydi","Scrap neden kodu ve maliyet etkisi"]}/>;
+    if(tab==="notifications") return <ModulePlaceholder title="Bildirim Merkezi" desc="Sistem alarmlari ve operasyonel uyarilar burada yonetilir." items={["Tezgah alarmi ve gecikme uyarilari","Stok kritik seviye bildirimleri","Takim omru ve cevrim sapma bildirimleri"]}/>;
     if(tab==="cost") return <ModulePlaceholder title="Maliyetleme" desc="Parca ve is emri bazli maliyetleri planlanan ve gerceklesen olarak karsilastirir." items={["Malzeme + iscilik + makina sure maliyeti","Scrap/rework maliyet analizi","Musteri ve urun bazli karlilik"]}/>;
     if(tab==="integrations") return <ModulePlaceholder title="Entegrasyonlar" desc="ERP, CAM ve bildirim sistemleri ile cift yon veri senkronu bu moduldedir." items={["ERP siparis/BOM/routing sync","CAM program versiyon baglama","Webhook + email + SMS alarm akislari"]}/>;
     return <ModulePlaceholder title="Modul" desc="Secili modul tanimli degil." items={[]}/>;

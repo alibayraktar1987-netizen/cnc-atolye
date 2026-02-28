@@ -19,7 +19,9 @@ Mevcut uygulama su anda agirlikla is emri, siparis, stok, planlama ve raporlama 
 ## Kapsam Dokumanlari
 
 - Gereksinim matrisi: `docs/requirements.md`
+- Guncel gereksinim kapsami (V2): `docs/requirements-v2.md`
 - Uygulama yol haritasi: `docs/roadmap.md`
+- Guncel yol haritasi (V2): `docs/roadmap-v2.md`
 - Veri modeli: `docs/data-models.md`
 - MRP master blueprint: `docs/mrp-master-blueprint.md`
 - Kullanici kilavuzu: `docs/user-guide.md`
