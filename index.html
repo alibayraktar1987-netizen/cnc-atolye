@@ -2245,13 +2245,13 @@ function App() {
   const canTools=true;
 
   const tabs=[
-    ...(canEntry?[{id:"giris",icon:"??",label:"Giri�"}]:[]),
-    ...(canPlanning?[{id:"planning",icon:"??",label:"Planlama"}]:[]),
+    ...(canEntry?[{id:"giris",icon:"IN",label:"Giris"}]:[]),
+    ...(canPlanning?[{id:"planning",icon:"PL",label:"Planlama"}]:[]),
     ...(canCustomers?[{id:"customers",icon:"CU",label:"Musteriler"}]:[]),
-    ...(canReport?[{id:"rapor",icon:"??",label:"Rapor"}]:[]),
-    ...(canTools?[{id:"tools",icon:"??",label:"Tak�m Sto�u"}]:[]),
-    ...(canOrders?[{id:"orders",icon:"??",label:"�� Emirleri"}]:[]),
-    ...(canUsers?[{id:"users",icon:"??",label:"Ayarlar"}]:[]),
+    ...(canReport?[{id:"rapor",icon:"RP",label:"Rapor"}]:[]),
+    ...(canTools?[{id:"tools",icon:"TS",label:"Takim Stogu"}]:[]),
+    ...(canOrders?[{id:"orders",icon:"IE",label:"Is Emirleri"}]:[]),
+    ...(canUsers?[{id:"users",icon:"AY",label:"Ayarlar"}]:[]),
   ];
 
   const activeView=(
