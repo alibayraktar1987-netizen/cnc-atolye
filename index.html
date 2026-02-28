@@ -2382,8 +2382,8 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
 
   const fv=(k,v)=>setForm(f=>({...f,[k]:v}));
   const selectedOrder=orders.find(o=>o.id===form.orderId)||null;
-  const filteredPlans=plans.filter(p=>!dateFilter||p.date===dateFilter);
-  const sortedPlanSegments=buildPlanSegments(filteredPlans);
+  const allPlanSegments=buildPlanSegments(plans);
+  const sortedPlanSegments=allPlanSegments.filter(seg=>!dateFilter||((seg.startDate||"")<=dateFilter&&(seg.endDate||"")>=dateFilter));
   const startObj=parseYmdLocal(form.startDate||todayStr());
   const endObj=parseYmdLocal(form.endDate||form.startDate||todayStr());
   const rangeStart=startObj<=endObj?startObj:endObj;
