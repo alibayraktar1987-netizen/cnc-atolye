@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="tr">
 <head>
 <meta charset="UTF-8"/>
@@ -101,6 +101,12 @@ const ORDER_STATUS_OPTIONS = [
   { id:"liquidation", label:"Tesfiyede", color:C.red },
   { id:"passive", label:"Pasif", color:C.muted2 },
 ];
+const SALES_STATUS_OPTIONS = [
+  { id:"new", label:"Yeni", color:C.accent },
+  { id:"waiting", label:"Beklemede", color:C.warn },
+  { id:"cancelled", label:"Iptal", color:C.red },
+  { id:"converted", label:"Donustu", color:C.green },
+];
 
 // ── HELPERS ──────────────────────────────────────────────────
 const pad2 = n => String(n).padStart(2,"0");
@@ -149,6 +155,9 @@ function formatBytes(b) {
 function hashPass(p) { return btoa(unescape(encodeURIComponent(p))); }
 function getOrderStatusMeta(status) {
   return ORDER_STATUS_OPTIONS.find(s=>s.id===status) || ORDER_STATUS_OPTIONS.find(s=>s.id==="passive");
+}
+function getSalesStatusMeta(status) {
+  return SALES_STATUS_OPTIONS.find(s=>s.id===status) || SALES_STATUS_OPTIONS.find(s=>s.id==="new");
 }
 
 // ── STYLE ATOMS ──────────────────────────────────────────────
@@ -373,6 +382,9 @@ function NavIcon({name,size=18}) {
   if(name==="orders") return (
     <svg viewBox="0 0 24 24" style={st}><rect {...p} x="5" y="3" width="14" height="18" rx="2"/><path {...p} d="M8 8h8M8 12h8M8 16h5"/></svg>
   );
+  if(name==="sales") return (
+    <svg viewBox="0 0 24 24" style={st}><path {...p} d="M4 7h16M4 12h10M4 17h8"/><circle {...p} cx="18" cy="17" r="3"/></svg>
+  );
   if(name==="users") return (
     <svg viewBox="0 0 24 24" style={st}><circle {...p} cx="12" cy="8" r="3.2"/><path {...p} d="M5 20a7 7 0 0 1 14 0"/></svg>
   );
@@ -529,6 +541,7 @@ function AdminUsers({currentUser,machines,onMachinesUpdate,currentLogo,onLogoUpd
 
 function ToolStock({currentUser}) {
   const isAdmin=currentUser.role==="admin";
+  const TOOL_CATEGORY_OPTIONS=["Freze","Matkap","Rayba","Kılavuz","Torna","Insert","Tutucu","Olcu Takimi","Diger"];
   const [tools,setTools]=useState([]);
   const [loading,setLoading]=useState(true);
   const [search,setSearch]=useState("");
@@ -641,6 +654,9 @@ function ToolStock({currentUser}) {
       (t.location||"").toLowerCase().includes(q);
   });
   const lowCount=tools.filter(t=>(Number(t.qty)||0)<=Math.max(Number(t.minQty)||0,0)).length;
+  const categoryOptions=(form.category&& !TOOL_CATEGORY_OPTIONS.includes(form.category))
+    ? [...TOOL_CATEGORY_OPTIONS,form.category]
+    : TOOL_CATEGORY_OPTIONS;
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
 
@@ -652,7 +668,13 @@ function ToolStock({currentUser}) {
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           <div><span style={labelSt}>Kod</span><input style={inputSt} value={form.code} onChange={e=>fv("code",e.target.value)} placeholder="TKM-001"/></div>
           <div><span style={labelSt}>Takim Adi *</span><input style={inputSt} value={form.name} onChange={e=>fv("name",e.target.value)} placeholder="12mm Parmak Freze"/></div>
-          <div><span style={labelSt}>Kategori</span><input style={inputSt} value={form.category} onChange={e=>fv("category",e.target.value)} placeholder="Freze, Matkap..."/></div>
+          <div>
+            <span style={labelSt}>Kategori</span>
+            <select style={inputSt} value={form.category} onChange={e=>fv("category",e.target.value)}>
+              <option value="">Kategori secin...</option>
+              {categoryOptions.map(c=><option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
           <div><span style={labelSt}>Stok Adedi</span><input style={inputSt} type="number" min="0" value={form.qty} onChange={e=>fv("qty",e.target.value)} placeholder="0"/></div>
           <div><span style={labelSt}>Minimum Adet</span><input style={inputSt} type="number" min="0" value={form.minQty} onChange={e=>fv("minQty",e.target.value)} placeholder="0"/></div>
           <div><span style={labelSt}>Konum</span><input style={inputSt} value={form.location} onChange={e=>fv("location",e.target.value)} placeholder="Raf A2"/></div>
@@ -881,6 +903,223 @@ function Customers() {
 }
 
 // ════════════════════════════════════════════════════════════
+// ============================================
+//  SALES ORDERS
+// ============================================
+function SalesOrders({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders}) {
+  const [salesOrders,setSalesOrders]=useState([]);
+  const [workOrders,setWorkOrders]=useState([]);
+  const [customers,setCustomers]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [editId,setEditId]=useState(null);
+  const [search,setSearch]=useState("");
+  const emptyForm={code:"",name:"",customerId:"",material:"",qty:"",dueDate:todayStr(),partSec:"",machines:[],note:"",status:"new"};
+  const [form,setForm]=useState(emptyForm);
+
+  const nextSalesCode=useCallback((list=salesOrders)=>{
+    const nums=list.map(o=>{
+      const m=(o.code||"").toUpperCase().match(/^SP-(\d+)$/);
+      return m?Number(m[1]):null;
+    }).filter(n=>n!==null);
+    const next=(nums.length?Math.max(...nums):0)+1;
+    return `SP-${String(next).padStart(3,"0")}`;
+  },[salesOrders]);
+  const nextWorkOrderCode=useCallback((list=workOrders)=>{
+    const nums=list.map(o=>{
+      const m=(o.code||"").toUpperCase().match(/^IE-(\d+)$/);
+      return m?Number(m[1]):null;
+    }).filter(n=>n!==null);
+    const next=(nums.length?Math.max(...nums):0)+1;
+    return `IE-${String(next).padStart(3,"0")}`;
+  },[workOrders]);
+
+  const load=useCallback(async()=>{
+    const [s,o,c]=await Promise.all([window.DB.getAll("salesOrders"),window.DB.getAll("orders"),window.DB.getAll("customers")]);
+    setSalesOrders(s.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setWorkOrders(o.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setCustomers(c.sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const toggleMachine=m=>fv("machines",form.machines.includes(m)?form.machines.filter(x=>x!==m):[...form.machines,m]);
+
+  async function saveSalesOrder() {
+    if(!form.name.trim()){alert("Siparis adi zorunlu.");return;}
+    const pickedCustomer=customers.find(c=>c.id===form.customerId);
+    const finalCode=editId?form.code:(form.code||nextSalesCode());
+    const data={
+      code:finalCode.toUpperCase(),
+      name:form.name.trim(),
+      customerId:pickedCustomer?.id||"",
+      customerName:pickedCustomer?.name||"",
+      material:form.material.trim(),
+      qty:Math.max(0,Number(form.qty)||0),
+      dueDate:form.dueDate||"",
+      partSec:Math.max(0,Number(form.partSec)||0),
+      machines:form.machines||[],
+      note:form.note.trim(),
+      status:form.status||"new",
+      updatedAt:new Date().toISOString(),
+      ...(editId?{}:{createdBy:currentUser.id}),
+    };
+    if(editId){
+      const ok=await window.DB.updateDoc("salesOrders",editId,data);
+      if(!ok){alert("Siparis guncellenemedi.");return;}
+      setSalesOrders(prev=>prev.map(x=>x.id===editId?{...x,...data}:x));
+    }else{
+      const id=await window.DB.addDoc("salesOrders",data);
+      if(!id){alert("Siparis kaydedilemedi.");return;}
+      setSalesOrders(prev=>[{id,...data,createdAt:new Date().toISOString()},...prev]);
+    }
+    setEditId(null);
+    setForm({...emptyForm,code:nextSalesCode()});
+  }
+
+  async function convertToWorkOrder(s) {
+    if((s.status||"")==="converted"&&s.workOrderId){alert("Bu siparis zaten is emrine donusturulmus.");return;}
+    if(!s.partSec||Number(s.partSec)<=0){alert("Donusum icin sipariste parca suresi girin.");return;}
+    if(!s.machines||s.machines.length===0){alert("Donusum icin sipariste en az bir tezgah secin.");return;}
+    const workCode=nextWorkOrderCode();
+    const workData={
+      code:workCode,
+      name:s.name||"",
+      customerId:s.customerId||"",
+      customerName:s.customerName||"",
+      material:s.material||"",
+      partSec:Number(s.partSec)||0,
+      machines:s.machines||[],
+      notes:[s.note?`Siparis Notu: ${s.note}`:"",s.qty?`Siparis Adedi: ${s.qty}`:"",s.dueDate?`Termin: ${s.dueDate}`:""].filter(Boolean).join(" | "),
+      files:[],
+      status:"active",
+      sourceSalesOrderId:s.id||"",
+      sourceSalesOrderCode:s.code||"",
+      createdBy:currentUser.id,
+      updatedAt:new Date().toISOString(),
+    };
+    const workId=await window.DB.addDoc("orders",workData);
+    if(!workId){alert("Is emri olusturulamadi.");return;}
+    const salesPatch={status:"converted",workOrderId:workId,workOrderCode:workCode,convertedAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+    const salesOk=await window.DB.updateDoc("salesOrders",s.id,salesPatch);
+    if(!salesOk){alert("Siparis isaretlenemedi; is emri olustu fakat siparis durumu guncellenemedi.");}
+    setWorkOrders(prev=>[{id:workId,...workData,createdAt:new Date().toISOString()},...prev]);
+    setSalesOrders(prev=>prev.map(x=>x.id===s.id?{...x,...salesPatch}:x));
+    if(onOpenWorkOrders) onOpenWorkOrders();
+  }
+
+  async function removeSalesOrder(s){
+    if(!confirm(`"${s.code||s.name||"Siparis"}" silinsin mi?`)) return;
+    const ok=await window.DB.deleteDoc("salesOrders",s.id);
+    if(!ok){alert("Siparis silinemedi.");return;}
+    setSalesOrders(prev=>prev.filter(x=>x.id!==s.id));
+    if(editId===s.id){
+      setEditId(null);
+      setForm({...emptyForm,code:nextSalesCode()});
+    }
+  }
+
+  const q=search.trim().toLowerCase();
+  const filtered=salesOrders.filter(s=>{
+    if(!q) return true;
+    return (s.code||"").toLowerCase().includes(q)||
+      (s.name||"").toLowerCase().includes(q)||
+      (s.customerName||"").toLowerCase().includes(q)||
+      (s.material||"").toLowerCase().includes(q);
+  });
+
+  useEffect(()=>{
+    setForm(prev=>editId?prev:{...prev,code:nextSalesCode()});
+  },[editId,nextSalesCode]);
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+
+  return (
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={{fontWeight:700,color:C.text}}>Siparis Formu</div>
+          {editId&&<Badge label="Duzenleme" color={C.warn}/>}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <div><span style={labelSt}>Siparis Kodu</span><input style={{...inputSt,background:editId?C.surface:C.card,color:editId?C.text:C.accent,fontWeight:700}} value={form.code} readOnly={!editId} onChange={e=>fv("code",e.target.value.toUpperCase())}/></div>
+          <div><span style={labelSt}>Siparis Adi *</span><input style={inputSt} value={form.name} onChange={e=>fv("name",e.target.value)} placeholder="Parca / urun adi"/></div>
+          <div>
+            <span style={labelSt}>Musteri</span>
+            <select style={inputSt} value={form.customerId||""} onChange={e=>fv("customerId",e.target.value)}>
+              <option value="">Musteri secin</option>
+              {customers.map(c=><option key={c.id} value={c.id}>{c.name}{c.code?` (${c.code})`:""}</option>)}
+            </select>
+          </div>
+          <div><span style={labelSt}>Malzeme</span><input style={inputSt} value={form.material} onChange={e=>fv("material",e.target.value)} placeholder="AISI 304, 42CrMo4..."/></div>
+          <div><span style={labelSt}>Siparis Adedi</span><input style={inputSt} type="number" min="0" value={form.qty} onChange={e=>fv("qty",e.target.value)} placeholder="0"/></div>
+          <div><span style={labelSt}>Termin</span><input style={inputSt} type="date" value={form.dueDate||""} onChange={e=>fv("dueDate",e.target.value||"")}/></div>
+          <div>
+            <span style={labelSt}>Parca Suresi (sn) *</span>
+            <input style={inputSt} type="number" min="1" value={form.partSec} onChange={e=>fv("partSec",e.target.value)} placeholder="Orn: 90"/>
+          </div>
+          <div>
+            <span style={labelSt}>Durum</span>
+            <select style={inputSt} value={form.status||"new"} onChange={e=>fv("status",e.target.value)}>
+              {SALES_STATUS_OPTIONS.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{marginTop:9}}>
+          <span style={labelSt}>Tezgah Atamasi *</span>
+          <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+            {machines.map(m=><button key={m} onClick={()=>toggleMachine(m)} style={chip(form.machines.includes(m))}>{m}</button>)}
+          </div>
+        </div>
+        <div style={{marginTop:9}}>
+          <span style={labelSt}>Not</span>
+          <textarea rows={2} style={{...inputSt,minHeight:64,resize:"vertical"}} value={form.note} onChange={e=>fv("note",e.target.value)} placeholder="Opsiyonel not..."/>
+        </div>
+        <div style={{display:"flex",gap:8,marginTop:10}}>
+          <button onClick={saveSalesOrder} style={{...btnSt("primary"),flex:1,padding:12}}>{editId?"Siparisi Guncelle":"Siparis Kaydet"}</button>
+          {editId&&<button onClick={()=>{setEditId(null);setForm({...emptyForm,code:nextSalesCode()});}} style={{...btnSt("ghost"),padding:"12px 14px"}}>Iptal</button>}
+        </div>
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <div style={{fontSize:12,color:C.muted2}}>Siparisler ({salesOrders.length})</div>
+        <input style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:220}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod, siparis veya musteri ara..."/>
+      </div>
+
+      {filtered.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"28px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Siparis bulunamadi</div>}
+      {filtered.map(s=>(
+        <div key={s.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"12px 14px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+            <div>
+              <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+                <span style={{fontWeight:800,fontFamily:"monospace",fontSize:14,color:C.text}}>{s.code||"-"}</span>
+                <Badge label={getSalesStatusMeta(s.status).label} color={getSalesStatusMeta(s.status).color}/>
+                {s.workOrderCode&&<Badge label={`IE: ${s.workOrderCode}`} color={C.green}/>}
+              </div>
+              <div style={{fontSize:13,color:C.text,marginTop:3}}>{s.name||"-"}</div>
+              <div style={{fontSize:11,color:C.muted2,marginTop:2}}>
+                {s.customerName?`${s.customerName} · `:""}
+                {s.material?`${s.material} · `:""}
+                {s.qty?`${s.qty} adet · `:""}
+                {s.dueDate?`Termin: ${s.dueDate}`:"Termin yok"}
+              </div>
+              <div style={{fontSize:11,color:C.muted,marginTop:1}}>
+                {s.partSec?`Parca: ${fmtSec(s.partSec)} · `:"Parca suresi yok · "}
+                {(s.machines||[]).join(", ")||"Tezgah secilmemis"}
+              </div>
+            </div>
+            <div style={{display:"flex",gap:7,flexWrap:"wrap",justifyContent:"flex-end"}}>
+              <button onClick={()=>{setEditId(s.id);setForm({code:s.code||"",name:s.name||"",customerId:s.customerId||"",material:s.material||"",qty:String(s.qty??""),dueDate:s.dueDate||todayStr(),partSec:String(s.partSec??""),machines:s.machines||[],note:s.note||"",status:s.status||"new"});}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
+              <button onClick={()=>convertToWorkOrder(s)} disabled={Boolean(s.workOrderId)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12,opacity:s.workOrderId?0.6:1,cursor:s.workOrderId?"not-allowed":"pointer"}}>{s.workOrderId?"Donusturuldu":"Is Emrine Donustur"}</button>
+              <button onClick={()=>removeSalesOrder(s)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
+            </div>
+          </div>
+          {s.note&&<div style={{marginTop:8,fontSize:12,color:C.muted2}}>{s.note}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
 //  WORK ORDERS
 // ════════════════════════════════════════════════════════════
 function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
@@ -2372,6 +2611,7 @@ function App() {
     ...(canEntry?[{id:"giris",icon:"giris",label:"Giris"}]:[]),
     ...(canPlanning?[{id:"planning",icon:"planning",label:"Planlama"}]:[]),
     ...(canCustomers?[{id:"customers",icon:"customers",label:"Musteriler"}]:[]),
+    ...(canOrders?[{id:"sales",icon:"sales",label:"Siparisler"}]:[]),
     ...(canReport?[{id:"rapor",icon:"rapor",label:"Rapor"}]:[]),
     ...(canTools?[{id:"tools",icon:"tools",label:"Takim Stogu"}]:[]),
     ...(canOrders?[{id:"orders",icon:"orders",label:"Is Emirleri"}]:[]),
@@ -2383,6 +2623,7 @@ function App() {
       {tab==="giris"&&<DataEntry currentUser={currentUser} machines={machines}/>}
       {tab==="planning"&&<Planning currentUser={currentUser} machines={machines}/>}
       {tab==="customers"&&<Customers/>}
+      {tab==="sales"&&<SalesOrders currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")}/>}
       {tab==="rapor"&&<Report currentUser={currentUser} machines={machines}/>} 
       {tab==="tools"&&<ToolStock currentUser={currentUser} machines={machines}/>} 
       {tab==="orders"&&<WorkOrders currentUser={currentUser} machines={machines}/>} 
