@@ -1421,7 +1421,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
         <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,marginBottom:8}}>Seçili Takım Değişimi</div>
         {machineToolPicked?(
           <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-            {machineToolPicked&&<Badge label={`Tezgah: ${machineToolPicked.code||machineToolPicked.name} x${Math.max(1,Number(form.machineToolQty)||1)}`} color={C.warn}/>}
+            {machineToolPicked&&<Badge label={`İş Emri: ${machineToolPicked.code||machineToolPicked.name} x${Math.max(1,Number(form.machineToolQty)||1)}`} color={C.warn}/>}
           </div>
         ):(
           <div style={{fontSize:12,color:C.muted2}}>Takım değişimi seçilmedi</div>
@@ -1439,7 +1439,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
             <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>Takım Değişimi</div>
             <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
               <div style={{flex:"1 1 260px"}}>
-                <span style={labelSt}>Tezgah Takım Değişimi</span>
+                <span style={labelSt}>İş Emri Takım Değişimi</span>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 95px",gap:8}}>
                   <select style={inputSt} value={toolDraft.machineToolId} onChange={e=>setToolDraft(p=>({...p,machineToolId:e.target.value}))}>
                     <option value="">Takım seç (opsiyonel)</option>
@@ -1489,7 +1489,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
                   {p&&<span style={{color:C.muted2}}>Maks/gün: {p.max}</span>}
                 </div>
                 {machineToolQty>0&&<div style={{display:"flex",gap:8,marginTop:7,fontSize:12,color:C.muted2,flexWrap:"wrap"}}>
-                  {machineToolQty>0&&<Badge label={"Tezgah: "+((e.machineToolCode||e.machineToolName)?`${e.machineToolCode||e.machineToolName} x${machineToolQty}`:`${machineToolQty}`)} color={C.warn}/>}
+                  {machineToolQty>0&&<Badge label={"İş Emri: "+((e.machineToolCode||e.machineToolName)?`${e.machineToolCode||e.machineToolName} x${machineToolQty}`:`${machineToolQty}`)} color={C.warn}/>}
                 </div>}
                 <div style={{marginTop:8,display:"flex",gap:8}}>
                   <button onClick={()=>startEdit(e)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Düzenle</button>
