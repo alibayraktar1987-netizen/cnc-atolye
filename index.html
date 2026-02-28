@@ -1145,7 +1145,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
   const [editId,setEditId]=useState(null);
   const [showToolModal,setShowToolModal]=useState(false);
   const [showShiftModal,setShowShiftModal]=useState(false);
-  const [toolDraft,setToolDraft]=useState({machineToolId:"",machineToolQty:"1",orderToolId:"",orderToolQty:"1"});
+  const [toolDraft,setToolDraft]=useState({machineToolId:"",machineToolQty:"1"});
   const [shiftDraft,setShiftDraft]=useState({correct:"",wrong:""});
   const [form,setForm]=useState({
     entryDate:todayStr(),
@@ -1156,8 +1156,6 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
     wrong:"",
     machineToolId:"",
     machineToolQty:"1",
-    orderToolId:"",
-    orderToolQty:"1",
   });
 
   useEffect(()=>{
@@ -1237,8 +1235,6 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
     wrong:"",
     machineToolId:"",
     machineToolQty:"1",
-    orderToolId:"",
-    orderToolQty:"1",
   }));
 
   async function submitShiftEnd(correctValue,wrongValue) {
@@ -1247,9 +1243,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
     const correctNum=Number(correctValue);
     const wrongNum=Number(wrongValue)||0;
     const machineTool=tools.find(t=>t.id===form.machineToolId);
-    const orderTool=tools.find(t=>t.id===form.orderToolId);
     const machineToolQty=form.machineToolId?Math.max(1,Number(form.machineToolQty)||1):0;
-    const orderToolQty=form.orderToolId?Math.max(1,Number(form.orderToolQty)||1):0;
     const d=parseYmdLocal(form.entryDate);
     const entry={
       date:ymdLocal(d), week:weekStart(d), month:monthStr(d),
@@ -1263,11 +1257,6 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
       machineToolName:machineTool?.name||"",
       machineToolQty,
       machineToolChange:machineToolQty,
-      orderToolId:orderTool?.id||"",
-      orderToolCode:orderTool?.code||"",
-      orderToolName:orderTool?.name||"",
-      orderToolQty,
-      orderToolChange:orderToolQty,
     };
     const prevEntry=editId?todayEntries.find(x=>x.id===editId):null;
     const stockDelta=getDeltaMap(prevEntry,entry);
@@ -1314,8 +1303,6 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
       wrong:String(entry.wrong??0),
       machineToolId:entry.machineToolId||"",
       machineToolQty:String(entry.machineToolQty??entry.machineToolChange??1),
-      orderToolId:entry.orderToolId||"",
-      orderToolQty:String(entry.orderToolQty??entry.orderToolChange??1),
     });
     setShiftDraft({
       correct:String(entry.correct??""),
@@ -1344,21 +1331,16 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
     setToolDraft({
       machineToolId:form.machineToolId||"",
       machineToolQty:String(form.machineToolQty||"1"),
-      orderToolId:form.orderToolId||"",
-      orderToolQty:String(form.orderToolQty||"1"),
     });
     setShowToolModal(true);
   }
 
   function approveToolChange(){
     const machineToolQty=toolDraft.machineToolId?String(Math.max(1,Number(toolDraft.machineToolQty)||1)):"1";
-    const orderToolQty=toolDraft.orderToolId?String(Math.max(1,Number(toolDraft.orderToolQty)||1)):"1";
     setForm(p=>({
       ...p,
       machineToolId:toolDraft.machineToolId||"",
       machineToolQty,
-      orderToolId:toolDraft.orderToolId||"",
-      orderToolQty,
     }));
     setShowToolModal(false);
   }
@@ -1377,7 +1359,6 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
   }
 
   const machineToolPicked=tools.find(t=>t.id===form.machineToolId);
-  const orderToolPicked=tools.find(t=>t.id===form.orderToolId);
 
   return (
     <div style={{padding:16,display:"flex",flexDirection:"column",gap:14}}>
@@ -1438,10 +1419,9 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
       </div>
       <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px"}}>
         <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,marginBottom:8}}>Seçili Takım Değişimi</div>
-        {(machineToolPicked||orderToolPicked)?(
+        {machineToolPicked?(
           <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
             {machineToolPicked&&<Badge label={`Tezgah: ${machineToolPicked.code||machineToolPicked.name} x${Math.max(1,Number(form.machineToolQty)||1)}`} color={C.warn}/>}
-            {orderToolPicked&&<Badge label={`İş Emri: ${orderToolPicked.code||orderToolPicked.name} x${Math.max(1,Number(form.orderToolQty)||1)}`} color={C.accent}/>}
           </div>
         ):(
           <div style={{fontSize:12,color:C.muted2}}>Takım değişimi seçilmedi</div>
@@ -1466,16 +1446,6 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
                     {toolOptions.map(t=><option key={t.id} value={t.id}>{t.code} - {t.name} (Stok: {Number(t.qty)||0})</option>)}
                   </select>
                   <input style={inputSt} type="number" min="1" placeholder="Adet" disabled={!toolDraft.machineToolId} value={toolDraft.machineToolQty} onChange={e=>setToolDraft(p=>({...p,machineToolQty:e.target.value}))}/>
-                </div>
-              </div>
-              <div style={{flex:"1 1 260px"}}>
-                <span style={labelSt}>İş Emri Takım Değişimi</span>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 95px",gap:8}}>
-                  <select style={inputSt} value={toolDraft.orderToolId} onChange={e=>setToolDraft(p=>({...p,orderToolId:e.target.value}))}>
-                    <option value="">Takım seç (opsiyonel)</option>
-                    {toolOptions.map(t=><option key={t.id} value={t.id}>{t.code} - {t.name} (Stok: {Number(t.qty)||0})</option>)}
-                  </select>
-                  <input style={inputSt} type="number" min="1" placeholder="Adet" disabled={!toolDraft.orderToolId} value={toolDraft.orderToolQty} onChange={e=>setToolDraft(p=>({...p,orderToolQty:e.target.value}))}/>
                 </div>
               </div>
             </div>
@@ -1507,7 +1477,6 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
           {todayEntries.slice(0,5).map(e=>{
             const p=calcPerf(e.correct,e.wrong,e.partSec);
             const machineToolQty=Number(e.machineToolQty??e.machineToolChange??0);
-            const orderToolQty=Number(e.orderToolQty??e.orderToolChange??0);
             return (
               <div key={e.id} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",marginBottom:8}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -1519,9 +1488,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
                   <span style={{color:C.red,fontWeight:600}}>❌ {e.wrong}</span>
                   {p&&<span style={{color:C.muted2}}>Maks/gün: {p.max}</span>}
                 </div>
-                {(machineToolQty>0||orderToolQty>0)&&<div style={{display:"flex",gap:8,marginTop:7,fontSize:12,color:C.muted2,flexWrap:"wrap"}}>
+                {machineToolQty>0&&<div style={{display:"flex",gap:8,marginTop:7,fontSize:12,color:C.muted2,flexWrap:"wrap"}}>
                   {machineToolQty>0&&<Badge label={"Tezgah: "+((e.machineToolCode||e.machineToolName)?`${e.machineToolCode||e.machineToolName} x${machineToolQty}`:`${machineToolQty}`)} color={C.warn}/>}
-                  {orderToolQty>0&&<Badge label={"İş Emri: "+((e.orderToolCode||e.orderToolName)?`${e.orderToolCode||e.orderToolName} x${orderToolQty}`:`${orderToolQty}`)} color={C.accent}/>}
                 </div>}
                 <div style={{marginTop:8,display:"flex",gap:8}}>
                   <button onClick={()=>startEdit(e)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Düzenle</button>
