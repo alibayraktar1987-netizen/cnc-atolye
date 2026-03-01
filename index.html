@@ -6269,14 +6269,17 @@ function App() {
   useEffect(()=>{setMenuQuery("");},[workMode]);
 
   const layoutMode=isDesktop?"desktop":(isTablet?"tablet":"mobile");
-  const contentMaxWidth=layoutMode==="desktop"?1520:(layoutMode==="tablet"?1180:520);
-  const headerPadding=layoutMode==="desktop"?"16px 24px":(layoutMode==="tablet"?"14px 20px":"14px 14px");
-  const desktopSidebarW=300;
-  const tabletSidebarW=240;
+  const isMobile=layoutMode==="mobile";
+  const contentMaxWidth=layoutMode==="desktop"?1760:(layoutMode==="tablet"?1320:760);
+  const shellPadding=layoutMode==="desktop"?"12px 14px 20px":(layoutMode==="tablet"?"10px 12px 16px":"8px 8px 0");
+  const headerPadding=layoutMode==="desktop"?"12px 14px":(layoutMode==="tablet"?"10px 12px":"8px 8px");
+  const desktopSidebarW=312;
+  const tabletSidebarW=262;
   const mobilePrimary=tabs.slice(0,4);
   const activeTabMeta=tabs.find(t=>t.id===tab)||null;
   const isOperatorMode=workMode==="operator";
   const activeContextLabel=isOperatorMode?"Operator Tek Sayfa":(activeTabMeta?.label||"Modul");
+  const menuResultText=`${visibleTabs.length}/${tabs.length} modul`;
 
   function getActiveView() {
     if(tab==="giris") return <DataEntry currentUser={currentUser} machines={machines}/>;
@@ -6308,25 +6311,48 @@ function App() {
   const activeView=getActiveView();
 
   const modeSwitch=(
-    <div style={{display:"inline-flex",border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden",background:C.surface}}>
-      {MODE_OPTIONS.map((m,idx)=>(
-        <button key={m.id} onClick={()=>setWorkMode(m.id)} style={{border:"none",background:workMode===m.id?m.color:C.surface,color:workMode===m.id?"#fff":C.text,padding:"7px 12px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",borderLeft:idx===0?"none":`1px solid ${C.border}`}}>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,minmax(0,1fr))":"repeat(4,minmax(0,1fr))",gap:6,width:isMobile?"100%":"auto"}}>
+      {MODE_OPTIONS.map(m=>(
+        <button key={m.id} onClick={()=>setWorkMode(m.id)} style={{border:`1px solid ${workMode===m.id?m.color:C.border}`,background:workMode===m.id?m.color:C.surface,color:workMode===m.id?"#fff":C.text,padding:"8px 12px",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",borderRadius:8,letterSpacing:.2,boxShadow:workMode===m.id?"0 6px 14px rgba(0,0,0,.08)":"none"}}>
           {m.label.replace(" Modu","")}
         </button>
       ))}
     </div>
   );
 
+  const menuSearch=(
+    <div style={{marginBottom:12,paddingBottom:10,borderBottom:`1px solid ${C.border}`}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:8}}>
+        <div style={{fontSize:11,fontWeight:700,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Modul Navigasyon</div>
+        <div style={{fontSize:11,color:C.muted2}}>{menuResultText}</div>
+      </div>
+      <input
+        value={menuQuery}
+        onChange={e=>setMenuQuery(e.target.value)}
+        placeholder="Modul ara..."
+        style={{...inputSt,padding:"9px 10px",fontSize:12}}
+      />
+    </div>
+  );
+
   const menuSection=compact=>(
-    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      {visibleGroups.length===0&&(
+        <div style={{background:C.surface2,border:`1px dashed ${C.border}`,borderRadius:10,padding:"14px 10px",fontSize:12,color:C.muted2,textAlign:"center"}}>
+          Arama sonucunda modul bulunamadi.
+        </div>
+      )}
       {visibleGroups.map(g=>(
         <div key={g}>
-          <div style={{fontSize:10,color:C.muted,letterSpacing:.3,textTransform:"uppercase",marginBottom:6,padding:compact?"0 2px":"0 6px",fontWeight:700}}>{g}</div>
+          <div style={{fontSize:10,color:C.muted2,letterSpacing:.5,textTransform:"uppercase",marginBottom:6,padding:compact?"0 2px":"0 6px",fontWeight:800}}>{g}</div>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
             {groupedTabs[g].map(t=>(
-              <button key={t.id} onClick={()=>setTab(t.id)} style={{display:"flex",alignItems:"center",gap:10,textAlign:"left",padding:compact?"9px 10px":"10px 12px",borderRadius:7,border:`1px solid ${tab===t.id?C.accent+"55":"transparent"}`,borderLeft:`3px solid ${tab===t.id?C.accent:"transparent"}`,background:tab===t.id?C.brandTint:"transparent",color:tab===t.id?C.accent:C.text,cursor:"pointer",fontFamily:"inherit"}}>
-                <span style={{width:22,display:"inline-flex",justifyContent:"center",alignItems:"center"}}><NavIcon name={t.icon}/></span>
-                <span style={{fontSize:compact?12:13,fontWeight:tab===t.id?700:500}}>{t.label}</span>
+              <button key={t.id} onClick={()=>{setTab(t.id);setMobileMenuOpen(false);}} style={{display:"flex",alignItems:"center",gap:10,textAlign:"left",padding:compact?"9px 10px":"10px 12px",borderRadius:8,border:`1px solid ${tab===t.id?C.accent+"55":C.border}`,background:tab===t.id?C.brandTint:C.surface,color:tab===t.id?C.accent:C.text,cursor:"pointer",fontFamily:"inherit",justifyContent:"space-between"}}>
+                <span style={{display:"inline-flex",alignItems:"center",gap:10,minWidth:0}}>
+                  <span style={{width:22,display:"inline-flex",justifyContent:"center",alignItems:"center",color:tab===t.id?C.accent:C.muted2}}><NavIcon name={t.icon}/></span>
+                  <span style={{fontSize:compact?12:13,fontWeight:tab===t.id?700:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.label}</span>
+                </span>
+                {tab===t.id&&<span style={{fontSize:10,fontWeight:700,color:C.accent,letterSpacing:.4}}>AKTIF</span>}
               </button>
             ))}
           </div>
@@ -6336,85 +6362,89 @@ function App() {
   );
 
   return (
-    <div style={{background:C.bg,minHeight:"100vh",color:C.text,fontFamily:"'Segoe UI','Segoe UI Variable Text',Tahoma,Arial,sans-serif"}}>
-      <div style={{width:"100%",maxWidth:contentMaxWidth,margin:"0 auto",paddingBottom:layoutMode==="mobile"?76:20}}>
-        <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:headerPadding,position:"sticky",top:0,zIndex:10,boxShadow:"0 1px 0 rgba(0,0,0,.03)"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:10}}>
-            <div style={{width:34,height:34,borderRadius:8,background:C.surface2,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",border:`1px solid ${C.border}`}}>
-              {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:16}}>⚙️</span>}
-            </div>
-            <div style={{flex:1,minWidth:220}}>
-              <div style={{fontWeight:700,fontSize:14,color:C.text}}>CNC Atolye MRP</div>
-              <div style={{color:C.muted2,fontSize:11,display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
-                <span>{activeContextLabel}</span>
-                <span>•</span>
-                <span>{currentUser.fullName}</span>
-                <Badge label={currentRoleLabel} color={isAdmin?C.accent:C.muted2}/>
-                <Badge label={layoutMode==="desktop"?"Desktop":(layoutMode==="tablet"?"Tablet":"Mobil")} color={C.muted2}/>
+    <div style={{background:C.bg,minHeight:"100vh",color:C.text}}>
+      <div className="mrp-shell" style={{width:"100%",maxWidth:contentMaxWidth,margin:"0 auto",paddingBottom:isMobile?78:20}}>
+        <div style={{padding:headerPadding,position:"sticky",top:0,zIndex:22}}>
+          <div className="mrp-topbar" style={{background:`linear-gradient(180deg, ${C.surface} 0%, ${C.surface2} 100%)`,border:`1px solid ${C.border}`}}>
+            <div style={{padding:isMobile?"12px 12px 10px":"14px 16px 12px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:10}}>
+                <div style={{width:40,height:40,borderRadius:10,background:C.surface2,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",border:`1px solid ${C.border}`}}>
+                  {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:16}}>⚙️</span>}
+                </div>
+                <div style={{flex:1,minWidth:isMobile?160:260}}>
+                  <div style={{fontWeight:800,fontSize:isMobile?14:16,color:C.text,letterSpacing:.2}}>CNC Atolye MRP</div>
+                  <div style={{color:C.muted2,fontSize:11,display:"flex",alignItems:"center",gap:5,flexWrap:"wrap",marginTop:2}}>
+                    <span>{activeContextLabel}</span>
+                    <span>•</span>
+                    <span>{currentUser.fullName}</span>
+                    <Badge label={currentRoleLabel} color={isAdmin?C.accent:C.muted2}/>
+                    <Badge label={layoutMode==="desktop"?"Desktop":(layoutMode==="tablet"?"Tablet":"Mobil")} color={C.muted2}/>
+                  </div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:isMobile?"flex-start":"flex-end"}}>
+                  {!isOperatorMode&&isMobile&&(
+                    <button onClick={()=>setMobileMenuOpen(true)} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:82}}>Menu</button>
+                  )}
+                  <button onClick={()=>updateTheme(themeMode==="dark"?"light":"dark")} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:98}}>
+                    {themeMode==="dark"?"Acik Tema":"Koyu Tema"}
+                  </button>
+                  <button onClick={logout} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:72}}>Cikis</button>
+                </div>
               </div>
-            </div>
-            <button onClick={()=>updateTheme(themeMode==="dark"?"light":"dark")} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:98}}>
-              {themeMode==="dark"?"Acik Tema":"Koyu Tema"}
-            </button>
-            <button onClick={logout} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12}}>Cikis</button>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            {modeSwitch}
-            <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:C.muted}}>
-              <span>Calisma Alani</span>
-              <Badge label={(MODE_OPTIONS.find(m=>m.id===workMode)?.label||"").replace(" Modu","")} color={C.accent}/>
+              <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"minmax(360px,1fr) auto",alignItems:"center",gap:10}}>
+                {modeSwitch}
+                <div style={{display:"flex",alignItems:"center",justifyContent:isMobile?"flex-start":"flex-end",gap:8,fontSize:12,color:C.muted}}>
+                  <span>Calisma Alani</span>
+                  <Badge label={(MODE_OPTIONS.find(m=>m.id===workMode)?.label||"").replace(" Modu","")} color={C.accent}/>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
         {isOperatorMode&&(
-          <div style={{padding:layoutMode==="mobile"?"6px 0 70px":"12px 10px"}}>
+          <div style={{padding:isMobile?"8px 8px 78px":shellPadding}}>
             <OperatorWorkspace currentUser={currentUser} machines={machines} onOpenModule={nextTab=>{setTab(nextTab);setWorkMode("operasyon");}}/>
           </div>
         )}
 
-        {!isOperatorMode&&layoutMode==="desktop"&&(
-          <div style={{display:"grid",gridTemplateColumns:`${desktopSidebarW}px minmax(0,1fr)`,gap:14,alignItems:"start",padding:"12px 10px"}}>
-            <div style={{position:"sticky",top:92}}>
-              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:10,maxHeight:"calc(100vh - 118px)",overflowY:"auto"}}>
-                {menuSection(false)}
+        {!isOperatorMode&&!isMobile&&(
+          <div style={{display:"grid",gridTemplateColumns:`${layoutMode==="desktop"?desktopSidebarW:tabletSidebarW}px minmax(0,1fr)`,gap:16,alignItems:"start",padding:shellPadding}}>
+            <div style={{position:"sticky",top:118}}>
+              <div className="mrp-panel mrp-scrollbar" style={{background:C.surface,border:`1px solid ${C.border}`,padding:10,maxHeight:"calc(100vh - 140px)",overflowY:"auto"}}>
+                {menuSearch}
+                {menuSection(layoutMode!=="desktop")}
               </div>
             </div>
             <div style={{minWidth:0}}>{activeView}</div>
           </div>
         )}
-        {!isOperatorMode&&layoutMode==="tablet"&&(
-          <div style={{display:"grid",gridTemplateColumns:`minmax(0,1fr) ${tabletSidebarW}px`,gap:14,alignItems:"start",padding:"10px"}}>
-            <div style={{minWidth:0}}>{activeView}</div>
-            <div style={{position:"sticky",top:92}}>
-              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:8,maxHeight:"calc(100vh - 118px)",overflowY:"auto"}}>
-                {menuSection(true)}
-              </div>
-            </div>
-          </div>
-        )}
-        {!isOperatorMode&&layoutMode==="mobile"&&(
+
+        {!isOperatorMode&&isMobile&&(
           <>
-            {activeView}
-            <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:520,background:C.surface,borderTop:`1px solid ${C.border}`,display:"flex",overflowX:"auto",overflowY:"hidden",WebkitOverflowScrolling:"touch",zIndex:20}}>
-              {mobilePrimary.map(t=>(
-                <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:"1 0 86px",minWidth:86,padding:"12px 10px 10px",border:"none",background:tab===t.id?C.brandTint:"transparent",cursor:"pointer",color:tab===t.id?C.accent:C.muted,borderTop:`2px solid ${tab===t.id?C.accent:"transparent"}`,fontFamily:"inherit"}}>
-                  <div style={{display:"inline-flex",justifyContent:"center",alignItems:"center",height:20}}><NavIcon name={t.icon} size={19}/></div>
-                  <div style={{fontSize:10,fontWeight:tab===t.id?700:400,marginTop:2}}>{t.label}</div>
+            <div style={{paddingBottom:76}}>{activeView}</div>
+            <div className="mrp-bottom-nav" style={{position:"fixed",left:0,right:0,bottom:0,background:`${C.surface}f0`,borderTop:`1px solid ${C.border}`,zIndex:24}}>
+              <div style={{width:"100%",maxWidth:contentMaxWidth,margin:"0 auto",display:"grid",gridTemplateColumns:`repeat(${mobilePrimary.length+1},minmax(0,1fr))`,alignItems:"stretch"}}>
+                {mobilePrimary.map(t=>(
+                  <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"10px 8px 8px",border:"none",background:tab===t.id?C.brandTint:"transparent",cursor:"pointer",color:tab===t.id?C.accent:C.muted,borderTop:`2px solid ${tab===t.id?C.accent:"transparent"}`,fontFamily:"inherit",minWidth:0}}>
+                    <div style={{display:"inline-flex",justifyContent:"center",alignItems:"center",height:20}}><NavIcon name={t.icon} size={18}/></div>
+                    <div style={{fontSize:10,fontWeight:tab===t.id?700:500,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.label}</div>
+                  </button>
+                ))}
+                <button onClick={()=>setMobileMenuOpen(true)} style={{padding:"10px 8px 8px",border:"none",background:mobileMenuOpen?C.brandTint:"transparent",cursor:"pointer",color:mobileMenuOpen?C.accent:C.muted,borderTop:`2px solid ${mobileMenuOpen?C.accent:"transparent"}`,fontFamily:"inherit",minWidth:0}}>
+                  <div style={{display:"inline-flex",justifyContent:"center",alignItems:"center",height:20}}><NavIcon name="users" size={18}/></div>
+                  <div style={{fontSize:10,fontWeight:mobileMenuOpen?700:500,marginTop:2}}>Menu</div>
                 </button>
-              ))}
-              <button onClick={()=>setMobileMenuOpen(true)} style={{flex:"0 0 82px",minWidth:82,padding:"12px 10px 10px",border:"none",background:mobileMenuOpen?C.brandTint:"transparent",cursor:"pointer",color:mobileMenuOpen?C.accent:C.muted,borderTop:`2px solid ${mobileMenuOpen?C.accent:"transparent"}`,fontFamily:"inherit"}}>
-                <div style={{display:"inline-flex",justifyContent:"center",alignItems:"center",height:20}}><NavIcon name="users" size={19}/></div>
-                <div style={{fontSize:10,fontWeight:mobileMenuOpen?700:400,marginTop:2}}>Menu</div>
-              </button>
+              </div>
             </div>
             {mobileMenuOpen&&(
               <div onClick={()=>setMobileMenuOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:30,display:"flex",alignItems:"flex-end"}}>
-                <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"80vh",background:C.surface,borderTop:`1px solid ${C.border}`,borderTopLeftRadius:16,borderTopRightRadius:16,padding:12,overflowY:"auto"}}>
+                <div onClick={e=>e.stopPropagation()} className="mrp-scrollbar" style={{width:"100%",maxHeight:"84vh",background:C.surface,borderTop:`1px solid ${C.border}`,borderTopLeftRadius:16,borderTopRightRadius:16,padding:12,overflowY:"auto"}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                     <div style={{fontWeight:700,color:C.text}}>MRP Menusu</div>
                     <button onClick={()=>setMobileMenuOpen(false)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kapat</button>
                   </div>
+                  {menuSearch}
                   {menuSection(true)}
                 </div>
               </div>
