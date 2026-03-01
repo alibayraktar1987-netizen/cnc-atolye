@@ -5,7 +5,32 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
 <title>CNC Atölye Takip</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
-<style>*{box-sizing:border-box;margin:0;padding:0;}body{background:#f3f2f1;}</style>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body,#root{min-height:100%;}
+body{
+  background:#f3f2f1;
+  font-family:"DM Sans","Segoe UI","Segoe UI Variable Text",Tahoma,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+.mrp-shell{width:100%;margin:0 auto;}
+.mrp-topbar{
+  border-radius:12px;
+  box-shadow:0 1px 2px rgba(15,23,42,.05),0 8px 24px rgba(15,23,42,.04);
+}
+.mrp-panel{
+  border-radius:10px;
+  box-shadow:0 1px 1px rgba(15,23,42,.04),0 8px 24px rgba(15,23,42,.03);
+}
+.mrp-scrollbar::-webkit-scrollbar{width:10px;height:10px;}
+.mrp-scrollbar::-webkit-scrollbar-thumb{background:rgba(148,163,184,.45);border-radius:999px;}
+.mrp-scrollbar::-webkit-scrollbar-track{background:transparent;}
+.mrp-bottom-nav{
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  backdrop-filter:saturate(130%) blur(8px);
+}
+</style>
 </head>
 <body>
 <div id="root"></div>
@@ -6078,6 +6103,7 @@ function App() {
   const [isDesktop,setIsDesktop]=useState(()=>typeof window!=="undefined"?window.matchMedia("(min-width: 1200px)").matches:false);
   const [logoError,setLogoError]=useState(false);
   const [mobileMenuOpen,setMobileMenuOpen]=useState(false);
+  const [menuQuery,setMenuQuery]=useState("");
 
   useEffect(()=>{
     async function init() {
@@ -6218,14 +6244,19 @@ function App() {
     const modeTabs=enabledTabs.filter(t=>activeGroups.includes(t.group));
     return modeTabs.length>0?modeTabs:enabledTabs;
   },[enabledTabs,activeGroups.join("|")]);
+  const visibleTabs=useMemo(()=>{
+    const q=(menuQuery||"").trim().toLowerCase();
+    if(!q) return tabs;
+    return tabs.filter(t=>(t.label||"").toLowerCase().includes(q)||(t.group||"").toLowerCase().includes(q));
+  },[tabs,menuQuery]);
   const groupedTabs=useMemo(()=>{
     const out={};
-    tabs.forEach(t=>{
+    visibleTabs.forEach(t=>{
       if(!out[t.group]) out[t.group]=[];
       out[t.group].push(t);
     });
     return out;
-  },[tabs]);
+  },[visibleTabs]);
   const groupOrder=["Planlama","Operasyon","Tedarik ve Stok","Analiz ve Yonetim","Sistem"];
   const visibleGroups=groupOrder.filter(g=>groupedTabs[g]&&groupedTabs[g].length>0);
   const currentRoleLabel=(USER_ROLES.find(r=>r.id===userForPerm.role)||{label:userForPerm.role||"-"}).label;
@@ -6235,6 +6266,7 @@ function App() {
     if(!tabs.some(t=>t.id===tab)) setTab(tabs[0].id);
   },[tabs,tab]);
   useEffect(()=>{setMobileMenuOpen(false);},[tab,workMode]);
+  useEffect(()=>{setMenuQuery("");},[workMode]);
 
   const layoutMode=isDesktop?"desktop":(isTablet?"tablet":"mobile");
   const contentMaxWidth=layoutMode==="desktop"?1520:(layoutMode==="tablet"?1180:520);
