@@ -13,6 +13,7 @@ from app.models.analysis_job import AnalysisJob
 from app.models.material import Material
 from app.models.part import Part
 from app.schemas.part import PartRead, PartSummary, PartUploadResponse
+from app.services.machine_profiles import list_machine_profile_ids
 from app.services.storage_service import StorageService
 from app.tasks.analysis_tasks import run_part_analysis_task
 
@@ -30,10 +31,13 @@ def _validate_step_file(filename: str) -> str:
 def upload_part(
     file: UploadFile = File(...),
     material_id: int = Form(...),
+    machine_profile: str = Form("auto"),
     db: Session = Depends(get_db),
 ) -> PartUploadResponse:
     if db.get(Material, material_id) is None:
         raise HTTPException(status_code=404, detail="Material not found")
+    if machine_profile not in list_machine_profile_ids():
+        raise HTTPException(status_code=400, detail="Unknown machine profile")
 
     filename = Path(file.filename or "part.step").name
     _validate_step_file(filename)
@@ -64,7 +68,7 @@ def upload_part(
     db.add(job)
     db.commit()
 
-    async_task = run_part_analysis_task.delay(part_id=part.id, job_id=job.id)
+    async_task = run_part_analysis_task.delay(part_id=part.id, job_id=job.id, machine_profile=machine_profile)
     job.celery_task_id = async_task.id
     db.commit()
 

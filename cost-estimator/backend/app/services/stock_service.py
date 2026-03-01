@@ -22,14 +22,25 @@ class StockService:
                 return float(opt)
         return float(options[-1])
 
-    def determine_stock(self, geometry: dict, material: MaterialInfo) -> dict:
+    def determine_stock(
+        self,
+        geometry: dict,
+        material: MaterialInfo,
+        stock_strategy: str = "auto",
+        allowance_multiplier: float = 1.0,
+    ) -> dict:
         bbox = geometry.get("bbox", {})
         x = float(bbox.get("x_mm", 0.0))
         y = float(bbox.get("y_mm", 0.0))
         z = float(bbox.get("z_mm", 0.0))
-        allowance = float(material.allowance_mm)
+        allowance = float(material.allowance_mm) * max(float(allowance_multiplier), 0.1)
 
         rotational = bool(geometry.get("rotational_symmetry", False))
+        if stock_strategy == "round_bar":
+            rotational = True
+        elif stock_strategy == "rectangular_block":
+            rotational = False
+
         if rotational:
             raw_diameter = max(x, y) + allowance * 2.0
             raw_length = z + allowance * 2.0

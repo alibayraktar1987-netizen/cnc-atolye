@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 class OperationClassifier:
-    def classify(self, geometry: dict, stock: dict) -> list[dict]:
+    def classify(self, geometry: dict, stock: dict, process_hint: str = "hybrid") -> list[dict]:
         operations: list[dict] = []
         stock_type = stock.get("stock_type", "rectangular_block")
         holes = int(geometry.get("holes_count", 0))
@@ -10,7 +10,10 @@ class OperationClassifier:
         bores = int(geometry.get("large_bore_count", 0))
         flat_faces = int(geometry.get("flat_face_count", 0))
 
-        if stock_type == "round_bar":
+        prefer_turning = process_hint == "turning"
+        prefer_milling = process_hint == "milling"
+
+        if stock_type == "round_bar" and not prefer_milling:
             operations.append(
                 {
                     "operation": "CNC Turning",
@@ -37,6 +40,15 @@ class OperationClassifier:
                     "feature_count": 1,
                 }
             )
+            if prefer_turning and stock_type != "round_bar":
+                operations.append(
+                    {
+                        "operation": "CNC Turning",
+                        "machine_type": "turning",
+                        "sequence": 15,
+                        "feature_count": 1,
+                    }
+                )
 
         if holes > 0:
             operations.append(

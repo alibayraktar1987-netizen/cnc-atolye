@@ -13,6 +13,7 @@ from app.models.material import Material
 from app.models.part import Part
 from app.services.cycle_time_service import CycleTimeService, ParameterProfile
 from app.services.geometry_service import GeometryService
+from app.services.machine_profiles import get_machine_profile
 from app.services.operation_classifier import OperationClassifier
 from app.services.stock_service import MaterialInfo, StockService
 from app.services.storage_service import StorageService
@@ -27,7 +28,7 @@ class AnalysisPipeline:
         self.cycle_service = CycleTimeService()
         self.storage = StorageService()
 
-    def run(self, part_id: str, job_id: str) -> None:
+    def run(self, part_id: str, job_id: str, machine_profile: str = "auto") -> None:
         part = self.db.get(Part, part_id)
         job = self.db.get(AnalysisJob, job_id)
         if part is None or job is None:
@@ -42,6 +43,7 @@ class AnalysisPipeline:
             material = self.db.get(Material, part.material_id)
             if material is None:
                 raise ValueError("Material not found")
+            selected_machine = get_machine_profile(machine_profile)
 
             with tempfile.TemporaryDirectory(prefix="step-analysis-") as tmp_dir:
                 step_path = Path(tmp_dir) / part.filename
@@ -55,8 +57,14 @@ class AnalysisPipeline:
                         price_per_kg=material.price_per_kg,
                         allowance_mm=material.allowance_mm,
                     ),
+                    stock_strategy=selected_machine.stock_strategy,
+                    allowance_multiplier=selected_machine.allowance_multiplier,
                 )
-                operations = self.operation_classifier.classify(geometry=geometry, stock=stock)
+                operations = self.operation_classifier.classify(
+                    geometry=geometry,
+                    stock=stock,
+                    process_hint=selected_machine.process,
+                )
 
                 param_rows = self.db.scalars(
                     select(CuttingParameter).where(CuttingParameter.material_id == material.id)
@@ -74,9 +82,9 @@ class AnalysisPipeline:
                         retract_time_min=row.retract_time_min,
                         cutter_diameter_mm=row.cutter_diameter_mm,
                         stepover_mm=row.stepover_mm,
-                        non_cut_factor=row.non_cut_factor,
-                        machine_cost_per_min=row.machine_cost_per_min,
-                        labor_cost_per_min=row.labor_cost_per_min,
+                        non_cut_factor=max(0.0, row.non_cut_factor + selected_machine.non_cut_factor_delta),
+                        machine_cost_per_min=row.machine_cost_per_min * selected_machine.machine_cost_multiplier,
+                        labor_cost_per_min=row.labor_cost_per_min * selected_machine.labor_cost_multiplier,
                     )
                     for row in param_rows
                 ]
@@ -87,6 +95,30 @@ class AnalysisPipeline:
                     stock=stock,
                     parameter_profiles=profiles,
                 )
+
+                bbox = geometry.get("bbox", {})
+                fit = (
+                    float(bbox.get("x_mm", 0.0)) <= selected_machine.max_x_mm
+                    and float(bbox.get("y_mm", 0.0)) <= selected_machine.max_y_mm
+                    and float(bbox.get("z_mm", 0.0)) <= selected_machine.max_z_mm
+                )
+
+                machine_meta = {
+                    "id": selected_machine.id,
+                    "label": selected_machine.label,
+                    "process": selected_machine.process,
+                    "stock_strategy": selected_machine.stock_strategy,
+                    "allowance_multiplier": selected_machine.allowance_multiplier,
+                    "machine_cost_multiplier": selected_machine.machine_cost_multiplier,
+                    "labor_cost_multiplier": selected_machine.labor_cost_multiplier,
+                    "non_cut_factor_delta": selected_machine.non_cut_factor_delta,
+                    "max_x_mm": selected_machine.max_x_mm,
+                    "max_y_mm": selected_machine.max_y_mm,
+                    "max_z_mm": selected_machine.max_z_mm,
+                    "fit_for_part_bbox": fit,
+                }
+                stock["machine_profile"] = machine_meta
+                estimate["machine_profile"] = machine_meta
 
                 model_key = f"{part.id}/preview.{model_format}"
                 self.storage.upload_model(model_key, model_bytes)

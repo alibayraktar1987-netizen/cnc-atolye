@@ -7,6 +7,21 @@ export type Material = {
   allowance_mm: number;
 };
 
+export type MachineProfile = {
+  id: string;
+  label: string;
+  process: "turning" | "milling" | "hybrid";
+  stock_strategy: "auto" | "round_bar" | "rectangular_block";
+  allowance_multiplier: number;
+  machine_cost_multiplier: number;
+  labor_cost_multiplier: number;
+  non_cut_factor_delta: number;
+  max_x_mm: number;
+  max_y_mm: number;
+  max_z_mm: number;
+  description: string;
+};
+
 export type PartSummary = {
   id: string;
   filename: string;
