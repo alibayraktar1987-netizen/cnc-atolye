@@ -6104,6 +6104,7 @@ function App() {
   const [logoError,setLogoError]=useState(false);
   const [mobileMenuOpen,setMobileMenuOpen]=useState(false);
   const [menuQuery,setMenuQuery]=useState("");
+  const [desktopMenuCollapsed,setDesktopMenuCollapsed]=useState(false);
 
   useEffect(()=>{
     async function init() {
@@ -6274,12 +6275,24 @@ function App() {
   const shellPadding=layoutMode==="desktop"?"12px 14px 20px":(layoutMode==="tablet"?"10px 12px 16px":"8px 8px 0");
   const headerPadding=layoutMode==="desktop"?"12px 14px":(layoutMode==="tablet"?"10px 12px":"8px 8px");
   const desktopSidebarW=312;
+  const desktopSidebarCollapsedW=86;
   const tabletSidebarW=262;
   const mobilePrimary=tabs.slice(0,4);
   const activeTabMeta=tabs.find(t=>t.id===tab)||null;
   const isOperatorMode=workMode==="operator";
   const activeContextLabel=isOperatorMode?"Operator Tek Sayfa":(activeTabMeta?.label||"Modul");
   const menuResultText=`${visibleTabs.length}/${tabs.length} modul`;
+  const desktopMenuIconOnly=layoutMode==="desktop"&&desktopMenuCollapsed;
+  const sidebarWidth=layoutMode==="desktop"
+    ? (desktopMenuCollapsed?desktopSidebarCollapsedW:desktopSidebarW)
+    : tabletSidebarW;
+  function toggleDesktopMenuCollapse(){
+    setDesktopMenuCollapsed(prev=>{
+      const next=!prev;
+      if(next) setMenuQuery("");
+      return next;
+    });
+  }
 
   function getActiveView() {
     if(tab==="giris") return <DataEntry currentUser={currentUser} machines={machines}/>;
@@ -6335,7 +6348,10 @@ function App() {
     </div>
   );
 
-  const menuSection=compact=>(
+  const menuSection=(opts={})=>{
+    const compact=Boolean(opts.compact);
+    const iconOnly=Boolean(opts.iconOnly);
+    return (
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
       {visibleGroups.length===0&&(
         <div style={{background:C.surface2,border:`1px dashed ${C.border}`,borderRadius:10,padding:"14px 10px",fontSize:12,color:C.muted2,textAlign:"center"}}>
@@ -6344,22 +6360,25 @@ function App() {
       )}
       {visibleGroups.map(g=>(
         <div key={g}>
-          <div style={{fontSize:10,color:C.muted2,letterSpacing:.5,textTransform:"uppercase",marginBottom:6,padding:compact?"0 2px":"0 6px",fontWeight:800}}>{g}</div>
+          <div title={g} style={{fontSize:10,color:C.muted2,letterSpacing:.5,textTransform:"uppercase",marginBottom:6,padding:compact?"0 2px":"0 6px",fontWeight:800,textAlign:iconOnly?"center":"left",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+            {iconOnly?g.split(" ").map(x=>x[0]||"").join("").slice(0,3):g}
+          </div>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
             {groupedTabs[g].map(t=>(
-              <button key={t.id} onClick={()=>{setTab(t.id);setMobileMenuOpen(false);}} style={{display:"flex",alignItems:"center",gap:10,textAlign:"left",padding:compact?"9px 10px":"10px 12px",borderRadius:8,border:`1px solid ${tab===t.id?C.accent+"55":C.border}`,background:tab===t.id?C.brandTint:C.surface,color:tab===t.id?C.accent:C.text,cursor:"pointer",fontFamily:"inherit",justifyContent:"space-between"}}>
-                <span style={{display:"inline-flex",alignItems:"center",gap:10,minWidth:0}}>
+              <button key={t.id} title={`${g} · ${t.label}`} onClick={()=>{setTab(t.id);setMobileMenuOpen(false);}} style={{display:"flex",alignItems:"center",gap:10,textAlign:"left",padding:iconOnly?"9px 8px":(compact?"9px 10px":"10px 12px"),borderRadius:8,border:`1px solid ${tab===t.id?C.accent+"55":C.border}`,background:tab===t.id?C.brandTint:C.surface,color:tab===t.id?C.accent:C.text,cursor:"pointer",fontFamily:"inherit",justifyContent:iconOnly?"center":"space-between"}}>
+                <span style={{display:"inline-flex",alignItems:"center",gap:10,minWidth:0,maxWidth:iconOnly?22:"100%"}}>
                   <span style={{width:22,display:"inline-flex",justifyContent:"center",alignItems:"center",color:tab===t.id?C.accent:C.muted2}}><NavIcon name={t.icon}/></span>
-                  <span style={{fontSize:compact?12:13,fontWeight:tab===t.id?700:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.label}</span>
+                  {!iconOnly&&<span style={{fontSize:compact?12:13,fontWeight:tab===t.id?700:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.label}</span>}
                 </span>
-                {tab===t.id&&<span style={{fontSize:10,fontWeight:700,color:C.accent,letterSpacing:.4}}>AKTIF</span>}
+                {!iconOnly&&tab===t.id&&<span style={{fontSize:10,fontWeight:700,color:C.accent,letterSpacing:.4}}>AKTIF</span>}
               </button>
             ))}
           </div>
         </div>
       ))}
     </div>
-  );
+    );
+  };
 
   return (
     <div style={{background:C.bg,minHeight:"100vh",color:C.text}}>
@@ -6382,6 +6401,11 @@ function App() {
                   </div>
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:isMobile?"flex-start":"flex-end"}}>
+                  {!isOperatorMode&&layoutMode==="desktop"&&(
+                    <button onClick={toggleDesktopMenuCollapse} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:112}}>
+                      {desktopMenuCollapsed?"Menuyu Ac":"Menuyu Daralt"}
+                    </button>
+                  )}
                   {!isOperatorMode&&isMobile&&(
                     <button onClick={()=>setMobileMenuOpen(true)} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:82}}>Menu</button>
                   )}
@@ -6409,11 +6433,19 @@ function App() {
         )}
 
         {!isOperatorMode&&!isMobile&&(
-          <div style={{display:"grid",gridTemplateColumns:`${layoutMode==="desktop"?desktopSidebarW:tabletSidebarW}px minmax(0,1fr)`,gap:16,alignItems:"start",padding:shellPadding}}>
+          <div style={{display:"grid",gridTemplateColumns:`${sidebarWidth}px minmax(0,1fr)`,gap:16,alignItems:"start",padding:shellPadding,transition:"grid-template-columns .18s ease"}}>
             <div style={{position:"sticky",top:118}}>
               <div className="mrp-panel mrp-scrollbar" style={{background:C.surface,border:`1px solid ${C.border}`,padding:10,maxHeight:"calc(100vh - 140px)",overflowY:"auto"}}>
-                {menuSearch}
-                {menuSection(layoutMode!=="desktop")}
+                {layoutMode==="desktop"&&(
+                  <div style={{display:"flex",justifyContent:desktopMenuIconOnly?"center":"space-between",alignItems:"center",marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${C.border}`}}>
+                    {!desktopMenuIconOnly&&<div style={{fontSize:11,fontWeight:700,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>MRP Menu</div>}
+                    <button onClick={toggleDesktopMenuCollapse} title={desktopMenuIconOnly?"Menuyu Genislet":"Menuyu Daralt"} style={{...btnSt("ghost"),padding:"6px 8px",fontSize:11,minWidth:desktopMenuIconOnly?40:88}}>
+                      {desktopMenuIconOnly?"→":"Daralt"}
+                    </button>
+                  </div>
+                )}
+                {!desktopMenuIconOnly&&menuSearch}
+                {menuSection({compact:layoutMode!=="desktop"||desktopMenuIconOnly,iconOnly:desktopMenuIconOnly})}
               </div>
             </div>
             <div style={{minWidth:0}}>{activeView}</div>
@@ -6445,7 +6477,7 @@ function App() {
                     <button onClick={()=>setMobileMenuOpen(false)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kapat</button>
                   </div>
                   {menuSearch}
-                  {menuSection(true)}
+                  {menuSection({compact:true})}
                 </div>
               </div>
             )}
