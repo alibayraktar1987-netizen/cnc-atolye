@@ -5791,6 +5791,46 @@ function IntegrationsReadinessModule(){
     </div>
   );
 }
+
+function MaterialQuoteBridgeModule(){
+  return (
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <div style={{fontWeight:700,color:C.text,fontSize:16}}>Malzeme Teklif ve Maliyet Analizi</div>
+          <Badge label="Yeni Full-Stack Modul" color={C.accent}/>
+        </div>
+        <div style={{fontSize:13,color:C.muted2,marginTop:8}}>
+          STEP yukleme, stok belirleme, operasyon siniflandirma ve CNC maliyet tahmini modulu ayri servis olarak eklendi.
+        </div>
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:10}}>
+        <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Frontend</div>
+          <div style={{marginTop:6,fontSize:14,color:C.text,fontWeight:700}}>http://localhost:5173</div>
+          <div style={{marginTop:8,fontSize:12,color:C.muted2}}>3D viewer + teklif paneli</div>
+        </div>
+        <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>API</div>
+          <div style={{marginTop:6,fontSize:14,color:C.text,fontWeight:700}}>http://localhost:8000/api/v1</div>
+          <div style={{marginTop:8,fontSize:12,color:C.muted2}}>Upload, job, part, material endpointleri</div>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <button onClick={()=>window.open("http://localhost:5173","_blank")} style={{...btnSt("primary"),padding:"9px 12px",fontSize:12}}>Modulu Ac</button>
+        <button onClick={()=>window.open("http://localhost:8000/docs","_blank")} style={{...btnSt("ghost"),padding:"9px 12px",fontSize:12}}>API Docs</button>
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Kurulum</div>
+        <pre style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,padding:12,overflow:"auto",fontSize:12,color:C.text}}>
+{`cd cost-estimator
+docker compose up --build`}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
 function ModulePlaceholder({title,desc,items=[]}) {
   return (
     <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
@@ -5959,6 +5999,7 @@ function App() {
     {id:"rapor",icon:"rapor",label:"Raporlar",group:"Analiz ve Yonetim",enabled:canReport},
     {id:"notifications",icon:"notifications",label:"Bildirim Merkezi",group:"Analiz ve Yonetim",enabled:(canNotifications||canUsers||canSales||canPurchasing)},
     {id:"cost",icon:"cost",label:"Maliyetleme",group:"Analiz ve Yonetim",enabled:(canOrders||canReport||canSales)},
+    {id:"materialquote",icon:"cost",label:"Malzeme Teklif",group:"Analiz ve Yonetim",enabled:(canOrders||canSales||canPurchasing||canReport)},
     {id:"machineprep",icon:"machines",label:"Makina Hazirlik",group:"Sistem",enabled:canMachinePrep},
     {id:"integrations",icon:"integration",label:"Entegrasyonlar",group:"Sistem",enabled:(canUsers||isAdmin)},
     {id:"users",icon:"users",label:"Ayarlar ve Guvenlik",group:"Sistem",enabled:canUsers},
@@ -6018,6 +6059,7 @@ function App() {
     if(tab==="quality") return <QualityTraceabilityModule currentUser={currentUser} machines={machines}/>;
     if(tab==="notifications") return <NotificationCenterModule currentUser={currentUser}/>;
     if(tab==="cost") return <CostingModule/>;
+    if(tab==="materialquote") return <MaterialQuoteBridgeModule/>;
     if(tab==="integrations") return <IntegrationsReadinessModule/>;
     return <ModulePlaceholder title="Modul" desc="Secili modul tanimli degil." items={[]}/>;
   }

@@ -41,3 +41,10 @@ Mevcut uygulama su anda agirlikla is emri, siparis, stok, planlama ve raporlama 
 - Docker image: `Dockerfile`
 - Docker Compose: `docker-compose.yml`
 - CI pipeline: `.github/workflows/ci.yml`
+
+## Yeni Modul: CNC Cost Estimator
+
+- Konum: `cost-estimator/`
+- Stack: FastAPI + React/TS + Celery + Redis + PostgreSQL + MinIO + three.js
+- Calistirma:
+  `cd cost-estimator && docker compose up --build`
