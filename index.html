@@ -258,17 +258,213 @@ async function addAuditLog(actorId,entityType,entityId,action,beforeData,afterDa
 async function fileToBase64(file) {
   return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
 }
+function getFileExt(name) {
+  return ((name||"").split(".").pop()||"").toLowerCase();
+}
+function isStepExtension(ext) {
+  return ext==="step"||ext==="stp";
+}
+function isImageFile(file) {
+  if(!file) return false;
+  const ext=getFileExt(file.name);
+  return Boolean(file.type&&file.type.startsWith("image/")) || ["jpg","jpeg","png","gif","webp","bmp","svg"].includes(ext);
+}
+function isPdfFile(file) {
+  if(!file) return false;
+  return file.type==="application/pdf" || getFileExt(file.name)==="pdf";
+}
+function isStepFile(file) {
+  if(!file) return false;
+  return isStepExtension(getFileExt(file.name));
+}
+function canFilePreview(file) {
+  if(!(file&&file.data)) return false;
+  return isImageFile(file) || isPdfFile(file) || isStepFile(file);
+}
 function getFileIcon(name) {
-  const ext=(name||"").split(".").pop().toLowerCase();
+  const ext=getFileExt(name);
   if(["jpg","jpeg","png","gif","webp"].includes(ext)) return "🖼️";
   if(ext==="pdf") return "📄";
   if(["dxf","dwg"].includes(ext)) return "📐";
+  if(isStepExtension(ext)) return "🧊";
   return "📎";
 }
 function formatBytes(b) {
   if(b<1024) return b+" B";
   if(b<1048576) return (b/1024).toFixed(1)+" KB";
   return (b/1048576).toFixed(1)+" MB";
+}
+function dataUrlToUint8Array(dataUrl) {
+  const payload=(dataUrl||"").split(",")[1]||"";
+  const binary=atob(payload);
+  const bytes=new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+  return bytes;
+}
+function disposeThreeObject(root) {
+  if(!(root&&root.traverse)) return;
+  root.traverse(node=>{
+    if(node.geometry&&typeof node.geometry.dispose==="function") node.geometry.dispose();
+    const mats=node.material? (Array.isArray(node.material)?node.material:[node.material]) : [];
+    mats.forEach(mat=>{ if(mat&&typeof mat.dispose==="function") mat.dispose(); });
+  });
+}
+function buildStepMesh(resultMesh,THREE_NS) {
+  const positions=resultMesh?.attributes?.position?.array;
+  if(!(positions&&positions.length)) return null;
+  const geometry=new THREE_NS.BufferGeometry();
+  geometry.setAttribute("position",new THREE_NS.Float32BufferAttribute(positions,3));
+  const normals=resultMesh?.attributes?.normal?.array;
+  if(normals&&normals.length) {
+    geometry.setAttribute("normal",new THREE_NS.Float32BufferAttribute(normals,3));
+  } else {
+    geometry.computeVertexNormals();
+  }
+  if(resultMesh?.index?.array?.length) {
+    geometry.setIndex(new THREE_NS.BufferAttribute(Uint32Array.from(resultMesh.index.array),1));
+  }
+  const color=Array.isArray(resultMesh?.color)
+    ? new THREE_NS.Color(resultMesh.color[0],resultMesh.color[1],resultMesh.color[2])
+    : new THREE_NS.Color(0x5b8def);
+  const material=new THREE_NS.MeshStandardMaterial({color,metalness:0.18,roughness:0.68,side:THREE_NS.DoubleSide});
+  const mesh=new THREE_NS.Mesh(geometry,material);
+  mesh.name=resultMesh?.name||"STEP Mesh";
+  return mesh;
+}
+function StepFileViewer({file}) {
+  const hostRef=useRef(null);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState("");
+
+  useEffect(()=>{
+    const host=hostRef.current;
+    let renderer=null;
+    let controls=null;
+    let scene=null;
+    let raf=0;
+    let disposed=false;
+    let rootGroup=null;
+    function cleanup() {
+      disposed=true;
+      if(raf) cancelAnimationFrame(raf);
+      window.removeEventListener("resize",resize);
+      if(controls&&typeof controls.dispose==="function") controls.dispose();
+      if(scene) disposeThreeObject(scene);
+      if(renderer){
+        renderer.dispose();
+        if(renderer.domElement&&renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+      }
+      if(host) host.innerHTML="";
+    }
+    function resize() {
+      if(!(host&&renderer&&camera)) return;
+      const width=Math.max(320,host.clientWidth||760);
+      const height=Math.max(260,host.clientHeight||460);
+      renderer.setSize(width,height,false);
+      camera.aspect=width/height;
+      camera.updateProjectionMatrix();
+    }
+    let camera=null;
+    async function loadStepFile() {
+      setLoading(true);
+      setError("");
+      if(!host){ setLoading(false); return; }
+      host.innerHTML="";
+      if(!(window.THREE&&window.occtimportjs)){
+        setError("STEP goruntuleyici kutuphanesi yuklenemedi.");
+        setLoading(false);
+        return;
+      }
+      try{
+        const THREE_NS=window.THREE;
+        const occt=await window.occtimportjs();
+        if(disposed) return;
+
+        const result=occt.ReadStepFile(dataUrlToUint8Array(file.data),null);
+        if(!(result&&Array.isArray(result.meshes)&&result.meshes.length)){
+          throw new Error("STEP modeli okunamadi.");
+        }
+
+        scene=new THREE_NS.Scene();
+        scene.background=new THREE_NS.Color(C.surface||"#f4f5f7");
+
+        const ambientLight=new THREE_NS.AmbientLight(0xffffff,0.66);
+        const keyLight=new THREE_NS.DirectionalLight(0xffffff,0.75);
+        keyLight.position.set(1.4,1.2,2.4);
+        scene.add(ambientLight,keyLight);
+
+        rootGroup=new THREE_NS.Group();
+        result.meshes.forEach(meshData=>{
+          const mesh=buildStepMesh(meshData,THREE_NS);
+          if(mesh) rootGroup.add(mesh);
+        });
+        scene.add(rootGroup);
+
+        const bbox=new THREE_NS.Box3().setFromObject(rootGroup);
+        const sizeVec=new THREE_NS.Vector3();
+        const centerVec=new THREE_NS.Vector3();
+        bbox.getSize(sizeVec);
+        bbox.getCenter(centerVec);
+        rootGroup.position.sub(centerVec);
+        const maxDim=Math.max(sizeVec.x,sizeVec.y,sizeVec.z)||120;
+
+        camera=new THREE_NS.PerspectiveCamera(45,1,0.1,Math.max(5000,maxDim*25));
+        camera.up.set(0,0,1);
+        camera.position.set(maxDim*1.9,maxDim*1.6,maxDim*1.5);
+        camera.lookAt(new THREE_NS.Vector3(0,0,0));
+
+        const grid=new THREE_NS.GridHelper(Math.max(150,maxDim*2.2),12,0x808080,0xc4c4c4);
+        grid.rotation.x=Math.PI/2;
+        scene.add(grid);
+
+        renderer=new THREE_NS.WebGLRenderer({antialias:true,preserveDrawingBuffer:false});
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+        renderer.outputEncoding=THREE_NS.sRGBEncoding;
+        host.appendChild(renderer.domElement);
+
+        controls=new THREE_NS.OrbitControls(camera,renderer.domElement);
+        controls.enableDamping=true;
+        controls.dampingFactor=0.06;
+        controls.minDistance=Math.max(10,maxDim*0.3);
+        controls.maxDistance=Math.max(1000,maxDim*12);
+        controls.target.set(0,0,0);
+        controls.update();
+
+        resize();
+        window.addEventListener("resize",resize);
+        const renderFrame=()=>{
+          if(disposed) return;
+          controls.update();
+          renderer.render(scene,camera);
+          raf=requestAnimationFrame(renderFrame);
+        };
+        renderFrame();
+        setLoading(false);
+      }catch(err){
+        console.error(err);
+        setError("STEP dosyasi acilirken hata olustu.");
+        setLoading(false);
+      }
+    }
+    loadStepFile();
+    return cleanup;
+  },[file?.data,file?.name]);
+
+  return (
+    <div style={{position:"relative",width:"100%",height:Math.min(window.innerHeight*0.68,560),minHeight:320,border:`1px solid ${C.border}`,borderRadius:10,background:C.surface2,overflow:"hidden"}}>
+      <div ref={hostRef} style={{width:"100%",height:"100%"}}/>
+      {loading&&(
+        <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.2)",color:"#fff",fontWeight:700,fontSize:13}}>
+          STEP yukleniyor...
+        </div>
+      )}
+      {!loading&&error&&(
+        <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",padding:12,textAlign:"center",color:C.text,fontSize:13,background:C.surface}}>
+          {error}
+        </div>
+      )}
+    </div>
+  );
 }
 function hashPass(p) { return btoa(unescape(encodeURIComponent(p))); }
 function getOrderStatusMeta(status) {
@@ -2541,13 +2737,16 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
 
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
   const toggleMachine=m=>fv("machines",form.machines.includes(m)?form.machines.filter(x=>x!==m):[...form.machines,m]);
-  const canPreview=f=>!!(f&&f.data&&(f.type?.startsWith("image/")||f.type==="application/pdf"));
+  const canPreview=f=>canFilePreview(f);
 
   async function handleFiles(fileList) {
     setUploading(true);
     const results=[];
     for(const file of Array.from(fileList)){
-      if(file.size>5*1024*1024){alert(`${file.name} 5MB'dan büyük, atlandı.`);continue;}
+      const ext=getFileExt(file.name);
+      const limitMb=isStepExtension(ext)?30:5;
+      const limit=limitMb*1024*1024;
+      if(file.size>limit){alert(`${file.name} ${limitMb}MB'dan buyuk, atlandi.`);continue;}
       const b64=await fileToBase64(file);
       results.push({name:file.name,size:file.size,type:file.type,data:b64});
     }
@@ -2685,8 +2884,14 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
               <button onClick={()=>setPreviewFile(null)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kapat</button>
             </div>
             <div style={{padding:10,overflow:"auto",background:C.surface}}>
-              {previewFile.type&&previewFile.type.startsWith("image/")&&<img src={previewFile.data} alt={previewFile.name} style={{width:"100%",height:"auto",borderRadius:10,border:`1px solid ${C.border}`}}/>}
-              {previewFile.type==="application/pdf"&&<iframe title={previewFile.name} src={previewFile.data} style={{width:"100%",height:"70vh",border:`1px solid ${C.border}`,borderRadius:10,background:"#fff"}}/>}
+              {isImageFile(previewFile)&&<img src={previewFile.data} alt={previewFile.name} style={{width:"100%",height:"auto",borderRadius:10,border:`1px solid ${C.border}`}}/>}
+              {isPdfFile(previewFile)&&<iframe title={previewFile.name} src={previewFile.data} style={{width:"100%",height:"70vh",border:`1px solid ${C.border}`,borderRadius:10,background:"#fff"}}/>}
+              {isStepFile(previewFile)&&<StepFileViewer file={previewFile}/>}
+              {!canFilePreview(previewFile)&&(
+                <div style={{padding:22,textAlign:"center",color:C.muted2,fontSize:13,border:`1px dashed ${C.border}`,borderRadius:10,background:C.card}}>
+                  Bu dosya turu icin onizleme yok. Dosyayi indirip harici uygulama ile acabilirsiniz.
+                </div>
+              )}
             </div>
           </div>
         </div>
