@@ -227,6 +227,69 @@ const MACHINE_DEFAULT_POINTS = MACHINE_DATA_POINTS.reduce((acc,p)=>{
   acc[p.id]=true;
   return acc;
 },{});
+const DEFAULT_QUOTE_TEMPLATE = {
+  companyName:"CNC Atolye",
+  companyAddress:"",
+  companyPhone:"",
+  companyEmail:"",
+  documentTitleQuote:"Proforma Teklif",
+  documentTitleOrder:"Siparis Onay Formu",
+  footerNote:"Bu teklif belirtilen sure boyunca gecerlidir.",
+  accentColor:"#0f6cbd",
+  showLogo:false,
+};
+function normalizeQuoteTemplate(raw){
+  const src=raw||{};
+  const pick=(k,d)=>typeof src[k]==="string"?src[k]:d;
+  const colorRaw=String(pick("accentColor",DEFAULT_QUOTE_TEMPLATE.accentColor)||"").trim();
+  const validColor=/^#?[0-9a-fA-F]{6}$/.test(colorRaw)?colorRaw.replace(/^([^#])/,"#$1"):DEFAULT_QUOTE_TEMPLATE.accentColor;
+  return {
+    companyName:pick("companyName",DEFAULT_QUOTE_TEMPLATE.companyName),
+    companyAddress:pick("companyAddress",DEFAULT_QUOTE_TEMPLATE.companyAddress),
+    companyPhone:pick("companyPhone",DEFAULT_QUOTE_TEMPLATE.companyPhone),
+    companyEmail:pick("companyEmail",DEFAULT_QUOTE_TEMPLATE.companyEmail),
+    documentTitleQuote:pick("documentTitleQuote",DEFAULT_QUOTE_TEMPLATE.documentTitleQuote),
+    documentTitleOrder:pick("documentTitleOrder",DEFAULT_QUOTE_TEMPLATE.documentTitleOrder),
+    footerNote:pick("footerNote",DEFAULT_QUOTE_TEMPLATE.footerNote),
+    accentColor:validColor,
+    showLogo:Boolean(src.showLogo),
+  };
+}
+function hexToRgb(hex,fallback={r:15,g:108,b:189}){
+  const clean=String(hex||"").replace("#","").trim();
+  if(!/^[0-9a-fA-F]{6}$/.test(clean)) return fallback;
+  return {
+    r:parseInt(clean.slice(0,2),16),
+    g:parseInt(clean.slice(2,4),16),
+    b:parseInt(clean.slice(4,6),16),
+  };
+}
+async function ensureExternalScript(src,checkFn){
+  try{
+    if(typeof checkFn==="function"&&checkFn()) return true;
+    if(!window.__scriptLoaders) window.__scriptLoaders={};
+    if(window.__scriptLoaders[src]) return window.__scriptLoaders[src];
+    window.__scriptLoaders[src]=new Promise((resolve,reject)=>{
+      const existing=document.querySelector(`script[data-src="${src}"]`);
+      if(existing){
+        existing.addEventListener("load",()=>resolve(true),{once:true});
+        existing.addEventListener("error",()=>reject(new Error("script load failed")),{once:true});
+        return;
+      }
+      const s=document.createElement("script");
+      s.src=src;
+      s.async=true;
+      s.dataset.src=src;
+      s.onload=()=>resolve(true);
+      s.onerror=()=>reject(new Error("script load failed"));
+      document.head.appendChild(s);
+    });
+    await window.__scriptLoaders[src];
+    return true;
+  }catch{
+    return false;
+  }
+}
 
 // ── HELPERS ──────────────────────────────────────────────────
 const pad2 = n => String(n).padStart(2,"0");
@@ -868,9 +931,19 @@ function AdminUsers({currentUser,machines,onMachinesUpdate,currentLogo,onLogoUpd
   const [loading,setLoading]=useState(true);
   const [expanded,setExpanded]=useState(null);
   const [logoLoading,setLogoLoading]=useState(false);
+  const [quoteTemplate,setQuoteTemplate]=useState(DEFAULT_QUOTE_TEMPLATE);
+  const [templateSaving,setTemplateSaving]=useState(false);
   const logoInputRef=useRef(null);
 
-  const load=useCallback(async()=>{ const u=await window.DB.getAll("users"); setUsers(u); setLoading(false); },[]);
+  const load=useCallback(async()=>{
+    const [u,templateDoc]=await Promise.all([
+      window.DB.getAll("users"),
+      window.DB.getDoc("config","quoteTemplate"),
+    ]);
+    setUsers(u);
+    setQuoteTemplate(normalizeQuoteTemplate(templateDoc||{}));
+    setLoading(false);
+  },[]);
   useEffect(()=>{load();},[load]);
 
   async function update(id,patch) {
@@ -908,6 +981,26 @@ function AdminUsers({currentUser,machines,onMachinesUpdate,currentLogo,onLogoUpd
     setLogoLoading(false);
     e.target.value="";
   }
+  function setTemplateField(key,value){
+    setQuoteTemplate(prev=>({...prev,[key]:value}));
+  }
+  async function saveQuoteTemplate(){
+    setTemplateSaving(true);
+    const normalized=normalizeQuoteTemplate(quoteTemplate);
+    const payload={
+      ...normalized,
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser.id,
+    };
+    const ok=await window.DB.setDoc("config","quoteTemplate",payload);
+    setTemplateSaving(false);
+    if(!ok){alert("Sablon kaydedilemedi.");return;}
+    setQuoteTemplate(normalized);
+    alert("Sablon kaydedildi.");
+  }
+  function resetQuoteTemplate(){
+    setQuoteTemplate({...DEFAULT_QUOTE_TEMPLATE});
+  }
 
   return (
     <div style={{padding:16}}>
@@ -924,6 +1017,38 @@ function AdminUsers({currentUser,machines,onMachinesUpdate,currentLogo,onLogoUpd
             <button onClick={()=>logoInputRef.current?.click()} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={logoLoading}>{logoLoading?"Yukleniyor...":"Logo Yukle"}</button>
             <button onClick={()=>onLogoUpdate("")} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}} disabled={logoLoading}>Varsayilana Don</button>
             <input ref={logoInputRef} type="file" accept="image/*" style={{display:"none"}} onChange={pickLogo}/>
+          </div>
+        </div>
+      </div>
+      <div style={{marginBottom:18}}>
+        <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Teklif PDF Sablon Tasarimi</div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div><span style={labelSt}>Sirket Adi</span><input style={inputSt} value={quoteTemplate.companyName} onChange={e=>setTemplateField("companyName",e.target.value)} placeholder="Firma adi"/></div>
+            <div><span style={labelSt}>Renk</span><div style={{display:"flex",gap:8}}><input style={{...inputSt,padding:0,width:48,height:36}} type="color" value={normalizeQuoteTemplate(quoteTemplate).accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)}/><input style={{...inputSt,flex:1}} value={quoteTemplate.accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)} placeholder="#0f6cbd"/></div></div>
+            <div><span style={labelSt}>Adres</span><input style={inputSt} value={quoteTemplate.companyAddress} onChange={e=>setTemplateField("companyAddress",e.target.value)} placeholder="Adres"/></div>
+            <div><span style={labelSt}>Telefon</span><input style={inputSt} value={quoteTemplate.companyPhone} onChange={e=>setTemplateField("companyPhone",e.target.value)} placeholder="+90 ..."/></div>
+            <div><span style={labelSt}>E-Posta</span><input style={inputSt} value={quoteTemplate.companyEmail} onChange={e=>setTemplateField("companyEmail",e.target.value)} placeholder="mail@firma.com"/></div>
+            <div style={{display:"flex",alignItems:"flex-end"}}>
+              <label style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:12,color:C.text,cursor:"pointer"}}>
+                <input type="checkbox" checked={Boolean(quoteTemplate.showLogo)} onChange={e=>setTemplateField("showLogo",e.target.checked)}/>
+                Logo kullan
+              </label>
+            </div>
+            <div><span style={labelSt}>Teklif Basligi</span><input style={inputSt} value={quoteTemplate.documentTitleQuote} onChange={e=>setTemplateField("documentTitleQuote",e.target.value)} placeholder="Proforma Teklif"/></div>
+            <div><span style={labelSt}>Siparis Basligi</span><input style={inputSt} value={quoteTemplate.documentTitleOrder} onChange={e=>setTemplateField("documentTitleOrder",e.target.value)} placeholder="Siparis Onay Formu"/></div>
+            <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Alt Not</span><textarea rows={2} style={{...inputSt,minHeight:64,resize:"vertical"}} value={quoteTemplate.footerNote} onChange={e=>setTemplateField("footerNote",e.target.value)} placeholder="PDF altinda gorunecek not"/></div>
+          </div>
+          <div style={{marginTop:10,padding:10,border:`1px solid ${C.border}`,borderRadius:10,background:C.surface}}>
+            <div style={{height:6,borderRadius:99,background:normalizeQuoteTemplate(quoteTemplate).accentColor,marginBottom:8}}/>
+            <div style={{fontWeight:700,color:C.text}}>{quoteTemplate.documentTitleQuote||DEFAULT_QUOTE_TEMPLATE.documentTitleQuote}</div>
+            <div style={{fontSize:12,color:C.muted2,marginTop:2}}>
+              {(quoteTemplate.companyName||DEFAULT_QUOTE_TEMPLATE.companyName)}{quoteTemplate.companyPhone?` · ${quoteTemplate.companyPhone}`:""}{quoteTemplate.companyEmail?` · ${quoteTemplate.companyEmail}`:""}
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8,marginTop:10}}>
+            <button onClick={saveQuoteTemplate} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={templateSaving}>{templateSaving?"Kaydediliyor...":"Sablonu Kaydet"}</button>
+            <button onClick={resetQuoteTemplate} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}} disabled={templateSaving}>Varsayilan</button>
           </div>
         </div>
       </div>
@@ -1959,6 +2084,8 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   const [quotes,setQuotes]=useState([]);
   const [salesOrders,setSalesOrders]=useState([]);
   const [workOrders,setWorkOrders]=useState([]);
+  const [quoteTemplate,setQuoteTemplate]=useState(DEFAULT_QUOTE_TEMPLATE);
+  const [brandingLogo,setBrandingLogo]=useState("");
   const [loading,setLoading]=useState(true);
   const [view,setView]=useState(defaultView==="quotes"?"quotes":"orders");
   const [search,setSearch]=useState("");
@@ -1985,18 +2112,22 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   },[]);
 
   const load=useCallback(async()=>{
-    const [c,prices,q,s,wo]=await Promise.all([
+    const [c,prices,q,s,wo,templateDoc,brandingDoc]=await Promise.all([
       window.DB.getAll("customers"),
       window.DB.getAll("customerPrices"),
       window.DB.getAll("salesQuotes"),
       window.DB.getAll("salesOrders"),
       window.DB.getAll("orders"),
+      window.DB.getDoc("config","quoteTemplate"),
+      window.DB.getDoc("config","branding"),
     ]);
     setCustomers(c.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
     setCustomerPrices(prices.sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||"")));
     setQuotes(q.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
     setSalesOrders(s.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
     setWorkOrders(wo.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setQuoteTemplate(normalizeQuoteTemplate(templateDoc||{}));
+    setBrandingLogo(typeof brandingDoc?.logo==="string"?brandingDoc.logo:"");
     setQuoteForm(f=>({...f,code:nextCode("TKL",q,/^TKL-(\d+)$/)}));
     setLoading(false);
   },[nextCode]);
@@ -2230,26 +2361,195 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     setView("orders");
   }
 
-  function openPrintableDoc(title,rows,footer=""){
-    const html=`<!doctype html><html><head><meta charset="utf-8"/><title>${title}</title>
-      <style>body{font-family:Arial,sans-serif;padding:24px;color:#111}h1{font-size:20px}table{border-collapse:collapse;width:100%;margin-top:16px}
-      th,td{border:1px solid #ccc;padding:8px;text-align:left;font-size:12px}th{background:#f5f5f5}.ft{margin-top:16px;font-size:12px;color:#444}</style></head>
-      <body><h1>${title}</h1><table><thead><tr><th>Parca No</th><th>Aciklama</th><th>Miktar</th><th>Birim Fiyat</th><th>Iskonto%</th><th>Tutar</th><th>Termin</th></tr></thead><tbody>
-      ${rows.map(r=>`<tr><td>${r.partNo||""}</td><td>${r.partName||""}</td><td>${safeNum(r.qty)}</td><td>${safeNum(r.unitPrice).toFixed(2)}</td><td>${safeNum(r.discountPct).toFixed(2)}</td><td>${(safeNum(r.qty)*safeNum(r.unitPrice)*(1-safeNum(r.discountPct)/100)).toFixed(2)}</td><td>${r.dueDate||""}</td></tr>`).join("")}
-      </tbody></table><div class="ft">${footer}</div></body></html>`;
-    const w=window.open("","_blank","width=980,height=720");
-    if(!w) return;
-    w.document.write(html);
-    w.document.close();
-    w.focus();
-    setTimeout(()=>w.print(),250);
+  async function exportSalesPdf(docType,doc){
+    const loaded=await ensureExternalScript(
+      "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
+      ()=>Boolean(window.jspdf&&window.jspdf.jsPDF)
+    );
+    if(!loaded||!window.jspdf||!window.jspdf.jsPDF){alert("PDF motoru yuklenemedi.");return;}
+    try{
+      const {jsPDF}=window.jspdf;
+      const pdf=new jsPDF({unit:"pt",format:"a4"});
+      const pageW=pdf.internal.pageSize.getWidth();
+      const pageH=pdf.internal.pageSize.getHeight();
+      const margin=34;
+      const contentW=pageW-(margin*2);
+      const template=normalizeQuoteTemplate(quoteTemplate||{});
+      const accent=hexToRgb(template.accentColor);
+      const isQuote=docType==="quote";
+      const titleBase=isQuote?template.documentTitleQuote:template.documentTitleOrder;
+      const title=`${titleBase} - ${doc.code||""}`;
+      const rows=(doc.lines||[]).map(r=>{
+        const qty=safeNum(r.qty);
+        const unit=safeNum(r.unitPrice);
+        const disc=safeNum(r.discountPct);
+        const total=qty*unit*(1-disc/100);
+        return {
+          partNo:r.partNo||"",
+          partName:r.partName||"",
+          qty,
+          unit,
+          disc,
+          total,
+          dueDate:r.dueDate||"",
+        };
+      });
+
+      pdf.setFillColor(accent.r,accent.g,accent.b);
+      pdf.rect(0,0,pageW,78,"F");
+
+      let titleX=margin;
+      if(template.showLogo&&brandingLogo&&String(brandingLogo).startsWith("data:image/")){
+        try{
+          pdf.addImage(brandingLogo,"PNG",margin,17,44,44);
+          titleX+=54;
+        }catch{}
+      }
+
+      pdf.setTextColor(255,255,255);
+      pdf.setFont("helvetica","bold");
+      pdf.setFontSize(16);
+      pdf.text(title,titleX,36);
+      pdf.setFont("helvetica","normal");
+      pdf.setFontSize(10);
+      const companyLine=[template.companyName,template.companyPhone,template.companyEmail].filter(Boolean).join(" · ");
+      if(companyLine) pdf.text(companyLine,titleX,54);
+
+      pdf.setTextColor(32,32,32);
+      let y=98;
+      const leftMeta=[
+        `Musteri: ${doc.customerName||"-"}`,
+        `Belge No: ${doc.code||"-"}`,
+        isQuote?`Gecerlilik: ${doc.validUntil||"-"}`:`Termin: ${doc.dueDate||"-"}`,
+      ];
+      if(template.companyAddress) leftMeta.push(`Adres: ${template.companyAddress}`);
+      leftMeta.forEach(line=>{
+        const lines=pdf.splitTextToSize(line,contentW);
+        pdf.text(lines,margin,y);
+        y+=lines.length*12;
+      });
+
+      y+=8;
+      const columns=[
+        {label:"Parca No",key:"partNo",width:72,align:"left"},
+        {label:"Aciklama",key:"partName",width:146,align:"left"},
+        {label:"Adet",key:"qty",width:44,align:"right"},
+        {label:"Birim",key:"unit",width:58,align:"right"},
+        {label:"Isk.%",key:"disc",width:44,align:"right"},
+        {label:"Tutar",key:"total",width:66,align:"right"},
+        {label:"Termin",key:"dueDate",width:75,align:"left"},
+      ];
+      const tableW=columns.reduce((sum,c)=>sum+c.width,0);
+      const headerH=22;
+
+      const drawHeader=(rowY)=>{
+        pdf.setFillColor(238,244,252);
+        pdf.rect(margin,rowY,tableW,headerH,"F");
+        pdf.setDrawColor(208,214,223);
+        pdf.rect(margin,rowY,tableW,headerH);
+        let x=margin;
+        pdf.setFont("helvetica","bold");
+        pdf.setFontSize(9);
+        pdf.setTextColor(35,35,35);
+        columns.forEach(col=>{
+          pdf.text(col.label,x+4,rowY+14);
+          x+=col.width;
+        });
+      };
+
+      drawHeader(y);
+      y+=headerH;
+      pdf.setFont("helvetica","normal");
+      pdf.setFontSize(9);
+
+      rows.forEach(row=>{
+        const descLines=pdf.splitTextToSize(String(row.partName||"-"),columns[1].width-8);
+        const rowH=Math.max(18,descLines.length*11+4);
+        if(y+rowH>pageH-118){
+          pdf.addPage();
+          y=margin;
+          drawHeader(y);
+          y+=headerH;
+          pdf.setFont("helvetica","normal");
+          pdf.setFontSize(9);
+        }
+        let x=margin;
+        columns.forEach(col=>{
+          pdf.setDrawColor(223,228,234);
+          pdf.rect(x,y,col.width,rowH);
+          const raw=row[col.key];
+          let text="";
+          if(col.key==="qty") text=String(safeNum(raw));
+          else if(["unit","disc","total"].includes(col.key)) text=safeNum(raw).toFixed(2);
+          else text=String(raw||"-");
+          if(col.key==="partName"){
+            pdf.text(descLines,x+4,y+11);
+          }else if(col.align==="right"){
+            pdf.text(text,x+col.width-4,y+11,{align:"right"});
+          }else{
+            pdf.text(text,x+4,y+11);
+          }
+          x+=col.width;
+        });
+        y+=rowH;
+      });
+
+      y+=10;
+      const calcGross=rows.reduce((sum,r)=>sum+(safeNum(r.qty)*safeNum(r.unit)),0);
+      const calcNet=rows.reduce((sum,r)=>sum+safeNum(r.total),0);
+      const grossRaw=safeNum(doc.grossAmount);
+      const discountRaw=safeNum(doc.discountAmount);
+      const netRaw=safeNum(doc.totalAmount);
+      const gross=grossRaw>0?grossRaw:calcGross;
+      const net=netRaw>0?netRaw:calcNet;
+      const discount=discountRaw>0?discountRaw:Math.max(0,gross-net);
+      const totals=[
+        ["Brut",gross.toFixed(2)],
+        ["Iskonto",discount.toFixed(2)],
+        ["Net",net.toFixed(2)],
+      ];
+      const boxW=172;
+      const boxX=margin+tableW-boxW;
+      totals.forEach((line,idx)=>{
+        const rowY=y+(idx*16);
+        pdf.setDrawColor(223,228,234);
+        pdf.rect(boxX,rowY,boxW,16);
+        pdf.setFont("helvetica",idx===2?"bold":"normal");
+        pdf.text(line[0],boxX+6,rowY+11);
+        pdf.text(`${line[1]} TRY`,boxX+boxW-6,rowY+11,{align:"right"});
+      });
+
+      y+=totals.length*16+12;
+      const noteText=doc.note?`Not: ${doc.note}`:"";
+      if(noteText){
+        const lines=pdf.splitTextToSize(noteText,tableW);
+        if(y+lines.length*12>pageH-70){pdf.addPage();y=margin;}
+        pdf.setFont("helvetica","normal");
+        pdf.setTextColor(72,72,72);
+        pdf.text(lines,margin,y);
+        y+=lines.length*12+6;
+      }
+      if(template.footerNote){
+        const lines=pdf.splitTextToSize(template.footerNote,tableW);
+        if(y+lines.length*12>pageH-44){pdf.addPage();y=margin;}
+        pdf.setFont("helvetica","italic");
+        pdf.setTextColor(96,96,96);
+        pdf.text(lines,margin,y);
+      }
+
+      const codeSafe=String(doc.code||Date.now()).replace(/[^a-zA-Z0-9_-]/g,"_");
+      const prefix=isQuote?"teklif":"siparis";
+      pdf.save(`${prefix}-${codeSafe}.pdf`);
+    }catch{
+      alert("PDF olusturulamadi.");
+    }
   }
 
   function printQuote(q){
-    openPrintableDoc(`Proforma Teklif - ${q.code||""}`,q.lines||[],`Musteri: ${q.customerName||"-"} · Gecerlilik: ${q.validUntil||"-"} · Toplam: ${safeNum(q.totalAmount).toFixed(2)} TRY`);
+    exportSalesPdf("quote",q);
   }
   function printOrder(o){
-    openPrintableDoc(`Siparis Onay Formu - ${o.code||""}`,o.lines||[],`Musteri: ${o.customerName||"-"} · Termin: ${o.dueDate||"-"} · Toplam: ${safeNum(o.totalAmount).toFixed(2)} TRY`);
+    exportSalesPdf("order",o);
   }
 
   async function addDelivery(order){
@@ -2486,7 +2786,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                   <div style={{fontSize:11,color:C.muted2,marginTop:2}}>Satir: {(qr.lines||[]).length} · Gecerlilik: {qr.validUntil||"-"} · Net: {safeNum(qr.totalAmount).toFixed(2)} TRY</div>
                 </div>
                 <div style={{display:"flex",gap:7,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                  <button onClick={()=>printQuote(qr)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>PDF/Yazdir</button>
+                  <button onClick={()=>printQuote(qr)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>PDF Indir</button>
                   <button onClick={()=>setQuoteStatus(qr,"approved")} style={{...btnSt("green"),padding:"6px 10px",fontSize:12,opacity:(qr.status||"")==="approved"?0.7:1}} disabled={(qr.status||"")==="approved"}>{(qr.status||"")==="approved"?"Onayli":"Musteri Onayi"}</button>
                   <button onClick={()=>convertQuoteToOrder(qr)} disabled={(qr.status||"")!=="approved"} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12,opacity:(qr.status||"")==="approved"?1:0.6,cursor:(qr.status||"")==="approved"?"pointer":"not-allowed"}}>Siparise Donustur</button>
                   <button onClick={()=>setQuoteStatus(qr,"cancelled")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Iptal</button>
@@ -2523,7 +2823,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                     </div>
                   </div>
                   <div style={{display:"flex",gap:7,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                    <button onClick={()=>printOrder(o)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Onay/PDF</button>
+                    <button onClick={()=>printOrder(o)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Onay PDF</button>
                     <button onClick={()=>setOrderStatus(o,"in_production")} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12,opacity:(o.status||"")==="in_production"?0.7:1}} disabled={(o.status||"")==="in_production"}>Uretimde</button>
                     <button onClick={()=>addDelivery(o)} style={{...btnSt("green"),padding:"6px 10px",fontSize:12}}>Kismi Teslim</button>
                     <button onClick={()=>convertOrderToWorkOrders(o)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}>Is Emri Olustur</button>
@@ -6345,7 +6645,7 @@ function App() {
   const canMachinePrep=canOrders;
   const allTabs=useMemo(()=>[
     {id:"dashboard",icon:"dashboard",label:"Gösterge Paneli",group:"Planlama",enabled:(canEntry||canOrders||canReport||canSales||canPurchasing)},
-    {id:"planning",icon:"planning",label:"Cizelgeleme",group:"Planlama",enabled:canPlanning},
+    {id:"planning",icon:"planning",label:"Planlama",group:"Planlama",enabled:canPlanning},
     {id:"mps",icon:"mps",label:"MPS",group:"Planlama",enabled:canPlanning},
     {id:"mrp",icon:"mrp",label:"MRP Run",group:"Planlama",enabled:canPlanning},
     {id:"parts",icon:"parts",label:"Parca ve BOM",group:"Planlama",enabled:canPlanning},
