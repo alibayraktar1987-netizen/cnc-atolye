@@ -11529,6 +11529,32 @@ function CncMonitorWall({currentUser,machines=DEFAULT_MACHINES}){
     if(key==="stopped") return "Duruyor";
     return "Raporlanmadi";
   }
+  function statusMetaOf(key){
+    if(key==="running") return {label:"Calisiyor",chip:C.green,banner:"linear-gradient(145deg,#1fb45a 0%,#10803f 100%)"};
+    if(key==="idle") return {label:"Beklemede",chip:C.accent,banner:"linear-gradient(145deg,#4f93e5 0%,#2b68cf 100%)"};
+    if(key==="setup") return {label:"Ayar",chip:C.warn,banner:"linear-gradient(145deg,#f0af3f 0%,#c98216 100%)"};
+    if(key==="alarm") return {label:"Alarm",chip:C.red,banner:"linear-gradient(145deg,#e4576f 0%,#c83249 100%)"};
+    if(key==="stopped") return {label:"Durdu",chip:C.red,banner:"linear-gradient(145deg,#e4576f 0%,#c83249 100%)"};
+    return {label:"Bagli Degil",chip:C.muted2,banner:"linear-gradient(145deg,#8d95a3 0%,#6f7785 100%)"};
+  }
+  function toneForCard(card){
+    if(!card.hasTelemetry||card.status==="offline"){
+      return {ring:C.muted2,bg:C.surface2,border:C.border,bar:C.muted2};
+    }
+    if(card.status==="alarm"||card.status==="stopped"){
+      return {ring:C.red,bg:C.redDim,border:`${C.red}44`,bar:C.red};
+    }
+    if(card.status==="idle"||card.status==="setup"){
+      return {ring:C.accent,bg:C.accentDim,border:`${C.accent}44`,bar:C.accent};
+    }
+    if(card.score>=85){
+      return {ring:C.green,bg:C.greenDim,border:`${C.green}44`,bar:C.green};
+    }
+    if(card.score>=65){
+      return {ring:C.warn,bg:C.warnDim,border:`${C.warn}44`,bar:C.warn};
+    }
+    return {ring:C.red,bg:C.redDim,border:`${C.red}44`,bar:C.red};
+  }
   function shiftBoundsForNow(now,row){
     const startMin=hmToMinute(row?.start);
     const endMin=hmToMinute(row?.end);
@@ -11557,56 +11583,6 @@ function CncMonitorWall({currentUser,machines=DEFAULT_MACHINES}){
     }
     if(end<=start) end.setTime(start.getTime()+(8*3600*1000));
     return {start,end};
-  }
-  function cardPalette(statusKey,score,hasTelemetry){
-    if(!hasTelemetry||statusKey==="offline"){
-      return {
-        header:"linear-gradient(180deg,#8f9398 0%,#7a7f85 100%)",
-        middle:"linear-gradient(180deg,#666a70 0%,#5a5e63 100%)",
-        strip:"#71767b",
-        stripText:"#eef0f2",
-        footer:"linear-gradient(180deg,#9ea2a7 0%,#8f9499 100%)",
-        ringTrack:"rgba(255,255,255,.32)",
-        ring:"rgba(232,236,240,.78)",
-        bar:"#f1f4f6",
-      };
-    }
-    const red={
-      header:"linear-gradient(180deg,#e44765 0%,#ce2d4a 100%)",
-      middle:"linear-gradient(180deg,#f20f41 0%,#e81e4b 100%)",
-      strip:"#cf1840",
-      stripText:"#ffe7ed",
-      footer:"linear-gradient(180deg,#ec5b79 0%,#df4f6d 100%)",
-      ringTrack:"rgba(255,255,255,.35)",
-      ring:"rgba(132,14,38,.72)",
-      bar:"#8f1231",
-    };
-    const orange={
-      header:"linear-gradient(180deg,#5fbb58 0%,#4dae46 100%)",
-      middle:"linear-gradient(180deg,#ff861e 0%,#ff7a16 100%)",
-      strip:"#ea6e10",
-      stripText:"#ffe8d5",
-      footer:"linear-gradient(180deg,#f7a35c 0%,#f1994f 100%)",
-      ringTrack:"rgba(255,255,255,.35)",
-      ring:"rgba(130,56,17,.72)",
-      bar:"#a24d1b",
-    };
-    const green={
-      header:"linear-gradient(180deg,#63c45d 0%,#4db447 100%)",
-      middle:"linear-gradient(180deg,#23b013 0%,#1fa80f 100%)",
-      strip:"#16990f",
-      stripText:"#daffda",
-      footer:"linear-gradient(180deg,#7ccc75 0%,#68bf61 100%)",
-      ringTrack:"rgba(255,255,255,.34)",
-      ring:"rgba(10,111,16,.72)",
-      bar:"#107214",
-    };
-    const base=score>=95?green:(score>=75?orange:red);
-    if(statusKey==="idle"||statusKey==="setup"){
-      return {...base,header:"linear-gradient(180deg,#4e90cc 0%,#3e7fb9 100%)"};
-    }
-    if(statusKey==="alarm"||statusKey==="stopped") return red;
-    return base;
   }
 
   if(loading){
@@ -11686,23 +11662,23 @@ function CncMonitorWall({currentUser,machines=DEFAULT_MACHINES}){
     while(bars.length<5) bars.unshift(0);
     const maxBar=Math.max(1,...bars);
     const gapSec=Math.abs(deltaQty)*plannedCycleSec;
-    const alertCode=`${String(Math.floor(gapSec/60)).padStart(4,"0")}:${pad2(gapSec%60)}`;
     const flowText=!hasTelemetry
-      ? "No telemetry"
-      : `${alertCode}: ${Math.abs(deltaQty)} parts ${deltaQty>=0?"ahead":"behind"}`;
-    const palette=cardPalette(status,score,hasTelemetry);
+      ? "Telemetri yok"
+      : `${Math.abs(deltaQty)} parca ${deltaQty>=0?"onde":"geride"} (${formatCompactDuration(gapSec)})`;
     return {
       id:row.id||`row_${idx}`,
       machineName:row.machineName,
+      status,
+      hasTelemetry,
       statusLine,
       score,
       ringPct,
       partCount,
+      expectedQty,
+      deltaQty,
       flowText,
-      flowTone:deltaQty>=0?"#d8ffd8":"#ffe1e5",
       bars,
       maxBar,
-      palette,
     };
   }).sort((a,b)=>(a.machineName||"").localeCompare(b.machineName||"","tr"));
 
@@ -11711,73 +11687,146 @@ function CncMonitorWall({currentUser,machines=DEFAULT_MACHINES}){
   const shiftEnd=normalizeHm(activeShift?.end,"00:00");
   const updateText=new Intl.DateTimeFormat("tr-TR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(now);
   const monitorUser=String(currentUser?.fullName||"").trim();
+  const machineCount=cards.length;
+  const connectedCount=cards.filter(c=>c.hasTelemetry).length;
+  const runningCount=cards.filter(c=>c.status==="running").length;
+  const alarmCount=cards.filter(c=>c.status==="alarm"||c.status==="stopped").length;
+  const behindCount=cards.filter(c=>c.deltaQty<0).length;
+  const avgScore=machineCount?Math.round(cards.reduce((sum,c)=>sum+safeNum(c.score),0)/machineCount):0;
+  const totalParts=cards.reduce((sum,c)=>sum+safeNum(c.partCount),0);
 
   return (
-    <div style={{padding:10}}>
-      <div ref={wallRef} style={{background:"#00050a",borderRadius:24,padding:12,boxShadow:"0 20px 55px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06)"}}>
-        <div style={{borderRadius:16,padding:10,background:"linear-gradient(180deg,#f3f5f8 0%,#d8dde4 100%)",border:"1px solid #b9c1cd"}}>
-          <div style={{background:"#0a0d12",borderRadius:12,padding:10,border:"1px solid #1d2430"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:10}}>
-              <div>
-                <div style={{fontSize:18,fontWeight:800,color:"#f2f6ff",letterSpacing:.4}}>CNC MONITOR</div>
-                <div style={{fontSize:12,color:"#b6c1d4",marginTop:2}}>Vardiya: {shiftLabel} ({shiftStart} - {shiftEnd}) · Son guncelleme: {updateText}{monitorUser?` · ${monitorUser}`:""}</div>
-              </div>
-              <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                {fsError&&<span style={{fontSize:11,color:"#ff9b9b"}}>{fsError}</span>}
-                <button onClick={load} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12,borderColor:"#334155",color:"#d5dfef",background:"#101826"}}>Yenile</button>
-                <button onClick={toggleFullscreen} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12,borderColor:"#334155",color:"#d5dfef",background:"#101826"}}>{isFullscreen?"Tam Ekrandan Cik":"Tam Ekran"}</button>
-              </div>
+    <div ref={wallRef} style={{padding:isFullscreen?12:16,display:"flex",flexDirection:"column",gap:12,background:isFullscreen?C.bgAlt:"transparent",minHeight:isFullscreen?"100vh":"auto"}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:10}}>
+          <div>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.9,textTransform:"uppercase"}}>Operasyon Duvari</div>
+            <div style={{fontSize:20,fontWeight:800,color:C.text}}>CNC Izleme</div>
+            <div style={{fontSize:12,color:C.muted2,marginTop:2}}>
+              Vardiya: {shiftLabel} ({shiftStart} - {shiftEnd}) · Son guncelleme: {updateText}{monitorUser?` · ${monitorUser}`:""}
             </div>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            {fsError&&<span style={{fontSize:11,color:C.red}}>{fsError}</span>}
+            <button onClick={load} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Yenile</button>
+            <button onClick={toggleFullscreen} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>{isFullscreen?"Tam Ekrandan Cik":"Tam Ekran"}</button>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px"}}>
+            <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Toplam Tezgah</div>
+            <div style={{fontSize:24,fontWeight:800,color:C.text,lineHeight:1.15}}>{machineCount}</div>
+          </div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px"}}>
+            <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Canli Veri</div>
+            <div style={{fontSize:24,fontWeight:800,color:connectedCount===machineCount?C.green:C.warn,lineHeight:1.15}}>{connectedCount}/{machineCount}</div>
+          </div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px"}}>
+            <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Calisan</div>
+            <div style={{fontSize:24,fontWeight:800,color:C.green,lineHeight:1.15}}>{runningCount}</div>
+          </div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px"}}>
+            <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Alarm / Durdu</div>
+            <div style={{fontSize:24,fontWeight:800,color:alarmCount>0?C.red:C.green,lineHeight:1.15}}>{alarmCount}</div>
+          </div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px"}}>
+            <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Ortalama OEE</div>
+            <div style={{fontSize:24,fontWeight:800,color:avgScore>=75?C.green:(avgScore>=60?C.warn:C.red),lineHeight:1.15}}>%{avgScore}</div>
+          </div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px"}}>
+            <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Toplam Parca</div>
+            <div style={{fontSize:24,fontWeight:800,color:C.text,lineHeight:1.15}}>{totalParts}</div>
+          </div>
+        </div>
+      </div>
 
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))",gap:8}}>
-              {cards.map(card=>{
-                const ringSize=130;
-                const ringStroke=10;
-                const radius=(ringSize-ringStroke)/2;
-                const circ=2*Math.PI*radius;
-                const dash=(card.ringPct/100)*circ;
-                return (
-                  <div key={card.id} style={{background:"#c9d1dc",borderRadius:7,padding:1,overflow:"hidden",display:"flex",flexDirection:"column",minHeight:300}}>
-                    <div style={{background:card.palette.header,padding:"8px 8px 7px",textAlign:"center",color:"#fff"}}>
-                      <div style={{fontWeight:800,fontSize:"clamp(24px,1.7vw,34px)",lineHeight:.98,textShadow:"0 1px 2px rgba(0,0,0,.35)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.machineName}</div>
-                      <div style={{fontSize:"clamp(12px,.95vw,18px)",fontWeight:600,marginTop:3,opacity:.95,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.statusLine}</div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+          <div style={{fontWeight:800,color:C.text,fontSize:16}}>Tezgah Kartlari</div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <Badge label={`Gecikmede: ${behindCount}`} color={behindCount>0?C.red:C.green}/>
+            <Badge label={`Aktif: ${runningCount}`} color={C.green}/>
+          </div>
+        </div>
+        <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:12,padding:10}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:10}}>
+            {cards.map(card=>{
+              const ringSize=112;
+              const ringStroke=10;
+              const radius=(ringSize-ringStroke)/2;
+              const circ=2*Math.PI*radius;
+              const dash=(card.ringPct/100)*circ;
+              const meta=statusMetaOf(card.status);
+              const tone=toneForCard(card);
+              return (
+                <div key={card.id} style={{border:`1px solid ${tone.border}`,borderRadius:12,overflow:"hidden",display:"flex",flexDirection:"column",minHeight:262,background:tone.bg}}>
+                  <div style={{background:meta.banner,padding:"9px 10px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontWeight:800,color:"#fff",fontSize:20,lineHeight:1.03,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.machineName}</div>
+                      <div style={{fontSize:11,color:"#f4f7ff",marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.statusLine}</div>
                     </div>
-                    <div style={{background:card.palette.middle,display:"flex",flexDirection:"column",flex:1,minHeight:0}}>
-                      <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"8px 8px 6px"}}>
-                        <div style={{position:"relative",width:ringSize,height:ringSize}}>
-                          <svg width={ringSize} height={ringSize} viewBox={`0 0 ${ringSize} ${ringSize}`}>
-                            <circle cx={ringSize/2} cy={ringSize/2} r={radius} stroke={card.palette.ringTrack} strokeWidth={ringStroke} fill="none"/>
-                            <circle cx={ringSize/2} cy={ringSize/2} r={radius} stroke={card.palette.ring} strokeWidth={ringStroke} fill="none" strokeLinecap="round" strokeDasharray={`${dash} ${Math.max(0,circ-dash)}`} transform={`rotate(-90 ${ringSize/2} ${ringSize/2})`}/>
-                          </svg>
-                          <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",color:"#fff",textShadow:"0 1px 1px rgba(0,0,0,.34)"}}>
-                            <div style={{fontSize:"clamp(28px,2vw,42px)",fontWeight:800,lineHeight:1}}>{card.score>0?`${card.score}%`:"-"}</div>
-                            <div style={{fontSize:12,fontWeight:700,letterSpacing:.6,marginTop:2}}>OEE</div>
-                            <div style={{fontSize:"clamp(32px,2.3vw,48px)",fontWeight:800,lineHeight:1.04,marginTop:2}}>{card.partCount}</div>
-                            <div style={{fontSize:12,fontWeight:700,letterSpacing:.5}}>PARTS</div>
-                          </div>
+                    <span style={{fontSize:10,fontWeight:800,color:"#fff",padding:"4px 7px",borderRadius:999,border:"1px solid rgba(255,255,255,.45)",background:"rgba(0,0,0,.12)",letterSpacing:.4,whiteSpace:"nowrap"}}>{meta.label}</span>
+                  </div>
+
+                  <div style={{padding:10,display:"grid",gridTemplateColumns:"120px minmax(0,1fr)",gap:10,alignItems:"center",flex:1}}>
+                    <div style={{display:"flex",justifyContent:"center"}}>
+                      <div style={{position:"relative",width:ringSize,height:ringSize}}>
+                        <svg width={ringSize} height={ringSize} viewBox={`0 0 ${ringSize} ${ringSize}`}>
+                          <circle cx={ringSize/2} cy={ringSize/2} r={radius} stroke="rgba(15,23,42,.14)" strokeWidth={ringStroke} fill="none"/>
+                          <circle cx={ringSize/2} cy={ringSize/2} r={radius} stroke={tone.ring} strokeWidth={ringStroke} fill="none" strokeLinecap="round" strokeDasharray={`${dash} ${Math.max(0,circ-dash)}`} transform={`rotate(-90 ${ringSize/2} ${ringSize/2})`}/>
+                        </svg>
+                        <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+                          <div style={{fontSize:27,fontWeight:800,color:C.text,lineHeight:1}}>{card.hasTelemetry?`%${card.score}`:"-"}</div>
+                          <div style={{fontSize:10,color:C.muted2,fontWeight:700,letterSpacing:.6}}>OEE</div>
                         </div>
                       </div>
-                      <div style={{background:card.palette.strip,color:card.flowTone,padding:"3px 6px",textAlign:"center",fontSize:12,fontWeight:700,letterSpacing:.2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                        {card.flowText}
-                      </div>
                     </div>
-                    <div style={{background:card.palette.footer,padding:"6px 6px 4px"}}>
-                      <div style={{height:56,display:"flex",alignItems:"flex-end",gap:5}}>
-                        {card.bars.map((v,idx)=>{
-                          const h=v>0?Math.max(4,Math.round((v/card.maxBar)*52)):4;
-                          return <div key={idx} style={{flex:1,height:h,borderRadius:"1px 1px 0 0",background:card.palette.bar,opacity:v>0?0.95:0.35}}/>;
-                        })}
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}>
+                      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
+                        <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Parca</div>
+                        <div style={{fontSize:16,color:C.text,fontWeight:800,marginTop:1}}>{card.partCount}</div>
                       </div>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:3,fontSize:10,fontWeight:700,color:"#ecffef"}}>
-                        <span>{shiftStart}</span>
-                        <span>{shiftEnd}</span>
+                      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
+                        <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Beklenen</div>
+                        <div style={{fontSize:16,color:C.text,fontWeight:800,marginTop:1}}>{card.expectedQty}</div>
+                      </div>
+                      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
+                        <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Fark</div>
+                        <div style={{fontSize:15,color:card.deltaQty>=0?C.green:C.red,fontWeight:800,marginTop:1}}>{card.deltaQty>=0?`+${card.deltaQty}`:card.deltaQty}</div>
+                      </div>
+                      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
+                        <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Durum</div>
+                        <div style={{fontSize:14,color:meta.chip,fontWeight:800,marginTop:2}}>{meta.label}</div>
                       </div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
+
+                  <div style={{padding:"0 10px 10px"}}>
+                    <div style={{fontSize:11,color:card.deltaQty>=0?C.green:(card.hasTelemetry?C.red:C.muted2),fontWeight:700,marginBottom:7,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.flowText}</div>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:5,alignItems:"end",height:42}}>
+                      {card.bars.map((v,idx)=>{
+                        const h=v>0?Math.max(6,Math.round((v/card.maxBar)*40)):6;
+                        return (
+                          <div key={idx} style={{height:"100%",display:"flex",alignItems:"flex-end"}}>
+                            <div style={{height:h,width:"100%",borderRadius:5,background:tone.bar,opacity:v>0?0.92:0.25}}/>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6,fontSize:10,color:C.muted2}}>
+                      <span>{shiftStart}</span>
+                      <span>{shiftEnd}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
+          {cards.length===0&&(
+            <div style={{padding:"24px 12px",textAlign:"center",color:C.muted2,fontSize:12}}>
+              Izleme karti olusturulacak tezgah bulunamadi.
+            </div>
+          )}
         </div>
       </div>
     </div>
