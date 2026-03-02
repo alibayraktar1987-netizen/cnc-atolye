@@ -1248,6 +1248,35 @@ function useTableColumnLayout(scope,defs){
   },[visibleColumns]);
   return {columns,visibleColumns,tableMinWidth,moveColumn,toggleColumn,resetColumns};
 }
+function useViewportPanelMetrics(ref,{minHeight=320,bottomGap=14,narrowWidth=1180}={}){
+  const [state,setState]=useState({height:560,isNarrow:false});
+  useEffect(()=>{
+    let raf=0;
+    const update=()=>{
+      const node=ref&&ref.current?ref.current:null;
+      const top=node&&typeof node.getBoundingClientRect==="function"
+        ? Math.max(0,safeNum(node.getBoundingClientRect().top))
+        : 0;
+      const height=Math.max(minHeight,Math.floor(window.innerHeight-top-bottomGap));
+      const isNarrow=window.innerWidth<narrowWidth;
+      setState(prev=>{
+        if(prev.height===height&&prev.isNarrow===isNarrow) return prev;
+        return {height,isNarrow};
+      });
+    };
+    const schedule=()=>{
+      if(raf) cancelAnimationFrame(raf);
+      raf=requestAnimationFrame(update);
+    };
+    schedule();
+    window.addEventListener("resize",schedule);
+    return ()=>{
+      if(raf) cancelAnimationFrame(raf);
+      window.removeEventListener("resize",schedule);
+    };
+  },[ref,minHeight,bottomGap,narrowWidth]);
+  return state;
+}
 
 // ── STYLE ATOMS ──────────────────────────────────────────────
 const labelSt={color:C.muted,fontSize:11,letterSpacing:.2,textTransform:"none",fontWeight:600,marginBottom:6,display:"block"};
@@ -4179,6 +4208,11 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     toggleColumn:toggleOrderTableColumn,
     resetColumns:resetOrderTableColumns,
   }=useTableColumnLayout("sales_management_orders",SALES_ORDER_LIST_COLUMNS);
+  const salesListPanelRef=useRef(null);
+  const {
+    height:salesListPanelHeight,
+    isNarrow:salesListPanelsStacked,
+  }=useViewportPanelMetrics(salesListPanelRef,{minHeight:340,bottomGap:14,narrowWidth:1180});
   const [customerEditId,setCustomerEditId]=useState("");
   const [priceEditId,setPriceEditId]=useState("");
   const [quoteEditId,setQuoteEditId]=useState("");
@@ -5380,6 +5414,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   ];
   const statusLabel=s=>getSalesStatusMeta(s).label;
   const statusColor=s=>getSalesStatusMeta(s).color;
+  const salesListPanelHeightPx=`${salesListPanelHeight}px`;
   const renderQuoteTableCell=(qr,quoteNet,col)=>{
     if(col.id==="quote_no"){
       return (
@@ -5484,13 +5519,43 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     display:"flex",
     flexDirection:"column",
     gap:10,
-    alignSelf:"flex-start",
-    position:"sticky",
-    top:12,
-    maxHeight:"calc(100dvh - 92px)",
-    overflowY:"auto",
-    scrollbarGutter:"stable",
+    ...(salesListPanelsStacked
+      ? {}
+      : {
+        alignSelf:"flex-start",
+        position:"sticky",
+        top:12,
+        minHeight:salesListPanelHeightPx,
+        maxHeight:salesListPanelHeightPx,
+        overflowY:"auto",
+        scrollbarGutter:"stable",
+      }),
   };
+  const salesListColumnStyle={
+    flex:"1 1 760px",
+    minWidth:0,
+    display:"flex",
+    flexDirection:"column",
+    gap:8,
+    ...(salesListPanelsStacked
+      ? {}
+      : {
+        minHeight:salesListPanelHeightPx,
+        maxHeight:salesListPanelHeightPx,
+      }),
+  };
+  const salesListTableCardStyle={
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    overflow:"hidden",
+    display:"flex",
+    flexDirection:"column",
+    ...(salesListPanelsStacked?{}:{flex:1,minHeight:0}),
+  };
+  const salesListTableScrollStyle=salesListPanelsStacked
+    ? {overflowX:"auto"}
+    : {overflow:"auto",flex:1,minHeight:0};
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
 
@@ -5574,7 +5639,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       )}
 
       {view==="quotes"&&(
-        <div style={{display:"flex",gap:10,alignItems:"flex-start",flexWrap:"wrap"}}>
+        <div ref={salesListPanelRef} style={{display:"flex",gap:10,alignItems:"flex-start",flexWrap:"wrap"}}>
           <div style={filterPanelStyle}>
             <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Teklifler</div>
             <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod, musteri, durum ara"/>
@@ -5592,7 +5657,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
             <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={quoteDateTo} onChange={e=>setQuoteDateTo(e.target.value||"")}/>
             <button onClick={()=>{setQuoteDateFrom("");setQuoteDateTo("");setQuoteStatusFilter("all");setSearch("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
           </div>
-          <div style={{flex:"1 1 760px",minWidth:0,display:"flex",flexDirection:"column",gap:8}}>
+          <div style={salesListColumnStyle}>
             <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
               <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                 <div style={{fontSize:12,color:C.muted2}}>Toplam Teklif: {filteredQuotes.length}</div>
@@ -5609,8 +5674,8 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                 <button onClick={openNewQuoteModal} style={{...btnSt("primary"),padding:"7px 12px",fontSize:12}}>Teklif Olustur</button>
               </div>
             </div>
-            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
-              <div style={{overflowX:"auto"}}>
+            <div style={salesListTableCardStyle}>
+              <div style={salesListTableScrollStyle}>
                 <table style={{width:"100%",minWidth:quoteTableMinWidth,borderCollapse:"collapse",fontSize:12}}>
                   <thead>
                     <tr style={{background:C.surface,color:C.muted2,textAlign:"left"}}>
@@ -5642,7 +5707,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       )}
 
       {view==="orders"&&(
-        <div style={{display:"flex",gap:10,alignItems:"flex-start",flexWrap:"wrap"}}>
+        <div ref={salesListPanelRef} style={{display:"flex",gap:10,alignItems:"flex-start",flexWrap:"wrap"}}>
           <div style={filterPanelStyle}>
             <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Siparisler</div>
             <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod, musteri, durum ara"/>
@@ -5664,7 +5729,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
             <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={orderDateTo} onChange={e=>setOrderDateTo(e.target.value||"")}/>
             <button onClick={()=>{setOrderDateFrom("");setOrderDateTo("");setOrderStatusFilter("all");setSearch("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
           </div>
-          <div style={{flex:"1 1 760px",minWidth:0,display:"flex",flexDirection:"column",gap:8}}>
+          <div style={salesListColumnStyle}>
             <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
               <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                 <div style={{fontSize:12,color:C.muted2}}>Toplam Siparis: {filteredOrders.length}</div>
@@ -5694,8 +5759,8 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                 }} style={{...btnSt("primary"),padding:"7px 12px",fontSize:12}}>Siparis Olustur</button>
               </div>
             </div>
-            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
-              <div style={{overflowX:"auto"}}>
+            <div style={salesListTableCardStyle}>
+              <div style={salesListTableScrollStyle}>
                 <table style={{width:"100%",minWidth:orderTableMinWidth,borderCollapse:"collapse",fontSize:12}}>
                   <thead>
                     <tr style={{background:C.surface,color:C.muted2,textAlign:"left"}}>
@@ -6147,6 +6212,11 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
     toggleColumn:toggleWorkOrderTableColumn,
     resetColumns:resetWorkOrderTableColumns,
   }=useTableColumnLayout("work_orders_list",WORK_ORDER_LIST_COLUMNS);
+  const workListPanelRef=useRef(null);
+  const {
+    height:workListPanelHeight,
+    isNarrow:workListPanelsStacked,
+  }=useViewportPanelMetrics(workListPanelRef,{minHeight:340,bottomGap:14,narrowWidth:1180});
   const fileRef=useRef();
   const emptyForm={code:"",name:"",partId:"",partNo:"",revision:"A",customerPartCode:"",partSnapshot:null,customerId:"",material:"",qty:"1",dueDate:todayStr(),priority:"normal",dependencies:[],partSec:"",machines:[],notes:"",files:[],status:"planned",sourceType:"manual"};
   const [form,setForm]=useState(emptyForm);
@@ -6415,6 +6485,55 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
     }
     return null;
   };
+  const workListPanelHeightPx=`${workListPanelHeight}px`;
+  const workFilterPanelStyle={
+    flex:"0 0 250px",
+    width:"100%",
+    maxWidth:280,
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    padding:12,
+    display:"flex",
+    flexDirection:"column",
+    gap:10,
+    ...(workListPanelsStacked
+      ? {}
+      : {
+        alignSelf:"flex-start",
+        position:"sticky",
+        top:12,
+        minHeight:workListPanelHeightPx,
+        maxHeight:workListPanelHeightPx,
+        overflowY:"auto",
+        scrollbarGutter:"stable",
+      }),
+  };
+  const workListColumnStyle={
+    flex:"1 1 760px",
+    minWidth:0,
+    display:"flex",
+    flexDirection:"column",
+    gap:8,
+    ...(workListPanelsStacked
+      ? {}
+      : {
+        minHeight:workListPanelHeightPx,
+        maxHeight:workListPanelHeightPx,
+      }),
+  };
+  const workListTableCardStyle={
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    overflow:"hidden",
+    display:"flex",
+    flexDirection:"column",
+    ...(workListPanelsStacked?{}:{flex:1,minHeight:0}),
+  };
+  const workListTableScrollStyle=workListPanelsStacked
+    ? {overflowX:"auto"}
+    : {overflow:"auto",flex:1,minHeight:0};
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
   const materialOptions=(form.material&& !materials.some(x=>x.name===form.material))
@@ -6579,8 +6698,8 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
         <div style={{fontSize:12,color:C.muted2}}>Is Emirleri · {orders.filter(o=>isOpenOrderStatus(o.status)).length} acik</div>
         <button onClick={()=>{setEditId(null);setForm({...emptyForm,code:nextOrderCode()});setShowForm(true);}} style={{...btnSt("primary"),padding:"7px 12px",fontSize:12}}>Is Emri Olustur</button>
       </div>
-      <div style={{display:"flex",gap:10,alignItems:"flex-start",flexWrap:"wrap"}}>
-        <div style={{flex:"0 0 250px",width:"100%",maxWidth:280,background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12,display:"flex",flexDirection:"column",gap:10}}>
+      <div ref={workListPanelRef} style={{display:"flex",gap:10,alignItems:"flex-start",flexWrap:"wrap"}}>
+        <div style={workFilterPanelStyle}>
           <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Is Emirleri</div>
           <input style={{...inputSt,padding:"8px 10px",fontSize:12}} placeholder="Kod, parca, musteri ara..." value={search} onChange={e=>setSearch(e.target.value)}/>
           <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Termin Araligi</div>
@@ -6601,7 +6720,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
           </div>
           <button onClick={()=>{setStatusFilters([]);setDueDateFrom("");setDueDateTo("");setSearch("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
         </div>
-        <div style={{flex:"1 1 760px",minWidth:0,display:"flex",flexDirection:"column",gap:8}}>
+        <div style={workListColumnStyle}>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <div style={{fontSize:12,color:C.muted2}}>Gosterilen Kayit: {filteredOrders.length}</div>
             <TableColumnEditor
@@ -6612,8 +6731,8 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
               onReset={resetWorkOrderTableColumns}
             />
           </div>
-          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
-            <div style={{overflowX:"auto"}}>
+          <div style={workListTableCardStyle}>
+            <div style={workListTableScrollStyle}>
               <table style={{width:"100%",minWidth:workOrderTableMinWidth,borderCollapse:"collapse",fontSize:12}}>
                 <thead>
                   <tr style={{background:C.surface,color:C.muted2,textAlign:"left"}}>
