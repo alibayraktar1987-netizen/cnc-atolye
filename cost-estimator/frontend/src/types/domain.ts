@@ -44,6 +44,7 @@ export type PartRead = PartSummary & {
     labor_cost: number;
     total_cost: number;
     total_cycle_time_min: number;
+    machine_profile?: Record<string, unknown>;
     operation_breakdown: Array<{
       operation: string;
       machine_type: string;

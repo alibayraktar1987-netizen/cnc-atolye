@@ -23,12 +23,25 @@ export function EstimatePanel({ part }: Props) {
   const estimate = part.estimate_json;
   const operations = (part.operations_json ?? []) as Array<Record<string, unknown>>;
   const bbox = (geometry?.bbox ?? {}) as Record<string, number>;
+  const machineFromEstimate = (estimate?.machine_profile ?? null) as Record<string, unknown> | null;
+  const machineFromStock = (stock?.machine_profile ?? null) as Record<string, unknown> | null;
+  const machine = machineFromEstimate ?? machineFromStock;
+  const machineFit = Boolean(machine?.fit_for_part_bbox ?? true);
 
   return (
     <section className="panel">
       <h2>Cost Breakdown</h2>
       {estimate ? (
         <>
+          {machine && (
+            <div className={`alert ${machineFit ? "info" : "error"}`} style={{ marginBottom: 10 }}>
+              Machine: <strong>{String(machine.label ?? machine.id ?? "-")}</strong>
+              {" · "}
+              Strategy: <strong>{String(machine.stock_strategy ?? "-")}</strong>
+              {" · "}
+              Fit: <strong>{machineFit ? "OK" : "Out of envelope"}</strong>
+            </div>
+          )}
           <div className="kpi-grid">
             <div className="kpi">
               <span>Material Cost</span>

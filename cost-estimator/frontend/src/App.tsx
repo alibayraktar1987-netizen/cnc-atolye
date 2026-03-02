@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchJob, fetchMaterials, fetchPart, fetchParts, getModelUrl, uploadStep } from "./api";
+import { fetchJob, fetchMachineProfiles, fetchMaterials, fetchPart, fetchParts, getModelUrl, uploadStep } from "./api";
 import { EstimatePanel } from "./components/EstimatePanel";
 import { ModelViewer } from "./components/ModelViewer";
 import { PartList } from "./components/PartList";
 import { UploadPanel } from "./components/UploadPanel";
-import type { AnalysisJob, Material, PartRead, PartSummary } from "./types/domain";
+import type { AnalysisJob, MachineProfile, Material, PartRead, PartSummary } from "./types/domain";
 import "./styles.css";
 
 function App() {
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [machineProfiles, setMachineProfiles] = useState<MachineProfile[]>([]);
   const [parts, setParts] = useState<PartSummary[]>([]);
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
   const [selectedPart, setSelectedPart] = useState<PartRead | null>(null);
@@ -19,8 +20,13 @@ function App() {
   async function loadInitial() {
     setGlobalError("");
     try {
-      const [materialsData, partsData] = await Promise.all([fetchMaterials(), fetchParts()]);
+      const [materialsData, machineProfilesData, partsData] = await Promise.all([
+        fetchMaterials(),
+        fetchMachineProfiles(),
+        fetchParts(),
+      ]);
       setMaterials(materialsData);
+      setMachineProfiles(machineProfilesData);
       setParts(partsData);
       if (!selectedPartId && partsData.length > 0) {
         setSelectedPartId(partsData[0].id);
@@ -66,11 +72,11 @@ function App() {
     return () => window.clearInterval(timer);
   }, [activeJob?.id]);
 
-  async function handleUpload(file: File, materialId: number) {
+  async function handleUpload(file: File, materialId: number, machineProfileId: string) {
     setUploadBusy(true);
     setGlobalError("");
     try {
-      const response = await uploadStep(file, materialId);
+      const response = await uploadStep(file, materialId, machineProfileId);
       const job = await fetchJob(response.job_id);
       setActiveJob(job);
       setSelectedPartId(response.part_id);
@@ -110,7 +116,12 @@ function App() {
       )}
 
       <section className="grid-two">
-        <UploadPanel materials={materials} onUpload={handleUpload} busy={uploadBusy} />
+        <UploadPanel
+          materials={materials}
+          machineProfiles={machineProfiles}
+          onUpload={handleUpload}
+          busy={uploadBusy}
+        />
         <PartList parts={parts} selectedPartId={selectedPartId} onSelect={setSelectedPartId} />
       </section>
 

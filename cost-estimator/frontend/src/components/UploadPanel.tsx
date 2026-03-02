@@ -1,21 +1,25 @@
 import { useMemo, useState } from "react";
-import type { Material } from "../types/domain";
+import type { MachineProfile, Material } from "../types/domain";
 
 type Props = {
   materials: Material[];
-  onUpload: (file: File, materialId: number) => Promise<void>;
+  machineProfiles: MachineProfile[];
+  onUpload: (file: File, materialId: number, machineProfileId: string) => Promise<void>;
   busy: boolean;
 };
 
-export function UploadPanel({ materials, onUpload, busy }: Props) {
+export function UploadPanel({ materials, machineProfiles, onUpload, busy }: Props) {
   const [materialId, setMaterialId] = useState<number | null>(null);
+  const [machineProfileId, setMachineProfileId] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState("");
 
   const acceptedHint = ".step,.stp";
   const defaultMaterialId = useMemo(() => materials[0]?.id ?? null, [materials]);
+  const defaultMachineProfileId = useMemo(() => machineProfiles[0]?.id ?? null, [machineProfiles]);
 
   const selectedMaterial = materialId ?? defaultMaterialId;
+  const selectedMachineProfile = machineProfileId ?? defaultMachineProfileId;
 
   async function handleUpload() {
     setError("");
@@ -27,7 +31,11 @@ export function UploadPanel({ materials, onUpload, busy }: Props) {
       setError("Please select a material.");
       return;
     }
-    await onUpload(file, selectedMaterial);
+    if (!selectedMachineProfile) {
+      setError("Please select a machine.");
+      return;
+    }
+    await onUpload(file, selectedMaterial, selectedMachineProfile);
     setFile(null);
   }
 
@@ -36,6 +44,19 @@ export function UploadPanel({ materials, onUpload, busy }: Props) {
       <h2>STEP Upload</h2>
       <p className="muted">AP203 / AP214 .step or .stp files are accepted.</p>
       <div className="form-grid">
+        <label className="field">
+          <span>Machine</span>
+          <select
+            value={selectedMachineProfile ?? ""}
+            onChange={(e) => setMachineProfileId(e.target.value || null)}
+          >
+            {machineProfiles.map((m) => (
+              <option value={m.id} key={m.id}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="field">
           <span>Material</span>
           <select value={selectedMaterial ?? ""} onChange={(e) => setMaterialId(Number(e.target.value) || null)}>

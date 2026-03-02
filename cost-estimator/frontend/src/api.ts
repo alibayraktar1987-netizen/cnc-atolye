@@ -365,13 +365,22 @@ export async function fetchMaterials(): Promise<Material[]> {
 }
 
 export async function fetchMachineProfiles(): Promise<MachineProfile[]> {
-  return withFallback(
-    async () => {
-      const { data } = await client.get<MachineProfile[]>("/machine-profiles");
-      return data;
-    },
-    mockFetchMachineProfiles,
-  );
+  try {
+    const { data } = await client.get<MachineProfile[]>("/machine-profiles");
+    if (forceMockMode) {
+      forceMockMode = false;
+      writeMockMode(false);
+    }
+    return data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      return mockFetchMachineProfiles();
+    }
+    if (!isConnectivityError(error)) throw error;
+    forceMockMode = true;
+    writeMockMode(true);
+    return mockFetchMachineProfiles();
+  }
 }
 
 export async function fetchParts(): Promise<PartSummary[]> {
