@@ -229,6 +229,89 @@ const SHIFTS = [
   { id:"ogleden", label:"Öğleden Sonra", time:"14:00–22:00" },
   { id:"gece", label:"Gece", time:"22:00–06:00" },
 ];
+function normalizeHm(value,fallback="00:00"){
+  const raw=String(value||"").trim();
+  const m=/^(\d{1,2}):(\d{2})$/.exec(raw);
+  if(!m) return fallback;
+  const hh=Number(m[1]);
+  const mm=Number(m[2]);
+  if(!Number.isFinite(hh)||!Number.isFinite(mm)||hh<0||hh>23||mm<0||mm>59) return fallback;
+  return `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
+}
+function parseShiftRangeText(value){
+  const clean=String(value||"").replace(/[–—]/g,"-");
+  const parts=clean.split("-");
+  const start=normalizeHm(parts[0],"00:00");
+  const end=normalizeHm(parts[1],start);
+  return {start,end};
+}
+const DEFAULT_SHIFT_WINDOWS=SHIFTS.map(shift=>{
+  const range=parseShiftRangeText(shift.time);
+  return {
+    id:shift.id,
+    label:shift.label,
+    start:range.start,
+    end:range.end,
+  };
+});
+const DEFAULT_KIOSK_SETTINGS = {
+  shiftWindows:DEFAULT_SHIFT_WINDOWS.map(row=>({...row})),
+  cycleDeviationNotificationEnabled:false,
+  cycleDeviationThresholdSec:20,
+};
+function normalizeKioskSettings(raw){
+  const src=(raw&&typeof raw==="object")?raw:{};
+  const inputList=Array.isArray(src.shiftWindows)?src.shiftWindows:(Array.isArray(src.shifts)?src.shifts:[]);
+  const shiftWindows=SHIFTS.map(base=>{
+    const fallback=DEFAULT_SHIFT_WINDOWS.find(row=>row.id===base.id)||{id:base.id,label:base.label,start:"00:00",end:"00:00"};
+    const row=inputList.find(item=>String(item?.id||"")===base.id)||{};
+    return {
+      id:base.id,
+      label:base.label,
+      start:normalizeHm(row.start,fallback.start),
+      end:normalizeHm(row.end,fallback.end),
+    };
+  });
+  const thresholdRaw=src.cycleDeviationThresholdSec??src.cycleDeviationThreshold;
+  return {
+    shiftWindows,
+    cycleDeviationNotificationEnabled:Boolean(src.cycleDeviationNotificationEnabled??src.notifyCycleDeviation),
+    cycleDeviationThresholdSec:Math.max(1,Math.round(safeNum(thresholdRaw||DEFAULT_KIOSK_SETTINGS.cycleDeviationThresholdSec))),
+  };
+}
+function hmToMinute(value){
+  const hm=normalizeHm(value,"");
+  if(!hm) return null;
+  const parts=hm.split(":");
+  if(parts.length!==2) return null;
+  const hh=Number(parts[0]);
+  const mm=Number(parts[1]);
+  if(!Number.isFinite(hh)||!Number.isFinite(mm)) return null;
+  return (hh*60)+mm;
+}
+function resolveShiftIdByMinute(shiftWindows,minute){
+  const rows=(Array.isArray(shiftWindows)&&shiftWindows.length>0)?shiftWindows:DEFAULT_SHIFT_WINDOWS;
+  if(!Number.isFinite(minute)) return rows[0]?.id||"sabah";
+  const m=Math.max(0,Math.min(1439,Math.floor(minute)));
+  for(const row of rows){
+    const start=hmToMinute(row.start);
+    const end=hmToMinute(row.end);
+    if(start===null||end===null) continue;
+    if(start===end) return row.id||rows[0]?.id||"sabah";
+    if(start<end){
+      if(m>=start&&m<end) return row.id||rows[0]?.id||"sabah";
+    }else{
+      if(m>=start||m<end) return row.id||rows[0]?.id||"sabah";
+    }
+  }
+  return rows[0]?.id||"sabah";
+}
+function minuteFromIsoLike(value){
+  if(typeof value!=="string"||!value) return null;
+  const m=/T(\d{2}):(\d{2})/.exec(value);
+  if(!m) return null;
+  return hmToMinute(`${m[1]}:${m[2]}`);
+}
 const EFFECTIVE_SECONDS = 72000;
 const LOGO_SRC = "./logo.png";
 const SESSION_TIMEOUT_MIN = 30;
