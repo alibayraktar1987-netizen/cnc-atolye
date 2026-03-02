@@ -9305,27 +9305,27 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const selectedOrder=orders.find(o=>o.id===form.orderId)||null;
   const setMpsF=(k,v)=>setMpsForm(p=>({...p,[k]:v}));
   const plannedOrderIdSet=new Set();
-  const plannedOrderCodeSet=new Set();
+  const plannedLegacyOrderCodeSet=new Set();
   plans.forEach(p=>{
     const orderId=String(p.orderId||"").trim();
     if(orderId){
       plannedOrderIdSet.add(orderId);
     }
     const orderCode=String(p.orderCode||"").trim().toUpperCase();
-    if(orderCode) plannedOrderCodeSet.add(orderCode);
+    if(!orderId&&orderCode) plannedLegacyOrderCodeSet.add(orderCode);
   });
   function isOrderAlreadyInPlanning(order){
     const id=String(order?.id||"").trim();
     if(id&&plannedOrderIdSet.has(id)) return true;
     const code=String(order?.code||"").trim().toUpperCase();
-    if(code&&plannedOrderCodeSet.has(code)) return true;
+    if(code&&plannedLegacyOrderCodeSet.has(code)) return true;
     return false;
   }
   const priorityWeight={urgent:0,acil:0,normal:1,low:2,dusuk:2};
   const ordersToPlan=[...orders]
     .filter(o=>{
       const st=String(o.status||"").toLowerCase();
-      if(st==="planned"||st==="completed") return false;
+      if(st==="completed") return false;
       return !isOrderAlreadyInPlanning(o);
     })
     .sort((a,b)=>{
