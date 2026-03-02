@@ -1270,9 +1270,11 @@ function useViewportPanelMetrics(ref,{minHeight=320,bottomGap=14,narrowWidth=118
     };
     schedule();
     window.addEventListener("resize",schedule);
+    window.addEventListener("scroll",schedule,{passive:true});
     return ()=>{
       if(raf) cancelAnimationFrame(raf);
       window.removeEventListener("resize",schedule);
+      window.removeEventListener("scroll",schedule);
     };
   },[ref,minHeight,bottomGap,narrowWidth]);
   return state;
@@ -5415,6 +5417,19 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   const statusLabel=s=>getSalesStatusMeta(s).label;
   const statusColor=s=>getSalesStatusMeta(s).color;
   const salesListPanelHeightPx=`${salesListPanelHeight}px`;
+  const salesSplitWrapStyle={
+    display:"flex",
+    gap:10,
+    alignItems:"flex-start",
+    flexWrap:"wrap",
+    ...(salesListPanelsStacked
+      ? {}
+      : {
+        minHeight:salesListPanelHeightPx,
+        maxHeight:salesListPanelHeightPx,
+        overflow:"hidden",
+      }),
+  };
   const renderQuoteTableCell=(qr,quoteNet,col)=>{
     if(col.id==="quote_no"){
       return (
@@ -5528,6 +5543,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
         minHeight:salesListPanelHeightPx,
         maxHeight:salesListPanelHeightPx,
         overflowY:"auto",
+        overscrollBehavior:"contain",
         scrollbarGutter:"stable",
       }),
   };
@@ -5555,7 +5571,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   };
   const salesListTableScrollStyle=salesListPanelsStacked
     ? {overflowX:"auto"}
-    : {overflow:"auto",flex:1,minHeight:0};
+    : {overflow:"auto",flex:1,minHeight:0,overscrollBehavior:"contain"};
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
 
@@ -5639,7 +5655,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       )}
 
       {view==="quotes"&&(
-        <div ref={salesListPanelRef} style={{display:"flex",gap:10,alignItems:"flex-start",flexWrap:"wrap"}}>
+        <div ref={salesListPanelRef} style={salesSplitWrapStyle}>
           <div style={filterPanelStyle}>
             <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Teklifler</div>
             <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod, musteri, durum ara"/>
@@ -5707,7 +5723,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       )}
 
       {view==="orders"&&(
-        <div ref={salesListPanelRef} style={{display:"flex",gap:10,alignItems:"flex-start",flexWrap:"wrap"}}>
+        <div ref={salesListPanelRef} style={salesSplitWrapStyle}>
           <div style={filterPanelStyle}>
             <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Siparisler</div>
             <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod, musteri, durum ara"/>
@@ -6486,6 +6502,19 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
     return null;
   };
   const workListPanelHeightPx=`${workListPanelHeight}px`;
+  const workSplitWrapStyle={
+    display:"flex",
+    gap:10,
+    alignItems:"flex-start",
+    flexWrap:"wrap",
+    ...(workListPanelsStacked
+      ? {}
+      : {
+        minHeight:workListPanelHeightPx,
+        maxHeight:workListPanelHeightPx,
+        overflow:"hidden",
+      }),
+  };
   const workFilterPanelStyle={
     flex:"0 0 250px",
     width:"100%",
@@ -6506,6 +6535,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
         minHeight:workListPanelHeightPx,
         maxHeight:workListPanelHeightPx,
         overflowY:"auto",
+        overscrollBehavior:"contain",
         scrollbarGutter:"stable",
       }),
   };
@@ -6533,7 +6563,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   };
   const workListTableScrollStyle=workListPanelsStacked
     ? {overflowX:"auto"}
-    : {overflow:"auto",flex:1,minHeight:0};
+    : {overflow:"auto",flex:1,minHeight:0,overscrollBehavior:"contain"};
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
   const materialOptions=(form.material&& !materials.some(x=>x.name===form.material))
@@ -6698,7 +6728,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
         <div style={{fontSize:12,color:C.muted2}}>Is Emirleri · {orders.filter(o=>isOpenOrderStatus(o.status)).length} acik</div>
         <button onClick={()=>{setEditId(null);setForm({...emptyForm,code:nextOrderCode()});setShowForm(true);}} style={{...btnSt("primary"),padding:"7px 12px",fontSize:12}}>Is Emri Olustur</button>
       </div>
-      <div ref={workListPanelRef} style={{display:"flex",gap:10,alignItems:"flex-start",flexWrap:"wrap"}}>
+      <div ref={workListPanelRef} style={workSplitWrapStyle}>
         <div style={workFilterPanelStyle}>
           <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Is Emirleri</div>
           <input style={{...inputSt,padding:"8px 10px",fontSize:12}} placeholder="Kod, parca, musteri ara..." value={search} onChange={e=>setSearch(e.target.value)}/>
