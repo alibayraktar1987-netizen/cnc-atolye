@@ -7050,6 +7050,40 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const fv=(k,v)=>setForm(f=>({...f,[k]:v}));
   const selectedOrder=orders.find(o=>o.id===form.orderId)||null;
   const setMpsF=(k,v)=>setMpsForm(p=>({...p,[k]:v}));
+  const planCountByOrderId={};
+  plans.forEach(p=>{
+    if(!p.orderId) return;
+    planCountByOrderId[p.orderId]=(planCountByOrderId[p.orderId]||0)+1;
+  });
+  const priorityWeight={urgent:0,acil:0,normal:1,low:2,dusuk:2};
+  const ordersToPlan=[...orders]
+    .filter(o=>safeNum(planCountByOrderId[o.id])===0)
+    .sort((a,b)=>{
+      const pa=priorityWeight[String(a.priority||"normal").toLowerCase()]??1;
+      const pb=priorityWeight[String(b.priority||"normal").toLowerCase()]??1;
+      if(pa!==pb) return pa-pb;
+      const da=String(a.dueDate||"9999-12-31");
+      const db=String(b.dueDate||"9999-12-31");
+      const dd=da.localeCompare(db);
+      if(dd!==0) return dd;
+      return String(a.code||"").localeCompare(String(b.code||""),"tr");
+    });
+  function openPlanModalForOrder(order){
+    if(!order) return;
+    const orderMachines=Array.isArray(order.machines)?order.machines:[];
+    const pickedMachine=orderMachines.find(m=>machines.includes(m))||(machines[0]||"CNC-1");
+    const baseDate=order.dueDate||todayStr();
+    setEditId(null);
+    setSelectedPlan(null);
+    setForm({
+      startDate:baseDate,
+      endDate:baseDate,
+      machine:pickedMachine,
+      orderId:order.id||"",
+      note:order.notes||"",
+    });
+    setShowPlanModal(true);
+  }
   const allPlanSegments=buildPlanSegments(plans);
   const sortedPlanSegments=allPlanSegments;
   const mpsBaseWeek=startOfWeekYmd(todayStr());
@@ -7514,6 +7548,47 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
             <button onClick={exportGanttPng} disabled={exporting} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,opacity:exporting?0.7:1}}>PNG</button>
             <button onClick={exportGanttPdf} disabled={exporting} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,opacity:exporting?0.7:1}}>PDF</button>
           </div>
+        </div>
+
+        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:10,marginBottom:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+            <div>
+              <div style={{fontSize:11,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Planlama Kuyrugu</div>
+              <div style={{fontWeight:800,color:C.text,fontSize:15}}>Planlanacak Is Emirleri</div>
+            </div>
+            <Badge label={`${ordersToPlan.length} Is Emri`} color={ordersToPlan.length>0?C.warn:C.green}/>
+          </div>
+          {ordersToPlan.length===0&&(
+            <div style={{fontSize:12,color:C.muted2,padding:"6px 2px"}}>
+              Planlanmayi bekleyen is emri yok.
+            </div>
+          )}
+          {ordersToPlan.length>0&&(
+            <div style={{display:"flex",flexDirection:"column",gap:7,maxHeight:190,overflowY:"auto",paddingRight:2}}>
+              {ordersToPlan.map(order=>{
+                const pMeta=PRIORITY_OPTIONS.find(p=>p.id===order.priority)||{label:(order.priority||"Normal"),color:C.muted2};
+                return (
+                  <div key={order.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 9px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                    <div style={{minWidth:210,flex:1}}>
+                      <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                        <span style={{fontWeight:800,color:C.text,fontFamily:"monospace",fontSize:12}}>{order.code||"-"}</span>
+                        <Badge label={pMeta.label||"-"} color={pMeta.color||C.muted2}/>
+                      </div>
+                      <div style={{fontSize:12,color:C.text,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                        {order.name||"-"}{order.customerName?` · ${order.customerName}`:""}
+                      </div>
+                      <div style={{fontSize:11,color:C.muted2,marginTop:2}}>
+                        Termin: {order.dueDate||"-"} · Tezgah: {Array.isArray(order.machines)&&order.machines.length>0?order.machines.join(", "):"-"}
+                      </div>
+                    </div>
+                    <button onClick={()=>openPlanModalForOrder(order)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}>
+                      Planla
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div style={{display:"grid",gridTemplateColumns:"1fr",gap:10}}>
