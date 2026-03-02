@@ -7797,6 +7797,356 @@ docker compose up --build`}
   );
 }
 
+function ProgramAndEnergyModule({currentUser,machines=DEFAULT_MACHINES}) {
+  const [loading,setLoading]=useState(true);
+  const [programs,setPrograms]=useState([]);
+  const [transfers,setTransfers]=useState([]);
+  const [energyRows,setEnergyRows]=useState([]);
+  const [orders,setOrders]=useState([]);
+  const [cfg,setCfg]=useState({emission:"0.43",unitCost:"5.5"});
+  const [pf,setPf]=useState({code:"",name:"",version:"V1",machine:machines[0]||"CNC-1"});
+  const [tf,setTf]=useState({programId:"",machine:machines[0]||"CNC-1",orderId:""});
+  const [ef,setEf]=useState({machine:machines[0]||"CNC-1",date:todayStr(),orderId:"",kwh:"",runtimeMin:""});
+
+  const load=useCallback(async()=>{
+    const [p,t,e,o,c]=await Promise.all([
+      window.DB.getAll("ncPrograms"),
+      window.DB.getAll("programTransfers"),
+      window.DB.getAll("energyReadings"),
+      window.DB.getAll("orders"),
+      window.DB.getDoc("config","energyConfig"),
+    ]);
+    setPrograms(p.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setTransfers(t.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setEnergyRows(e.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setOrders(o.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setCfg({emission:String(safeNum(c?.emissionFactorKgPerKwh)||0.43),unitCost:String(safeNum(c?.energyUnitCostTry)||5.5)});
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="progenergy") return;
+      if(d.type==="refresh") load();
+      if(d.type==="new") setPf({code:"",name:"",version:"V1",machine:machines[0]||"CNC-1"});
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load,machines]);
+
+  async function saveProgram(){
+    const code=String(pf.code||"").trim().toUpperCase();
+    if(!code||!String(pf.name||"").trim()){alert("Program kodu ve adi zorunlu.");return;}
+    const payload={code,name:String(pf.name||"").trim(),version:String(pf.version||"V1").trim().toUpperCase(),machine:pf.machine||machines[0]||"CNC-1",updatedAt:new Date().toISOString(),updatedBy:currentUser?.id||""};
+    const id=await window.DB.addDoc("ncPrograms",payload);
+    if(!id){alert("Program kaydedilemedi.");return;}
+    setPrograms(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
+    setPf(f=>({...f,code:"",name:"",version:"V1"}));
+  }
+  async function saveTransfer(){
+    const p=programs.find(x=>x.id===tf.programId);
+    if(!p){alert("Program secin.");return;}
+    const o=orders.find(x=>x.id===tf.orderId);
+    const payload={programId:p.id,programCode:p.code||"",programVersion:p.version||"",machine:tf.machine||machines[0]||"CNC-1",orderId:o?.id||"",orderCode:o?.code||"",status:"completed",createdBy:currentUser?.id||"",createdAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("programTransfers",payload);
+    if(!id){alert("Transfer kaydedilemedi.");return;}
+    setTransfers(prev=>[{id,...payload},...prev]);
+  }
+  async function saveCfg(){
+    const payload={emissionFactorKgPerKwh:Math.max(0,safeNum(cfg.emission)||0.43),energyUnitCostTry:Math.max(0,safeNum(cfg.unitCost)||0),updatedAt:new Date().toISOString(),updatedBy:currentUser?.id||""};
+    const ok=await window.DB.setDoc("config","energyConfig",payload);
+    if(!ok){alert("Ayar kaydedilemedi.");return;}
+  }
+  async function saveEnergy(){
+    const kwh=Math.max(0,safeNum(ef.kwh));
+    if(kwh<=0){alert("kWh zorunlu.");return;}
+    const factor=Math.max(0,safeNum(cfg.emission)||0.43);
+    const costKwh=Math.max(0,safeNum(cfg.unitCost)||0);
+    const o=orders.find(x=>x.id===ef.orderId);
+    const payload={machine:ef.machine||machines[0]||"CNC-1",date:ef.date||todayStr(),orderId:o?.id||"",orderCode:o?.code||"",kwh,runtimeMin:Math.max(0,safeNum(ef.runtimeMin)),co2Kg:kwh*factor,energyCostTry:kwh*costKwh,createdBy:currentUser?.id||"",createdAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("energyReadings",payload);
+    if(!id){alert("Enerji kaydi olusturulamadi.");return;}
+    setEnergyRows(prev=>[{id,...payload},...prev]);
+    setEf(f=>({...f,kwh:"",runtimeMin:""}));
+  }
+
+  const totalKwh=energyRows.reduce((s,r)=>s+safeNum(r.kwh),0);
+  const totalCo2=energyRows.reduce((s,r)=>s+safeNum(r.co2Kg),0);
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  return (
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontWeight:700,color:C.text}}>Faz-1: Program Transfer + Enerji/Karbon</div>
+        <div style={{fontSize:12,color:C.muted2,marginTop:4}}>NC program versiyon/transfer ve enerji-karbon kayitlari.</div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Program ve Transfer</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <input style={inputSt} placeholder="Program Kodu" value={pf.code} onChange={e=>setPf(f=>({...f,code:e.target.value}))}/>
+            <input style={inputSt} placeholder="Program Adi" value={pf.name} onChange={e=>setPf(f=>({...f,name:e.target.value}))}/>
+            <input style={inputSt} placeholder="Versiyon" value={pf.version} onChange={e=>setPf(f=>({...f,version:e.target.value}))}/>
+            <select style={inputSt} value={pf.machine} onChange={e=>setPf(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}><button onClick={saveProgram} style={{...btnSt("primary"),padding:"7px 11px",fontSize:12}}>Program Kaydet</button></div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginTop:10}}>
+            <select style={inputSt} value={tf.programId} onChange={e=>setTf(f=>({...f,programId:e.target.value}))}><option value="">Program secin</option>{programs.slice(0,200).map(p=><option key={p.id} value={p.id}>{p.code} · {p.version}</option>)}</select>
+            <select style={inputSt} value={tf.machine} onChange={e=>setTf(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
+            <select style={inputSt} value={tf.orderId} onChange={e=>setTf(f=>({...f,orderId:e.target.value}))}><option value="">Is emri (opsiyonel)</option>{orders.slice(0,120).map(o=><option key={o.id} value={o.id}>{o.code}</option>)}</select>
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}><button onClick={saveTransfer} style={{...btnSt("green"),padding:"7px 11px",fontSize:12}}>Transfer Kaydet</button></div>
+          <div style={{fontSize:12,color:C.muted2,marginTop:8}}>Program: {programs.length} · Transfer: {transfers.length}</div>
+        </div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Enerji/Karbon</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <input style={inputSt} placeholder="kgCO2/kWh" value={cfg.emission} onChange={e=>setCfg(f=>({...f,emission:e.target.value}))}/>
+            <input style={inputSt} placeholder="TRY/kWh" value={cfg.unitCost} onChange={e=>setCfg(f=>({...f,unitCost:e.target.value}))}/>
+            <select style={inputSt} value={ef.machine} onChange={e=>setEf(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
+            <input style={inputSt} type="date" value={ef.date} onChange={e=>setEf(f=>({...f,date:e.target.value}))}/>
+            <input style={inputSt} type="number" min="0" placeholder="kWh" value={ef.kwh} onChange={e=>setEf(f=>({...f,kwh:e.target.value}))}/>
+            <input style={inputSt} type="number" min="0" placeholder="Calisma dk" value={ef.runtimeMin} onChange={e=>setEf(f=>({...f,runtimeMin:e.target.value}))}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:8}}>
+            <button onClick={saveCfg} style={{...btnSt("ghost"),padding:"7px 11px",fontSize:12}}>Ayar</button>
+            <button onClick={saveEnergy} style={{...btnSt("primary"),padding:"7px 11px",fontSize:12}}>Kaydet</button>
+          </div>
+          <div style={{marginTop:8,fontSize:12,color:C.muted2}}>Toplam Enerji: <b style={{color:C.text}}>{totalKwh.toFixed(2)} kWh</b> · Toplam Karbon: <b style={{color:C.text}}>{totalCo2.toFixed(2)} kg</b></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ToolCycleAnalyticsModule({currentUser,machines=DEFAULT_MACHINES}) {
+  const [loading,setLoading]=useState(true);
+  const [offsets,setOffsets]=useState([]);
+  const [cycles,setCycles]=useState([]);
+  const [orders,setOrders]=useState([]);
+  const [of,setOf]=useState({machine:machines[0]||"CNC-1",toolCode:"",programCode:"",geometry:"0",wear:"0"});
+  const [cf,setCf]=useState({machine:machines[0]||"CNC-1",orderId:"",plannedSec:"60",actualSec:"",idleSec:"",cutSec:""});
+
+  const load=useCallback(async()=>{
+    const [o,c,ord]=await Promise.all([window.DB.getAll("toolOffsets"),window.DB.getAll("cycleLogs"),window.DB.getAll("orders")]);
+    setOffsets(o.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setCycles(c.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setOrders(ord.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="toolcycle") return;
+      if(d.type==="refresh") load();
+      if(d.type==="new"){
+        setOf({machine:machines[0]||"CNC-1",toolCode:"",programCode:"",geometry:"0",wear:"0"});
+        setCf({machine:machines[0]||"CNC-1",orderId:"",plannedSec:"60",actualSec:"",idleSec:"",cutSec:""});
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load,machines]);
+
+  async function saveOffset(){
+    if(!of.toolCode.trim()){alert("Takim kodu zorunlu.");return;}
+    const payload={machine:of.machine||machines[0]||"CNC-1",toolCode:of.toolCode.trim().toUpperCase(),programCode:of.programCode.trim().toUpperCase(),geometryOffset:safeNum(of.geometry),wearOffset:safeNum(of.wear),reason:"manual",createdBy:currentUser?.id||"",createdAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("toolOffsets",payload);
+    if(!id){alert("Offset kaydi olusturulamadi.");return;}
+    setOffsets(prev=>[{id,...payload},...prev]);
+    setOf(f=>({...f,toolCode:"",programCode:"",geometry:"0",wear:"0"}));
+  }
+  async function saveCycle(){
+    const planned=Math.max(1,safeNum(cf.plannedSec)||1);
+    const actual=Math.max(0,safeNum(cf.actualSec));
+    if(actual<=0){alert("Gercek sure zorunlu.");return;}
+    const idle=Math.max(0,safeNum(cf.idleSec));
+    const cut=Math.max(0,safeNum(cf.cutSec));
+    const o=orders.find(x=>x.id===cf.orderId);
+    const payload={machine:cf.machine||machines[0]||"CNC-1",orderId:o?.id||"",orderCode:o?.code||"",plannedSec:planned,actualSec:actual,idleSec:idle,cutSec:cut,deviationPct:((actual-planned)/planned)*100,airCutPct:actual>0?(idle/actual)*100:0,createdBy:currentUser?.id||"",createdAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("cycleLogs",payload);
+    if(!id){alert("Cevrim kaydi olusturulamadi.");return;}
+    setCycles(prev=>[{id,...payload},...prev]);
+    setCf(f=>({...f,orderId:"",actualSec:"",idleSec:"",cutSec:""}));
+  }
+
+  const avgDev=cycles.length?cycles.reduce((s,r)=>s+safeNum(r.deviationPct),0)/cycles.length:0;
+  const avgAir=cycles.length?cycles.reduce((s,r)=>s+safeNum(r.airCutPct),0)/cycles.length:0;
+  const critical=cycles.filter(r=>Math.abs(safeNum(r.deviationPct))>10).length;
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  return (
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontWeight:700,color:C.text}}>Faz-2: Takim Offset + Cevrim Analizi</div>
+        <div style={{fontSize:12,color:C.muted2,marginTop:4}}>Offset kaydi, cevrim sapmasi ve air-cut izleme.</div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(170px,1fr))",gap:8}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Offset</div><div style={{fontSize:22,color:C.text,fontWeight:800}}>{offsets.length}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Kritik Sapma</div><div style={{fontSize:22,color:critical?C.red:C.green,fontWeight:800}}>{critical}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Ort. Air-Cut</div><div style={{fontSize:22,color:C.warn,fontWeight:800}}>%{avgAir.toFixed(1)}</div></div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Offset Girisi</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <select style={inputSt} value={of.machine} onChange={e=>setOf(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
+            <input style={inputSt} placeholder="Takim Kodu" value={of.toolCode} onChange={e=>setOf(f=>({...f,toolCode:e.target.value}))}/>
+            <input style={inputSt} placeholder="Program Kodu" value={of.programCode} onChange={e=>setOf(f=>({...f,programCode:e.target.value}))}/>
+            <input style={inputSt} type="number" placeholder="Geometri" value={of.geometry} onChange={e=>setOf(f=>({...f,geometry:e.target.value}))}/>
+            <input style={inputSt} type="number" placeholder="Asinma" value={of.wear} onChange={e=>setOf(f=>({...f,wear:e.target.value}))}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}><button onClick={saveOffset} style={{...btnSt("primary"),padding:"7px 11px",fontSize:12}}>Kaydet</button></div>
+        </div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Cevrim Girisi</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <select style={inputSt} value={cf.machine} onChange={e=>setCf(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
+            <select style={inputSt} value={cf.orderId} onChange={e=>setCf(f=>({...f,orderId:e.target.value}))}><option value="">Is emri (opsiyonel)</option>{orders.slice(0,120).map(o=><option key={o.id} value={o.id}>{o.code}</option>)}</select>
+            <input style={inputSt} type="number" placeholder="Planlanan sn" value={cf.plannedSec} onChange={e=>setCf(f=>({...f,plannedSec:e.target.value}))}/>
+            <input style={inputSt} type="number" placeholder="Gercek sn" value={cf.actualSec} onChange={e=>setCf(f=>({...f,actualSec:e.target.value}))}/>
+            <input style={inputSt} type="number" placeholder="Bos sn" value={cf.idleSec} onChange={e=>setCf(f=>({...f,idleSec:e.target.value}))}/>
+            <input style={inputSt} type="number" placeholder="Kesme sn" value={cf.cutSec} onChange={e=>setCf(f=>({...f,cutSec:e.target.value}))}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}><button onClick={saveCycle} style={{...btnSt("green"),padding:"7px 11px",fontSize:12}}>Kaydet</button></div>
+          <div style={{fontSize:12,color:C.muted2,marginTop:8}}>Ort. Sapma: <b style={{color:C.text}}>%{avgDev.toFixed(1)}</b> · Cevrim Kaydi: {cycles.length}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ClosedLoopWarehouseModule({currentUser,machines=DEFAULT_MACHINES}) {
+  const [loading,setLoading]=useState(true);
+  const [feedbacks,setFeedbacks]=useState([]);
+  const [moves,setMoves]=useState([]);
+  const [materials,setMaterials]=useState([]);
+  const [orders,setOrders]=useState([]);
+  const [ff,setFf]=useState({orderId:"",machine:machines[0]||"CNC-1",programCode:"",toolCode:"",target:"0",actual:"0",tolerance:"0.02",wear:""});
+  const [mf,setMf]=useState({materialId:"",moveType:"in",qty:"",lotNo:"",location:""});
+
+  const load=useCallback(async()=>{
+    const [f,m,mat,o]=await Promise.all([window.DB.getAll("measurementFeedback"),window.DB.getAll("warehouseMoves"),window.DB.getAll("materials"),window.DB.getAll("orders")]);
+    setFeedbacks(f.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setMoves(m.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setMaterials(mat.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    setOrders(o.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="closedloop") return;
+      if(d.type==="refresh") load();
+      if(d.type==="new"){
+        setFf({orderId:"",machine:machines[0]||"CNC-1",programCode:"",toolCode:"",target:"0",actual:"0",tolerance:"0.02",wear:""});
+        setMf({materialId:"",moveType:"in",qty:"",lotNo:"",location:""});
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load,machines]);
+
+  async function saveFeedback(){
+    const target=safeNum(ff.target), actual=safeNum(ff.actual), tol=Math.abs(safeNum(ff.tolerance));
+    const dev=actual-target;
+    const wear=safeNum(ff.wear||(-dev).toFixed(4));
+    const o=orders.find(x=>x.id===ff.orderId);
+    const payload={orderId:o?.id||"",orderCode:o?.code||"",machine:ff.machine||machines[0]||"CNC-1",programCode:ff.programCode.trim().toUpperCase(),toolCode:ff.toolCode.trim().toUpperCase(),target,actual,tolerance:tol,deviation:dev,result:Math.abs(dev)<=tol?"pass":"fail",recommendedWear:wear,applyStatus:"pending",createdBy:currentUser?.id||"",createdAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("measurementFeedback",payload);
+    if(!id){alert("Olcum geri besleme kaydi olusturulamadi.");return;}
+    setFeedbacks(prev=>[{id,...payload},...prev]);
+    setFf(f=>({...f,orderId:"",programCode:"",toolCode:"",target:"0",actual:"0",tolerance:"0.02",wear:""}));
+  }
+  async function applyFeedback(row){
+    if((row.applyStatus||"")==="applied") return;
+    const off={machine:row.machine||machines[0]||"CNC-1",toolCode:row.toolCode||"",programCode:row.programCode||"",geometryOffset:0,wearOffset:safeNum(row.recommendedWear),reason:"closed_loop_measurement",createdBy:currentUser?.id||"",createdAt:new Date().toISOString()};
+    const offsetId=await window.DB.addDoc("toolOffsets",off);
+    if(!offsetId){alert("Offset uygulanamadi.");return;}
+    const patch={applyStatus:"applied",appliedOffsetId:offsetId,appliedAt:new Date().toISOString(),appliedBy:currentUser?.id||""};
+    const ok=await window.DB.updateDoc("measurementFeedback",row.id,patch);
+    if(!ok){alert("Olcum kaydi guncellenemedi.");return;}
+    setFeedbacks(prev=>prev.map(x=>x.id===row.id?{...x,...patch}:x));
+  }
+  async function saveMove(){
+    const qty=Math.max(0,safeNum(mf.qty));
+    if(!mf.materialId||qty<=0){alert("Malzeme ve miktar zorunlu.");return;}
+    const mat=materials.find(x=>x.id===mf.materialId);
+    if(!mat){alert("Malzeme bulunamadi.");return;}
+    const before=safeNum(mat.stock);
+    const delta=mf.moveType==="in"?qty:-qty;
+    const after=before+delta;
+    if(after<0){alert("Stok yetersiz.");return;}
+    const ok=await window.DB.updateDoc("materials",mat.id,{stock:after,updatedAt:new Date().toISOString()});
+    if(!ok){alert("Stok guncellenemedi.");return;}
+    const payload={materialId:mat.id,materialCode:mat.code||"",materialName:mat.name||"",moveType:mf.moveType||"in",qty,lotNo:mf.lotNo.trim(),location:mf.location.trim(),beforeStock:before,afterStock:after,createdBy:currentUser?.id||"",createdAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("warehouseMoves",payload);
+    if(!id){alert("Hareket kaydedilemedi.");return;}
+    setMaterials(prev=>prev.map(x=>x.id===mat.id?{...x,stock:after}:x));
+    setMoves(prev=>[{id,...payload},...prev]);
+    setMf({materialId:"",moveType:"in",qty:"",lotNo:"",location:""});
+  }
+
+  const pending=feedbacks.filter(x=>(x.applyStatus||"")!=="applied").length;
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  return (
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontWeight:700,color:C.text}}>Faz-3: Olcum Geri Besleme + Depo</div>
+        <div style={{fontSize:12,color:C.muted2,marginTop:4}}>Olcumden offset duzeltme ve lot bazli depo hareketleri.</div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(170px,1fr))",gap:8}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Bekleyen Geri Besleme</div><div style={{fontSize:22,color:pending?C.warn:C.green,fontWeight:800}}>{pending}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Olcum Kaydi</div><div style={{fontSize:22,color:C.text,fontWeight:800}}>{feedbacks.length}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Depo Hareketi</div><div style={{fontSize:22,color:C.text,fontWeight:800}}>{moves.length}</div></div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Olcum Geri Besleme</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <select style={inputSt} value={ff.orderId} onChange={e=>setFf(f=>({...f,orderId:e.target.value}))}><option value="">Is emri</option>{orders.slice(0,120).map(o=><option key={o.id} value={o.id}>{o.code}</option>)}</select>
+            <select style={inputSt} value={ff.machine} onChange={e=>setFf(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
+            <input style={inputSt} placeholder="Program" value={ff.programCode} onChange={e=>setFf(f=>({...f,programCode:e.target.value}))}/>
+            <input style={inputSt} placeholder="Takim" value={ff.toolCode} onChange={e=>setFf(f=>({...f,toolCode:e.target.value}))}/>
+            <input style={inputSt} type="number" placeholder="Hedef" value={ff.target} onChange={e=>setFf(f=>({...f,target:e.target.value}))}/>
+            <input style={inputSt} type="number" placeholder="Gercek" value={ff.actual} onChange={e=>setFf(f=>({...f,actual:e.target.value}))}/>
+            <input style={inputSt} type="number" placeholder="Tolerans" value={ff.tolerance} onChange={e=>setFf(f=>({...f,tolerance:e.target.value}))}/>
+            <input style={inputSt} type="number" placeholder="Wear duzeltme" value={ff.wear} onChange={e=>setFf(f=>({...f,wear:e.target.value}))}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}><button onClick={saveFeedback} style={{...btnSt("primary"),padding:"7px 11px",fontSize:12}}>Kaydet</button></div>
+          <div style={{marginTop:8,maxHeight:210,overflowY:"auto"}}>
+            {feedbacks.slice(0,20).map(f=>(
+              <div key={f.id} style={{padding:"7px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.muted2}}>
+                <span style={{color:C.text,fontWeight:700}}>{f.orderCode||"-"} · {f.toolCode||"-"}</span> · Dev {safeNum(f.deviation).toFixed(4)} · {f.result}
+                {(f.applyStatus||"")!=="applied"&&<button onClick={()=>applyFeedback(f)} style={{...btnSt("green"),padding:"4px 8px",fontSize:11,marginLeft:8}}>Uygula</button>}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Depo Hareketi</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <select style={inputSt} value={mf.materialId} onChange={e=>setMf(f=>({...f,materialId:e.target.value}))}><option value="">Malzeme secin</option>{materials.map(m=><option key={m.id} value={m.id}>{m.code} · {m.name} (Stok {safeNum(m.stock)})</option>)}</select>
+            <select style={inputSt} value={mf.moveType} onChange={e=>setMf(f=>({...f,moveType:e.target.value}))}><option value="in">Giris</option><option value="out">Cikis</option></select>
+            <input style={inputSt} type="number" placeholder="Miktar" value={mf.qty} onChange={e=>setMf(f=>({...f,qty:e.target.value}))}/>
+            <input style={inputSt} placeholder="Lot No" value={mf.lotNo} onChange={e=>setMf(f=>({...f,lotNo:e.target.value}))}/>
+            <input style={inputSt} placeholder="Lokasyon" value={mf.location} onChange={e=>setMf(f=>({...f,location:e.target.value}))}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}><button onClick={saveMove} style={{...btnSt("green"),padding:"7px 11px",fontSize:12}}>Kaydet</button></div>
+          <div style={{marginTop:8,maxHeight:210,overflowY:"auto"}}>
+            {moves.slice(0,20).map(m=>(
+              <div key={m.id} style={{padding:"7px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.muted2}}>
+                <span style={{color:C.text,fontWeight:700}}>{m.materialCode||"-"} · {m.lotNo||"-"}</span> · {m.moveType==="in"?"Giris":"Cikis"} {safeNum(m.qty)} · {safeNum(m.beforeStock)}→{safeNum(m.afterStock)}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ModulePlaceholder({title,desc,items=[]}) {
   return (
     <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
@@ -7938,6 +8288,7 @@ function App() {
   const canUsers=hasPermission(userForPerm,"approve_users")||isAdmin;
   const canTools=canOrders||canPurchasing||canEntry;
   const canMachinePrep=canOrders;
+  const canSmartFactory=canOrders||canReport||canEntry||canPurchasing||canQuality;
   const allTabs=useMemo(()=>[
     {id:"dashboard",icon:"dashboard",label:"Gösterge Paneli",group:"Planlama",enabled:(canEntry||canOrders||canReport||canSales||canPurchasing)},
     {id:"planning",icon:"planning",label:"Yeni Planlama",group:"Planlama",enabled:canPlanning},
@@ -7958,10 +8309,13 @@ function App() {
     {id:"notifications",icon:"notifications",label:"Bildirim Merkezi",group:"Analiz ve Yonetim",enabled:(canNotifications||canUsers||canSales||canPurchasing)},
     {id:"cost",icon:"cost",label:"Maliyetleme",group:"Analiz ve Yonetim",enabled:(canOrders||canReport||canSales)},
     {id:"materialquote",icon:"cost",label:"Malzeme Teklif",group:"Analiz ve Yonetim",enabled:(canOrders||canSales||canPurchasing||canReport)},
+    {id:"progenergy",icon:"integration",label:"Program ve Enerji",group:"Analiz ve Yonetim",enabled:canSmartFactory},
+    {id:"toolcycle",icon:"tools",label:"Takim ve Cevrim",group:"Operasyon",enabled:canSmartFactory},
+    {id:"closedloop",icon:"quality",label:"Olcum ve Depo",group:"Tedarik ve Stok",enabled:canSmartFactory},
     {id:"machineprep",icon:"machines",label:"Makina Hazirlik",group:"Sistem",enabled:canMachinePrep},
     {id:"integrations",icon:"integration",label:"Entegrasyonlar",group:"Sistem",enabled:(canUsers||isAdmin)},
     {id:"users",icon:"users",label:"Ayarlar ve Guvenlik",group:"Sistem",enabled:canUsers},
-  ],[canEntry,canOrders,canSales,canPurchasing,canQuality,canDowntime,canNotifications,canReport,canPlanning,canTools,canCustomers,canMachinePrep,canUsers,isAdmin]);
+  ],[canEntry,canOrders,canSales,canPurchasing,canQuality,canDowntime,canNotifications,canReport,canPlanning,canTools,canCustomers,canMachinePrep,canUsers,isAdmin,canSmartFactory]);
   const enabledTabs=useMemo(()=>allTabs.filter(t=>t.enabled),[allTabs]);
   const tabs=enabledTabs;
   const visibleTabs=useMemo(()=>{
@@ -8010,6 +8364,9 @@ function App() {
     quotes:"Yeni Teklif",
     rapor:"Yeni Rapor",
     machineprep:"Yeni Makina Profili",
+    progenergy:"Yeni Program",
+    toolcycle:"Yeni Offset",
+    closedloop:"Yeni Geri Besleme",
   };
   const canCreateInTab=Boolean(createActions[tab]);
   const createLabel=createActions[tab]||"Yeni Ekle";
@@ -8061,6 +8418,9 @@ function App() {
     if(tab==="notifications") return <NotificationCenterModule currentUser={currentUser}/>;
     if(tab==="cost") return <CostingModule/>;
     if(tab==="materialquote") return <MaterialQuoteBridgeModule/>;
+    if(tab==="progenergy") return <ProgramAndEnergyModule currentUser={currentUser} machines={machines}/>;
+    if(tab==="toolcycle") return <ToolCycleAnalyticsModule currentUser={currentUser} machines={machines}/>;
+    if(tab==="closedloop") return <ClosedLoopWarehouseModule currentUser={currentUser} machines={machines}/>;
     if(tab==="integrations") return <IntegrationsReadinessModule/>;
     return <ModulePlaceholder title="Modul" desc="Secili modul tanimli degil." items={[]}/>;
   }
