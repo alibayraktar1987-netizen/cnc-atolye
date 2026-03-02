@@ -426,6 +426,7 @@ const PERMISSIONS = [
   { id:"data_entry", label:"Veri Girişi", icon:"📝", desc:"Üretim verisi girebilir" },
   { id:"view_reports", label:"Rapor Görüntüleme", icon:"📊", desc:"Tüm raporları görebilir" },
   { id:"manage_orders", label:"İş Emri Oluşturma", icon:"📋", desc:"İş emri ekleyip düzenleyebilir" },
+  { id:"assign_tasks", label:"Calisan Gorevlendirme", icon:"🧩", desc:"Calisanlara gorev atayabilir" },
   { id:"approve_users", label:"Kullanıcı Onaylama", icon:"👥", desc:"Kullanıcıları onaylayabilir" },
   { id:"manage_sales", label:"Satis ve Teklif", icon:"💼", desc:"Teklif ve siparis yonetebilir" },
   { id:"manage_purchasing", label:"Satin Alma", icon:"🛒", desc:"Talep ve PO yonetebilir" },
@@ -436,9 +437,9 @@ const PERMISSIONS = [
 const ROLE_PERMISSION_DEFAULTS = {
   admin: PERMISSIONS.map(p=>p.id),
   sales:["manage_sales","view_reports"],
-  planner:["manage_orders","view_reports","manage_sales"],
+  planner:["manage_orders","view_reports","manage_sales","assign_tasks"],
   purchasing:["manage_purchasing","view_reports"],
-  supervisor:["data_entry","view_reports","manage_downtime","manage_notifications"],
+  supervisor:["data_entry","view_reports","manage_downtime","manage_notifications","assign_tasks"],
   operator:["data_entry"],
   quality:["manage_quality","view_reports"],
   viewer:["view_reports"],
@@ -1380,6 +1381,9 @@ function NavIcon({name,size=18}) {
   if(name==="monitor") return (
     <svg viewBox="0 0 24 24" style={st}><rect {...p} x="3" y="4" width="18" height="13" rx="2"/><path {...p} d="M8 20h8M12 17v3"/><path {...p} d="M7 12l2-2 2 1 3-3 3 2"/></svg>
   );
+  if(name==="tasks") return (
+    <svg viewBox="0 0 24 24" style={st}><rect {...p} x="4" y="3" width="16" height="18" rx="2"/><path {...p} d="M8 8h8M8 12h8M8 16h5"/><path {...p} d="M4 8l2 2 3-3"/></svg>
+  );
   return null;
 }
 
@@ -2263,6 +2267,301 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate}) {
           ))}
         </>
       )}
+    </div>
+  );
+}
+
+function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [tasks,setTasks]=useState([]);
+  const [users,setUsers]=useState([]);
+  const [orders,setOrders]=useState([]);
+  const [query,setQuery]=useState("");
+  const [filterStatus,setFilterStatus]=useState("all");
+  const [filterAssignee,setFilterAssignee]=useState("all");
+  const [form,setForm]=useState({
+    assigneeId:"",
+    title:"",
+    detail:"",
+    priority:"medium",
+    dueDate:addDays(todayStr(),1),
+    machine:machines[0]||"",
+    orderId:"",
+  });
+  const canAssign=hasPermission(currentUser,"assign_tasks")||currentUser.role==="admin"||hasPermission(currentUser,"approve_users");
+
+  const load=useCallback(async()=>{
+    const [taskRows,userRows,orderRows]=await Promise.all([
+      window.DB.getAll("employeeTasks"),
+      window.DB.getAll("users"),
+      window.DB.getAll("orders"),
+    ]);
+    setTasks(taskRows);
+    setUsers(userRows);
+    setOrders(orderRows);
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  const activeUsers=[...users]
+    .filter(u=>u.status==="active")
+    .sort((a,b)=>String(a.fullName||a.id||"").localeCompare(String(b.fullName||b.id||""),"tr"));
+  const openOrders=[...orders]
+    .filter(o=>isOpenOrderStatus(o.status))
+    .sort((a,b)=>String(a.dueDate||"").localeCompare(String(b.dueDate||"")));
+
+  useEffect(()=>{
+    const fallbackAssignee=activeUsers[0]?.id||"";
+    const fallbackMachine=machines[0]||"";
+    setForm(prev=>{
+      const assigneeValid=prev.assigneeId&&activeUsers.some(u=>u.id===prev.assigneeId);
+      const machineValid=prev.machine&&machines.includes(prev.machine);
+      const nextAssignee=assigneeValid?prev.assigneeId:fallbackAssignee;
+      const nextMachine=machineValid?prev.machine:fallbackMachine;
+      if(nextAssignee===prev.assigneeId&&nextMachine===prev.machine) return prev;
+      return {...prev,assigneeId:nextAssignee,machine:nextMachine};
+    });
+  },[activeUsers,machines]);
+
+  const statusOrder={open:0,in_progress:1,done:2,cancelled:3};
+  const statusMeta=status=>{
+    if(status==="done") return {label:"Tamamlandi",color:C.green};
+    if(status==="in_progress") return {label:"Devam Ediyor",color:C.warn};
+    if(status==="cancelled") return {label:"Iptal",color:C.red};
+    return {label:"Acildi",color:C.accent};
+  };
+  const priorityMeta=priority=>{
+    if(priority==="high") return {label:"Yuksek",color:C.red};
+    if(priority==="low") return {label:"Dusuk",color:C.muted2};
+    return {label:"Normal",color:C.warn};
+  };
+
+  const sortedTasks=[...tasks].sort((a,b)=>{
+    const sa=statusOrder[a.status]??0;
+    const sb=statusOrder[b.status]??0;
+    if(sa!==sb) return sa-sb;
+    const da=String(a.dueDate||"9999-12-31");
+    const db=String(b.dueDate||"9999-12-31");
+    const d=da.localeCompare(db);
+    if(d!==0) return d;
+    return String(b.createdAt||"").localeCompare(String(a.createdAt||""));
+  });
+  const myTasks=sortedTasks.filter(t=>t.assigneeId===currentUser.id);
+  const visibleTasks=canAssign?sortedTasks:myTasks;
+  const queryText=String(query||"").trim().toLowerCase();
+  const filteredTasks=visibleTasks.filter(task=>{
+    if(filterStatus!=="all"&&task.status!==filterStatus) return false;
+    if(canAssign&&filterAssignee!=="all"&&task.assigneeId!==filterAssignee) return false;
+    if(!queryText) return true;
+    const hay=[
+      task.title||"",
+      task.detail||"",
+      task.assigneeName||"",
+      task.assignedByName||"",
+      task.machine||"",
+      task.orderCode||"",
+    ].join(" ").toLowerCase();
+    return hay.includes(queryText);
+  });
+
+  const myOpenCount=myTasks.filter(t=>!["done","cancelled"].includes(t.status||"")).length;
+  const overdueCount=sortedTasks.filter(t=>{
+    if(["done","cancelled"].includes(t.status||"")) return false;
+    return String(t.dueDate||"")!==""&&String(t.dueDate)<todayStr();
+  }).length;
+  const activeCount=sortedTasks.filter(t=>t.status==="in_progress").length;
+  const doneCount=sortedTasks.filter(t=>t.status==="done").length;
+
+  function setF(key,value){
+    setForm(prev=>({...prev,[key]:value}));
+  }
+
+  async function createTask(){
+    if(!canAssign){alert("Gorev atama yetkiniz yok.");return;}
+    if(!form.assigneeId){alert("Calisan secin.");return;}
+    if(!form.title.trim()){alert("Gorev basligi zorunlu.");return;}
+    const assignee=activeUsers.find(u=>u.id===form.assigneeId);
+    if(!assignee){alert("Secilen calisan aktif degil.");return;}
+    const pickedOrder=openOrders.find(o=>o.id===form.orderId)||null;
+    const nowIso=new Date().toISOString();
+    const payload={
+      assigneeId:assignee.id,
+      assigneeName:assignee.fullName||assignee.username||assignee.id,
+      title:form.title.trim(),
+      detail:form.detail.trim(),
+      priority:form.priority||"medium",
+      dueDate:form.dueDate||"",
+      machine:form.machine||"",
+      orderId:pickedOrder?.id||"",
+      orderCode:pickedOrder?.code||"",
+      status:"open",
+      assignedBy:currentUser.id,
+      assignedByName:currentUser.fullName||currentUser.id,
+      createdAt:nowIso,
+      updatedAt:nowIso,
+    };
+    setSaving(true);
+    const id=await window.DB.addDoc("employeeTasks",payload);
+    setSaving(false);
+    if(!id){alert("Gorev kaydi olusturulamadi.");return;}
+    setTasks(prev=>[{id,...payload},...prev]);
+    setForm(prev=>({
+      ...prev,
+      title:"",
+      detail:"",
+      priority:"medium",
+      dueDate:addDays(todayStr(),1),
+      orderId:"",
+    }));
+    try{
+      await window.DB.addDoc("notifications",{
+        type:"task",
+        title:"Yeni Gorev",
+        message:`${payload.title} gorevi atandi.`,
+        severity:payload.priority==="high"?"high":"medium",
+        status:"new",
+        targetUserId:payload.assigneeId,
+        sourceKey:id,
+        createdAt:nowIso,
+      });
+    }catch{}
+  }
+
+  async function updateTaskStatus(task,nextStatus){
+    const canAct=canAssign||task.assigneeId===currentUser.id;
+    if(!canAct) return;
+    const nowIso=new Date().toISOString();
+    const patch={
+      status:nextStatus,
+      updatedAt:nowIso,
+      ...(nextStatus==="done"?{completedAt:nowIso,completedBy:currentUser.id}:{})
+    };
+    const ok=await window.DB.updateDoc("employeeTasks",task.id,patch);
+    if(!ok){alert("Gorev durumu guncellenemedi.");return;}
+    setTasks(prev=>prev.map(row=>row.id===task.id?{...row,...patch}:row));
+  }
+
+  async function deleteTask(task){
+    if(!canAssign){alert("Bu islem icin yetkiniz yok.");return;}
+    if(!confirm(`Gorev silinsin mi? (${task.title||"-"})`)) return;
+    const ok=await window.DB.deleteDoc("employeeTasks",task.id);
+    if(!ok){alert("Gorev silinemedi.");return;}
+    setTasks(prev=>prev.filter(row=>row.id!==task.id));
+  }
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+
+  return (
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <div>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Calisan Takibi</div>
+            <div style={{fontSize:18,fontWeight:800,color:C.text}}>Gorevlendirme Merkezi</div>
+          </div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            <Badge label={`Benim Acik: ${myOpenCount}`} color={myOpenCount>0?C.warn:C.green}/>
+            <Badge label={`Devam Eden: ${activeCount}`} color={activeCount>0?C.warn:C.muted2}/>
+            <Badge label={`Geciken: ${overdueCount}`} color={overdueCount>0?C.red:C.green}/>
+            <Badge label={`Tamamlanan: ${doneCount}`} color={C.green}/>
+          </div>
+        </div>
+      </div>
+
+      {canAssign&&(
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
+          <div style={{fontWeight:700,color:C.text,fontSize:14,marginBottom:8}}>Yeni Gorev Ata</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:8}}>
+            <div><span style={labelSt}>Calisan</span><select style={inputSt} value={form.assigneeId} onChange={e=>setF("assigneeId",e.target.value)}>{activeUsers.map(u=><option key={u.id} value={u.id}>{u.fullName||u.id}</option>)}</select></div>
+            <div><span style={labelSt}>Oncelik</span><select style={inputSt} value={form.priority} onChange={e=>setF("priority",e.target.value)}><option value="high">Yuksek</option><option value="medium">Normal</option><option value="low">Dusuk</option></select></div>
+            <div><span style={labelSt}>Termin</span><input style={inputSt} type="date" value={form.dueDate} onChange={e=>setF("dueDate",e.target.value||"")}/></div>
+            <div><span style={labelSt}>Tezgah</span><select style={inputSt} value={form.machine} onChange={e=>setF("machine",e.target.value)}><option value="">Seciniz</option>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+            <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Is Emri (Opsiyonel)</span><select style={inputSt} value={form.orderId} onChange={e=>setF("orderId",e.target.value)}><option value="">Seciniz</option>{openOrders.map(o=><option key={o.id} value={o.id}>{o.code||"-"} · {o.name||"-"}</option>)}</select></div>
+            <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Gorev Basligi</span><input style={inputSt} value={form.title} onChange={e=>setF("title",e.target.value)} placeholder="Orn: CNC-2 icin ilk parca ayari"/></div>
+            <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Aciklama</span><textarea rows={3} style={{...inputSt,minHeight:76,resize:"vertical"}} value={form.detail} onChange={e=>setF("detail",e.target.value)} placeholder="Gorev detaylari..."/></div>
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}>
+            <button onClick={createTask} disabled={saving} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,opacity:saving?0.7:1}}>
+              {saving?"Kaydediliyor...":"Gorev Ata"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end",marginBottom:10}}>
+          <div style={{minWidth:220,flex:"1 1 320px"}}>
+            <span style={labelSt}>Ara</span>
+            <input style={inputSt} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Gorev, calisan, tezgah, is emri..."/>
+          </div>
+          <div style={{minWidth:170,flex:"1 1 180px"}}>
+            <span style={labelSt}>Durum</span>
+            <select style={inputSt} value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
+              <option value="all">Tum Durumlar</option>
+              <option value="open">Acilanlar</option>
+              <option value="in_progress">Devam Edenler</option>
+              <option value="done">Tamamlananlar</option>
+              <option value="cancelled">Iptal Edilenler</option>
+            </select>
+          </div>
+          {canAssign&&(
+            <div style={{minWidth:200,flex:"1 1 220px"}}>
+              <span style={labelSt}>Calisan</span>
+              <select style={inputSt} value={filterAssignee} onChange={e=>setFilterAssignee(e.target.value)}>
+                <option value="all">Tum Calisanlar</option>
+                {activeUsers.map(u=><option key={u.id} value={u.id}>{u.fullName||u.id}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+
+        {filteredTasks.length===0&&(
+          <div style={{padding:"26px 10px",textAlign:"center",fontSize:12,color:C.muted2,border:`1px dashed ${C.border}`,borderRadius:10}}>
+            Gosterilecek gorev bulunamadi.
+          </div>
+        )}
+
+        {filteredTasks.length>0&&(
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {filteredTasks.map(task=>{
+              const sMeta=statusMeta(task.status||"open");
+              const pMeta=priorityMeta(task.priority||"medium");
+              const due=String(task.dueDate||"");
+              const isOverdue=due&&due<todayStr()&&!["done","cancelled"].includes(task.status||"");
+              const canAct=canAssign||task.assigneeId===currentUser.id;
+              return (
+                <div key={task.id} style={{border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px",background:C.surface}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+                    <div style={{minWidth:220,flex:1}}>
+                      <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                        <div style={{fontWeight:800,color:C.text,fontSize:14}}>{task.title||"-"}</div>
+                        <Badge label={sMeta.label} color={sMeta.color}/>
+                        <Badge label={pMeta.label} color={pMeta.color}/>
+                      </div>
+                      {task.detail&&<div style={{fontSize:12,color:C.text,marginTop:4,whiteSpace:"pre-wrap"}}>{task.detail}</div>}
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap",fontSize:11,color:C.muted2,marginTop:5}}>
+                        <span>Calisan: <strong>{task.assigneeName||task.assigneeId||"-"}</strong></span>
+                        {task.machine&&<span>Tezgah: <strong>{task.machine}</strong></span>}
+                        {task.orderCode&&<span>Is Emri: <strong>{task.orderCode}</strong></span>}
+                        {task.assignedByName&&<span>Atayan: <strong>{task.assignedByName}</strong></span>}
+                        {due&&<span style={{color:isOverdue?C.red:C.muted2}}>Termin: <strong>{due}</strong></span>}
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                      {canAct&&task.status==="open"&&<button onClick={()=>updateTaskStatus(task,"in_progress")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Basla</button>}
+                      {canAct&&["open","in_progress"].includes(task.status||"")&&<button onClick={()=>updateTaskStatus(task,"done")} style={{...btnSt("green"),padding:"6px 10px",fontSize:12}}>Tamamla</button>}
+                      {canAct&&task.status==="done"&&<button onClick={()=>updateTaskStatus(task,"open")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Yeniden Ac</button>}
+                      {canAssign&&task.status!=="cancelled"&&<button onClick={()=>updateTaskStatus(task,"cancelled")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Iptal</button>}
+                      {canAssign&&<button onClick={()=>deleteTask(task)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Sil</button>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -5759,6 +6058,10 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const [previewFile,setPreviewFile]=useState(null);
   const [toolDraft,setToolDraft]=useState({machineToolId:"",machineToolQty:"1"});
   const [shiftDraft,setShiftDraft]=useState({correct:"",wrong:""});
+  const [kioskViewport,setKioskViewport]=useState(()=>({
+    w:(typeof window!=="undefined"&&window.innerWidth)?window.innerWidth:1920,
+    h:(typeof window!=="undefined"&&window.innerHeight)?window.innerHeight:1080,
+  }));
   const [kioskSettings,setKioskSettings]=useState(DEFAULT_KIOSK_SETTINGS);
   const cycleDeviationStateRef=useRef({});
   const [form,setForm]=useState({
@@ -5830,6 +6133,20 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     setShowPicker(false);
     setSearch("");
   },[kioskMode,showPicker]);
+  useEffect(()=>{
+    if(!kioskMode||typeof window==="undefined") return;
+    const onResize=()=>setKioskViewport({
+      w:window.innerWidth||1920,
+      h:window.innerHeight||1080,
+    });
+    onResize();
+    window.addEventListener("resize",onResize);
+    window.addEventListener("orientationchange",onResize);
+    return ()=>{
+      window.removeEventListener("resize",onResize);
+      window.removeEventListener("orientationchange",onResize);
+    };
+  },[kioskMode]);
 
   useEffect(()=>{
     if(typeof window==="undefined") return;
@@ -6472,12 +6789,22 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     justifyContent:"center",
     gap:10,
   };
+  const kioskBaseWidth=1920;
+  const kioskBaseHeight=1080;
+  const kioskViewportWidth=kioskViewport.w||kioskBaseWidth;
+  const kioskViewportHeight=kioskViewport.h||kioskBaseHeight;
+  const kioskScale=Math.max(0.1,Math.min(kioskViewportWidth/kioskBaseWidth,kioskViewportHeight/kioskBaseHeight));
+  const kioskStageWidth=Math.max(320,Math.floor(kioskBaseWidth*kioskScale));
+  const kioskStageHeight=Math.max(180,Math.floor(kioskBaseHeight*kioskScale));
 
   if(kioskMode){
     return (
-      <div style={{minHeight:"100vh",width:"100%",padding:12,background:"radial-gradient(140% 130% at 18% 12%, #131a25 0%, #0b0f14 56%, #080b10 100%)",display:"flex",alignItems:"center",justifyContent:"center"}}>
-        <div style={{width:"100%",maxWidth:1400,borderRadius:28,padding:12,background:"linear-gradient(145deg,#111721 0%,#0d1118 48%,#161d28 100%)",boxShadow:"0 30px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.15)"}}>
-          <div style={{background:"#edf1f6",borderRadius:14,overflow:"hidden",border:"1px solid #cdd5e0"}}>
+      <div style={{width:"100vw",height:"100dvh",overflow:"hidden",background:"radial-gradient(140% 130% at 18% 12%, #131a25 0%, #0b0f14 56%, #080b10 100%)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <div style={{width:kioskStageWidth,height:kioskStageHeight,position:"relative",overflow:"hidden"}}>
+          <div style={{width:kioskBaseWidth,height:kioskBaseHeight,transform:`scale(${kioskScale})`,transformOrigin:"top left"}}>
+            <div style={{width:"100%",height:"100%",padding:12,display:"flex"}}>
+              <div style={{width:"100%",height:"100%",borderRadius:28,padding:12,background:"linear-gradient(145deg,#111721 0%,#0d1118 48%,#161d28 100%)",boxShadow:"0 30px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.15)"}}>
+                <div style={{background:"#edf1f6",borderRadius:14,overflow:"hidden",border:"1px solid #cdd5e0",height:"100%",display:"flex",flexDirection:"column"}}>
             <div style={{background:topHeaderTheme.gradient,padding:"18px 22px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:12,alignItems:"center",color:"#e7fff2"}}>
               <div>
                 <div style={{fontSize:40,fontWeight:800,lineHeight:1,letterSpacing:.4}}>{form.selectedOrder?.code||"PLAN YOK"}</div>
@@ -6593,6 +6920,9 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
         {showPicker&&!kioskMode&&(
           <div style={{position:"fixed",inset:0,background:"rgba(8,12,18,.78)",zIndex:55,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>{setShowPicker(false);setSearch("");}}>
             <div style={{width:"100%",maxWidth:1120,height:"min(88vh,860px)",background:"#f3f6fb",border:"1px solid #cfd8e4",borderRadius:16,overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 24px 60px rgba(0,0,0,.35)"}} onClick={e=>e.stopPropagation()}>
@@ -8558,6 +8888,117 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     setPlans(p.sort((a,b)=>(b.date||"").localeCompare(a.date||"")));
   }
 
+  function getSegmentToken(seg){
+    const first=(seg&&Array.isArray(seg.plans)&&seg.plans.length>0)?seg.plans[0]:null;
+    if(first&&first.id) return `plan:${first.id}`;
+    return `seg:${seg?.id||""}`;
+  }
+  function buildMachineQueueSpecs(machine){
+    return allPlanSegments
+      .filter(seg=>seg.machine===machine)
+      .sort((a,b)=>{
+        const sa=String(a.startDate||"");
+        const sb=String(b.startDate||"");
+        const ds=sa.localeCompare(sb);
+        if(ds!==0) return ds;
+        return String(a.orderCode||"").localeCompare(String(b.orderCode||""),"tr");
+      })
+      .map(seg=>({
+        token:getSegmentToken(seg),
+        machine,
+        seed:(seg.plans&&seg.plans.length>0)?seg.plans[0]:null,
+        startDate:String(seg.startDate||todayStr()),
+        endDate:String(seg.endDate||seg.startDate||todayStr()),
+        days:Math.max(1,dayDiff(seg.startDate||todayStr(),seg.endDate||seg.startDate||todayStr())+1),
+        planIds:(seg.plans||[]).map(p=>p.id).filter(Boolean),
+      }));
+  }
+  function applySequentialDatesToSpecs(specs,{anchorIndex=0,forceStartDate=""}={}){
+    const rows=(Array.isArray(specs)?specs:[]).map(spec=>({
+      ...spec,
+      startDate:String(spec?.startDate||todayStr()),
+      endDate:String(spec?.endDate||spec?.startDate||todayStr()),
+      days:Math.max(1,Math.floor(Number(spec?.days)||1)),
+      planIds:Array.isArray(spec?.planIds)?spec.planIds.filter(Boolean):[],
+    }));
+    if(rows.length===0) return rows;
+    const anchor=Math.max(0,Math.min(rows.length-1,Math.floor(Number(anchorIndex)||0)));
+    for(let i=anchor;i<rows.length;i+=1){
+      const prev=i>0?rows[i-1]:null;
+      let start=rows[i].startDate||todayStr();
+      if(i===anchor&&forceStartDate) start=String(forceStartDate);
+      if(prev){
+        const minStart=addDays(prev.endDate||prev.startDate||todayStr(),1);
+        if(i===anchor){
+          if(start<minStart) start=minStart;
+        }else{
+          start=minStart;
+        }
+      }
+      const end=addDays(start,Math.max(1,rows[i].days)-1);
+      rows[i]={...rows[i],startDate:start,endDate:end};
+    }
+    return rows;
+  }
+  function firstDifferentTokenIndex(before,after){
+    const a=Array.isArray(before)?before:[];
+    const b=Array.isArray(after)?after:[];
+    const len=Math.min(a.length,b.length);
+    for(let i=0;i<len;i+=1){
+      if(String(a[i]?.token||"")!==String(b[i]?.token||"")) return i;
+    }
+    if(a.length!==b.length) return len;
+    return -1;
+  }
+  async function persistMachineQueueFromSpecs(machine,specs,anchorIndex=0){
+    const rows=Array.isArray(specs)?specs:[];
+    if(rows.length===0){
+      const machinePlanIds=plans.filter(p=>p.machine===machine).map(p=>p.id).filter(Boolean);
+      for(const id of machinePlanIds){
+        const ok=await window.DB.deleteDoc("plans",id);
+        if(!ok){
+          alert("Plan sirasi guncellenemedi (silme).");
+          await refreshPlans();
+          return false;
+        }
+      }
+      if(machinePlanIds.length>0){
+        const removed=new Set(machinePlanIds);
+        setPlans(prev=>prev.filter(p=>!removed.has(p.id)));
+      }
+      return true;
+    }
+    const anchor=Math.max(0,Math.min(rows.length-1,Math.floor(Number(anchorIndex)||0)));
+    const impacted=rows.slice(anchor);
+    const removeIds=[...new Set(impacted.flatMap(spec=>Array.isArray(spec.planIds)?spec.planIds:[]).filter(Boolean))];
+    for(const id of removeIds){
+      const ok=await window.DB.deleteDoc("plans",id);
+      if(!ok){
+        alert("Plan sirasi guncellenemedi (silme).");
+        await refreshPlans();
+        return false;
+      }
+    }
+    const recreated=[];
+    for(const spec of impacted){
+      const seed=spec.seed||{};
+      const dates=getDateRange(spec.startDate,spec.endDate);
+      for(const dt of dates){
+        const payload=buildPlanPayloadFromSeed(seed,machine,dt);
+        const id=await window.DB.addDoc("plans",payload);
+        if(!id){
+          alert("Plan sirasi guncellenemedi (ekleme).");
+          await refreshPlans();
+          return false;
+        }
+        recreated.push({id,...payload});
+      }
+    }
+    const removedSet=new Set(removeIds);
+    setPlans(prev=>[...recreated.reverse(),...prev.filter(p=>!removedSet.has(p.id))]);
+    return true;
+  }
+
   async function resizeSegment(segmentId,targetDate,edge){
     const seg=segmentById[segmentId];
     if(!seg||!targetDate) return;
@@ -8566,51 +9007,27 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     const nextStart=edge==="start"?(targetDate<=oldEnd?targetDate:oldEnd):oldStart;
     const nextEnd=edge==="end"?(targetDate>=oldStart?targetDate:oldStart):oldEnd;
     if(nextStart===oldStart&&nextEnd===oldEnd) return;
-    const oldDates=getDateRange(oldStart,oldEnd);
-    const nextDates=getDateRange(nextStart,nextEnd);
-    const oldSet=new Set(oldDates);
-    const nextSet=new Set(nextDates);
-    const toRemove=oldDates.filter(d=>!nextSet.has(d));
-    const toAdd=nextDates.filter(d=>!oldSet.has(d));
-    const segPlanByDate={};
-    seg.plans.forEach(p=>{segPlanByDate[p.date]=p;});
-    const segPlanIds=new Set(seg.plans.map(p=>p.id));
-    const duplicateAdd=toAdd.filter(d=>plans.some(p=>p.machine===seg.machine&&p.date===d&&!segPlanByDate[d]));
-    if(duplicateAdd.length>0){
-      alert(`Çakışma var: ${duplicateAdd.slice(0,4).join(", ")}`);
-      return;
+    const machine=seg.machine||"";
+    if(!machine) return;
+    const machineSpecs=buildMachineQueueSpecs(machine);
+    const token=getSegmentToken(seg);
+    const idx=machineSpecs.findIndex(spec=>spec.token===token);
+    if(idx<0) return;
+    const updated=[...machineSpecs];
+    updated[idx]={
+      ...updated[idx],
+      startDate:nextStart,
+      endDate:nextEnd,
+      days:Math.max(1,dayDiff(nextStart,nextEnd)+1),
+    };
+    const forceStartDate=edge==="start"?nextStart:"";
+    const scheduled=applySequentialDatesToSpecs(updated,{anchorIndex:idx,forceStartDate});
+    const editedIds=new Set((seg.plans||[]).map(p=>p.id));
+    if(editId&&editedIds.has(editId)){
+      setForm(f=>({...f,startDate:scheduled[idx].startDate,endDate:scheduled[idx].endDate}));
     }
-    if(editId&&segPlanIds.has(editId)){
-      setForm(f=>({...f,startDate:nextStart,endDate:nextEnd}));
-    }
-    const base=seg.plans[0];
-    for(const d of toRemove){
-      const p=segPlanByDate[d];
-      if(p){
-        const ok=await window.DB.deleteDoc("plans",p.id);
-        if(!ok){alert("Plan güncellenemedi (silme).");await refreshPlans();return;}
-      }
-    }
-    for(const d of toAdd){
-      const data={
-        machine:seg.machine,
-        orderId:base.orderId||"",
-        orderCode:base.orderCode||"",
-        orderName:base.orderName||"",
-        orderPartSec:base.orderPartSec||0,
-        orderCustomerName:base.orderCustomerName||"",
-        note:base.note||"",
-        status:base.status||"planned",
-        createdBy:base.createdBy||"",
-        date:d,
-        week:weekStart(parseYmdLocal(d)),
-        month:monthStr(parseYmdLocal(d)),
-        updatedAt:new Date().toISOString(),
-      };
-      const id=await window.DB.addDoc("plans",data);
-      if(!id){alert("Plan güncellenemedi (ekleme).");await refreshPlans();return;}
-    }
-    await refreshPlans();
+    const ok=await persistMachineQueueFromSpecs(machine,scheduled,idx);
+    if(ok&&selectedPlan) setSelectedPlan(null);
   }
 
   async function loadScriptOnce(src,globalName){
@@ -8904,6 +9321,43 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       alert(`Bu is emri ${targetMachine} icin uygun degil.`);
       return false;
     }
+    const seed={
+      orderId:order.id,
+      orderCode:order.code||"",
+      orderName:order.name||"",
+      orderPartSec:Number(order.partSec)||0,
+      orderCustomerName:order.customerName||"",
+      note:order.notes||"",
+      status:"planned",
+      createdBy:currentUser.id,
+    };
+    if(targetSegmentId){
+      const targetSeg=allSegmentById[targetSegmentId]||null;
+      if(targetSeg&&targetSeg.machine===targetMachine){
+        const machineSpecs=buildMachineQueueSpecs(targetMachine);
+        const targetToken=getSegmentToken(targetSeg);
+        const targetIdx=machineSpecs.findIndex(spec=>spec.token===targetToken);
+        if(targetIdx>=0){
+          const insertStart=addDays(targetSeg.endDate||targetSeg.startDate||todayStr(),1);
+          const insertSpec={
+            token:`new-order:${order.id}:${Date.now()}`,
+            machine:targetMachine,
+            seed,
+            startDate:insertStart,
+            endDate:insertStart,
+            days:1,
+            planIds:[],
+          };
+          const nextSpecs=[...machineSpecs];
+          const insertIdx=targetIdx+1;
+          nextSpecs.splice(insertIdx,0,insertSpec);
+          const scheduled=applySequentialDatesToSpecs(nextSpecs,{anchorIndex:insertIdx,forceStartDate:insertStart});
+          const ok=await persistMachineQueueFromSpecs(targetMachine,scheduled,insertIdx);
+          if(ok&&selectedPlan) setSelectedPlan(null);
+          return ok;
+        }
+      }
+    }
     let desiredDate=todayStr();
     if(targetSegmentId){
       const targetSeg=allSegmentById[targetSegmentId]||null;
@@ -8918,14 +9372,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     }
     const payload={
       machine:targetMachine,
-      orderId:order.id,
-      orderCode:order.code||"",
-      orderName:order.name||"",
-      orderPartSec:Number(order.partSec)||0,
-      orderCustomerName:order.customerName||"",
-      note:order.notes||"",
-      status:"planned",
-      createdBy:currentUser.id,
+      ...seed,
       date:planDate,
       week:weekStart(parseYmdLocal(planDate)),
       month:monthStr(parseYmdLocal(planDate)),
@@ -9013,6 +9460,75 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     if(selectedPlan) setSelectedPlan(null);
     return true;
   }
+  async function placeSegmentAfterSegment(sourceSegmentId,targetSegmentId){
+    const sourceSeg=allSegmentById[sourceSegmentId];
+    const targetSeg=allSegmentById[targetSegmentId];
+    if(!sourceSeg||!targetSeg) return false;
+    if(sourceSeg.id===targetSeg.id) return true;
+    const sourceMachine=String(sourceSeg.machine||"");
+    const targetMachine=String(targetSeg.machine||"");
+    if(!sourceMachine||!targetMachine) return false;
+    const sourceSpecs=buildMachineQueueSpecs(sourceMachine);
+    const sourceToken=getSegmentToken(sourceSeg);
+    const sourceIdx=sourceSpecs.findIndex(spec=>spec.token===sourceToken);
+    if(sourceIdx<0) return false;
+    const movingSpec={...sourceSpecs[sourceIdx],machine:targetMachine};
+    if(sourceMachine===targetMachine){
+      const nextSpecs=sourceSpecs.filter((_,idx)=>idx!==sourceIdx);
+      const targetToken=getSegmentToken(targetSeg);
+      const targetIdx=nextSpecs.findIndex(spec=>spec.token===targetToken);
+      if(targetIdx<0) return false;
+      const insertIdx=targetIdx+1;
+      nextSpecs.splice(insertIdx,0,movingSpec);
+      const firstDiff=firstDifferentTokenIndex(sourceSpecs,nextSpecs);
+      if(firstDiff<0) return true;
+      const scheduled=applySequentialDatesToSpecs(nextSpecs,{anchorIndex:firstDiff});
+      const ok=await persistMachineQueueFromSpecs(sourceMachine,scheduled,firstDiff);
+      if(ok&&selectedPlan) setSelectedPlan(null);
+      return ok;
+    }
+    const targetSpecs=buildMachineQueueSpecs(targetMachine);
+    const targetToken=getSegmentToken(targetSeg);
+    const targetIdx=targetSpecs.findIndex(spec=>spec.token===targetToken);
+    if(targetIdx<0) return false;
+    const sourceRemain=sourceSpecs.filter((_,idx)=>idx!==sourceIdx);
+    const sourceAnchor=sourceRemain.length>0?Math.min(sourceIdx,sourceRemain.length-1):0;
+    const sourceScheduled=sourceRemain.length>0
+      ? applySequentialDatesToSpecs(sourceRemain,{anchorIndex:sourceAnchor})
+      : [];
+    const movedIds=(movingSpec.planIds||[]).filter(Boolean);
+    const insertStart=addDays(targetSpecs[targetIdx].endDate||targetSpecs[targetIdx].startDate||todayStr(),1);
+    const targetNext=[...targetSpecs];
+    targetNext.splice(targetIdx+1,0,{
+      ...movingSpec,
+      machine:targetMachine,
+      startDate:insertStart,
+      endDate:insertStart,
+      planIds:[],
+    });
+    const targetScheduled=applySequentialDatesToSpecs(targetNext,{anchorIndex:targetIdx+1,forceStartDate:insertStart});
+    const okSource=await persistMachineQueueFromSpecs(sourceMachine,sourceScheduled,sourceAnchor);
+    if(!okSource) return false;
+    if(sourceRemain.length>0&&movedIds.length>0){
+      for(const id of movedIds){
+        const ok=await window.DB.deleteDoc("plans",id);
+        if(!ok){
+          alert("Operasyon tasinamadi.");
+          await refreshPlans();
+          return false;
+        }
+      }
+      const movedSet=new Set(movedIds);
+      setPlans(prev=>prev.filter(p=>!movedSet.has(p.id)));
+    }
+    const okTarget=await persistMachineQueueFromSpecs(targetMachine,targetScheduled,targetIdx+1);
+    if(!okTarget){
+      await refreshPlans();
+      return false;
+    }
+    if(selectedPlan) setSelectedPlan(null);
+    return true;
+  }
 
   async function handleBoardDrop(e,{targetSegmentId="",targetMachine=""}={}){
     e.preventDefault();
@@ -9036,7 +9552,10 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     if(!sourceSegmentId) return;
     if(targetSegmentId){
       if(sourceSegmentId===targetSegmentId) return;
-      await swapSegmentSlots(sourceSegmentId,targetSegmentId);
+      const placed=await placeSegmentAfterSegment(sourceSegmentId,targetSegmentId);
+      if(!placed){
+        await swapSegmentSlots(sourceSegmentId,targetSegmentId);
+      }
       return;
     }
     if(targetMachine){
@@ -9302,7 +9821,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
               ))}
             </div>
             <div style={{fontSize:11,color:C.muted2}}>
-              Ipucu: Operasyon kartlarini surukleyip baska kartin ustune birakarak yer degistirebilir, bos alana birakarak tezgah degistirebilirsiniz. Planlanacak is emri kartlarini da surukleyip tezgah satirina birakabilirsiniz.
+              Ipucu: Karti baska kartin ustune biraktiginizda hedef karttan sonraya planlanir. Ilk operasyon uzarsa siradaki planlar otomatik kaydirilir. Planlanacak is emri kartlarini da surukleyip tezgah satirina birakabilirsiniz.
             </div>
 
             <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflowX:"auto"}}>
@@ -13059,6 +13578,7 @@ function App() {
     if(isOperatorRole){
       return [
         {id:"giris",icon:"giris",label:"Uretim Girisi",group:"Operasyon",enabled:canEntry},
+        {id:"assignments",icon:"tasks",label:"Gorevlerim",group:"Operasyon",enabled:true},
       ];
     }
     return [
@@ -13069,6 +13589,7 @@ function App() {
       {id:"sales",icon:"sales",label:"Satis Siparisleri",group:"Planlama",enabled:canSales},
       {id:"orders",icon:"orders",label:"Is Emirleri",group:"Operasyon",enabled:canOrders},
       {id:"giris",icon:"giris",label:"Uretim Girisi",group:"Operasyon",enabled:canEntry},
+      {id:"assignments",icon:"tasks",label:"Calisan Gorevlendirme",group:"Operasyon",enabled:true},
       {id:"cncmonitor",icon:"monitor",label:"CNC Izleme",group:"Operasyon",enabled:canMonitor},
       {id:"downtime",icon:"downtime",label:"Durus Yonetimi",group:"Operasyon",enabled:canDowntime},
       {id:"quality",icon:"quality",label:"Kalite ve Izlenebilirlik",group:"Operasyon",enabled:canQuality},
@@ -13161,6 +13682,7 @@ function App() {
 
   function getActiveView() {
     if(tab==="giris") return <DataEntry currentUser={currentUser} machines={machines}/>;
+    if(tab==="assignments") return <TaskAssignmentModule currentUser={currentUser} machines={machines}/>;
     if(tab==="planning") return <Planning currentUser={currentUser} machines={machines}/>;
     if(tab==="machineprep") return <MachineConnectivityPrep currentUser={currentUser} machines={machines} onMachinesSync={updateMachines}/>;
     if(tab==="customers") return <Customers/>;
