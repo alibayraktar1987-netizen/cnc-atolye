@@ -8110,6 +8110,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const [showMpsModal,setShowMpsModal]=useState(false);
   const [mpsForm,setMpsForm]=useState({partNo:"",weekStart:startOfWeekYmd(todayStr()),plannedQty:"0",note:""});
   const [dragPlanId,setDragPlanId]=useState(null);
+  const [dragBoardSegmentId,setDragBoardSegmentId]=useState("");
   const [exporting,setExporting]=useState(false);
   const [planQuery,setPlanQuery]=useState("");
   const [planMachineFilter,setPlanMachineFilter]=useState("all");
@@ -8264,6 +8265,8 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     setPlans(prev=>[{id,...data},...prev]);
   }
   const allPlanSegments=buildPlanSegments(plans);
+  const allSegmentById={};
+  allPlanSegments.forEach(seg=>{allSegmentById[seg.id]=seg;});
   const sortedPlanSegments=allPlanSegments;
   const mpsBaseWeek=startOfWeekYmd(todayStr());
   const mpsBuckets=Array.from({length:8},(_,i)=>{
@@ -8677,6 +8680,125 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     }
   }
 
+  function buildPlanPayloadFromSeed(seed,machine,date){
+    return {
+      machine,
+      orderId:seed?.orderId||"",
+      orderCode:seed?.orderCode||"",
+      orderName:seed?.orderName||"",
+      orderPartSec:Number(seed?.orderPartSec)||0,
+      orderCustomerName:seed?.orderCustomerName||"",
+      note:seed?.note||"",
+      status:seed?.status||"planned",
+      createdBy:seed?.createdBy||currentUser.id,
+      date,
+      week:weekStart(parseYmdLocal(date)),
+      month:monthStr(parseYmdLocal(date)),
+      updatedAt:new Date().toISOString(),
+    };
+  }
+
+  function readBoardDragSegmentId(e){
+    const raw=(e&&e.dataTransfer&&e.dataTransfer.getData)?(e.dataTransfer.getData("text/plain")||""):"";
+    if(raw){
+      try{
+        const payload=JSON.parse(raw);
+        if(payload&&payload.type==="board-segment"&&payload.segmentId) return String(payload.segmentId);
+      }catch{}
+    }
+    return dragBoardSegmentId||"";
+  }
+
+  async function moveSegmentToMachine(segmentId,targetMachine){
+    const seg=allSegmentById[segmentId];
+    if(!seg||!targetMachine) return false;
+    if(seg.machine===targetMachine) return true;
+    const segIds=new Set((seg.plans||[]).map(p=>p.id));
+    const dates=getDateRange(seg.startDate,seg.endDate);
+    const conflicts=dates.filter(dt=>plans.some(p=>p.machine===targetMachine&&p.date===dt&&!segIds.has(p.id)));
+    if(conflicts.length>0){
+      alert(`Hedef tezgahta cakisma var: ${conflicts.slice(0,4).join(", ")}${conflicts.length>4?" ...":""}`);
+      return false;
+    }
+    const nowIso=new Date().toISOString();
+    for(const p of seg.plans||[]){
+      const ok=await window.DB.updateDoc("plans",p.id,{machine:targetMachine,updatedAt:nowIso});
+      if(!ok){
+        alert("Operasyon tasinamadi.");
+        await refreshPlans();
+        return false;
+      }
+    }
+    setPlans(prev=>prev.map(p=>segIds.has(p.id)?{...p,machine:targetMachine,updatedAt:nowIso}:p));
+    return true;
+  }
+
+  async function swapSegmentSlots(sourceSegmentId,targetSegmentId){
+    const sourceSeg=allSegmentById[sourceSegmentId];
+    const targetSeg=allSegmentById[targetSegmentId];
+    if(!sourceSeg||!targetSeg) return false;
+    if(sourceSeg.id===targetSeg.id) return true;
+    const sourceSeed=(sourceSeg.plans||[])[0]||null;
+    const targetSeed=(targetSeg.plans||[])[0]||null;
+    if(!sourceSeed||!targetSeed){
+      alert("Operasyon yer degistirme icin yeterli plan verisi yok.");
+      return false;
+    }
+    const sourceDates=getDateRange(sourceSeg.startDate,sourceSeg.endDate);
+    const targetDates=getDateRange(targetSeg.startDate,targetSeg.endDate);
+    const sourceIds=(sourceSeg.plans||[]).map(p=>p.id);
+    const targetIds=(targetSeg.plans||[]).map(p=>p.id);
+    for(const id of [...sourceIds,...targetIds]){
+      const ok=await window.DB.deleteDoc("plans",id);
+      if(!ok){
+        alert("Operasyonlar yer degistirilemedi (silme asamasi).");
+        await refreshPlans();
+        return false;
+      }
+    }
+    const recreated=[];
+    for(const dt of targetDates){
+      const payload=buildPlanPayloadFromSeed(sourceSeed,targetSeg.machine,dt);
+      const id=await window.DB.addDoc("plans",payload);
+      if(!id){
+        alert("Operasyonlar yer degistirilemedi (ekleme asamasi).");
+        await refreshPlans();
+        return false;
+      }
+      recreated.push({id,...payload});
+    }
+    for(const dt of sourceDates){
+      const payload=buildPlanPayloadFromSeed(targetSeed,sourceSeg.machine,dt);
+      const id=await window.DB.addDoc("plans",payload);
+      if(!id){
+        alert("Operasyonlar yer degistirilemedi (ekleme asamasi).");
+        await refreshPlans();
+        return false;
+      }
+      recreated.push({id,...payload});
+    }
+    const removedIdSet=new Set([...sourceIds,...targetIds]);
+    setPlans(prev=>[...recreated.reverse(),...prev.filter(p=>!removedIdSet.has(p.id))]);
+    if(selectedPlan) setSelectedPlan(null);
+    return true;
+  }
+
+  async function handleBoardDrop(e,{targetSegmentId="",targetMachine=""}={}){
+    e.preventDefault();
+    e.stopPropagation();
+    const sourceSegmentId=readBoardDragSegmentId(e);
+    setDragBoardSegmentId("");
+    if(!sourceSegmentId) return;
+    if(targetSegmentId){
+      if(sourceSegmentId===targetSegmentId) return;
+      await swapSegmentSlots(sourceSegmentId,targetSegmentId);
+      return;
+    }
+    if(targetMachine){
+      await moveSegmentToMachine(sourceSegmentId,targetMachine);
+    }
+  }
+
   const selectedPlanSegment=selectedPlan?findSegmentForPlan(selectedPlan):null;
   const selectedSegmentId=selectedPlan?(selectedPlan._segmentId||selectedPlanSegment?.id||""):"";
   const selectedPlanOperationMeta=(selectedPlan&&selectedPlan.orderId)?(orderOperationMetaById[selectedPlan.orderId]||null):null;
@@ -8793,23 +8915,48 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const machineBoardVisible=planMachineFilter==="all"
     ? machineBoardRows
     : machineBoardRows.filter(row=>row.machine===planMachineFilter);
-  function renderBoardSegmentCard(card,{compact=false}={}){
+  function renderBoardSegmentCard(card,{compact=false,targetMachine=""}={}){
     if(!card){
       return (
-        <div style={{minHeight:compact?118:142,display:"flex",alignItems:"center",justifyContent:"center",border:`1px dashed ${C.border}`,borderRadius:12,background:C.surface,color:C.muted2,fontSize:12}}>
-          Atanmis operasyon yok
+        <div
+          onDragOver={e=>{if(dragBoardSegmentId) e.preventDefault();}}
+          onDrop={e=>handleBoardDrop(e,{targetMachine})}
+          style={{
+            minHeight:compact?118:142,
+            display:"flex",
+            alignItems:"center",
+            justifyContent:"center",
+            border:`1px dashed ${dragBoardSegmentId?C.accent:C.border}`,
+            borderRadius:12,
+            background:dragBoardSegmentId?(C.accent+"11"):C.surface,
+            color:C.muted2,
+            fontSize:12,
+          }}
+        >
+          {dragBoardSegmentId?"Buraya Birak":"Atanmis operasyon yok"}
         </div>
       );
     }
     const segment=card.segment||null;
     const isSelected=selectedSegmentId===card.id;
+    const isDragging=dragBoardSegmentId===card.id;
     const duePast=card.due&&card.due!=="-"&&card.due<planningToday;
     const dueSoon=card.due&&card.due!=="-"&&card.due>=planningToday&&dayDiff(planningToday,card.due)<=2;
     const dueTone=duePast?C.red:(dueSoon?C.warn:C.green);
     return (
       <div
+        draggable
+        onDragStart={e=>{
+          const payload=JSON.stringify({type:"board-segment",segmentId:card.id});
+          e.dataTransfer.setData("text/plain",payload);
+          e.dataTransfer.effectAllowed="move";
+          setDragBoardSegmentId(card.id);
+        }}
+        onDragEnd={()=>setDragBoardSegmentId("")}
+        onDragOver={e=>{if(dragBoardSegmentId) e.preventDefault();}}
+        onDrop={e=>handleBoardDrop(e,{targetSegmentId:card.id,targetMachine:segment?.machine||targetMachine})}
         onClick={()=>setSelectedPlan(card.seedPlan||segment)}
-        style={{background:card.tone.bg,border:`1px solid ${isSelected?card.tone.text:card.tone.border}`,borderRadius:12,overflow:"hidden",cursor:"pointer",boxShadow:isSelected?`0 0 0 1px ${card.tone.text}66`:"none",display:"flex",flexDirection:"column"}}
+        style={{background:card.tone.bg,border:`1px solid ${isSelected?card.tone.text:card.tone.border}`,borderRadius:12,overflow:"hidden",cursor:"pointer",boxShadow:isSelected?`0 0 0 1px ${card.tone.text}66`:"none",display:"flex",flexDirection:"column",opacity:isDragging?0.56:1}}
       >
         <div style={{background:card.tone.header,color:"#fff",padding:"8px 10px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
           <div style={{minWidth:0}}>
@@ -8907,6 +9054,9 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                 </div>
               ))}
             </div>
+            <div style={{fontSize:11,color:C.muted2}}>
+              Ipucu: Operasyon kartlarini surukleyip baska kartin ustune birakarak yer degistirebilir, bos alana birakarak tezgah degistirebilirsiniz.
+            </div>
 
             <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflowX:"auto"}}>
               <div style={{minWidth:900}}>
@@ -8930,15 +9080,17 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                           {row.activeSegment?"Calisiyor":(row.segments.length>0?"Kuyrukta":"Bos")}
                         </div>
                       </div>
-                      {renderBoardSegmentCard(row.activeCard)}
-                      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))",gap:8}}>
+                      <div onDragOver={e=>{if(dragBoardSegmentId) e.preventDefault();}} onDrop={e=>handleBoardDrop(e,{targetMachine:row.machine})}>
+                        {renderBoardSegmentCard(row.activeCard,{targetMachine:row.machine})}
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))",gap:8}} onDragOver={e=>{if(dragBoardSegmentId) e.preventDefault();}} onDrop={e=>handleBoardDrop(e,{targetMachine:row.machine})}>
                         {row.nextCards.map(card=>(
                           <div key={card.id}>
-                            {renderBoardSegmentCard(card,{compact:true})}
+                            {renderBoardSegmentCard(card,{compact:true,targetMachine:row.machine})}
                           </div>
                         ))}
                         {row.nextCards.length===0&&(
-                          <div>{renderBoardSegmentCard(null,{compact:true})}</div>
+                          <div>{renderBoardSegmentCard(null,{compact:true,targetMachine:row.machine})}</div>
                         )}
                       </div>
                     </div>
