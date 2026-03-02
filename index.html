@@ -6451,6 +6451,11 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     return hay.includes(planQueryText);
   });
   const filteredGanttRows=ganttRows.filter(row=>machineFilter==="all"||row.machine===machineFilter);
+  const ganttRowHeight=23;
+  const ganttHeaderHeight=24;
+  const ganttVisibleRowCount=Math.max(1,filteredGanttRows.length);
+  const ganttViewportHeight=Math.min(780,Math.max(220,ganttHeaderHeight+(ganttVisibleRowCount*ganttRowHeight)+16));
+  const ganttCardMinHeight=ganttViewportHeight+(monthOrders.length>0?72:40);
   function shiftGanttMonth(delta){
     const [y,m]=ganttMonth.split("-").map(Number);
     const d=new Date(y,m-1+delta,1);
@@ -6858,11 +6863,11 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
             </div>
           </div>
 
-          <div style={{order:1,background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:10,minHeight:520}}>
+          <div style={{order:1,background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:10,minHeight:ganttCardMinHeight}}>
             {monthOrders.length>0&&<div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:10}}>
               {monthOrders.map(o=><span key={o.id} style={{display:"inline-flex",alignItems:"center",gap:6,background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px",fontSize:11,color:C.muted2}}><span style={{width:10,height:10,borderRadius:3,background:o.color,display:"inline-block"}}/>{o.code?`${o.code} - ${o.name||""}${o.customer?` - ${o.customer}`:""}`:(o.name||"İş Emri")}</span>)}
             </div>}
-            <div ref={ganttRef} style={{overflow:"auto",border:`1px solid ${C.border}`,borderRadius:10,background:C.card}}>
+            <div ref={ganttRef} style={{height:ganttViewportHeight,overflow:"auto",border:`1px solid ${C.border}`,borderRadius:10,background:C.card}}>
               <div style={{minWidth:ganttMinWidth,width:"100%",padding:8}}>
                 <div style={{display:"grid",gridTemplateColumns:ganttGridTemplate,columnGap:1,rowGap:1,alignItems:"center",marginBottom:4}}>
                   <div style={{fontSize:10,color:C.muted2,fontWeight:700,textTransform:"uppercase",letterSpacing:.6,paddingLeft:4}}>Tezgah</div>
