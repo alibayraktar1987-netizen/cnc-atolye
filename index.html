@@ -53,25 +53,114 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 // ── DB HELPERS ──────────────────────────────────────────────
+function sanitizeForFirestore(value) {
+  if(value===undefined) return undefined;
+  if(value===null) return null;
+  if(Array.isArray(value)){
+    return value
+      .map(item=>sanitizeForFirestore(item))
+      .filter(item=>item!==undefined);
+  }
+  if(typeof value==="number"){
+    return Number.isFinite(value)?value:0;
+  }
+  if(value instanceof Date){
+    return value.toISOString();
+  }
+  if(typeof value==="object"){
+    const out={};
+    Object.entries(value).forEach(([k,v])=>{
+      const sv=sanitizeForFirestore(v);
+      if(sv!==undefined) out[k]=sv;
+    });
+    return out;
+  }
+  return value;
+}
+function firestoreErrorText(err) {
+  if(!err) return "Bilinmeyen hata";
+  const code=typeof err.code==="string"?err.code:"";
+  const msg=typeof err.message==="string"?err.message:String(err);
+  return code?`${code} - ${msg}`:msg;
+}
+let lastDbError="";
+function setLastDbError(err){
+  lastDbError=firestoreErrorText(err);
+}
 window.DB = {
   async getDoc(col, id) {
-    try { const s = await getDoc(doc(db, col, id)); return s.exists() ? { id: s.id, ...s.data() } : null; } catch { return null; }
+    try {
+      const s = await getDoc(doc(db, col, id));
+      lastDbError="";
+      return s.exists() ? { id: s.id, ...s.data() } : null;
+    } catch(e) {
+      setLastDbError(e);
+      console.error("DB.getDoc error",col,id,e);
+      return null;
+    }
   },
   async setDoc(col, id, data) {
-    try { await setDoc(doc(db, col, id), data, { merge: true }); return true; } catch(e) { console.error(e); return false; }
+    try {
+      await setDoc(doc(db, col, id), sanitizeForFirestore(data), { merge: true });
+      lastDbError="";
+      return true;
+    } catch(e) {
+      setLastDbError(e);
+      console.error("DB.setDoc error",col,id,e);
+      return false;
+    }
   },
   async getAll(col) {
-    try { const s = await getDocs(collection(db, col)); return s.docs.map(d => ({ id: d.id, ...d.data() })); } catch { return []; }
+    try {
+      const s = await getDocs(collection(db, col));
+      lastDbError="";
+      return s.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch(e) {
+      setLastDbError(e);
+      console.error("DB.getAll error",col,e);
+      return [];
+    }
   },
   async addDoc(col, data) {
-    try { const r = await addDoc(collection(db, col), { ...data, createdAt: new Date().toISOString() }); return r.id; } catch { return null; }
+    try {
+      const payload=sanitizeForFirestore({ ...data, createdAt: data?.createdAt||new Date().toISOString() });
+      const r = await addDoc(collection(db, col), payload);
+      lastDbError="";
+      return r.id;
+    } catch(e) {
+      setLastDbError(e);
+      console.error("DB.addDoc error",col,e,data);
+      return null;
+    }
   },
   async updateDoc(col, id, data) {
-    try { await updateDoc(doc(db, col, id), data); return true; } catch { return false; }
+    try {
+      await updateDoc(doc(db, col, id), sanitizeForFirestore(data));
+      lastDbError="";
+      return true;
+    } catch(e) {
+      setLastDbError(e);
+      console.error("DB.updateDoc error",col,id,e,data);
+      return false;
+    }
   },
   async deleteDoc(col, id) {
-    try { await deleteDoc(doc(db, col, id)); return true; } catch { return false; }
-  }
+    try {
+      await deleteDoc(doc(db, col, id));
+      lastDbError="";
+      return true;
+    } catch(e) {
+      setLastDbError(e);
+      console.error("DB.deleteDoc error",col,id,e);
+      return false;
+    }
+  },
+  getLastError() {
+    return lastDbError||"";
+  },
+  clearLastError() {
+    lastDbError="";
+  },
 };
 
 // ── SESSION ─────────────────────────────────────────────────
@@ -2309,6 +2398,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
   const emptyPartForm={
     partNo:"",
     customerPartCode:"",
+    customerName:"",
     name:"",
     material:"",
     revision:"A",
@@ -2370,10 +2460,27 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
     const next=(nums.length?Math.max(...nums):0)+1;
     return `PRT-${String(next).padStart(4,"0")}`;
   },[parts]);
+  const getPartCompanyName=(part)=>{
+    const direct=String(part?.customerName||part?.companyName||"").trim();
+    if(direct) return direct;
+    const history=(Array.isArray(part?.priceHistory)?part.priceHistory:[])
+      .filter(r=>String(r?.customerName||"").trim());
+    if(history.length===0) return "";
+    const sorted=[...history].sort((a,b)=>{
+      const da=String(a?.updatedAt||a?.date||a?.createdAt||"");
+      const db=String(b?.updatedAt||b?.date||b?.createdAt||"");
+      return db.localeCompare(da);
+    });
+    return String(sorted[0]?.customerName||"").trim();
+  };
   const filtered=parts.filter(p=>{
     const q=search.toLowerCase().trim();
     if(!q) return true;
-    return (p.partNo||"").toLowerCase().includes(q)||(p.customerPartCode||"").toLowerCase().includes(q)||(p.name||"").toLowerCase().includes(q)||(p.material||"").toLowerCase().includes(q);
+    return (p.partNo||"").toLowerCase().includes(q)||
+      (p.customerPartCode||"").toLowerCase().includes(q)||
+      (p.name||"").toLowerCase().includes(q)||
+      (p.material||"").toLowerCase().includes(q)||
+      getPartCompanyName(p).toLowerCase().includes(q);
   });
   const BAR_LENGTH_MM=3000;
   const normalized=s=>String(s||"").trim().toUpperCase();
@@ -2484,6 +2591,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
     const payload={
       partNo:computedPartNo,
       customerPartCode:String(partForm.customerPartCode||"").trim().toUpperCase(),
+      customerName:String(partForm.customerName||"").trim(),
       name:partForm.name.trim(),
       material:partForm.material.trim(),
       revision:(partForm.revision||"A").trim().toUpperCase(),
@@ -2514,7 +2622,11 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
       return;
     }
     const id=await window.DB.addDoc("parts",payload);
-    if(!id){alert("Parca kaydedilemedi.");return;}
+    if(!id){
+      const err=window.DB.getLastError?window.DB.getLastError():"";
+      alert(`Parca kaydedilemedi.${err?`\n${err}`:""}`);
+      return;
+    }
     await addAuditLog(currentUser.id,"part",id,"create",null,payload,{module:"parts"});
     const next=[{id,...payload,createdAt:new Date().toISOString()},...parts].sort((a,b)=>(a.partNo||"").localeCompare(b.partNo||"","tr"));
     setParts(next);
@@ -2529,6 +2641,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
     setPartForm({
       partNo:p.partNo||"",
       customerPartCode:p.customerPartCode||"",
+      customerName:p.customerName||p.companyName||getPartCompanyName(p)||"",
       name:p.name||"",
       material:p.material||"",
       revision:p.revision||"A",
@@ -2651,7 +2764,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
             <button onClick={openCreatePartModal} style={{...btnSt("primary"),padding:"6px 10px",fontSize:11}}>+ Parca Ekle</button>
           </div>
         </div>
-        <input style={{...inputSt,padding:"8px 10px",fontSize:12,marginBottom:8}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Parca no / musteri kodu / ad / malzeme ara..."/>
+        <input style={{...inputSt,padding:"8px 10px",fontSize:12,marginBottom:8}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Parca no / musteri kodu / firma / ad / malzeme ara..."/>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
           <div style={{fontSize:11,color:C.muted2,letterSpacing:.5,textTransform:"uppercase"}}>
             Toplam {parts.length} parca · Filtrelenen {filtered.length}
@@ -2665,9 +2778,10 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
           <div style={{overflowX:"auto"}}>
             <div style={{minWidth:980}}>
-              <div style={{display:"grid",gridTemplateColumns:"1.1fr 2fr 1.2fr .8fr 1.2fr .9fr .7fr",gap:8,padding:"9px 10px",borderBottom:`1px solid ${C.border}`,background:C.card,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700}}>
+              <div style={{display:"grid",gridTemplateColumns:"1.1fr 1.7fr 1.2fr 1.1fr .8fr 1.1fr .9fr .7fr",gap:8,padding:"9px 10px",borderBottom:`1px solid ${C.border}`,background:C.card,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700}}>
                 <div>Parca No</div>
                 <div>Parca Adi</div>
+                <div>Firma</div>
                 <div>Musteri Kodu</div>
                 <div>Rev</div>
                 <div>Malzeme</div>
@@ -2677,6 +2791,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
               {filtered.map((p,idx)=>{
                 const selected=selectedPartId===p.id;
                 const docsCount=(Array.isArray(p.documents)?p.documents.length:0)+(p.drawingFile?1:0);
+                const companyName=getPartCompanyName(p)||"-";
                 return (
                   <button
                     key={p.id}
@@ -2685,7 +2800,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
                       width:"100%",
                       textAlign:"left",
                       display:"grid",
-                      gridTemplateColumns:"1.1fr 2fr 1.2fr .8fr 1.2fr .9fr .7fr",
+                      gridTemplateColumns:"1.1fr 1.7fr 1.2fr 1.1fr .8fr 1.1fr .9fr .7fr",
                       gap:8,
                       padding:"10px 10px",
                       border:"none",
@@ -2705,6 +2820,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
                         Setup {safeNum(p.setupSec)} sn · Cycle {safeNum(p.cycleSec)} sn
                       </div>
                     </div>
+                    <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{companyName}</div>
                     <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.customerPartCode||"-"}</div>
                     <div style={{fontSize:11,color:C.text,fontWeight:700}}>{p.revision||"A"}</div>
                     <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.material||"-"}</div>
@@ -2733,6 +2849,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
               <div><span style={labelSt}>Parca No (Otomatik)</span><input style={{...inputSt,background:C.surface,color:C.muted2}} value={partForm.partNo||nextPartNo()} readOnly/></div>
               <div><span style={labelSt}>Parca Musteri Kodu</span><input style={inputSt} value={partForm.customerPartCode} onChange={e=>fv("customerPartCode",e.target.value)} placeholder="MUS-PRC-001"/></div>
               <div><span style={labelSt}>Parca Adi *</span><input style={inputSt} value={partForm.name} onChange={e=>fv("name",e.target.value)} placeholder="Govde"/></div>
+              <div><span style={labelSt}>Firma Adi</span><input style={inputSt} value={partForm.customerName} onChange={e=>fv("customerName",e.target.value)} placeholder="ABC Otomotiv"/></div>
               <div><span style={labelSt}>Revizyon</span><input style={inputSt} value={partForm.revision} onChange={e=>fv("revision",e.target.value)}/></div>
               <div>
                 <span style={labelSt}>Malzeme</span>
@@ -2887,7 +3004,6 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   const [view,setView]=useState(defaultView==="quotes"?"quotes":"orders");
   const [search,setSearch]=useState("");
   const [quoteStatusFilter,setQuoteStatusFilter]=useState("all");
-  const [quoteCurrencyFilter,setQuoteCurrencyFilter]=useState("all");
   const [customerEditId,setCustomerEditId]=useState("");
   const [priceEditId,setPriceEditId]=useState("");
   const [quoteEditId,setQuoteEditId]=useState("");
@@ -2899,13 +3015,12 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   const [customerForm,setCustomerForm]=useState({name:"",code:"",contact:"",phone:"",email:"",discountPct:"0"});
   const [priceForm,setPriceForm]=useState({customerId:"",partNo:"",price:"",discountPct:"0",currency:"TRY"});
   const [quickPartForm,setQuickPartForm]=useState(()=>makeQuickPartForm());
-  const makeDraftLine=()=>({partId:"",partNo:"",partName:"",revision:"A",qty:"1",unitPrice:"0",discountPct:"0",dueDate:todayStr(),partSec:"60",machine:(machines[0]||"CNC-1")});
+  const makeDraftLine=()=>({partId:"",partNo:"",partName:"",revision:"A",customerPartCode:"",material:"",partSnapshot:null,qty:"1",unitPrice:"0",discountPct:"0",dueDate:todayStr(),partSec:"60",machine:(machines[0]||"CNC-1")});
   const [quoteForm,setQuoteForm]=useState({
     code:"",
     customerId:"",
     validUntil:todayStr(),
     priority:"normal",
-    currency:"TRY",
     note:"",
     lines:[makeDraftLine()],
   });
@@ -2965,7 +3080,6 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     setQuoteForm(f=>({
       ...f,
       code:nextCode("TKL",q,/^TKL-(\d+)$/),
-      currency:enabledCurrencyCodes.includes(String(f.currency||"").toUpperCase())?String(f.currency||"").toUpperCase():fallbackCurrency,
     }));
     setOrderForm(f=>({...f,code:nextCode("SIP",s,/^SIP-(\d+)$/)}));
     setPriceForm(f=>({
@@ -2979,17 +3093,11 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   useEffect(()=>{
     const activeCodes=quoteCurrencies.map(x=>x.code);
     if(activeCodes.length===0) return;
-    setQuoteForm(f=>{
-      const current=String(f.currency||"").toUpperCase();
-      if(activeCodes.includes(current)) return f;
-      return {...f,currency:defaultQuoteCurrency};
-    });
     setPriceForm(f=>{
       const current=String(f.currency||"").toUpperCase();
       if(activeCodes.includes(current)) return f;
       return {...f,currency:defaultQuoteCurrency};
     });
-    setQuoteCurrencyFilter(f=>activeCodes.includes(f)||f==="all"?f:"all");
   },[defaultQuoteCurrency,quoteCurrencies.map(x=>x.code).join(",")]);
   useEffect(()=>{
     function onTabAction(ev){
@@ -3005,7 +3113,6 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
             customerId:"",
             validUntil:todayStr(),
             priority:"normal",
-            currency:defaultQuoteCurrency,
             note:"",
             lines:[makeDraftLine()],
           });
@@ -3051,11 +3158,6 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     const discAmt=(gross*disc)/100;
     return {gross,discAmt,net:gross-discAmt};
   };
-  const quoteTotals=quoteForm.lines.reduce((acc,line)=>{
-    const t=lineTotal(line);
-    acc.gross+=t.gross; acc.discount+=t.discAmt; acc.net+=t.net;
-    return acc;
-  },{gross:0,discount:0,net:0});
   const orderTotals=orderForm.lines.reduce((acc,line)=>{
     const t=lineTotal(line);
     acc.gross+=t.gross; acc.discount+=t.discAmt; acc.net+=t.net;
@@ -3077,10 +3179,73 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     if(!key) return null;
     return parts.find(p=>normalizePartNo(p.partNo)===key)||null;
   }
+  function findPartById(partId){
+    const key=String(partId||"").trim();
+    if(!key) return null;
+    return parts.find(p=>String(p.id||"")===key)||null;
+  }
+  function resolvePartFromLine(line){
+    if(!line) return null;
+    return findPartById(line.partId)||findPartByNo(line.partNo)||null;
+  }
+  function makePartSnapshot(part){
+    if(!part) return null;
+    const routeOps=(Array.isArray(part.routingOps)?part.routingOps:[]).map(op=>({
+      id:op.id||"",
+      operationTypeId:op.operationTypeId||"",
+      operationCode:op.operationCode||"",
+      operationName:op.operationName||op.operation||"",
+      machine:op.machine||"",
+      setupSec:Math.max(0,safeNum(op.setupSec)),
+      cycleSec:Math.max(0,safeNum(op.cycleSec)),
+      ncProgram:op.ncProgram||"",
+      tooling:op.tooling||"",
+    }));
+    return {
+      partId:part.id||"",
+      partNo:normalizePartNo(part.partNo||""),
+      partName:String(part.name||"").trim(),
+      revision:String(part.revision||"A").trim().toUpperCase()||"A",
+      customerPartCode:String(part.customerPartCode||"").trim().toUpperCase(),
+      customerName:String(part.customerName||part.companyName||"").trim(),
+      material:String(part.material||"").trim(),
+      setupSec:Math.max(0,safeNum(part.setupSec)),
+      cycleSec:Math.max(1,safeNum(part.cycleSec)||60),
+      unitCost:Math.max(0,safeNum(part.unitCost)),
+      costBreakdown:{
+        materialCost:Math.max(0,safeNum(part.costBreakdown?.materialCost)),
+        laborCost:Math.max(0,safeNum(part.costBreakdown?.laborCost)),
+        machineCost:Math.max(0,safeNum(part.costBreakdown?.machineCost)),
+      },
+      ncProgramVersion:String(part.ncProgramVersion||"").trim().toUpperCase(),
+      routingOps:routeOps,
+      sourceUpdatedAt:part.updatedAt||part.createdAt||"",
+    };
+  }
+  function normalizeSalesLine(line,{dueDateFallback=todayStr()}={}){
+    const linkedPart=resolvePartFromLine(line);
+    const snapshot=makePartSnapshot(linkedPart)||((line&&line.partSnapshot&&typeof line.partSnapshot==="object")?line.partSnapshot:null);
+    return {
+      partId:String(line?.partId||snapshot?.partId||""),
+      partNo:String(line?.partNo||snapshot?.partNo||"").trim().toUpperCase(),
+      partName:String(line?.partName||snapshot?.partName||"").trim(),
+      revision:String(line?.revision||snapshot?.revision||"A").trim().toUpperCase()||"A",
+      customerPartCode:String(line?.customerPartCode||snapshot?.customerPartCode||"").trim().toUpperCase(),
+      material:String(line?.material||snapshot?.material||"").trim(),
+      partSnapshot:snapshot||null,
+      qty:Math.max(0,safeNum(line?.qty)),
+      unitPrice:Math.max(0,safeNum(line?.unitPrice)),
+      discountPct:Math.max(0,Math.min(100,safeNum(line?.discountPct))),
+      dueDate:line?.dueDate||dueDateFallback||todayStr(),
+      partSec:Math.max(1,safeNum(line?.partSec)||safeNum(snapshot?.cycleSec)||60),
+      machine:line?.machine||machines[0]||"CNC-1",
+    };
+  }
   function applyPartToQuoteLine(idx,part){
     if(!part) return;
     const routeMachine=(part.routingOps||[])[0]?.machine||"";
     const cycleFromPart=Math.max(1,safeNum(part.cycleSec)||0);
+    const snapshot=makePartSnapshot(part);
     setQuoteForm(f=>({
       ...f,
       lines:f.lines.map((line,i)=>{
@@ -3091,6 +3256,9 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
           partNo:normalizePartNo(part.partNo||line.partNo),
           partName:String(part.name||line.partName||"").trim(),
           revision:normalizePartNo(part.revision||line.revision||"A")||"A",
+          customerPartCode:String(part.customerPartCode||line.customerPartCode||"").trim().toUpperCase(),
+          material:String(part.material||line.material||"").trim(),
+          partSnapshot:snapshot||line.partSnapshot||null,
           partSec:String(cycleFromPart||Math.max(1,safeNum(line.partSec)||60)),
           machine:routeMachine||line.machine||machines[0]||"CNC-1",
         };
@@ -3100,7 +3268,10 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   function syncQuoteLineFromPartNo(idx,partNo){
     const part=findPartByNo(partNo);
     if(!part){
-      setLine(idx,"partId","");
+      setQuoteForm(f=>({
+        ...f,
+        lines:f.lines.map((line,i)=>i!==idx?line:{...line,partId:"",partSnapshot:null}),
+      }));
       return null;
     }
     applyPartToQuoteLine(idx,part);
@@ -3126,7 +3297,6 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     const existing=findPartByNo(partNo);
     if(existing){
       applyPartToQuoteLine(idx,existing);
-      applyCustomerPrice(idx,partNo);
       setShowCreatePartModal(false);
       setCreatePartLineIdx(-1);
       setQuickPartForm(makeQuickPartForm());
@@ -3140,6 +3310,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     const payload={
       partNo,
       customerPartCode:"",
+      customerName:selectedCustomer?.name||"",
       name:partName,
       material:String(quickPartForm.material||"").trim(),
       revision:normalizePartNo(quickPartForm.revision||"A")||"A",
@@ -3161,12 +3332,15 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       updatedBy:currentUser.id,
     };
     const id=await window.DB.addDoc("parts",payload);
-    if(!id){alert("Parca kaydedilemedi.");return;}
+    if(!id){
+      const err=window.DB.getLastError?window.DB.getLastError():"";
+      alert(`Parca kaydedilemedi.${err?`\n${err}`:""}`);
+      return;
+    }
     await addAuditLog(currentUser.id,"part",id,"create_from_quote",null,payload,{module:"sales"});
     const created={id,...payload,createdAt:new Date().toISOString()};
     setParts(prev=>[created,...prev].sort((a,b)=>(a.partNo||"").localeCompare(b.partNo||"","tr")));
     applyPartToQuoteLine(idx,created);
-    applyCustomerPrice(idx,partNo);
     setShowCreatePartModal(false);
     setCreatePartLineIdx(-1);
     setQuickPartForm(makeQuickPartForm());
@@ -3187,7 +3361,6 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       customerId:"",
       validUntil:todayStr(),
       priority:"normal",
-      currency:defaultQuoteCurrency,
       note:"",
       lines:[makeDraftLine()],
     });
@@ -3202,77 +3375,27 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       customerId:quote.customerId||"",
       validUntil:quote.validUntil||todayStr(),
       priority:quote.priority||"normal",
-      currency:quoteCurrencies.some(c=>c.code===String(quote.currency||"").toUpperCase())
-        ? String(quote.currency||"").toUpperCase()
-        : defaultQuoteCurrency,
       note:quote.note||"",
       lines:(quote.lines&&quote.lines.length
         ? quote.lines
         : [makeDraftLine()]).map(l=>({
-          partId:String(l.partId||findPartByNo(l.partNo)?.id||""),
+          partId:String(l.partId||resolvePartFromLine(l)?.id||""),
           partNo:String(l.partNo||"").trim().toUpperCase(),
           partName:String(l.partName||"").trim(),
           revision:String(l.revision||"A").trim().toUpperCase(),
+          customerPartCode:String(l.customerPartCode||l.partSnapshot?.customerPartCode||"").trim().toUpperCase(),
+          material:String(l.material||l.partSnapshot?.material||"").trim(),
+          partSnapshot:(l.partSnapshot&&typeof l.partSnapshot==="object")?l.partSnapshot:null,
           qty:String(Math.max(0,safeNum(l.qty))),
           unitPrice:String(Math.max(0,safeNum(l.unitPrice))),
           discountPct:String(Math.max(0,Math.min(100,safeNum(l.discountPct)))),
           dueDate:l.dueDate||todayStr(),
-          partSec:String(Math.max(1,safeNum(l.partSec)||safeNum(findPartByNo(l.partNo)?.cycleSec)||60)),
+          partSec:String(Math.max(1,safeNum(l.partSec)||safeNum(resolvePartFromLine(l)?.cycleSec)||60)),
           machine:l.machine||machines[0]||"CNC-1",
         })),
     });
     setShowOrderModal(false);
     setShowQuoteModal(true);
-  }
-  async function syncPartPriceHistoryFromQuote(quoteId,quoteCode,customer,currency,lines){
-    if(!quoteId||!Array.isArray(lines)||lines.length===0) return;
-    const nowIso=new Date().toISOString();
-    const byPart={};
-    lines.forEach((line,idx)=>{
-      const part=findPartByNo(line.partNo);
-      if(!part||!part.id) return;
-      const key=part.id;
-      if(!byPart[key]) byPart[key]={part,entries:[]};
-      const unitPrice=Math.max(0,safeNum(line.unitPrice));
-      const discountPct=Math.max(0,Math.min(100,safeNum(line.discountPct)));
-      const netUnitPrice=Math.max(0,unitPrice*(1-(discountPct/100)));
-      byPart[key].entries.push({
-        id:`qh_${quoteId}_${idx}`,
-        sourceType:"quote",
-        sourceId:quoteId,
-        sourceCode:quoteCode||"",
-        customerId:customer?.id||"",
-        customerName:customer?.name||"",
-        currency:String(currency||defaultQuoteCurrency||"TRY").toUpperCase(),
-        unitPrice,
-        discountPct,
-        netUnitPrice,
-        qty:Math.max(0,safeNum(line.qty)),
-        date:line.dueDate||todayStr(),
-        updatedAt:nowIso,
-        updatedBy:currentUser.id,
-      });
-    });
-    const partIds=Object.keys(byPart);
-    for(const partId of partIds){
-      const bucket=byPart[partId];
-      const currentPart=bucket.part;
-      const existing=Array.isArray(currentPart.priceHistory)?[...currentPart.priceHistory]:[];
-      bucket.entries.forEach(entry=>{
-        const idx=existing.findIndex(h=>h.id===entry.id);
-        if(idx>=0) existing[idx]={...existing[idx],...entry};
-        else existing.unshift(entry);
-      });
-      const nextHistory=existing.slice(0,250);
-      const ok=await window.DB.updateDoc("parts",partId,{
-        priceHistory:nextHistory,
-        updatedAt:new Date().toISOString(),
-        updatedBy:currentUser.id,
-      });
-      if(ok){
-        setParts(prev=>prev.map(p=>p.id===partId?{...p,priceHistory:nextHistory}:p));
-      }
-    }
   }
   async function syncPartPriceHistoryFromPriceList(priceRow,historyId){
     const part=findPartByNo(priceRow?.partNo||"");
@@ -3312,19 +3435,43 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     }
   }
 
-  function applyCustomerPrice(idx,partNo){
-    const priceRow=customerPrices.find(p=>p.customerId===quoteForm.customerId&&String(p.partNo||"").trim().toLowerCase()===String(partNo||"").trim().toLowerCase());
-    if(!priceRow) return;
-    setLine(idx,"unitPrice",String(priceRow.price||0));
-    setLine(idx,"discountPct",String(priceRow.discountPct||0));
-    const cur=String(priceRow.currency||"").toUpperCase();
-    if(cur&&quoteCurrencies.some(c=>c.code===cur)) setQ("currency",cur);
-  }
   function applyOrderCustomerPrice(idx,partNo){
     const priceRow=customerPrices.find(p=>p.customerId===orderForm.customerId&&String(p.partNo||"").trim().toLowerCase()===String(partNo||"").trim().toLowerCase());
     if(!priceRow) return;
     setOrderLine(idx,"unitPrice",String(priceRow.price||0));
     setOrderLine(idx,"discountPct",String(priceRow.discountPct||0));
+  }
+  function syncOrderLineFromPartNo(idx,partNo){
+    const part=findPartByNo(partNo);
+    if(!part){
+      setOrderForm(f=>({
+        ...f,
+        lines:f.lines.map((line,i)=>i!==idx?line:{...line,partId:"",partSnapshot:null}),
+      }));
+      return null;
+    }
+    const routeMachine=(part.routingOps||[])[0]?.machine||"";
+    const cycleFromPart=Math.max(1,safeNum(part.cycleSec)||60);
+    const snapshot=makePartSnapshot(part);
+    setOrderForm(f=>({
+      ...f,
+      lines:f.lines.map((line,i)=>{
+        if(i!==idx) return line;
+        return {
+          ...line,
+          partId:part.id||line.partId||"",
+          partNo:normalizePartNo(part.partNo||line.partNo),
+          partName:String(part.name||line.partName||"").trim(),
+          revision:normalizePartNo(part.revision||line.revision||"A")||"A",
+          customerPartCode:String(part.customerPartCode||line.customerPartCode||"").trim().toUpperCase(),
+          material:String(part.material||line.material||"").trim(),
+          partSnapshot:snapshot||line.partSnapshot||null,
+          partSec:String(cycleFromPart||Math.max(1,safeNum(line.partSec)||60)),
+          machine:routeMachine||line.machine||machines[0]||"CNC-1",
+        };
+      }),
+    }));
+    return part;
   }
 
   async function saveCustomer(){
@@ -3415,36 +3562,17 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     if(!quoteForm.lines.length){alert("En az bir satir ekleyin.");return;}
     if(quoteForm.lines.some(l=>!l.partNo||safeNum(l.qty)<=0)){alert("Satirlarda parca no ve miktar zorunlu.");return;}
     const customer=customers.find(c=>c.id===quoteForm.customerId);
-    const pickedCurrency=quoteCurrencies.some(c=>c.code===String(quoteForm.currency||"").toUpperCase())
-      ? String(quoteForm.currency||"").toUpperCase()
-      : defaultQuoteCurrency;
-    const normalizedLines=quoteForm.lines.map(l=>({
-      partId:String(l.partId||findPartByNo(l.partNo)?.id||""),
-      partNo:String(l.partNo||"").trim().toUpperCase(),
-      partName:String(l.partName||findPartByNo(l.partNo)?.name||"").trim(),
-      revision:String(l.revision||findPartByNo(l.partNo)?.revision||"A").trim().toUpperCase(),
-      qty:Math.max(0,safeNum(l.qty)),
-      unitPrice:Math.max(0,safeNum(l.unitPrice)),
-      discountPct:Math.max(0,Math.min(100,safeNum(l.discountPct))),
-      dueDate:l.dueDate||todayStr(),
-      partSec:Math.max(1,safeNum(l.partSec)||safeNum(findPartByNo(l.partNo)?.cycleSec)||60),
-      machine:l.machine||machines[0]||"CNC-1",
-    }));
-    const grossAmount=normalizedLines.reduce((sum,l)=>sum+(safeNum(l.qty)*safeNum(l.unitPrice)),0);
-    const discountAmount=normalizedLines.reduce((sum,l)=>sum+((safeNum(l.qty)*safeNum(l.unitPrice))*safeNum(l.discountPct)/100),0);
-    const totalAmount=Math.max(0,grossAmount-discountAmount);
+    const normalizedLines=quoteForm.lines
+      .map(l=>normalizeSalesLine(l,{dueDateFallback:todayStr()}))
+      .map(l=>({...l,unitPrice:0,discountPct:0}));
     const payload={
       code:(quoteForm.code||nextCode("TKL",quotes,/^TKL-(\d+)$/)).toUpperCase(),
       customerId:customer?.id||"",
       customerName:customer?.name||"",
       validUntil:quoteForm.validUntil||todayStr(),
       priority:quoteForm.priority||"normal",
-      currency:pickedCurrency,
       note:quoteForm.note.trim(),
       lines:normalizedLines,
-      grossAmount,
-      discountAmount,
-      totalAmount,
       updatedAt:new Date().toISOString(),
     };
     if(quoteEditId){
@@ -3458,14 +3586,12 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       if(!ok){alert("Teklif guncellenemedi.");return;}
       await addAuditLog(currentUser.id,"salesQuote",quoteEditId,"update",before,patch,{module:"sales"});
       setQuotes(prev=>prev.map(x=>x.id===quoteEditId?{...x,...patch}:x));
-      await syncPartPriceHistoryFromQuote(quoteEditId,patch.code,customer,pickedCurrency,normalizedLines);
     }else{
       const createPayload={...payload,status:"offer",createdBy:currentUser.id};
       const id=await window.DB.addDoc("salesQuotes",createPayload);
       if(!id){alert("Teklif kaydedilemedi.");return;}
       await addAuditLog(currentUser.id,"salesQuote",id,"create",null,createPayload,{module:"sales"});
       setQuotes(prev=>[{id,...createPayload,createdAt:new Date().toISOString()},...prev]);
-      await syncPartPriceHistoryFromQuote(id,createPayload.code,customer,pickedCurrency,normalizedLines);
     }
     const nextQuoteSeed=quoteEditId?quotes:[...quotes,{code:payload.code||quoteForm.code||""}];
     setQuoteEditId("");
@@ -3474,7 +3600,6 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       customerId:"",
       validUntil:todayStr(),
       priority:"normal",
-      currency:defaultQuoteCurrency,
       note:"",
       lines:[makeDraftLine()],
     });
@@ -3487,18 +3612,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     if(!orderForm.lines.length){alert("En az bir satir ekleyin.");return;}
     if(orderForm.lines.some(l=>!l.partNo||safeNum(l.qty)<=0)){alert("Satirlarda parca no ve miktar zorunlu.");return;}
     const customer=customers.find(c=>c.id===orderForm.customerId);
-    const lines=orderForm.lines.map(l=>({
-      partId:String(l.partId||findPartByNo(l.partNo)?.id||""),
-      partNo:String(l.partNo||"").trim().toUpperCase(),
-      partName:String(l.partName||findPartByNo(l.partNo)?.name||"").trim(),
-      revision:String(l.revision||findPartByNo(l.partNo)?.revision||"A").trim().toUpperCase(),
-      qty:Math.max(0,safeNum(l.qty)),
-      unitPrice:Math.max(0,safeNum(l.unitPrice)),
-      discountPct:Math.max(0,Math.min(100,safeNum(l.discountPct))),
-      dueDate:l.dueDate||orderForm.dueDate||todayStr(),
-      partSec:Math.max(1,safeNum(l.partSec)||safeNum(findPartByNo(l.partNo)?.cycleSec)||60),
-      machine:l.machine||machines[0]||"CNC-1",
-    }));
+    const lines=orderForm.lines.map(l=>normalizeSalesLine(l,{dueDateFallback:orderForm.dueDate||todayStr()}));
     const qtyTotal=lines.reduce((sum,l)=>sum+safeNum(l.qty),0);
     const earliestDue=[...lines].sort((a,b)=>String(a.dueDate||"").localeCompare(String(b.dueDate||"")))[0]?.dueDate||orderForm.dueDate||todayStr();
     const payload={
@@ -3539,34 +3653,18 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   }
 
   async function duplicateQuote(q){
-    const lines=(q.lines||[]).map(l=>({
-      partId:String(l.partId||findPartByNo(l.partNo)?.id||""),
-      partNo:String(l.partNo||"").trim().toUpperCase(),
-      partName:String(l.partName||"").trim(),
-      revision:String(l.revision||"A").trim().toUpperCase(),
-      qty:Math.max(0,safeNum(l.qty)),
-      unitPrice:Math.max(0,safeNum(l.unitPrice)),
-      discountPct:Math.max(0,Math.min(100,safeNum(l.discountPct))),
-      dueDate:l.dueDate||todayStr(),
-      partSec:Math.max(1,safeNum(l.partSec)||60),
-      machine:l.machine||machines[0]||"CNC-1",
-    }));
+    const lines=(q.lines||[])
+      .map(l=>normalizeSalesLine(l,{dueDateFallback:todayStr()}))
+      .map(l=>({...l,unitPrice:0,discountPct:0}));
     if(lines.length===0){alert("Kopyalanacak teklif satiri yok.");return;}
-    const gross=lines.reduce((sum,l)=>sum+(safeNum(l.qty)*safeNum(l.unitPrice)),0);
-    const discount=lines.reduce((sum,l)=>sum+((safeNum(l.qty)*safeNum(l.unitPrice))*safeNum(l.discountPct)/100),0);
-    const net=Math.max(0,gross-discount);
     const payload={
       code:nextCode("TKL",quotes,/^TKL-(\d+)$/),
       customerId:q.customerId||"",
       customerName:q.customerName||"",
       validUntil:q.validUntil||todayStr(),
       priority:q.priority||"normal",
-      currency:(q.currency&&quoteCurrencies.some(c=>c.code===String(q.currency).toUpperCase()))?String(q.currency).toUpperCase():defaultQuoteCurrency,
       note:(q.note||"").trim(),
       lines,
-      grossAmount:gross,
-      discountAmount:discount,
-      totalAmount:net,
       status:"offer",
       copiedFromQuoteId:q.id||"",
       copiedFromQuoteCode:q.code||"",
@@ -3577,24 +3675,11 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     if(!id){alert("Teklif kopyalanamadi.");return;}
     await addAuditLog(currentUser.id,"salesQuote",id,"copy",q,payload,{module:"sales"});
     setQuotes(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
-    const customer=customers.find(c=>c.id===payload.customerId)||null;
-    await syncPartPriceHistoryFromQuote(id,payload.code,customer,payload.currency,lines);
     setView("quotes");
   }
 
   async function duplicateSalesOrder(o){
-    const lines=(o.lines||[]).map(l=>({
-      partId:String(l.partId||findPartByNo(l.partNo)?.id||""),
-      partNo:String(l.partNo||"").trim().toUpperCase(),
-      partName:String(l.partName||"").trim(),
-      revision:String(l.revision||"A").trim().toUpperCase(),
-      qty:Math.max(0,safeNum(l.qty)),
-      unitPrice:Math.max(0,safeNum(l.unitPrice)),
-      discountPct:Math.max(0,Math.min(100,safeNum(l.discountPct))),
-      dueDate:l.dueDate||o.dueDate||todayStr(),
-      partSec:Math.max(1,safeNum(l.partSec)||60),
-      machine:l.machine||machines[0]||"CNC-1",
-    }));
+    const lines=(o.lines||[]).map(l=>normalizeSalesLine(l,{dueDateFallback:o.dueDate||todayStr()}));
     if(lines.length===0){alert("Kopyalanacak siparis satiri yok.");return;}
     const qty=lines.reduce((sum,l)=>sum+safeNum(l.qty),0);
     const gross=lines.reduce((sum,l)=>sum+(safeNum(l.qty)*safeNum(l.unitPrice)),0);
@@ -3647,16 +3732,23 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     const createdIds=[];
     const createdCodes=[];
     let seed=[...workOrders];
-    for(const line of order.lines){
+    const normalizedOrderLines=(order.lines||[]).map(l=>normalizeSalesLine(l,{dueDateFallback:order.dueDate||todayStr()}));
+    for(const line of normalizedOrderLines){
       const code=nextCode("IE",seed,/^IE-(\d+)$/);
+      const lineSnapshot=(line.partSnapshot&&typeof line.partSnapshot==="object")
+        ? line.partSnapshot
+        : makePartSnapshot(resolvePartFromLine(line));
       const woPayload={
         code,
         name:line.partName||line.partNo||order.code,
         customerId:order.customerId||"",
         customerName:order.customerName||"",
         material:line.material||order.material||"",
+        partId:line.partId||lineSnapshot?.partId||"",
         partNo:line.partNo||"",
         revision:line.revision||"",
+        customerPartCode:line.customerPartCode||lineSnapshot?.customerPartCode||"",
+        partSnapshot:lineSnapshot||null,
         qty:Math.max(0,safeNum(line.qty)),
         dueDate:line.dueDate||order.dueDate||"",
         priority:order.priority||"normal",
@@ -3694,8 +3786,9 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     const existing=salesOrders.find(s=>s.sourceQuoteId===q.id);
     if(existing){alert(`Bu teklif zaten siparise donustu: ${existing.code}`);return;}
     const orderCode=nextCode("SIP",salesOrders,/^SIP-(\d+)$/);
-    const qtyTotal=q.lines.reduce((sum,l)=>sum+safeNum(l.qty),0);
-    const dueDate=[...q.lines].sort((a,b)=>String(a.dueDate||"").localeCompare(String(b.dueDate||"")))[0]?.dueDate||todayStr();
+    const normalizedQuoteLines=(q.lines||[]).map(l=>normalizeSalesLine(l,{dueDateFallback:todayStr()}));
+    const qtyTotal=normalizedQuoteLines.reduce((sum,l)=>sum+safeNum(l.qty),0);
+    const dueDate=[...normalizedQuoteLines].sort((a,b)=>String(a.dueDate||"").localeCompare(String(b.dueDate||"")))[0]?.dueDate||todayStr();
     const payload={
       code:orderCode,
       customerId:q.customerId||"",
@@ -3703,7 +3796,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       sourceQuoteId:q.id,
       sourceQuoteCode:q.code||"",
       currency:(q.currency&&quoteCurrencies.some(c=>c.code===String(q.currency).toUpperCase()))?String(q.currency).toUpperCase():defaultQuoteCurrency,
-      lines:q.lines||[],
+      lines:normalizedQuoteLines,
       qty:qtyTotal,
       dueDate,
       priority:q.priority||"normal",
@@ -3798,15 +3891,22 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       });
 
       y+=8;
-      const columns=[
-        {label:"Parca No",key:"partNo",width:72,align:"left"},
-        {label:"Aciklama",key:"partName",width:146,align:"left"},
-        {label:"Adet",key:"qty",width:44,align:"right"},
-        {label:"Birim",key:"unit",width:58,align:"right"},
-        {label:"Isk.%",key:"disc",width:44,align:"right"},
-        {label:"Tutar",key:"total",width:66,align:"right"},
-        {label:"Termin",key:"dueDate",width:75,align:"left"},
-      ];
+      const columns=isQuote
+        ? [
+          {label:"Parca No",key:"partNo",width:110,align:"left"},
+          {label:"Aciklama",key:"partName",width:250,align:"left"},
+          {label:"Adet",key:"qty",width:70,align:"right"},
+          {label:"Termin",key:"dueDate",width:90,align:"left"},
+        ]
+        : [
+          {label:"Parca No",key:"partNo",width:72,align:"left"},
+          {label:"Aciklama",key:"partName",width:146,align:"left"},
+          {label:"Adet",key:"qty",width:44,align:"right"},
+          {label:"Birim",key:"unit",width:58,align:"right"},
+          {label:"Isk.%",key:"disc",width:44,align:"right"},
+          {label:"Tutar",key:"total",width:66,align:"right"},
+          {label:"Termin",key:"dueDate",width:75,align:"left"},
+        ];
       const tableW=columns.reduce((sum,c)=>sum+c.width,0);
       const headerH=22;
 
@@ -3831,7 +3931,9 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       pdf.setFontSize(9);
 
       rows.forEach(row=>{
-        const descLines=pdf.splitTextToSize(String(row.partName||"-"),columns[1].width-8);
+        const descCol=columns.find(c=>c.key==="partName");
+        const descWidth=(descCol?descCol.width:146)-8;
+        const descLines=pdf.splitTextToSize(String(row.partName||"-"),Math.max(40,descWidth));
         const rowH=Math.max(18,descLines.length*11+4);
         if(y+rowH>pageH-118){
           pdf.addPage();
@@ -3863,31 +3965,32 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       });
 
       y+=10;
-      const calcGross=rows.reduce((sum,r)=>sum+(safeNum(r.qty)*safeNum(r.unit)),0);
-      const calcNet=rows.reduce((sum,r)=>sum+safeNum(r.total),0);
-      const grossRaw=safeNum(doc.grossAmount);
-      const discountRaw=safeNum(doc.discountAmount);
-      const netRaw=safeNum(doc.totalAmount);
-      const gross=grossRaw>0?grossRaw:calcGross;
-      const net=netRaw>0?netRaw:calcNet;
-      const discount=discountRaw>0?discountRaw:Math.max(0,gross-net);
-      const totals=[
-        ["Brut",gross.toFixed(2)],
-        ["Iskonto",discount.toFixed(2)],
-        ["Net",net.toFixed(2)],
-      ];
-      const boxW=172;
-      const boxX=margin+tableW-boxW;
-      totals.forEach((line,idx)=>{
-        const rowY=y+(idx*16);
-        pdf.setDrawColor(223,228,234);
-        pdf.rect(boxX,rowY,boxW,16);
-        pdf.setFont("helvetica",idx===2?"bold":"normal");
-        pdf.text(line[0],boxX+6,rowY+11);
-        pdf.text(`${line[1]} ${docCurrency}`,boxX+boxW-6,rowY+11,{align:"right"});
-      });
-
-      y+=totals.length*16+12;
+      if(!isQuote){
+        const calcGross=rows.reduce((sum,r)=>sum+(safeNum(r.qty)*safeNum(r.unit)),0);
+        const calcNet=rows.reduce((sum,r)=>sum+safeNum(r.total),0);
+        const grossRaw=safeNum(doc.grossAmount);
+        const discountRaw=safeNum(doc.discountAmount);
+        const netRaw=safeNum(doc.totalAmount);
+        const gross=grossRaw>0?grossRaw:calcGross;
+        const net=netRaw>0?netRaw:calcNet;
+        const discount=discountRaw>0?discountRaw:Math.max(0,gross-net);
+        const totals=[
+          ["Brut",gross.toFixed(2)],
+          ["Iskonto",discount.toFixed(2)],
+          ["Net",net.toFixed(2)],
+        ];
+        const boxW=172;
+        const boxX=margin+tableW-boxW;
+        totals.forEach((line,idx)=>{
+          const rowY=y+(idx*16);
+          pdf.setDrawColor(223,228,234);
+          pdf.rect(boxX,rowY,boxW,16);
+          pdf.setFont("helvetica",idx===2?"bold":"normal");
+          pdf.text(line[0],boxX+6,rowY+11);
+          pdf.text(`${line[1]} ${docCurrency}`,boxX+boxW-6,rowY+11,{align:"right"});
+        });
+        y+=totals.length*16+12;
+      }
       const noteText=doc.note?`Not: ${doc.note}`:"";
       if(noteText){
         const lines=pdf.splitTextToSize(noteText,tableW);
@@ -3972,8 +4075,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   const filteredQuotes=quotes.filter(x=>{
     const textOk=!q||(x.code||"").toLowerCase().includes(q)||(x.customerName||"").toLowerCase().includes(q)||(x.status||"").toLowerCase().includes(q);
     const statusOk=quoteStatusFilter==="all"||(x.status||"")===quoteStatusFilter;
-    const currencyOk=quoteCurrencyFilter==="all"||String(x.currency||defaultQuoteCurrency).toUpperCase()===quoteCurrencyFilter;
-    return textOk&&statusOk&&currencyOk;
+    return textOk&&statusOk;
   });
   const filteredOrders=salesOrders.filter(x=>!q||(x.code||"").toLowerCase().includes(q)||(x.customerName||"").toLowerCase().includes(q)||(x.status||"").toLowerCase().includes(q));
   const statusLabel=s=>getSalesStatusMeta(s).label;
@@ -4072,10 +4174,6 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
               <option value="converted">Donustu</option>
               <option value="cancelled">Iptal</option>
             </select>
-            <select style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:130}} value={quoteCurrencyFilter} onChange={e=>setQuoteCurrencyFilter(e.target.value)}>
-              <option value="all">Tum Para</option>
-              {quoteCurrencies.map(cur=><option key={cur.code} value={cur.code}>{cur.code} · {cur.label}</option>)}
-            </select>
             <input style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:220}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod / musteri / durum ara..."/>
           </div>
           {filteredQuotes.map(qr=>(
@@ -4085,10 +4183,9 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                   <div style={{display:"flex",gap:7,alignItems:"center",flexWrap:"wrap"}}>
                     <span style={{fontWeight:800,fontFamily:"monospace",fontSize:14,color:C.text}}>{qr.code}</span>
                     <Badge label={statusLabel(qr.status)} color={statusColor(qr.status)}/>
-                    <Badge label={String(qr.currency||defaultQuoteCurrency).toUpperCase()} color={C.accent}/>
                   </div>
                   <div style={{fontSize:13,color:C.text,marginTop:3}}>{qr.customerName||"-"}</div>
-                  <div style={{fontSize:11,color:C.muted2,marginTop:2}}>Satir: {(qr.lines||[]).length} · Gecerlilik: {qr.validUntil||"-"} · Net: {formatByCurrency(qr.totalAmount,qr.currency)}</div>
+                  <div style={{fontSize:11,color:C.muted2,marginTop:2}}>Satir: {(qr.lines||[]).length} · Gecerlilik: {qr.validUntil||"-"}</div>
                 </div>
                 <div style={{display:"flex",gap:7,flexWrap:"wrap",justifyContent:"flex-end"}}>
                   <button onClick={()=>openEditQuoteModal(qr)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
@@ -4188,7 +4285,6 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                 <div><span style={labelSt}>Musteri *</span><select style={inputSt} value={quoteForm.customerId} onChange={e=>setQ("customerId",e.target.value)}><option value="">Secin</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
                 <div><span style={labelSt}>Gecerlilik</span><input style={inputSt} type="date" value={quoteForm.validUntil} onChange={e=>setQ("validUntil",e.target.value)}/></div>
                 <div><span style={labelSt}>Oncelik</span><select style={inputSt} value={quoteForm.priority} onChange={e=>setQ("priority",e.target.value)}><option value="urgent">Acil</option><option value="normal">Normal</option><option value="low">Dusuk</option></select></div>
-                <div><span style={labelSt}>Doviz Cinsi</span><select style={inputSt} value={quoteForm.currency||defaultQuoteCurrency} onChange={e=>setQ("currency",e.target.value)}>{quoteCurrencies.map(cur=><option key={cur.code} value={cur.code}>{cur.code} · {cur.label}</option>)}</select></div>
               </div>
               <div><span style={labelSt}>Not</span><input style={inputSt} value={quoteForm.note} onChange={e=>setQ("note",e.target.value)} placeholder="Opsiyonel not"/></div>
 
@@ -4198,24 +4294,20 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
               </div>
 
               <div style={{overflowX:"auto"}}>
-                <div style={{minWidth:1120,display:"flex",flexDirection:"column",gap:7}}>
-                  <div style={{display:"grid",gridTemplateColumns:"120px 180px 72px 84px 94px 88px 132px 94px 104px 96px 44px",gap:7,fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:".35px"}}>
-                    <div>Parca No</div><div>Parca Adi</div><div>Rev.</div><div>Adet</div><div>Birim</div><div>Iskonto %</div><div>Termin</div><div>Cevrim sn</div><div>Tutar</div><div>Kutuphane</div><div/>
+                <div style={{minWidth:940,display:"flex",flexDirection:"column",gap:7}}>
+                  <div style={{display:"grid",gridTemplateColumns:"140px 210px 72px 96px 140px 96px 140px 44px",gap:7,fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:".35px"}}>
+                    <div>Parca No</div><div>Parca Adi</div><div>Rev.</div><div>Adet</div><div>Termin</div><div>Cevrim sn</div><div>Kutuphane</div><div/>
                   </div>
                   {quoteForm.lines.map((line,idx)=>{
-                    const t=lineTotal(line);
                     const hasPart=Boolean(findPartByNo(line.partNo));
                     return (
-                      <div key={idx} style={{display:"grid",gridTemplateColumns:"120px 180px 72px 84px 94px 88px 132px 94px 104px 96px 44px",gap:7}}>
-                        <input style={inputSt} list="quote-part-catalog" value={line.partNo} onChange={e=>{const val=e.target.value;setLine(idx,"partNo",val);if(findPartByNo(val)){syncQuoteLineFromPartNo(idx,val);}}} onBlur={()=>{const linked=syncQuoteLineFromPartNo(idx,line.partNo);applyCustomerPrice(idx,linked?.partNo||line.partNo);}} placeholder="P-NO"/>
+                      <div key={idx} style={{display:"grid",gridTemplateColumns:"140px 210px 72px 96px 140px 96px 140px 44px",gap:7}}>
+                        <input style={inputSt} list="quote-part-catalog" value={line.partNo} onChange={e=>{const val=e.target.value;setLine(idx,"partNo",val);if(findPartByNo(val)){syncQuoteLineFromPartNo(idx,val);}}} onBlur={()=>{syncQuoteLineFromPartNo(idx,line.partNo);}} placeholder="P-NO"/>
                         <input style={inputSt} value={line.partName} onChange={e=>setLine(idx,"partName",e.target.value)} placeholder="Parca adi"/>
                         <input style={inputSt} value={line.revision} onChange={e=>setLine(idx,"revision",e.target.value.toUpperCase())} placeholder="A"/>
                         <input style={inputSt} type="number" min="0" value={line.qty} onChange={e=>setLine(idx,"qty",e.target.value)}/>
-                        <input style={inputSt} type="number" min="0" value={line.unitPrice} onChange={e=>setLine(idx,"unitPrice",e.target.value)}/>
-                        <input style={inputSt} type="number" min="0" max="100" value={line.discountPct} onChange={e=>setLine(idx,"discountPct",e.target.value)}/>
                         <input style={inputSt} type="date" value={line.dueDate||todayStr()} onChange={e=>setLine(idx,"dueDate",e.target.value)}/>
                         <input style={inputSt} type="number" min="1" value={line.partSec} onChange={e=>setLine(idx,"partSec",e.target.value)}/>
-                        <div style={{...inputSt,display:"flex",alignItems:"center",justifyContent:"flex-end",fontWeight:700,color:C.text}}>{safeNum(t.net).toFixed(2)}</div>
                         <div style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
                           {String(line.partNo||"").trim()?(
                             hasPart
@@ -4234,12 +4326,6 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                   <option key={p.id||p.partNo} value={p.partNo}>{p.name||""}</option>
                 ))}
               </datalist>
-
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
-                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Brut</div><div style={{fontWeight:800,color:C.text}}>{formatByCurrency(quoteTotals.gross,quoteForm.currency)}</div></div>
-                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Iskonto</div><div style={{fontWeight:800,color:C.warn}}>{formatByCurrency(quoteTotals.discount,quoteForm.currency)}</div></div>
-                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Net</div><div style={{fontWeight:800,color:C.accent}}>{formatByCurrency(quoteTotals.net,quoteForm.currency)}</div></div>
-              </div>
             </div>
             <div style={{padding:"12px 14px",borderTop:`1px solid ${C.border}`,display:"flex",justifyContent:"flex-end",gap:8}}>
               <button onClick={closeQuoteModal} style={{...btnSt("ghost"),padding:"9px 13px",fontSize:12}}>Iptal</button>
@@ -4309,7 +4395,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                     const t=lineTotal(line);
                     return (
                       <div key={idx} style={{display:"grid",gridTemplateColumns:"120px 180px 72px 84px 94px 88px 132px 94px 104px 44px",gap:7}}>
-                        <input style={inputSt} value={line.partNo} onChange={e=>setOrderLine(idx,"partNo",e.target.value)} onBlur={()=>applyOrderCustomerPrice(idx,line.partNo)} placeholder="P-NO"/>
+                        <input style={inputSt} value={line.partNo} onChange={e=>setOrderLine(idx,"partNo",e.target.value)} onBlur={()=>{const linked=syncOrderLineFromPartNo(idx,line.partNo);applyOrderCustomerPrice(idx,linked?.partNo||line.partNo);}} placeholder="P-NO"/>
                         <input style={inputSt} value={line.partName} onChange={e=>setOrderLine(idx,"partName",e.target.value)} placeholder="Parca adi"/>
                         <input style={inputSt} value={line.revision} onChange={e=>setOrderLine(idx,"revision",e.target.value.toUpperCase())} placeholder="A"/>
                         <input style={inputSt} type="number" min="0" value={line.qty} onChange={e=>setOrderLine(idx,"qty",e.target.value)}/>
@@ -4593,7 +4679,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   const [previewFile,setPreviewFile]=useState(null);
   const [uploading,setUploading]=useState(false);
   const fileRef=useRef();
-  const emptyForm={code:"",name:"",partNo:"",revision:"A",customerId:"",material:"",qty:"1",dueDate:todayStr(),priority:"normal",dependencies:[],partSec:"",machines:[],notes:"",files:[],status:"planned",sourceType:"manual"};
+  const emptyForm={code:"",name:"",partId:"",partNo:"",revision:"A",customerPartCode:"",partSnapshot:null,customerId:"",material:"",qty:"1",dueDate:todayStr(),priority:"normal",dependencies:[],partSec:"",machines:[],notes:"",files:[],status:"planned",sourceType:"manual"};
   const [form,setForm]=useState(emptyForm);
   const nextOrderCode=useCallback((list=orders)=>{
     const nums=list.map(o=>{
@@ -4677,11 +4763,17 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
     if(form.machines.length===0){alert("En az bir tezgah seçin!");return;}
     const finalCode=editId?form.code:(form.code||nextOrderCode());
     const pickedCustomer=customers.find(c=>c.id===form.customerId);
+    const editingOrder=editId?orders.find(x=>x.id===editId):null;
     const data={
       code:finalCode.toUpperCase(),
       name:form.name,
+      partId:String(form.partId||editingOrder?.partId||""),
       partNo:(form.partNo||"").trim().toUpperCase(),
       revision:(form.revision||"A").trim().toUpperCase(),
+      customerPartCode:String(form.customerPartCode||editingOrder?.customerPartCode||"").trim().toUpperCase(),
+      partSnapshot:(form.partSnapshot&&typeof form.partSnapshot==="object")
+        ? form.partSnapshot
+        : ((editingOrder?.partSnapshot&&typeof editingOrder.partSnapshot==="object")?editingOrder.partSnapshot:null),
       customerId:pickedCustomer?.id||"",
       customerName:pickedCustomer?.name||"",
       material:form.material,
@@ -4719,8 +4811,11 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
     const data={
       code:newCode.toUpperCase(),
       name:order.name||"",
+      partId:order.partId||"",
       partNo:(order.partNo||"").trim().toUpperCase(),
       revision:(order.revision||"A").trim().toUpperCase(),
+      customerPartCode:String(order.customerPartCode||"").trim().toUpperCase(),
+      partSnapshot:(order.partSnapshot&&typeof order.partSnapshot==="object")?order.partSnapshot:null,
       customerId:order.customerId||"",
       customerName:order.customerName||"",
       material:order.material||"",
@@ -4988,7 +5083,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
                 </div>
                 <div style={{display:"flex",gap:6,justifyContent:"flex-end",alignItems:"center"}}>
                   <button onClick={()=>setViewOrder(o)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Goruntule</button>
-                  <button onClick={()=>{setForm({code:o.code,name:o.name,partNo:o.partNo||"",revision:o.revision||"A",customerId:o.customerId||"",material:o.material||"",qty:String(o.qty??"1"),dueDate:o.dueDate||todayStr(),priority:o.priority||"normal",dependencies:o.dependencies||[],partSec:o.partSec,machines:o.machines||[],notes:o.notes||"",files:o.files||[],status:o.status||"planned",sourceType:o.sourceType||"manual"});setEditId(o.id);setShowForm(true);}} style={{...btnSt(),padding:"6px 10px",fontSize:12}}>Duzenle</button>
+                  <button onClick={()=>{setForm({code:o.code,name:o.name,partId:o.partId||"",partNo:o.partNo||"",revision:o.revision||"A",customerPartCode:o.customerPartCode||"",partSnapshot:(o.partSnapshot&&typeof o.partSnapshot==="object")?o.partSnapshot:null,customerId:o.customerId||"",material:o.material||"",qty:String(o.qty??"1"),dueDate:o.dueDate||todayStr(),priority:o.priority||"normal",dependencies:o.dependencies||[],partSec:o.partSec,machines:o.machines||[],notes:o.notes||"",files:o.files||[],status:o.status||"planned",sourceType:o.sourceType||"manual"});setEditId(o.id);setShowForm(true);}} style={{...btnSt(),padding:"6px 10px",fontSize:12}}>Duzenle</button>
                   <button onClick={()=>duplicateWorkOrder(o)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kopyala</button>
                   <select style={{...inputSt,width:132,padding:"6px 8px",fontSize:12}} value={o.status||"passive"} onChange={e=>setOrderStatus(o,e.target.value)}>
                     {ORDER_STATUS_OPTIONS.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
@@ -5352,41 +5447,68 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const opTheme=(()=>{
     if(statusMeta.mode==="running"){
       return {
-        shell:"#0f1419",
+        shell:"#0d1218",
+        shellGradient:"radial-gradient(150% 130% at 0% 0%, #21432f 0%, #101a23 55%, #090d12 100%)",
         panel:"#1d9944",
+        panelGradient:"linear-gradient(165deg,#1f9f4c 0%,#177c39 100%)",
         panelDark:"#177f38",
+        panelDarkGradient:"linear-gradient(155deg,#177239 0%,#11592b 100%)",
         panelSoft:"#21a94b",
+        panelSoftGradient:"linear-gradient(165deg,#27aa57 0%,#1a8140 100%)",
         border:"rgba(255,255,255,.24)",
+        borderStrong:"rgba(255,255,255,.35)",
         text:"#ecfff2",
         textDim:"#cbf1d6",
         textMuted:"#a6dfb8",
+        cardBg:"rgba(7,18,12,.34)",
+        cardBgSoft:"rgba(255,255,255,.14)",
+        inputBg:"rgba(9,28,17,.45)",
+        shadow:"0 18px 34px rgba(0,0,0,.35)",
         danger:"#ffb1b1",
         warn:"#ffe18f",
       };
     }
     if(statusMeta.mode==="idle"){
       return {
-        shell:"#17120a",
+        shell:"#161109",
+        shellGradient:"radial-gradient(150% 130% at 0% 0%, #66441b 0%, #22170d 55%, #120d08 100%)",
         panel:"#b46b1a",
+        panelGradient:"linear-gradient(165deg,#be741f 0%,#954f11 100%)",
         panelDark:"#935713",
+        panelDarkGradient:"linear-gradient(155deg,#915312 0%,#6d3a0a 100%)",
         panelSoft:"#c87d27",
+        panelSoftGradient:"linear-gradient(165deg,#ce842f 0%,#a9601a 100%)",
         border:"rgba(255,255,255,.24)",
+        borderStrong:"rgba(255,255,255,.34)",
         text:"#fff4e4",
         textDim:"#ffe0b9",
         textMuted:"#f7c98f",
+        cardBg:"rgba(35,20,6,.36)",
+        cardBgSoft:"rgba(255,255,255,.14)",
+        inputBg:"rgba(46,25,8,.42)",
+        shadow:"0 18px 34px rgba(0,0,0,.35)",
         danger:"#ffd2ba",
         warn:"#ffe18f",
       };
     }
     return {
       shell:"#1a1010",
+      shellGradient:"radial-gradient(150% 130% at 0% 0%, #592121 0%, #241111 55%, #120b0b 100%)",
       panel:"#aa3030",
+      panelGradient:"linear-gradient(165deg,#b63b3b 0%,#842525 100%)",
       panelDark:"#8d2525",
+      panelDarkGradient:"linear-gradient(155deg,#8f2828 0%,#681b1b 100%)",
       panelSoft:"#bc3a3a",
+      panelSoftGradient:"linear-gradient(165deg,#c34343 0%,#9c2e2e 100%)",
       border:"rgba(255,255,255,.24)",
+      borderStrong:"rgba(255,255,255,.34)",
       text:"#ffecec",
       textDim:"#ffcfcf",
       textMuted:"#f5abab",
+      cardBg:"rgba(41,12,12,.34)",
+      cardBgSoft:"rgba(255,255,255,.14)",
+      inputBg:"rgba(44,13,13,.42)",
+      shadow:"0 18px 34px rgba(0,0,0,.35)",
       danger:"#ffd4d4",
       warn:"#ffd7a8",
     };
@@ -5406,32 +5528,56 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     .sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||""))
     .slice(0,3);
   const entryRootStyle=kioskMode
-    ? {padding:8,display:"flex",flexDirection:"column",gap:10,width:"100%",height:"100dvh",minHeight:"100vh",overflow:"hidden"}
+    ? {padding:10,display:"flex",flexDirection:"column",gap:10,width:"100%",height:"100dvh",minHeight:"100vh",overflow:"hidden",background:opTheme.shellGradient}
     : {padding:16,display:"flex",flexDirection:"column",gap:12};
   const shellStyle=kioskMode
-    ? {background:opTheme.shell,borderRadius:18,border:`1px solid ${C.border}`,padding:10,display:"flex",flexDirection:"column",flex:1,minHeight:0,overflow:"hidden"}
+    ? {background:opTheme.shellGradient,borderRadius:18,border:`1px solid ${opTheme.borderStrong}`,padding:10,display:"flex",flexDirection:"column",flex:1,minHeight:0,overflow:"hidden",boxShadow:opTheme.shadow}
     : {background:opTheme.shell,borderRadius:18,border:`1px solid ${C.border}`,padding:10};
   const contentStackStyle=kioskMode
     ? {marginTop:10,display:"flex",flexDirection:"column",gap:10,flex:1,minHeight:0,overflowY:"auto",paddingRight:2}
     : {marginTop:10,display:"flex",flexDirection:"column",gap:10};
   const opsPanelStyle=kioskMode
-    ? {background:opTheme.panel,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:"12px 10px",display:"flex",flexDirection:"column",flex:1,minHeight:0}
-    : {background:opTheme.panel,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:"12px 10px"};
+    ? {background:opTheme.panelGradient||opTheme.panel,border:`1px solid ${opTheme.borderStrong}`,borderRadius:12,padding:"12px 10px",display:"flex",flexDirection:"column",flex:1,minHeight:0,boxShadow:"inset 0 1px 0 rgba(255,255,255,.12)"}
+    : {background:opTheme.panelGradient||opTheme.panel,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:"12px 10px"};
   const opsGridStyle=kioskMode
     ? {display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:10,flex:1,minHeight:0,alignItems:"stretch"}
     : {display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:10};
   const stockPanelStyle=kioskMode
-    ? {background:opTheme.panelSoft,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:10,display:"flex",flexDirection:"column",flex:1,minHeight:0}
-    : {background:opTheme.panelSoft,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:10};
+    ? {background:opTheme.panelSoftGradient||opTheme.panelSoft,border:`1px solid ${opTheme.borderStrong}`,borderRadius:12,padding:10,display:"flex",flexDirection:"column",flex:1,minHeight:0,boxShadow:"inset 0 1px 0 rgba(255,255,255,.12)"}
+    : {background:opTheme.panelSoftGradient||opTheme.panelSoft,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:10};
   const stockGridStyle=kioskMode
     ? {display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:10,flex:1,minHeight:0,alignItems:"stretch"}
     : {display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:10};
   const topInfoGridStyle=kioskMode
-    ? {background:opTheme.panelDark,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:"10px 12px",display:"grid",gridTemplateColumns:"repeat(3,minmax(220px,1fr))",gap:8,alignItems:"center"}
-    : {background:opTheme.panelDark,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:"10px 12px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8,alignItems:"center"};
+    ? {background:opTheme.panelDarkGradient||opTheme.panelDark,border:`1px solid ${opTheme.borderStrong}`,borderRadius:12,padding:"11px 12px",display:"grid",gridTemplateColumns:"repeat(3,minmax(220px,1fr))",gap:8,alignItems:"center",boxShadow:"inset 0 1px 0 rgba(255,255,255,.14)"}
+    : {background:opTheme.panelDarkGradient||opTheme.panelDark,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:"10px 12px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8,alignItems:"center"};
   const topControlStyle=kioskMode
-    ? {display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"nowrap",gridColumn:"1 / -1",overflowX:"auto",paddingBottom:2}
+    ? {display:"flex",gap:6,justifyContent:"flex-end",alignItems:"center",flexWrap:"nowrap",gridColumn:"1 / -1",overflowX:"auto",paddingBottom:2}
     : {display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"};
+  const infoPillStyle={background:opTheme.cardBgSoft,border:`1px solid ${opTheme.borderStrong}`,borderRadius:10,padding:"7px 10px",color:opTheme.text,fontSize:11,fontWeight:700};
+  const machineChipStyle=(active)=>({
+    ...chip(active,active?C.accent:C.muted2),
+    padding:"8px 12px",
+    fontSize:12,
+    borderColor:active?C.accent:opTheme.borderStrong,
+    color:active?"#fff":opTheme.text,
+    background:active?C.accent:opTheme.cardBgSoft,
+  });
+  const shiftButtonStyle=(active)=>({
+    ...btnSt(active?"primary":"ghost"),
+    padding:"8px 10px",
+    fontSize:11,
+    fontWeight:700,
+    borderColor:opTheme.borderStrong,
+    background:active?C.accent:opTheme.cardBgSoft,
+    color:active?"#fff":opTheme.text,
+  });
+  const sectionCardStyle=kioskMode
+    ? {background:opTheme.cardBg,border:`1px solid ${opTheme.borderStrong}`,borderRadius:10,padding:10,boxShadow:"inset 0 1px 0 rgba(255,255,255,.08)"}
+    : {background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:10};
+  const rowCardStyle={background:opTheme.cardBgSoft,border:`1px solid ${opTheme.borderStrong}`,borderRadius:8,padding:"6px 7px"};
+  const themedInputStyle={background:opTheme.inputBg,borderColor:opTheme.borderStrong,color:opTheme.text};
+  const statStripStyle={display:"grid",gridTemplateColumns:kioskMode?"repeat(4,minmax(0,1fr))":"repeat(auto-fit,minmax(140px,1fr))",gap:8};
 
   return (
     <div style={entryRootStyle}>
@@ -5452,12 +5598,12 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             <div style={{fontSize:17,fontWeight:700,color:opTheme.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{form.selectedOrder?.code||"-"}{form.selectedOrder?.name?` | ${form.selectedOrder.name}`:""}</div>
           </div>
           <div style={topControlStyle}>
-            <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"6px 10px",border:`1px solid ${opTheme.border}`,borderRadius:8,background:"rgba(255,255,255,.12)",fontSize:11,color:opTheme.text,fontWeight:700}}>
+            <span style={{...infoPillStyle,display:"inline-flex",alignItems:"center",gap:6}}>
               <span style={{width:10,height:10,borderRadius:"50%",background:statusMeta.color,display:"inline-block"}}/>
               {statusMeta.label}
             </span>
-            <input type="date" max={todayStr()} value={form.entryDate} onChange={e=>fv("entryDate",e.target.value||todayStr())} style={{...inputSt,padding:"8px 10px",fontSize:12,width:160,background:"rgba(255,255,255,.15)",borderColor:opTheme.border,color:opTheme.text}}/>
-            {SHIFTS.map(s=><button key={s.id} onClick={()=>fv("shift",s.id)} style={{...btnSt(form.shift===s.id?"primary":"ghost"),padding:"7px 9px",fontSize:11,opacity:form.shift===s.id?1:0.95}}>{s.label}</button>)}
+            <input type="date" max={todayStr()} value={form.entryDate} onChange={e=>fv("entryDate",e.target.value||todayStr())} style={{...inputSt,...themedInputStyle,padding:"8px 10px",fontSize:12,width:160}}/>
+            {SHIFTS.map(s=><button key={s.id} onClick={()=>fv("shift",s.id)} style={shiftButtonStyle(form.shift===s.id)}>{s.label}</button>)}
           </div>
         </div>
 
@@ -5474,23 +5620,42 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
           </div>
         ):(
           <div style={{marginTop:8,display:"flex",gap:7,flexWrap:"wrap"}}>
-            {machines.map(m=><button key={m} onClick={()=>selectMachine(m)} style={{...chip(form.machine===m,form.machine===m?C.accent:C.muted2),padding:"8px 12px",fontSize:12}}>{m}</button>)}
+            {machines.map(m=><button key={m} onClick={()=>selectMachine(m)} style={machineChipStyle(form.machine===m)}>{m}</button>)}
           </div>
         )}
 
         <div style={contentStackStyle}>
+          <div style={statStripStyle}>
+            <div style={{...rowCardStyle,padding:"8px 10px"}}>
+              <div style={{fontSize:10,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Durum</div>
+              <div style={{fontSize:15,fontWeight:800,color:statusMeta.color,marginTop:2}}>{statusMeta.label}</div>
+            </div>
+            <div style={{...rowCardStyle,padding:"8px 10px"}}>
+              <div style={{fontSize:10,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Uretilen</div>
+              <div style={{fontSize:15,fontWeight:800,color:opTheme.text,marginTop:2}}>{producedQty}</div>
+            </div>
+            <div style={{...rowCardStyle,padding:"8px 10px"}}>
+              <div style={{fontSize:10,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Scrap</div>
+              <div style={{fontSize:15,fontWeight:800,color:opTheme.danger,marginTop:2}}>{scrapQty}</div>
+            </div>
+            <div style={{...rowCardStyle,padding:"8px 10px"}}>
+              <div style={{fontSize:10,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Kalite</div>
+              <div style={{fontSize:15,fontWeight:800,color:qualityPct<90?opTheme.warn:opTheme.text,marginTop:2}}>%{qualityPct}</div>
+            </div>
+          </div>
+
           <div style={opsPanelStyle}>
             <div style={opsGridStyle}>
-              <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:10,...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
+              <div style={{...sectionCardStyle,...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
               <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>SET-UP</div>
-              <button onClick={openToolChangeModal} style={{...btnSt("ghost"),width:"100%",padding:"12px 10px",fontSize:13,borderColor:opTheme.border,color:opTheme.text}}>Takım Değişimi</button>
+              <button onClick={openToolChangeModal} style={{...btnSt("ghost"),width:"100%",padding:"12px 10px",fontSize:13,borderColor:opTheme.borderStrong,color:opTheme.text,background:opTheme.cardBgSoft,fontWeight:700}}>Takım Değişimi</button>
               <div style={{marginTop:8,fontSize:12,color:opTheme.textDim,textAlign:"center"}}>
                 {machineToolPicked?`${machineToolPicked.code||machineToolPicked.name} x${Math.max(1,Number(form.machineToolQty)||1)}`:"Takım seçilmedi"}
               </div>
               <div style={{marginTop:10,fontSize:11,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Stoktaki Takımlar</div>
               <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:5,maxHeight:130,overflowY:"auto"}}>
                 {stockedTools.slice(0,5).map(t=>(
-                  <div key={t.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:opTheme.textDim,background:"rgba(255,255,255,.08)",border:`1px solid ${opTheme.border}`,borderRadius:8,padding:"6px 7px"}}>
+                  <div key={t.id} style={{...rowCardStyle,display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:opTheme.textDim}}>
                     <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:155}}>{t.code||"-"} · {t.name||"Takım"}</span>
                     <strong>{safeNum(t.qty)}</strong>
                   </div>
@@ -5499,12 +5664,12 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               </div>
             </div>
 
-              <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:10,...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
+              <div style={{...sectionCardStyle,...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
               <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>PRODUCTION</div>
               <div>
                 <span style={{...labelSt,color:opTheme.textMuted}}>İş Emri</span>
                 {form.selectedOrder?(
-                  <div style={{background:"rgba(255,255,255,.12)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:"9px 10px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div style={{...rowCardStyle,padding:"9px 10px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                     <div style={{minWidth:0}}>
                       <div style={{fontWeight:700,fontFamily:"monospace",fontSize:13,color:opTheme.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{form.selectedOrder.code}</div>
                       <div style={{fontSize:11,color:opTheme.textDim,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{form.selectedOrder.name||"-"} · {fmtSec(form.selectedOrder.partSec)}</div>
@@ -5513,12 +5678,12 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                   </div>
                 ):(
                   <>
-                    <button onClick={()=>setShowPicker(!showPicker)} style={{...inputSt,textAlign:"left",cursor:"pointer",color:opTheme.textDim,display:"block",background:"rgba(255,255,255,.12)",borderColor:opTheme.border}}>
+                    <button onClick={()=>setShowPicker(!showPicker)} style={{...inputSt,...themedInputStyle,textAlign:"left",cursor:"pointer",color:opTheme.textDim,display:"block"}}>
                       {orders.length===0?"Aktif iş emri yok":"İş emri seçin..."}
                     </button>
                     {showPicker&&(
-                      <div style={{background:"rgba(0,0,0,.18)",border:`1px solid ${opTheme.border}`,borderRadius:10,marginTop:4,overflow:"hidden"}}>
-                        <input style={{...inputSt,borderRadius:0,borderBottom:`1px solid ${opTheme.border}`,background:"rgba(255,255,255,.12)",borderColor:opTheme.border,color:opTheme.text}} placeholder="Ara..." value={search} onChange={e=>setSearch(e.target.value)} autoFocus/>
+                      <div style={{background:opTheme.cardBg,border:`1px solid ${opTheme.borderStrong}`,borderRadius:10,marginTop:4,overflow:"hidden"}}>
+                        <input style={{...inputSt,...themedInputStyle,borderRadius:0,borderBottom:`1px solid ${opTheme.borderStrong}`}} placeholder="Ara..." value={search} onChange={e=>setSearch(e.target.value)} autoFocus/>
                         <div style={{maxHeight:170,overflowY:"auto"}}>
                           {filtered.length===0&&<div style={{padding:12,color:opTheme.textDim,textAlign:"center",fontSize:12}}>Sonuç yok</div>}
                           {filtered.map(o=>(
@@ -5534,37 +5699,37 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                 )}
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}>
-                <div><span style={{...labelSt,color:opTheme.textMuted}}>Doğru</span><input style={{...inputSt,padding:"12px 10px",fontSize:20,fontWeight:800,textAlign:"center",background:"rgba(255,255,255,.12)",borderColor:opTheme.border,color:opTheme.text}} type="number" min="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>
-                <div><span style={{...labelSt,color:opTheme.textMuted}}>Scrap</span><input style={{...inputSt,padding:"12px 10px",fontSize:20,fontWeight:800,textAlign:"center",background:"rgba(255,255,255,.12)",borderColor:opTheme.border,color:opTheme.text}} type="number" min="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>
+                <div><span style={{...labelSt,color:opTheme.textMuted}}>Doğru</span><input style={{...inputSt,...themedInputStyle,padding:"12px 10px",fontSize:20,fontWeight:800,textAlign:"center"}} type="number" min="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>
+                <div><span style={{...labelSt,color:opTheme.textMuted}}>Scrap</span><input style={{...inputSt,...themedInputStyle,padding:"12px 10px",fontSize:20,fontWeight:800,textAlign:"center"}} type="number" min="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>
               </div>
-              <button onClick={openShiftEndModal} style={{...btnSt(saved?"green":"primary"),width:"100%",padding:"12px 10px",fontSize:13,marginTop:9}}>
+              <button onClick={openShiftEndModal} style={{...btnSt(saved?"green":"primary"),width:"100%",padding:"12px 10px",fontSize:13,marginTop:9,borderColor:"transparent",fontWeight:700,boxShadow:"0 8px 16px rgba(0,0,0,.22)"}}>
                 {editId?"Vardiya Sonu Güncelle":"Vardiya Sonu Onayla"}
               </button>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:7,marginTop:9}}>
-                <div style={{background:"rgba(255,255,255,.12)",border:`1px solid ${opTheme.border}`,borderRadius:8,padding:"6px 7px",textAlign:"center"}}><div style={{fontSize:10,color:opTheme.textMuted}}>Hedef</div><div style={{fontSize:14,color:opTheme.text,fontWeight:800}}>{selectedOrderQty||"-"}</div></div>
-                <div style={{background:"rgba(255,255,255,.12)",border:`1px solid ${opTheme.border}`,borderRadius:8,padding:"6px 7px",textAlign:"center"}}><div style={{fontSize:10,color:opTheme.textMuted}}>Kalan</div><div style={{fontSize:14,color:opTheme.text,fontWeight:800}}>{selectedOrderQty?remainingQty:"-"}</div></div>
-                <div style={{background:"rgba(255,255,255,.12)",border:`1px solid ${opTheme.border}`,borderRadius:8,padding:"6px 7px",textAlign:"center"}}><div style={{fontSize:10,color:opTheme.textMuted}}>İlerleme</div><div style={{fontSize:14,color:opTheme.text,fontWeight:800}}>{selectedOrderQty?`%${progressPct}`:"-"}</div></div>
+                <div style={{...rowCardStyle,textAlign:"center"}}><div style={{fontSize:10,color:opTheme.textMuted}}>Hedef</div><div style={{fontSize:14,color:opTheme.text,fontWeight:800}}>{selectedOrderQty||"-"}</div></div>
+                <div style={{...rowCardStyle,textAlign:"center"}}><div style={{fontSize:10,color:opTheme.textMuted}}>Kalan</div><div style={{fontSize:14,color:opTheme.text,fontWeight:800}}>{selectedOrderQty?remainingQty:"-"}</div></div>
+                <div style={{...rowCardStyle,textAlign:"center"}}><div style={{fontSize:10,color:opTheme.textMuted}}>İlerleme</div><div style={{fontSize:14,color:opTheme.text,fontWeight:800}}>{selectedOrderQty?`%${progressPct}`:"-"}</div></div>
               </div>
             </div>
 
-              <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:10,...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
+              <div style={{...sectionCardStyle,...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
               <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>BREAKDOWN / STOP</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                <div style={{background:"rgba(255,255,255,.12)",border:`1px solid ${opTheme.border}`,borderRadius:9,padding:"8px 9px",textAlign:"center"}}>
+                <div style={{...rowCardStyle,padding:"8px 9px",textAlign:"center"}}>
                   <div style={{fontSize:10,color:opTheme.textMuted}}>Kalite</div>
                   <div style={{fontSize:20,fontWeight:800,color:qualityPct<90?opTheme.warn:opTheme.text}}>%{qualityPct}</div>
                 </div>
-                <div style={{background:"rgba(255,255,255,.12)",border:`1px solid ${opTheme.border}`,borderRadius:9,padding:"8px 9px",textAlign:"center"}}>
+                <div style={{...rowCardStyle,padding:"8px 9px",textAlign:"center"}}>
                   <div style={{fontSize:10,color:opTheme.textMuted}}>Parça Süresi</div>
                   <div style={{fontSize:20,fontWeight:800,color:opTheme.text}}>{form.selectedOrder?fmtSec(form.selectedOrder.partSec):"--:--"}</div>
                 </div>
               </div>
-              <button onClick={openShiftEndModal} style={{...btnSt("ghost"),width:"100%",padding:"11px 10px",fontSize:13,marginTop:8,borderColor:opTheme.border,color:opTheme.text}}>Finish / Stop</button>
+              <button onClick={openShiftEndModal} style={{...btnSt("ghost"),width:"100%",padding:"11px 10px",fontSize:13,marginTop:8,borderColor:opTheme.borderStrong,color:opTheme.text,background:opTheme.cardBgSoft,fontWeight:700}}>Finish / Stop</button>
               <div style={{marginTop:9,fontSize:11,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Son 3 Kayıt</div>
               <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:5}}>
                 {recentMachineEntries.length===0&&<div style={{fontSize:11,color:opTheme.textDim}}>Kayıt yok.</div>}
                 {recentMachineEntries.map(e=>(
-                  <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:opTheme.textDim,background:"rgba(255,255,255,.08)",border:`1px solid ${opTheme.border}`,borderRadius:8,padding:"6px 7px"}}>
+                  <div key={e.id} style={{...rowCardStyle,display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:opTheme.textDim}}>
                     <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:180}}>{e.jobCode} · ✅{safeNum(e.correct)} / ❌{safeNum(e.wrong)}</span>
                     <span>{e.shift||"-"}</span>
                   </div>
@@ -5575,27 +5740,27 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
           </div>
 
           <div style={stockPanelStyle}>
-            <div style={{fontSize:19,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>STOCK INFORMATIONS</div>
+            <div style={{fontSize:19,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>STOK BILGILERI</div>
             <div style={stockGridStyle}>
-              <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:"10px 9px",...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
+              <div style={{...sectionCardStyle,padding:"10px 9px",...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
               <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.6,textTransform:"uppercase",marginBottom:6}}>İş Emri Teknik Dokümanları ({selectedOrderFiles.length})</div>
               {selectedOrderFiles.length===0&&<div style={{fontSize:12,color:opTheme.textDim}}>Doküman yok.</div>}
               {selectedOrderFiles.length>0&&(
                 <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:170,overflowY:"auto"}}>
                   {selectedOrderFiles.map((f,i)=>(
-                    <div key={`${f.name||"file"}_${i}`} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 8px",border:`1px solid ${opTheme.border}`,background:"rgba(255,255,255,.1)",borderRadius:8}}>
+                    <div key={`${f.name||"file"}_${i}`} style={{...rowCardStyle,display:"flex",alignItems:"center",gap:8,padding:"7px 8px"}}>
                       <div style={{fontSize:16,lineHeight:1}}>{getFileIcon(f.name)}</div>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:11,color:opTheme.text,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name||"Dokuman"}</div>
                         <div style={{fontSize:10,color:opTheme.textDim}}>{formatBytes(Number(f.size)||0)}</div>
                       </div>
-                      <button onClick={()=>openOrderFile(f)} style={{...btnSt("ghost"),padding:"4px 8px",fontSize:10,borderColor:opTheme.border,color:opTheme.text}}>{canFilePreview(f)?"Önizle":"İndir"}</button>
+                      <button onClick={()=>openOrderFile(f)} style={{...btnSt("ghost"),padding:"4px 8px",fontSize:10,borderColor:opTheme.borderStrong,color:opTheme.text,background:opTheme.cardBg}}>{canFilePreview(f)?"Önizle":"İndir"}</button>
                     </div>
                   ))}
                 </div>
               )}
             </div>
-              <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:"10px 9px",...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
+              <div style={{...sectionCardStyle,padding:"10px 9px",...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
               <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.6,textTransform:"uppercase",marginBottom:6}}>Takım Stokları ({stockedTools.length})</div>
               {stockedTools.length===0&&<div style={{fontSize:12,color:opTheme.warn}}>Stokta takım yok.</div>}
               {stockedTools.length>0&&(
@@ -5605,7 +5770,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                     const min=Math.max(0,safeNum(t.minQty));
                     const critical=qty<=min;
                     return (
-                      <div key={t.id} style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"center",gap:8,padding:"7px 8px",border:`1px solid ${opTheme.border}`,background:"rgba(255,255,255,.1)",borderRadius:8}}>
+                      <div key={t.id} style={{...rowCardStyle,display:"grid",gridTemplateColumns:"1fr auto",alignItems:"center",gap:8,padding:"7px 8px"}}>
                         <div style={{minWidth:0}}>
                           <div style={{fontSize:11,color:opTheme.text,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.code||"-"} · {t.name||"Takım"}</div>
                           <div style={{fontSize:10,color:opTheme.textDim}}>{t.location||"Lokasyon yok"}</div>
@@ -8153,6 +8318,131 @@ function MachineConnectivityPrep({currentUser,machines=DEFAULT_MACHINES}) {
   const simCount=profiles.filter(r=>r.connectionMode==="simulation").length;
   const liveCount=profiles.filter(r=>r.connectionMode==="live").length;
   const pilotTarget=5;
+  async function downloadMachineConnectionPdf(){
+    const loaded=await ensureExternalScript(
+      "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
+      ()=>Boolean(window.jspdf&&window.jspdf.jsPDF)
+    );
+    if(!loaded||!window.jspdf||!window.jspdf.jsPDF){alert("PDF motoru yuklenemedi.");return;}
+    try{
+      const {jsPDF}=window.jspdf;
+      const pdf=new jsPDF({unit:"pt",format:"a4"});
+      const pageW=pdf.internal.pageSize.getWidth();
+      const pageH=pdf.internal.pageSize.getHeight();
+      const margin=38;
+      const contentW=pageW-(margin*2);
+      let y=margin;
+      function newPage(){
+        pdf.addPage();
+        y=margin;
+      }
+      function ensureSpace(h){
+        if(y+h>pageH-margin) newPage();
+      }
+      function addTitle(text){
+        ensureSpace(30);
+        pdf.setFont("helvetica","bold");
+        pdf.setFontSize(18);
+        pdf.setTextColor(17,24,39);
+        pdf.text(text,margin,y);
+        y+=24;
+      }
+      function addSection(text){
+        ensureSpace(24);
+        pdf.setFont("helvetica","bold");
+        pdf.setFontSize(12);
+        pdf.setTextColor(31,41,55);
+        pdf.text(text,margin,y);
+        y+=16;
+      }
+      function addParagraph(text,size=10,indent=0){
+        pdf.setFont("helvetica","normal");
+        pdf.setFontSize(size);
+        pdf.setTextColor(55,65,81);
+        const lines=pdf.splitTextToSize(String(text||""),contentW-indent);
+        const h=Math.max(12,lines.length*(size+2));
+        ensureSpace(h+2);
+        pdf.text(lines,margin+indent,y);
+        y+=h;
+      }
+      function addBullet(text){
+        ensureSpace(14);
+        pdf.setFont("helvetica","normal");
+        pdf.setFontSize(10);
+        pdf.setTextColor(55,65,81);
+        const lines=pdf.splitTextToSize(String(text||""),contentW-14);
+        pdf.text("-",margin,y);
+        pdf.text(lines,margin+10,y);
+        y+=Math.max(13,lines.length*12);
+      }
+      const nowIso=new Date().toISOString();
+      const statusLabel=mode=>mode==="live"?"Canli":mode==="simulation"?"Simulasyon":"Bagli Degil";
+      const profileRows=[...profiles].sort((a,b)=>(a.machineName||"").localeCompare(b.machineName||"","tr"));
+
+      addTitle("CNC Tezgah Baglanti Hazirlik Dokumani");
+      addParagraph(`Olusturma Tarihi (UTC): ${nowIso}`);
+      addParagraph(`Olusturan Kullanici: ${currentUser?.name||currentUser?.id||"-"}`);
+      y+=4;
+
+      addSection("1) Sistem Ozet Bilgisi");
+      addBullet(`IPC: ${(edgeConfig.ipcName||"IPC-01")} · Konum: ${(edgeConfig.location||"-")} · Timezone: ${(edgeConfig.timezone||"Europe/Istanbul")}`);
+      addBullet(`Default polling: ${Math.max(1,Number(edgeConfig.defaultPollingSec)||10)} sn`);
+      addBullet(`Buffer: ${Math.max(100,Number(edgeConfig.maxBufferRows)||5000)} satir · Resend: ${Math.max(1,Number(edgeConfig.resendSec)||5)} sn · Sync batch: ${Math.max(1,Number(edgeConfig.syncBatch)||200)}`);
+      addBullet(`Makina profili: ${profiles.length} (Bagli Degil: ${plannedCount}, Simulasyon: ${simCount}, Canli: ${liveCount})`);
+      y+=4;
+
+      addSection("2) Protokol ve Baglanti Notlari");
+      addBullet("Fanuc: FOCAS2 veya MTConnect adaptoru. FOCAS2 icin port, CNC option ve erisim lisansi kontrol edilir.");
+      addBullet("Siemens: OPC-UA endpoint, namespace ve sertifika guven iliskisi (trust list) hazirlanir.");
+      addBullet("Heidenhain: DNC/LSV2 veya OPC-UA. DNC icin IP/port ve izinli istemci tanimi yapilir.");
+      addBullet("Generic: MTConnect veya MQTT. Broker adresi, topic yapisi ve QoS standardi belirlenir.");
+      addBullet("Tum profiller UTC zaman damgasi ile toplanir; makina lokal saati ayrica kaydedilir.");
+      y+=4;
+
+      addSection("3) Toplanacak Veri Noktalari");
+      addParagraph(MACHINE_DATA_POINTS.map(p=>p.label).join(", "));
+      y+=4;
+
+      addSection("4) Makina Profil Listesi");
+      if(profileRows.length===0){
+        addParagraph("Kayitli makina profili yok.");
+      }else{
+        profileRows.forEach((row,idx)=>{
+          ensureSpace(66);
+          pdf.setDrawColor(220,224,230);
+          pdf.setFillColor(248,250,252);
+          const boxH=60;
+          pdf.roundedRect(margin,y,contentW,boxH,6,6,"FD");
+          pdf.setFont("helvetica","bold");
+          pdf.setFontSize(10);
+          pdf.setTextColor(17,24,39);
+          pdf.text(`${idx+1}. ${row.machineName||"-"} (${row.code||"-"})`,margin+8,y+14);
+          pdf.setFont("helvetica","normal");
+          pdf.setFontSize(9);
+          pdf.setTextColor(55,65,81);
+          const line1=`Marka/Protokol: ${row.brand||"-"} / ${row.protocol||"-"}   |   Mod: ${statusLabel(row.connectionMode||"not_connected")}   |   Polling: ${Number(row.pollingSec)||10}s`;
+          const line2=`IP/Port: ${row.ip?`${row.ip}${row.port?`:${row.port}`:""}`:"-"}   |   Edge: ${row.edgeAgent||edgeConfig.ipcName||"IPC-01"}   |   TZ: ${row.timezone||"Europe/Istanbul"}`;
+          const enabledPoints=MACHINE_DATA_POINTS.filter(p=>row.dataPoints?.[p.id]).map(p=>p.label).join(", ")||"Secilmemis";
+          pdf.text(pdf.splitTextToSize(line1,contentW-16),margin+8,y+28);
+          pdf.text(pdf.splitTextToSize(line2,contentW-16),margin+8,y+40);
+          pdf.text(pdf.splitTextToSize(`Veri: ${enabledPoints}`,contentW-16),margin+8,y+52);
+          y+=boxH+6;
+        });
+      }
+
+      addSection("5) Canliya Gecis Kontrol Listesi");
+      addBullet("Fiziksel ag kablolamasi tamamlandi (IPC - switch - CNC).");
+      addBullet("Makina IP, port, protokol ve polling degerleri profille birebir dogrulandi.");
+      addBullet("Durum/parca/program/alarm/tool-life alanlari testte veri uretiyor.");
+      addBullet("Baglanti kesme-senkronizasyon testi (edge buffer) basariyla tamamlandi.");
+      addBullet("Operasyon ekibi icin sorumlular, rollback ve acil durum plani kayda alindi.");
+
+      const safeDate=todayStr().replace(/[^0-9-]/g,"");
+      pdf.save(`tezgah-baglanti-dokumani-${safeDate}.pdf`);
+    }catch{
+      alert("Baglanti dokumani PDF olusturulamadi.");
+    }
+  }
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
 
@@ -8161,7 +8451,10 @@ function MachineConnectivityPrep({currentUser,machines=DEFAULT_MACHINES}) {
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
           <div style={{fontWeight:700,color:C.text}}>Makina Baglanti Hazirligi (Baglanti Yok Modu)</div>
-          <button onClick={startCreate} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>+ Makina Profili</button>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={downloadMachineConnectionPdf} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Baglanti Dokumani PDF</button>
+            <button onClick={startCreate} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>+ Makina Profili</button>
+          </div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8}}>
           <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:10,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Pilot Hedef</div><div style={{fontWeight:800,color:C.accent,fontSize:18}}>{pilotTarget}</div></div>
