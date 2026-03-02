@@ -2102,8 +2102,18 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
 //  SALES MANAGEMENT V2
 // ════════════════════════════════════════════════════════════
 function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders,defaultView="orders"}) {
+  const makeQuickPartForm=(seed={})=>({
+    partNo:String(seed.partNo||"").trim().toUpperCase(),
+    name:String(seed.name||"").trim(),
+    material:String(seed.material||"").trim(),
+    revision:String(seed.revision||"A").trim().toUpperCase()||"A",
+    setupSec:String(seed.setupSec??300),
+    cycleSec:String(seed.cycleSec??60),
+    notes:String(seed.notes||""),
+  });
   const [customers,setCustomers]=useState([]);
   const [customerPrices,setCustomerPrices]=useState([]);
+  const [parts,setParts]=useState([]);
   const [quotes,setQuotes]=useState([]);
   const [salesOrders,setSalesOrders]=useState([]);
   const [workOrders,setWorkOrders]=useState([]);
@@ -2114,15 +2124,29 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   const [search,setSearch]=useState("");
   const [customerEditId,setCustomerEditId]=useState("");
   const [priceEditId,setPriceEditId]=useState("");
+  const [showQuoteModal,setShowQuoteModal]=useState(false);
+  const [showOrderModal,setShowOrderModal]=useState(false);
+  const [showCreatePartModal,setShowCreatePartModal]=useState(false);
+  const [createPartLineIdx,setCreatePartLineIdx]=useState(-1);
   const [customerForm,setCustomerForm]=useState({name:"",code:"",contact:"",phone:"",email:"",discountPct:"0"});
   const [priceForm,setPriceForm]=useState({customerId:"",partNo:"",price:"",discountPct:"0",currency:"TRY"});
+  const [quickPartForm,setQuickPartForm]=useState(()=>makeQuickPartForm());
+  const makeDraftLine=()=>({partId:"",partNo:"",partName:"",revision:"A",qty:"1",unitPrice:"0",discountPct:"0",dueDate:todayStr(),partSec:"60",machine:(machines[0]||"CNC-1")});
   const [quoteForm,setQuoteForm]=useState({
     code:"",
     customerId:"",
     validUntil:todayStr(),
     priority:"normal",
     note:"",
-    lines:[{partNo:"",partName:"",revision:"A",qty:"1",unitPrice:"0",discountPct:"0",dueDate:todayStr(),partSec:"60",machine:(machines[0]||"CNC-1")}],
+    lines:[makeDraftLine()],
+  });
+  const [orderForm,setOrderForm]=useState({
+    code:"",
+    customerId:"",
+    dueDate:todayStr(),
+    priority:"normal",
+    note:"",
+    lines:[makeDraftLine()],
   });
 
   const nextCode=useCallback((prefix,list,regex)=>{
@@ -2135,9 +2159,10 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   },[]);
 
   const load=useCallback(async()=>{
-    const [c,prices,q,s,wo,templateDoc,brandingDoc]=await Promise.all([
+    const [c,prices,pList,q,s,wo,templateDoc,brandingDoc]=await Promise.all([
       window.DB.getAll("customers"),
       window.DB.getAll("customerPrices"),
+      window.DB.getAll("parts"),
       window.DB.getAll("salesQuotes"),
       window.DB.getAll("salesOrders"),
       window.DB.getAll("orders"),
@@ -2146,12 +2171,14 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     ]);
     setCustomers(c.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
     setCustomerPrices(prices.sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||"")));
+    setParts(pList.sort((a,b)=>(a.partNo||"").localeCompare(b.partNo||"","tr")));
     setQuotes(q.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
     setSalesOrders(s.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
     setWorkOrders(wo.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
     setQuoteTemplate(normalizeQuoteTemplate(templateDoc||{}));
     setBrandingLogo(typeof brandingDoc?.logo==="string"?brandingDoc.logo:"");
     setQuoteForm(f=>({...f,code:nextCode("TKL",q,/^TKL-(\d+)$/)}));
+    setOrderForm(f=>({...f,code:nextCode("SIP",s,/^SIP-(\d+)$/)}));
     setLoading(false);
   },[nextCode]);
   useEffect(()=>{load();},[load]);
@@ -2170,17 +2197,28 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
             validUntil:todayStr(),
             priority:"normal",
             note:"",
-            lines:[{partNo:"",partName:"",revision:"A",qty:"1",unitPrice:"0",discountPct:"0",dueDate:todayStr(),partSec:"60",machine:(machines[0]||"CNC-1")}],
+            lines:[makeDraftLine()],
           });
+          setShowOrderModal(false);
+          setShowQuoteModal(true);
         } else {
           setView("orders");
+          setOrderForm({
+            code:nextCode("SIP",salesOrders,/^SIP-(\d+)$/),
+            customerId:"",
+            dueDate:todayStr(),
+            priority:"normal",
+            note:"",
+            lines:[makeDraftLine()],
+          });
+          setShowQuoteModal(false);
+          setShowOrderModal(true);
         }
-        window.scrollTo({top:0,behavior:"smooth"});
       }
     }
     window.addEventListener("mrp:tab-action",onTabAction);
     return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
-  },[load,machines,nextCode,quotes]);
+  },[load,machines,nextCode,quotes,salesOrders]);
 
   const resetCustomerForm=()=>{ setCustomerEditId(""); setCustomerForm({name:"",code:"",contact:"",phone:"",email:"",discountPct:"0"}); };
   const resetPriceForm=()=>{ setPriceEditId(""); setPriceForm({customerId:"",partNo:"",price:"",discountPct:"0",currency:"TRY"}); };
@@ -2207,17 +2245,136 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     acc.gross+=t.gross; acc.discount+=t.discAmt; acc.net+=t.net;
     return acc;
   },{gross:0,discount:0,net:0});
+  const orderTotals=orderForm.lines.reduce((acc,line)=>{
+    const t=lineTotal(line);
+    acc.gross+=t.gross; acc.discount+=t.discAmt; acc.net+=t.net;
+    return acc;
+  },{gross:0,discount:0,net:0});
 
   const setQ=(k,v)=>setQuoteForm(f=>({...f,[k]:v}));
   const setLine=(idx,k,v)=>setQuoteForm(f=>({...f,lines:f.lines.map((line,i)=>i===idx?{...line,[k]:v}:line)}));
-  const addLine=()=>setQuoteForm(f=>({...f,lines:[...f.lines,{partNo:"",partName:"",revision:"A",qty:"1",unitPrice:"0",discountPct:"0",dueDate:todayStr(),partSec:"60",machine:(machines[0]||"CNC-1")}]}));
+  const addLine=()=>setQuoteForm(f=>({...f,lines:[...f.lines,makeDraftLine()]}));
   const removeLine=idx=>setQuoteForm(f=>({...f,lines:f.lines.filter((_,i)=>i!==idx)}));
+  const setO=(k,v)=>setOrderForm(f=>({...f,[k]:v}));
+  const setOrderLine=(idx,k,v)=>setOrderForm(f=>({...f,lines:f.lines.map((line,i)=>i===idx?{...line,[k]:v}:line)}));
+  const addOrderLine=()=>setOrderForm(f=>({...f,lines:[...f.lines,{...makeDraftLine(),dueDate:f.dueDate||todayStr()}]}));
+  const removeOrderLine=idx=>setOrderForm(f=>({...f,lines:f.lines.filter((_,i)=>i!==idx)}));
+
+  const normalizePartNo=partNo=>String(partNo||"").trim().toUpperCase();
+  function findPartByNo(partNo){
+    const key=normalizePartNo(partNo);
+    if(!key) return null;
+    return parts.find(p=>normalizePartNo(p.partNo)===key)||null;
+  }
+  function applyPartToQuoteLine(idx,part){
+    if(!part) return;
+    const routeMachine=(part.routingOps||[])[0]?.machine||"";
+    const cycleFromPart=Math.max(1,safeNum(part.cycleSec)||0);
+    setQuoteForm(f=>({
+      ...f,
+      lines:f.lines.map((line,i)=>{
+        if(i!==idx) return line;
+        return {
+          ...line,
+          partId:part.id||line.partId||"",
+          partNo:normalizePartNo(part.partNo||line.partNo),
+          partName:String(part.name||line.partName||"").trim(),
+          revision:normalizePartNo(part.revision||line.revision||"A")||"A",
+          partSec:String(cycleFromPart||Math.max(1,safeNum(line.partSec)||60)),
+          machine:routeMachine||line.machine||machines[0]||"CNC-1",
+        };
+      }),
+    }));
+  }
+  function syncQuoteLineFromPartNo(idx,partNo){
+    const part=findPartByNo(partNo);
+    if(!part){
+      setLine(idx,"partId","");
+      return null;
+    }
+    applyPartToQuoteLine(idx,part);
+    return part;
+  }
+  function openCreatePartForQuoteLine(idx){
+    const line=quoteForm.lines[idx]||makeDraftLine();
+    setCreatePartLineIdx(idx);
+    setQuickPartForm(makeQuickPartForm({
+      partNo:line.partNo||"",
+      name:line.partName||"",
+      revision:line.revision||"A",
+      cycleSec:line.partSec||"60",
+    }));
+    setShowCreatePartModal(true);
+  }
+  async function saveQuickPartFromQuote(){
+    const idx=createPartLineIdx;
+    if(idx<0||idx>=quoteForm.lines.length){setShowCreatePartModal(false);setCreatePartLineIdx(-1);return;}
+    const partNo=normalizePartNo(quickPartForm.partNo);
+    const partName=String(quickPartForm.name||"").trim();
+    if(!partNo||!partName){alert("Parca no ve ad zorunlu.");return;}
+    const existing=findPartByNo(partNo);
+    if(existing){
+      applyPartToQuoteLine(idx,existing);
+      applyCustomerPrice(idx,partNo);
+      setShowCreatePartModal(false);
+      setCreatePartLineIdx(-1);
+      setQuickPartForm(makeQuickPartForm());
+      return;
+    }
+    const setupSec=Math.max(0,safeNum(quickPartForm.setupSec)||300);
+    const cycleSec=Math.max(1,safeNum(quickPartForm.cycleSec)||60);
+    const materialCost=0;
+    const laborCost=((setupSec+cycleSec)/3600)*250;
+    const machineCost=((setupSec+cycleSec)/3600)*600;
+    const payload={
+      partNo,
+      name:partName,
+      material:String(quickPartForm.material||"").trim(),
+      revision:normalizePartNo(quickPartForm.revision||"A")||"A",
+      setupSec,
+      cycleSec,
+      qtyPerRaw:1,
+      rawUnitCost:0,
+      laborRateHour:250,
+      machineRateHour:600,
+      ncProgramVersion:"V1",
+      unitCost:materialCost+laborCost+machineCost,
+      costBreakdown:{materialCost,laborCost,machineCost},
+      drawingFile:null,
+      notes:String(quickPartForm.notes||"").trim(),
+      bomLines:[],
+      routingOps:[],
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser.id,
+    };
+    const id=await window.DB.addDoc("parts",payload);
+    if(!id){alert("Parca kaydedilemedi.");return;}
+    await addAuditLog(currentUser.id,"part",id,"create_from_quote",null,payload,{module:"sales"});
+    const created={id,...payload,createdAt:new Date().toISOString()};
+    setParts(prev=>[created,...prev].sort((a,b)=>(a.partNo||"").localeCompare(b.partNo||"","tr")));
+    applyPartToQuoteLine(idx,created);
+    applyCustomerPrice(idx,partNo);
+    setShowCreatePartModal(false);
+    setCreatePartLineIdx(-1);
+    setQuickPartForm(makeQuickPartForm());
+  }
+  function closeCreatePartModal(){
+    setShowCreatePartModal(false);
+    setCreatePartLineIdx(-1);
+    setQuickPartForm(makeQuickPartForm());
+  }
 
   function applyCustomerPrice(idx,partNo){
     const priceRow=customerPrices.find(p=>p.customerId===quoteForm.customerId&&String(p.partNo||"").trim().toLowerCase()===String(partNo||"").trim().toLowerCase());
     if(!priceRow) return;
     setLine(idx,"unitPrice",String(priceRow.price||0));
     setLine(idx,"discountPct",String(priceRow.discountPct||0));
+  }
+  function applyOrderCustomerPrice(idx,partNo){
+    const priceRow=customerPrices.find(p=>p.customerId===orderForm.customerId&&String(p.partNo||"").trim().toLowerCase()===String(partNo||"").trim().toLowerCase());
+    if(!priceRow) return;
+    setOrderLine(idx,"unitPrice",String(priceRow.price||0));
+    setOrderLine(idx,"discountPct",String(priceRow.discountPct||0));
   }
 
   async function saveCustomer(){
@@ -2310,14 +2467,15 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       priority:quoteForm.priority||"normal",
       note:quoteForm.note.trim(),
       lines:quoteForm.lines.map(l=>({
+        partId:String(l.partId||findPartByNo(l.partNo)?.id||""),
         partNo:String(l.partNo||"").trim().toUpperCase(),
-        partName:String(l.partName||"").trim(),
-        revision:String(l.revision||"A").trim().toUpperCase(),
+        partName:String(l.partName||findPartByNo(l.partNo)?.name||"").trim(),
+        revision:String(l.revision||findPartByNo(l.partNo)?.revision||"A").trim().toUpperCase(),
         qty:Math.max(0,safeNum(l.qty)),
         unitPrice:Math.max(0,safeNum(l.unitPrice)),
         discountPct:Math.max(0,Math.min(100,safeNum(l.discountPct))),
         dueDate:l.dueDate||todayStr(),
-        partSec:Math.max(1,safeNum(l.partSec)||60),
+        partSec:Math.max(1,safeNum(l.partSec)||safeNum(findPartByNo(l.partNo)?.cycleSec)||60),
         machine:l.machine||machines[0]||"CNC-1",
       })),
       grossAmount:quoteTotals.gross,
@@ -2337,13 +2495,70 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       validUntil:todayStr(),
       priority:"normal",
       note:"",
-      lines:[{partNo:"",partName:"",revision:"A",qty:"1",unitPrice:"0",discountPct:"0",dueDate:todayStr(),partSec:"60",machine:(machines[0]||"CNC-1")}],
+      lines:[makeDraftLine()],
     });
+    setShowQuoteModal(false);
     setView("quotes");
+  }
+
+  async function saveManualOrder(){
+    if(!orderForm.customerId){alert("Musteri secin.");return;}
+    if(!orderForm.lines.length){alert("En az bir satir ekleyin.");return;}
+    if(orderForm.lines.some(l=>!l.partNo||safeNum(l.qty)<=0)){alert("Satirlarda parca no ve miktar zorunlu.");return;}
+    const customer=customers.find(c=>c.id===orderForm.customerId);
+    const lines=orderForm.lines.map(l=>({
+      partId:String(l.partId||findPartByNo(l.partNo)?.id||""),
+      partNo:String(l.partNo||"").trim().toUpperCase(),
+      partName:String(l.partName||findPartByNo(l.partNo)?.name||"").trim(),
+      revision:String(l.revision||findPartByNo(l.partNo)?.revision||"A").trim().toUpperCase(),
+      qty:Math.max(0,safeNum(l.qty)),
+      unitPrice:Math.max(0,safeNum(l.unitPrice)),
+      discountPct:Math.max(0,Math.min(100,safeNum(l.discountPct))),
+      dueDate:l.dueDate||orderForm.dueDate||todayStr(),
+      partSec:Math.max(1,safeNum(l.partSec)||safeNum(findPartByNo(l.partNo)?.cycleSec)||60),
+      machine:l.machine||machines[0]||"CNC-1",
+    }));
+    const qtyTotal=lines.reduce((sum,l)=>sum+safeNum(l.qty),0);
+    const earliestDue=[...lines].sort((a,b)=>String(a.dueDate||"").localeCompare(String(b.dueDate||"")))[0]?.dueDate||orderForm.dueDate||todayStr();
+    const payload={
+      code:(orderForm.code||nextCode("SIP",salesOrders,/^SIP-(\d+)$/)).toUpperCase(),
+      customerId:customer?.id||"",
+      customerName:customer?.name||"",
+      sourceQuoteId:"",
+      sourceQuoteCode:"",
+      lines,
+      qty:qtyTotal,
+      dueDate:earliestDue,
+      priority:orderForm.priority||"normal",
+      totalAmount:orderTotals.net,
+      deliveredQty:0,
+      deliveries:[],
+      status:"approved",
+      workOrderIds:[],
+      workOrderCodes:[],
+      note:orderForm.note.trim(),
+      createdBy:currentUser.id,
+      updatedAt:new Date().toISOString(),
+    };
+    const id=await window.DB.addDoc("salesOrders",payload);
+    if(!id){alert("Siparis kaydedilemedi.");return;}
+    await addAuditLog(currentUser.id,"salesOrder",id,"create_manual",null,payload,{module:"sales"});
+    setSalesOrders(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
+    setOrderForm({
+      code:nextCode("SIP",[...salesOrders,{id,...payload}],/^SIP-(\d+)$/),
+      customerId:"",
+      dueDate:todayStr(),
+      priority:"normal",
+      note:"",
+      lines:[makeDraftLine()],
+    });
+    setShowOrderModal(false);
+    setView("orders");
   }
 
   async function duplicateQuote(q){
     const lines=(q.lines||[]).map(l=>({
+      partId:String(l.partId||findPartByNo(l.partNo)?.id||""),
       partNo:String(l.partNo||"").trim().toUpperCase(),
       partName:String(l.partName||"").trim(),
       revision:String(l.revision||"A").trim().toUpperCase(),
@@ -2384,6 +2599,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
 
   async function duplicateSalesOrder(o){
     const lines=(o.lines||[]).map(l=>({
+      partId:String(l.partId||findPartByNo(l.partNo)?.id||""),
       partNo:String(l.partNo||"").trim().toUpperCase(),
       partName:String(l.partName||"").trim(),
       revision:String(l.revision||"A").trim().toUpperCase(),
@@ -2859,47 +3075,20 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
 
       {view==="quotes"&&(
         <>
-          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-              <div style={{fontWeight:700,color:C.text}}>Teklif Olustur</div>
-              <Badge label={quoteForm.code||"-"} color={C.warn}/>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-              <div><span style={labelSt}>Musteri</span><select style={inputSt} value={quoteForm.customerId} onChange={e=>setQ("customerId",e.target.value)}><option value="">Secin</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
-              <div><span style={labelSt}>Gecerlilik</span><input style={inputSt} type="date" value={quoteForm.validUntil} onChange={e=>setQ("validUntil",e.target.value||todayStr())}/></div>
-              <div><span style={labelSt}>Oncelik</span><select style={inputSt} value={quoteForm.priority} onChange={e=>setQ("priority",e.target.value)}><option value="acil">Acil</option><option value="normal">Normal</option><option value="dusuk">Dusuk</option></select></div>
-            </div>
-            <div style={{marginTop:10}}>
-              <span style={labelSt}>Teklif Satirlari</span>
-              {quoteForm.lines.map((line,idx)=>(
-                <div key={idx} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10,marginBottom:8}}>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr .7fr .7fr .7fr .9fr .7fr .8fr auto",gap:6}}>
-                    <input style={{...inputSt,padding:"7px 9px",fontSize:12}} placeholder="Parca No" value={line.partNo} onChange={e=>{setLine(idx,"partNo",e.target.value);applyCustomerPrice(idx,e.target.value);}}/>
-                    <input style={{...inputSt,padding:"7px 9px",fontSize:12}} placeholder="Parca Adi" value={line.partName} onChange={e=>setLine(idx,"partName",e.target.value)}/>
-                    <input style={{...inputSt,padding:"7px 9px",fontSize:12}} placeholder="Rev" value={line.revision} onChange={e=>setLine(idx,"revision",e.target.value)}/>
-                    <input style={{...inputSt,padding:"7px 9px",fontSize:12}} type="number" min="1" placeholder="Adet" value={line.qty} onChange={e=>setLine(idx,"qty",e.target.value)}/>
-                    <input style={{...inputSt,padding:"7px 9px",fontSize:12}} type="number" min="0" placeholder="Fiyat" value={line.unitPrice} onChange={e=>setLine(idx,"unitPrice",e.target.value)}/>
-                    <input style={{...inputSt,padding:"7px 9px",fontSize:12}} type="number" min="0" max="100" placeholder="Iskonto%" value={line.discountPct} onChange={e=>setLine(idx,"discountPct",e.target.value)}/>
-                    <input style={{...inputSt,padding:"7px 9px",fontSize:12}} type="date" value={line.dueDate} onChange={e=>setLine(idx,"dueDate",e.target.value||todayStr())}/>
-                    <input style={{...inputSt,padding:"7px 9px",fontSize:12}} type="number" min="1" placeholder="Parca sn" value={line.partSec} onChange={e=>setLine(idx,"partSec",e.target.value)}/>
-                    <button onClick={()=>removeLine(idx)} style={{...btnSt("danger"),padding:"7px 9px",fontSize:12}}>Sil</button>
-                  </div>
-                  <div style={{fontSize:11,color:C.muted2,marginTop:6}}>
-                    Satir Net: {lineTotal(line).net.toFixed(2)} TRY
-                  </div>
-                </div>
-              ))}
-              <button onClick={addLine} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>+ Satir Ekle</button>
-            </div>
-            <div style={{marginTop:10}}><span style={labelSt}>Not</span><textarea style={{...inputSt,minHeight:64,resize:"vertical"}} value={quoteForm.note} onChange={e=>setQ("note",e.target.value)}/></div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:10}}>
-              <div style={{fontSize:12,color:C.muted2}}>Brut: {quoteTotals.gross.toFixed(2)} · Iskonto: {quoteTotals.discount.toFixed(2)} · Net: <span style={{color:C.text,fontWeight:700}}>{quoteTotals.net.toFixed(2)} TRY</span></div>
-              <button onClick={saveQuote} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Teklif Kaydet</button>
-            </div>
-          </div>
-
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <div style={{fontSize:12,color:C.muted2}}>Teklifler ({quotes.length})</div>
+            <button onClick={()=>{
+              setQuoteForm({
+                code:nextCode("TKL",quotes,/^TKL-(\d+)$/),
+                customerId:"",
+                validUntil:todayStr(),
+                priority:"normal",
+                note:"",
+                lines:[makeDraftLine()],
+              });
+              setShowOrderModal(false);
+              setShowQuoteModal(true);
+            }} style={{...btnSt("primary"),padding:"7px 10px",fontSize:12}}>+ Yeni Teklif</button>
             <input style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:220}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod / musteri / durum ara..."/>
           </div>
           {filteredQuotes.map(qr=>(
@@ -2931,6 +3120,18 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
         <>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <div style={{fontSize:12,color:C.muted2}}>Siparisler ({salesOrders.length})</div>
+            <button onClick={()=>{
+              setOrderForm({
+                code:nextCode("SIP",salesOrders,/^SIP-(\d+)$/),
+                customerId:"",
+                dueDate:todayStr(),
+                priority:"normal",
+                note:"",
+                lines:[makeDraftLine()],
+              });
+              setShowQuoteModal(false);
+              setShowOrderModal(true);
+            }} style={{...btnSt("primary"),padding:"7px 10px",fontSize:12}}>+ Yeni Siparis</button>
             <input style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:220}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod / musteri / durum ara..."/>
           </div>
           {filteredOrders.map(o=>{
@@ -2979,6 +3180,174 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
           })}
           {filteredOrders.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"24px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Siparis bulunamadi</div>}
         </>
+      )}
+
+      {showQuoteModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.62)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:55,padding:14}} onClick={()=>setShowQuoteModal(false)}>
+          <div style={{width:"100%",maxWidth:1240,maxHeight:"92vh",overflow:"hidden",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
+            <div style={{padding:"12px 14px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+              <div>
+                <div style={{fontWeight:800,color:C.text,fontSize:16}}>Yeni Teklif</div>
+                <div style={{fontSize:12,color:C.muted2}}>Teklif bilgilerini ve satirlarini girin.</div>
+              </div>
+              <button onClick={()=>setShowQuoteModal(false)} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Kapat</button>
+            </div>
+            <div style={{padding:14,display:"flex",flexDirection:"column",gap:12,overflowY:"auto"}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
+                <div><span style={labelSt}>Teklif No</span><input style={inputSt} value={quoteForm.code} onChange={e=>setQ("code",e.target.value.toUpperCase())}/></div>
+                <div><span style={labelSt}>Musteri *</span><select style={inputSt} value={quoteForm.customerId} onChange={e=>setQ("customerId",e.target.value)}><option value="">Secin</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+                <div><span style={labelSt}>Gecerlilik</span><input style={inputSt} type="date" value={quoteForm.validUntil} onChange={e=>setQ("validUntil",e.target.value)}/></div>
+                <div><span style={labelSt}>Oncelik</span><select style={inputSt} value={quoteForm.priority} onChange={e=>setQ("priority",e.target.value)}><option value="urgent">Acil</option><option value="normal">Normal</option><option value="low">Dusuk</option></select></div>
+              </div>
+              <div><span style={labelSt}>Not</span><input style={inputSt} value={quoteForm.note} onChange={e=>setQ("note",e.target.value)} placeholder="Opsiyonel not"/></div>
+
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <div style={{fontWeight:700,color:C.text}}>Teklif Satirlari</div>
+                <button onClick={addLine} style={{...btnSt("primary"),padding:"7px 11px",fontSize:12}}>+ Satir Ekle</button>
+              </div>
+
+              <div style={{overflowX:"auto"}}>
+                <div style={{minWidth:1240,display:"flex",flexDirection:"column",gap:7}}>
+                  <div style={{display:"grid",gridTemplateColumns:"120px 180px 72px 84px 94px 88px 132px 94px 130px 104px 96px 44px",gap:7,fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:".35px"}}>
+                    <div>Parca No</div><div>Parca Adi</div><div>Rev.</div><div>Adet</div><div>Birim</div><div>Iskonto %</div><div>Termin</div><div>Cevrim sn</div><div>Tezgah</div><div>Tutar</div><div>Kutuphane</div><div/>
+                  </div>
+                  {quoteForm.lines.map((line,idx)=>{
+                    const t=lineTotal(line);
+                    const hasPart=Boolean(findPartByNo(line.partNo));
+                    return (
+                      <div key={idx} style={{display:"grid",gridTemplateColumns:"120px 180px 72px 84px 94px 88px 132px 94px 130px 104px 96px 44px",gap:7}}>
+                        <input style={inputSt} list="quote-part-catalog" value={line.partNo} onChange={e=>{const val=e.target.value;setLine(idx,"partNo",val);if(findPartByNo(val)){syncQuoteLineFromPartNo(idx,val);}}} onBlur={()=>{const linked=syncQuoteLineFromPartNo(idx,line.partNo);applyCustomerPrice(idx,linked?.partNo||line.partNo);}} placeholder="P-NO"/>
+                        <input style={inputSt} value={line.partName} onChange={e=>setLine(idx,"partName",e.target.value)} placeholder="Parca adi"/>
+                        <input style={inputSt} value={line.revision} onChange={e=>setLine(idx,"revision",e.target.value.toUpperCase())} placeholder="A"/>
+                        <input style={inputSt} type="number" min="0" value={line.qty} onChange={e=>setLine(idx,"qty",e.target.value)}/>
+                        <input style={inputSt} type="number" min="0" value={line.unitPrice} onChange={e=>setLine(idx,"unitPrice",e.target.value)}/>
+                        <input style={inputSt} type="number" min="0" max="100" value={line.discountPct} onChange={e=>setLine(idx,"discountPct",e.target.value)}/>
+                        <input style={inputSt} type="date" value={line.dueDate||todayStr()} onChange={e=>setLine(idx,"dueDate",e.target.value)}/>
+                        <input style={inputSt} type="number" min="1" value={line.partSec} onChange={e=>setLine(idx,"partSec",e.target.value)}/>
+                        <select style={inputSt} value={line.machine} onChange={e=>setLine(idx,"machine",e.target.value)}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
+                        <div style={{...inputSt,display:"flex",alignItems:"center",justifyContent:"flex-end",fontWeight:700,color:C.text}}>{safeNum(t.net).toFixed(2)}</div>
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
+                          {String(line.partNo||"").trim()?(
+                            hasPart
+                              ? <span style={{fontSize:11,color:C.green,fontWeight:700}}>Bulundu</span>
+                              : <button onClick={()=>openCreatePartForQuoteLine(idx)} style={{...btnSt("ghost"),padding:"5px 7px",fontSize:11}}>+ Parca</button>
+                          ):<span style={{fontSize:11,color:C.muted2}}>-</span>}
+                        </div>
+                        <button onClick={()=>removeLine(idx)} style={{...btnSt("danger"),padding:0,fontSize:16,lineHeight:1}}>×</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <datalist id="quote-part-catalog">
+                {parts.slice(0,1000).map(p=>(
+                  <option key={p.id||p.partNo} value={p.partNo}>{p.name||""}</option>
+                ))}
+              </datalist>
+
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Brut</div><div style={{fontWeight:800,color:C.text}}>{moneyFmt(quoteTotals.gross)}</div></div>
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Iskonto</div><div style={{fontWeight:800,color:C.warn}}>{moneyFmt(quoteTotals.discount)}</div></div>
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Net</div><div style={{fontWeight:800,color:C.accent}}>{moneyFmt(quoteTotals.net)}</div></div>
+              </div>
+            </div>
+            <div style={{padding:"12px 14px",borderTop:`1px solid ${C.border}`,display:"flex",justifyContent:"flex-end",gap:8}}>
+              <button onClick={()=>setShowQuoteModal(false)} style={{...btnSt("ghost"),padding:"9px 13px",fontSize:12}}>Iptal</button>
+              <button onClick={saveQuote} style={{...btnSt("primary"),padding:"9px 13px",fontSize:12}}>Teklifi Kaydet</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCreatePartModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.62)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:56,padding:14}} onClick={closeCreatePartModal}>
+          <div style={{width:"100%",maxWidth:760,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,display:"flex",flexDirection:"column",gap:10}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+              <div>
+                <div style={{fontWeight:800,color:C.text,fontSize:16}}>Yeni Parca Ekle</div>
+                <div style={{fontSize:12,color:C.muted2}}>Kayit tamamlaninca teklif satirina otomatik baglanir.</div>
+              </div>
+              <button onClick={closeCreatePartModal} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Kapat</button>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
+              <div><span style={labelSt}>Parca No *</span><input style={inputSt} value={quickPartForm.partNo} onChange={e=>setQuickPartForm(f=>({...f,partNo:e.target.value.toUpperCase()}))} placeholder="PRT-001"/></div>
+              <div><span style={labelSt}>Parca Adi *</span><input style={inputSt} value={quickPartForm.name} onChange={e=>setQuickPartForm(f=>({...f,name:e.target.value}))} placeholder="Parca adi"/></div>
+              <div><span style={labelSt}>Revizyon</span><input style={inputSt} value={quickPartForm.revision} onChange={e=>setQuickPartForm(f=>({...f,revision:e.target.value.toUpperCase()}))} placeholder="A"/></div>
+              <div><span style={labelSt}>Malzeme</span><input style={inputSt} value={quickPartForm.material} onChange={e=>setQuickPartForm(f=>({...f,material:e.target.value}))} placeholder="Opsiyonel"/></div>
+              <div><span style={labelSt}>Setup sn</span><input style={inputSt} type="number" min="0" value={quickPartForm.setupSec} onChange={e=>setQuickPartForm(f=>({...f,setupSec:e.target.value}))}/></div>
+              <div><span style={labelSt}>Cevrim sn</span><input style={inputSt} type="number" min="1" value={quickPartForm.cycleSec} onChange={e=>setQuickPartForm(f=>({...f,cycleSec:e.target.value}))}/></div>
+            </div>
+            <div><span style={labelSt}>Not</span><input style={inputSt} value={quickPartForm.notes} onChange={e=>setQuickPartForm(f=>({...f,notes:e.target.value}))} placeholder="Opsiyonel not"/></div>
+            <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+              <button onClick={closeCreatePartModal} style={{...btnSt("ghost"),padding:"9px 13px",fontSize:12}}>Iptal</button>
+              <button onClick={saveQuickPartFromQuote} style={{...btnSt("primary"),padding:"9px 13px",fontSize:12}}>Parcayi Kaydet</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showOrderModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.62)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:55,padding:14}} onClick={()=>setShowOrderModal(false)}>
+          <div style={{width:"100%",maxWidth:1240,maxHeight:"92vh",overflow:"hidden",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
+            <div style={{padding:"12px 14px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+              <div>
+                <div style={{fontWeight:800,color:C.text,fontSize:16}}>Yeni Siparis</div>
+                <div style={{fontSize:12,color:C.muted2}}>Siparis bilgilerini ve satirlarini girin.</div>
+              </div>
+              <button onClick={()=>setShowOrderModal(false)} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Kapat</button>
+            </div>
+            <div style={{padding:14,display:"flex",flexDirection:"column",gap:12,overflowY:"auto"}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
+                <div><span style={labelSt}>Siparis No</span><input style={inputSt} value={orderForm.code} onChange={e=>setO("code",e.target.value.toUpperCase())}/></div>
+                <div><span style={labelSt}>Musteri *</span><select style={inputSt} value={orderForm.customerId} onChange={e=>setO("customerId",e.target.value)}><option value="">Secin</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+                <div><span style={labelSt}>Termin</span><input style={inputSt} type="date" value={orderForm.dueDate} onChange={e=>setO("dueDate",e.target.value)}/></div>
+                <div><span style={labelSt}>Oncelik</span><select style={inputSt} value={orderForm.priority} onChange={e=>setO("priority",e.target.value)}><option value="urgent">Acil</option><option value="normal">Normal</option><option value="low">Dusuk</option></select></div>
+              </div>
+              <div><span style={labelSt}>Not</span><input style={inputSt} value={orderForm.note} onChange={e=>setO("note",e.target.value)} placeholder="Opsiyonel not"/></div>
+
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <div style={{fontWeight:700,color:C.text}}>Siparis Satirlari</div>
+                <button onClick={addOrderLine} style={{...btnSt("primary"),padding:"7px 11px",fontSize:12}}>+ Satir Ekle</button>
+              </div>
+
+              <div style={{overflowX:"auto"}}>
+                <div style={{minWidth:1240,display:"flex",flexDirection:"column",gap:7}}>
+                  <div style={{display:"grid",gridTemplateColumns:"120px 180px 72px 84px 94px 88px 132px 94px 130px 104px 44px",gap:7,fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:".35px"}}>
+                    <div>Parca No</div><div>Parca Adi</div><div>Rev.</div><div>Adet</div><div>Birim</div><div>Iskonto %</div><div>Termin</div><div>Cevrim sn</div><div>Tezgah</div><div>Tutar</div><div/>
+                  </div>
+                  {orderForm.lines.map((line,idx)=>{
+                    const t=lineTotal(line);
+                    return (
+                      <div key={idx} style={{display:"grid",gridTemplateColumns:"120px 180px 72px 84px 94px 88px 132px 94px 130px 104px 44px",gap:7}}>
+                        <input style={inputSt} value={line.partNo} onChange={e=>setOrderLine(idx,"partNo",e.target.value)} onBlur={()=>applyOrderCustomerPrice(idx,line.partNo)} placeholder="P-NO"/>
+                        <input style={inputSt} value={line.partName} onChange={e=>setOrderLine(idx,"partName",e.target.value)} placeholder="Parca adi"/>
+                        <input style={inputSt} value={line.revision} onChange={e=>setOrderLine(idx,"revision",e.target.value.toUpperCase())} placeholder="A"/>
+                        <input style={inputSt} type="number" min="0" value={line.qty} onChange={e=>setOrderLine(idx,"qty",e.target.value)}/>
+                        <input style={inputSt} type="number" min="0" value={line.unitPrice} onChange={e=>setOrderLine(idx,"unitPrice",e.target.value)}/>
+                        <input style={inputSt} type="number" min="0" max="100" value={line.discountPct} onChange={e=>setOrderLine(idx,"discountPct",e.target.value)}/>
+                        <input style={inputSt} type="date" value={line.dueDate||orderForm.dueDate||todayStr()} onChange={e=>setOrderLine(idx,"dueDate",e.target.value)}/>
+                        <input style={inputSt} type="number" min="1" value={line.partSec} onChange={e=>setOrderLine(idx,"partSec",e.target.value)}/>
+                        <select style={inputSt} value={line.machine} onChange={e=>setOrderLine(idx,"machine",e.target.value)}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
+                        <div style={{...inputSt,display:"flex",alignItems:"center",justifyContent:"flex-end",fontWeight:700,color:C.text}}>{safeNum(t.net).toFixed(2)}</div>
+                        <button onClick={()=>removeOrderLine(idx)} style={{...btnSt("danger"),padding:0,fontSize:16,lineHeight:1}}>×</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Brut</div><div style={{fontWeight:800,color:C.text}}>{moneyFmt(orderTotals.gross)}</div></div>
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Iskonto</div><div style={{fontWeight:800,color:C.warn}}>{moneyFmt(orderTotals.discount)}</div></div>
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Net</div><div style={{fontWeight:800,color:C.accent}}>{moneyFmt(orderTotals.net)}</div></div>
+              </div>
+            </div>
+            <div style={{padding:"12px 14px",borderTop:`1px solid ${C.border}`,display:"flex",justifyContent:"flex-end",gap:8}}>
+              <button onClick={()=>setShowOrderModal(false)} style={{...btnSt("ghost"),padding:"9px 13px",fontSize:12}}>Iptal</button>
+              <button onClick={saveManualOrder} style={{...btnSt("primary"),padding:"9px 13px",fontSize:12}}>Siparisi Kaydet</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
