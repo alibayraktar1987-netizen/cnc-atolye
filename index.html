@@ -1838,7 +1838,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
     laborRateHour:"250",
     machineRateHour:"600",
     ncProgramVersion:"V1",
-    drawingFile:null,
+    documents:[],
     notes:"",
   };
   const [parts,setParts]=useState([]);
@@ -1931,16 +1931,32 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
     setShowPartModal(true);
   };
 
-  async function pickDrawing(e){
-    const file=e.target.files&&e.target.files[0];
-    if(!file) return;
-    if(file.size>8*1024*1024){alert("Dosya en fazla 8MB olabilir.");return;}
+  async function pickPartDocuments(e){
+    const files=Array.from((e.target.files||[]));
+    if(files.length===0) return;
+    const tooBig=files.find(file=>file.size>8*1024*1024);
+    if(tooBig){alert(`"${tooBig.name}" 8MB limitini asiyor.`);e.target.value="";return;}
     setUploading(true);
-    const data=await fileToBase64(file);
-    setUploading(false);
-    setPartForm(f=>({...f,drawingFile:{name:file.name,size:file.size,type:file.type,data}}));
-    e.target.value="";
+    try{
+      const docs=[];
+      for(const file of files){
+        const data=await fileToBase64(file);
+        docs.push({
+          id:`doc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`,
+          name:file.name,
+          size:file.size,
+          type:file.type||"",
+          data,
+          uploadedAt:new Date().toISOString(),
+        });
+      }
+      setPartForm(f=>({...f,documents:[...(f.documents||[]),...docs]}));
+    }finally{
+      setUploading(false);
+      e.target.value="";
+    }
   }
+  const removePartDocument=(docId)=>setPartForm(f=>({...f,documents:(f.documents||[]).filter(d=>d.id!==docId)}));
 
   async function savePart(){
     if(!partForm.partNo.trim()||!partForm.name.trim()){alert("Parca no ve ad zorunlu.");return;}
@@ -1958,7 +1974,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
       ncProgramVersion:(partForm.ncProgramVersion||"V1").trim().toUpperCase(),
       unitCost:partCostCalc.unitCost,
       costBreakdown:{materialCost:partCostCalc.materialCost,laborCost:partCostCalc.laborCost,machineCost:partCostCalc.machineCost},
-      drawingFile:partForm.drawingFile||null,
+      documents:Array.isArray(partForm.documents)?partForm.documents:[],
       notes:partForm.notes.trim(),
       bomLines:[],
       routingOps:[],
@@ -1985,6 +2001,9 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
   }
 
   function loadPartToForm(p){
+    const docs=(Array.isArray(p.documents)&&p.documents.length>0)
+      ? p.documents
+      : (p.drawingFile?[{...p.drawingFile,id:`legacy_${p.id||Date.now()}`}]:[]);
     setPartForm({
       partNo:p.partNo||"",
       name:p.name||"",
@@ -1997,7 +2016,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
       laborRateHour:String(p.laborRateHour??250),
       machineRateHour:String(p.machineRateHour??600),
       ncProgramVersion:p.ncProgramVersion||"V1",
-      drawingFile:p.drawingFile||null,
+      documents:docs,
       notes:p.notes||"",
     });
   }
@@ -2122,12 +2141,25 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
               <div><span style={labelSt}>Iscilik Saatlik</span><input style={inputSt} type="number" min="0" value={partForm.laborRateHour} onChange={e=>fv("laborRateHour",e.target.value)}/></div>
               <div><span style={labelSt}>Tezgah Saatlik</span><input style={inputSt} type="number" min="0" value={partForm.machineRateHour} onChange={e=>fv("machineRateHour",e.target.value)}/></div>
               <div>
-                <span style={labelSt}>Teknik Resim</span>
+                <span style={labelSt}>Dosyalar</span>
                 <label style={{...inputSt,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
-                  <span style={{fontSize:12,color:C.muted2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{partForm.drawingFile?.name||"Dosya sec..."}</span>
-                  <span style={{fontSize:11,color:C.accent}}>{uploading?"Yukleniyor":"Sec"}</span>
-                  <input type="file" accept=".pdf,.dxf,.dwg,image/*" style={{display:"none"}} onChange={pickDrawing}/>
+                  <span style={{fontSize:12,color:C.muted2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{uploading?"Yukleniyor...":"Dosya sec (coklu)"}</span>
+                  <span style={{fontSize:11,color:C.accent}}>{(partForm.documents||[]).length} dosya</span>
+                  <input type="file" multiple style={{display:"none"}} onChange={pickPartDocuments}/>
                 </label>
+                <div style={{fontSize:11,color:C.muted2,marginTop:4}}>Istedigin kadar dosya ekleyebilirsin (STEP/PDF/Resim vb).</div>
+                {(partForm.documents||[]).length>0&&(
+                  <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:5,maxHeight:120,overflowY:"auto",paddingRight:4}}>
+                    {(partForm.documents||[]).map(doc=>(
+                      <div key={doc.id||doc.name} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 7px"}}>
+                        <div style={{fontSize:11,color:C.muted2,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                          {doc.name||"dosya"}{doc.size?` (${Math.max(1,Math.round((Number(doc.size)||0)/1024))} KB)`:""}
+                        </div>
+                        <button onClick={()=>removePartDocument(doc.id)} style={{...btnSt("danger"),padding:"3px 7px",fontSize:10}}>Sil</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             <div style={{marginTop:8}}>
@@ -8413,7 +8445,7 @@ function App() {
   const allTabs=useMemo(()=>[
     {id:"dashboard",icon:"dashboard",label:"Gösterge Paneli",group:"Planlama",enabled:(canEntry||canOrders||canReport||canSales||canPurchasing)},
     {id:"planning",icon:"planning",label:"Planlama",group:"Planlama",enabled:canPlanning},
-    {id:"parts",icon:"parts",label:"Parca ve BOM",group:"Planlama",enabled:canPlanning},
+    {id:"parts",icon:"parts",label:"Parca Yonetimi",group:"Planlama",enabled:canPlanning},
     {id:"quotes",icon:"quotes",label:"Teklif Yonetimi",group:"Planlama",enabled:canSales},
     {id:"sales",icon:"sales",label:"Satis Siparisleri",group:"Planlama",enabled:canSales},
     {id:"orders",icon:"orders",label:"Is Emirleri",group:"Operasyon",enabled:canOrders},
@@ -8472,29 +8504,10 @@ function App() {
   const activeTabMeta=tabs.find(t=>t.id===tab)||null;
   const activeContextLabel=activeTabMeta?.label||"Modul";
   const menuResultText=`${visibleTabs.length}/${tabs.length} modul`;
-  const createActions={
-    planning:"Yeni Planlama",
-    customers:"Yeni Musteri",
-    materials:"Yeni Malzeme",
-    tools:"Yeni Takim",
-    sales:"Yeni Siparis",
-    orders:"Yeni Is Emri",
-    quotes:"Yeni Teklif",
-    rapor:"Yeni Rapor",
-    machineprep:"Yeni Makina Profili",
-    progenergy:"Yeni Program",
-    toolcycle:"Yeni Offset",
-    closedloop:"Yeni Geri Besleme",
-  };
-  const canCreateInTab=Boolean(createActions[tab]);
-  const createLabel=createActions[tab]||"Yeni Ekle";
   const desktopMenuIconOnly=layoutMode==="desktop"&&desktopMenuCollapsed;
   const sidebarWidth=layoutMode==="desktop"
     ? (desktopMenuCollapsed?desktopSidebarCollapsedW:desktopSidebarW)
     : tabletSidebarW;
-  function emitTabAction(type){
-    window.dispatchEvent(new CustomEvent("mrp:tab-action",{detail:{type,tab,tabMeta:activeTabMeta||null}}));
-  }
   function toggleDesktopMenuCollapse(){
     setDesktopMenuCollapsed(prev=>{
       const next=!prev;
@@ -8591,22 +8604,6 @@ function App() {
     </div>
     );
   };
-  const commandBar=(
-    <div className="mrp-panel" style={{background:C.surface,border:`1px solid ${C.border}`,padding:"10px 12px",marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-      <div>
-        <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>
-          {activeTabMeta?.group||"Modul"} / {activeTabMeta?.label||"Modul"}
-        </div>
-        <div style={{fontSize:12,color:C.muted2,marginTop:3}}>Dynamics tarzı komut çubuğu</div>
-      </div>
-      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-        <button onClick={()=>emitTabAction("refresh")} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12}}>Yenile</button>
-        {canCreateInTab&&(
-          <button onClick={()=>emitTabAction("new")} style={{...btnSt("primary"),padding:"7px 12px",fontSize:12}}>+ {createLabel}</button>
-        )}
-      </div>
-    </div>
-  );
 
   return (
     <div style={{background:C.bg,minHeight:"100vh",color:C.text}}>
@@ -8674,7 +8671,6 @@ function App() {
               </div>
             </div>
             <div style={{minWidth:0}}>
-              {commandBar}
               {activeView}
             </div>
           </div>
@@ -8683,7 +8679,6 @@ function App() {
         {isMobile&&(
           <>
             <div style={{paddingBottom:76}}>
-              {commandBar}
               {activeView}
             </div>
             <div className="mrp-bottom-nav" style={{position:"fixed",left:0,right:0,bottom:0,background:`${C.surface}f0`,borderTop:`1px solid ${C.border}`,zIndex:24}}>
