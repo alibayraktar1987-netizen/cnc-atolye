@@ -498,6 +498,31 @@ const PRIORITY_OPTIONS = [
   { id:"normal", label:"Normal", color:C.accent },
   { id:"dusuk", label:"Dusuk", color:C.muted2 },
 ];
+const TABLE_COLUMN_LAYOUT_STORAGE_PREFIX = "cnc_atolye_table_columns_v1";
+const SALES_QUOTE_LIST_COLUMNS = [
+  {id:"quote_no",label:"Teklif No",width:176},
+  {id:"customer",label:"Firma Adi",width:168},
+  {id:"valid_until",label:"Gecerlilik",width:128},
+  {id:"status",label:"Teklif Asamasi",width:146},
+  {id:"total",label:"Genel Toplam",width:150,align:"right"},
+  {id:"actions",label:"Islem",width:336,align:"right",required:true},
+];
+const SALES_ORDER_LIST_COLUMNS = [
+  {id:"order_no",label:"Siparis No",width:176},
+  {id:"customer",label:"Musteri",width:210},
+  {id:"due_date",label:"Termin",width:120},
+  {id:"status",label:"Durum",width:126},
+  {id:"remaining",label:"Kalan / Toplam",width:152,align:"right"},
+  {id:"document",label:"Belge",width:180},
+  {id:"actions",label:"Islem",width:420,align:"right",required:true},
+];
+const WORK_ORDER_LIST_COLUMNS = [
+  {id:"work_order",label:"Is Emri",width:232},
+  {id:"customer_part",label:"Musteri / Parca",width:228},
+  {id:"due",label:"Termin",width:124},
+  {id:"status_production",label:"Durum / Uretim",width:152},
+  {id:"actions",label:"Islem",width:352,align:"right",required:true},
+];
 const MACHINE_BRAND_OPTIONS = ["Fanuc","Siemens","Heidenhain","Generic"];
 const MACHINE_PROTOCOL_OPTIONS = {
   Fanuc:["FOCAS2","MTConnect"],
@@ -1115,6 +1140,114 @@ function downloadCsv(filename,columns,rows){
   a.remove();
   URL.revokeObjectURL(url);
 }
+function normalizeTableColumnDefs(defs){
+  const src=Array.isArray(defs)?defs:[];
+  const seen=new Set();
+  return src.map((row,idx)=>{
+    const id=String(row?.id||`col_${idx}`).trim();
+    if(!id||seen.has(id)) return null;
+    seen.add(id);
+    return {
+      id,
+      label:String(row?.label||id),
+      width:Math.max(84,safeNum(row?.width)||140),
+      align:row?.align==="right"?"right":"left",
+      required:Boolean(row?.required),
+      defaultVisible:row?.required?true:(row?.defaultVisible!==false),
+    };
+  }).filter(Boolean);
+}
+function normalizeTableColumnLayout(raw,defs){
+  const base=normalizeTableColumnDefs(defs);
+  const src=(raw&&typeof raw==="object")?raw:{};
+  const orderInput=Array.isArray(src.order)?src.order:[];
+  const visibleInput=(src.visible&&typeof src.visible==="object")?src.visible:{};
+  const byId={};
+  base.forEach(col=>{byId[col.id]=col;});
+  const order=[];
+  const seen=new Set();
+  orderInput.forEach(item=>{
+    const id=String(item||"").trim();
+    if(!id||seen.has(id)||!byId[id]) return;
+    seen.add(id);
+    order.push(id);
+  });
+  base.forEach(col=>{
+    if(!seen.has(col.id)) order.push(col.id);
+  });
+  return order.map((id,idx)=>{
+    const col=byId[id];
+    const hasVisible=Object.prototype.hasOwnProperty.call(visibleInput,id);
+    const visible=col.required?true:(hasVisible?Boolean(visibleInput[id]):col.defaultVisible);
+    return {...col,visible,order:idx};
+  });
+}
+function tableColumnLayoutPayload(columns){
+  const order=[];
+  const visible={};
+  (Array.isArray(columns)?columns:[]).forEach(col=>{
+    order.push(col.id);
+    if(!col.required) visible[col.id]=Boolean(col.visible);
+  });
+  return {order,visible};
+}
+function tableColumnStorageKey(scope){
+  return `${TABLE_COLUMN_LAYOUT_STORAGE_PREFIX}_${String(scope||"default").trim()||"default"}`;
+}
+function readTableColumnLayout(scope,defs){
+  const fallback=normalizeTableColumnLayout({},defs);
+  try{
+    const raw=window.localStorage.getItem(tableColumnStorageKey(scope));
+    if(!raw) return fallback;
+    const parsed=JSON.parse(raw);
+    return normalizeTableColumnLayout(parsed,defs);
+  }catch{
+    return fallback;
+  }
+}
+function writeTableColumnLayout(scope,columns){
+  try{
+    window.localStorage.setItem(tableColumnStorageKey(scope),JSON.stringify(tableColumnLayoutPayload(columns)));
+  }catch{}
+}
+function useTableColumnLayout(scope,defs){
+  const defsKey=useMemo(()=>normalizeTableColumnDefs(defs).map(col=>col.id).join("|"),[defs]);
+  const [columns,setColumns]=useState(()=>readTableColumnLayout(scope,defs));
+  useEffect(()=>{
+    setColumns(readTableColumnLayout(scope,defs));
+  },[scope,defsKey]);
+  useEffect(()=>{
+    writeTableColumnLayout(scope,columns);
+  },[scope,columns]);
+  const visibleColumns=useMemo(()=>columns.filter(col=>col.required||col.visible),[columns]);
+  const moveColumn=useCallback((id,dir)=>{
+    setColumns(prev=>{
+      const idx=prev.findIndex(col=>col.id===id);
+      if(idx<0) return prev;
+      const target=dir==="up"?idx-1:idx+1;
+      if(target<0||target>=prev.length) return prev;
+      const next=[...prev];
+      const [item]=next.splice(idx,1);
+      next.splice(target,0,item);
+      return next.map((col,i)=>({...col,order:i}));
+    });
+  },[]);
+  const toggleColumn=useCallback(id=>{
+    setColumns(prev=>prev.map(col=>{
+      if(col.id!==id) return col;
+      if(col.required) return col;
+      return {...col,visible:!col.visible};
+    }));
+  },[]);
+  const resetColumns=useCallback(()=>{
+    setColumns(normalizeTableColumnLayout({},defs));
+  },[defs]);
+  const tableMinWidth=useMemo(()=>{
+    const total=visibleColumns.reduce((sum,col)=>sum+Math.max(84,safeNum(col.width)||140),0);
+    return Math.max(520,total);
+  },[visibleColumns]);
+  return {columns,visibleColumns,tableMinWidth,moveColumn,toggleColumn,resetColumns};
+}
 
 // ── STYLE ATOMS ──────────────────────────────────────────────
 const labelSt={color:C.muted,fontSize:11,letterSpacing:.2,textTransform:"none",fontWeight:600,marginBottom:6,display:"block"};
@@ -1127,6 +1260,36 @@ const btnSt=(v="primary")=>({border:`1px solid ${v==="primary"?C.accent:v==="dan
      v==="ghost"?{background:C.surface,color:C.text}:
      {background:C.surface2,color:C.text})});
 
+function TableColumnEditor({title="Sutun Duzenle",columns,onToggle,onMove,onReset}) {
+  const rows=Array.isArray(columns)?columns:[];
+  return (
+    <details style={{position:"relative"}}>
+      <summary style={{listStyle:"none",cursor:"pointer",userSelect:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:600,color:C.text,background:C.surface}}>
+        Sutun Duzenle
+      </summary>
+      <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",minWidth:270,maxWidth:320,padding:10,background:C.card,border:`1px solid ${C.border}`,borderRadius:10,boxShadow:"0 12px 32px rgba(15,23,42,.18)",zIndex:60}}>
+        <div style={{fontSize:11,color:C.muted2,letterSpacing:.5,textTransform:"uppercase"}}>{title}</div>
+        <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:6,maxHeight:250,overflowY:"auto"}}>
+          {rows.map((col,idx)=>(
+            <div key={col.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"5px 6px",border:`1px solid ${C.border}`,borderRadius:8,background:C.surface}}>
+              <label style={{display:"flex",alignItems:"center",gap:8,minWidth:0,flex:1,cursor:col.required?"default":"pointer"}}>
+                <input type="checkbox" checked={col.required?true:Boolean(col.visible)} disabled={col.required} onChange={()=>onToggle(col.id)}/>
+                <span style={{fontSize:12,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{col.label}</span>
+              </label>
+              <div style={{display:"flex",gap:4}}>
+                <button type="button" onClick={()=>onMove(col.id,"up")} disabled={idx===0} style={{...btnSt("ghost"),padding:"2px 7px",fontSize:11,opacity:idx===0?0.45:1}}>↑</button>
+                <button type="button" onClick={()=>onMove(col.id,"down")} disabled={idx===rows.length-1} style={{...btnSt("ghost"),padding:"2px 7px",fontSize:11,opacity:idx===rows.length-1?0.45:1}}>↓</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{marginTop:9,display:"flex",justifyContent:"flex-end"}}>
+          <button type="button" onClick={onReset} style={{...btnSt("ghost"),padding:"5px 10px",fontSize:11}}>Varsayilan</button>
+        </div>
+      </div>
+    </details>
+  );
+}
 function Badge({label:l,color=C.muted2}) {
   return <span style={{background:color+"18",color,border:`1px solid ${color}40`,borderRadius:999,padding:"2px 8px",fontSize:10,fontWeight:700,letterSpacing:.3,textTransform:"uppercase"}}>{l}</span>;
 }
@@ -4000,6 +4163,22 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   const [orderDateTo,setOrderDateTo]=useState("");
   const [quoteSortDir,setQuoteSortDir]=useState("desc");
   const [orderSortDir,setOrderSortDir]=useState("desc");
+  const {
+    columns:quoteTableColumns,
+    visibleColumns:visibleQuoteTableColumns,
+    tableMinWidth:quoteTableMinWidth,
+    moveColumn:moveQuoteTableColumn,
+    toggleColumn:toggleQuoteTableColumn,
+    resetColumns:resetQuoteTableColumns,
+  }=useTableColumnLayout("sales_management_quotes",SALES_QUOTE_LIST_COLUMNS);
+  const {
+    columns:orderTableColumns,
+    visibleColumns:visibleOrderTableColumns,
+    tableMinWidth:orderTableMinWidth,
+    moveColumn:moveOrderTableColumn,
+    toggleColumn:toggleOrderTableColumn,
+    resetColumns:resetOrderTableColumns,
+  }=useTableColumnLayout("sales_management_orders",SALES_ORDER_LIST_COLUMNS);
   const [customerEditId,setCustomerEditId]=useState("");
   const [priceEditId,setPriceEditId]=useState("");
   const [quoteEditId,setQuoteEditId]=useState("");
@@ -5201,6 +5380,99 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   ];
   const statusLabel=s=>getSalesStatusMeta(s).label;
   const statusColor=s=>getSalesStatusMeta(s).color;
+  const renderQuoteTableCell=(qr,quoteNet,col)=>{
+    if(col.id==="quote_no"){
+      return (
+        <td key={col.id} style={{padding:"10px 12px"}}>
+          <div style={{fontFamily:"monospace",fontWeight:700,color:C.text}}>{qr.code||"-"}</div>
+          <div style={{fontSize:11,color:C.muted2}}>Satir: {(qr.lines||[]).length}</div>
+        </td>
+      );
+    }
+    if(col.id==="customer"){
+      return <td key={col.id} style={{padding:"10px 12px",color:C.text,fontWeight:600}}>{qr.customerName||"-"}</td>;
+    }
+    if(col.id==="valid_until"){
+      return <td key={col.id} style={{padding:"10px 12px",color:C.muted2}}>{qr.validUntil||"-"}</td>;
+    }
+    if(col.id==="status"){
+      return <td key={col.id} style={{padding:"10px 12px"}}><Badge label={statusLabel(qr.status)} color={statusColor(qr.status)}/></td>;
+    }
+    if(col.id==="total"){
+      return <td key={col.id} style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:C.text}}>{formatByCurrency(quoteNet,qr.currency||defaultQuoteCurrency)}</td>;
+    }
+    if(col.id==="actions"){
+      return (
+        <td key={col.id} style={{padding:"10px 12px"}}>
+          <div style={{display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
+            <button onClick={()=>openEditQuoteModal(qr)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Duzenle</button>
+            <button onClick={()=>printQuote(qr)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>PDF</button>
+            <button onClick={()=>duplicateQuote(qr)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Kopyala</button>
+            <button onClick={()=>setQuoteStatus(qr,"approved")} style={{...btnSt("green"),padding:"5px 8px",fontSize:11,opacity:(qr.status||"")==="approved"?0.7:1}} disabled={(qr.status||"")==="approved"}>{(qr.status||"")==="approved"?"Onayli":"Onay"}</button>
+            <button onClick={()=>convertQuoteToOrder(qr)} disabled={(qr.status||"")!=="approved"} style={{...btnSt("primary"),padding:"5px 8px",fontSize:11,opacity:(qr.status||"")==="approved"?1:0.6,cursor:(qr.status||"")==="approved"?"pointer":"not-allowed"}}>Siparise Donustur</button>
+            <button onClick={()=>setQuoteStatus(qr,"cancelled")} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Iptal</button>
+          </div>
+        </td>
+      );
+    }
+    return null;
+  };
+  const renderSalesOrderTableCell=(o,remaining,col)=>{
+    if(col.id==="order_no"){
+      return (
+        <td key={col.id} style={{padding:"10px 12px"}}>
+          <div style={{fontFamily:"monospace",fontWeight:700,color:C.text}}>{o.code||"-"}</div>
+          {o.sourceQuoteCode&&<div style={{fontSize:11,color:C.muted2}}>Teklif: {o.sourceQuoteCode}</div>}
+        </td>
+      );
+    }
+    if(col.id==="customer"){
+      return (
+        <td key={col.id} style={{padding:"10px 12px"}}>
+          <div style={{fontWeight:600,color:C.text}}>{o.customerName||"-"}</div>
+          <div style={{fontSize:11,color:C.muted2}}>Adet: {safeNum(o.qty)} · Teslim: {safeNum(o.deliveredQty)}</div>
+          <div style={{fontSize:11,color:C.muted2}}>Vade: {Math.max(0,safeNum(o.paymentTermDays??30))} gun</div>
+          {(o.deliveries||[]).length>0&&<div style={{fontSize:11,color:C.muted2}}>Son: {(o.deliveries||[]).slice(-1)[0]?.date||"-"}</div>}
+        </td>
+      );
+    }
+    if(col.id==="due_date"){
+      return <td key={col.id} style={{padding:"10px 12px",color:C.muted2}}>{o.dueDate||"-"}</td>;
+    }
+    if(col.id==="status"){
+      return <td key={col.id} style={{padding:"10px 12px"}}><Badge label={statusLabel(o.status)} color={statusColor(o.status)}/></td>;
+    }
+    if(col.id==="remaining"){
+      return <td key={col.id} style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:C.text}}>{remaining} / {safeNum(o.qty)}</td>;
+    }
+    if(col.id==="document"){
+      return (
+        <td key={col.id} style={{padding:"10px 12px",color:C.muted2,fontSize:11}}>
+          {o.dispatchRef?`Irsaliye: ${o.dispatchRef}`:"-"}
+          {o.invoiceRef?` · Fatura: ${o.invoiceRef}`:""}
+        </td>
+      );
+    }
+    if(col.id==="actions"){
+      return (
+        <td key={col.id} style={{padding:"10px 12px"}}>
+          <div style={{display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
+            <button onClick={()=>printOrder(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>PDF</button>
+            <button onClick={()=>duplicateSalesOrder(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Kopyala</button>
+            <button onClick={()=>setOrderStatus(o,"in_production")} style={{...btnSt("primary"),padding:"5px 8px",fontSize:11,opacity:(o.status||"")==="in_production"?0.7:1}} disabled={(o.status||"")==="in_production"}>Uretimde</button>
+            <button onClick={()=>addDelivery(o)} style={{...btnSt("green"),padding:"5px 8px",fontSize:11}}>Kismi Teslim</button>
+            <button onClick={()=>convertOrderToWorkOrders(o)} style={{...(o.workOrderIds&&o.workOrderIds.length>0?btnSt("ghost"):btnSt("primary")),padding:"5px 8px",fontSize:11}}>
+              {(o.workOrderIds&&o.workOrderIds.length>0)?"Is Emirleri":"Is Emri"}
+            </button>
+            <button onClick={()=>markExternalDoc(o,"dispatch")} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Irsaliye</button>
+            <button onClick={()=>markExternalDoc(o,"invoice")} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Fatura</button>
+            <button onClick={()=>setOrderStatus(o,"cancelled")} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11,opacity:(o.status||"")==="cancelled"?0.7:1}} disabled={(o.status||"")==="cancelled"}>Iptal</button>
+          </div>
+        </td>
+      );
+    }
+    return null;
+  };
   const filterPanelStyle={
     flex:"0 0 250px",
     width:"100%",
@@ -5326,19 +5598,25 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                 <div style={{fontSize:12,color:C.muted2}}>Toplam Teklif: {filteredQuotes.length}</div>
                 <button onClick={()=>setQuoteSortDir(v=>v==="desc"?"asc":"desc")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Sirala: {quoteSortDir==="desc"?"Yeniden Eskiye":"Eskiden Yeniye"}</button>
               </div>
-              <button onClick={openNewQuoteModal} style={{...btnSt("primary"),padding:"7px 12px",fontSize:12}}>Teklif Olustur</button>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <TableColumnEditor
+                  title="Teklif Tablosu"
+                  columns={quoteTableColumns}
+                  onToggle={toggleQuoteTableColumn}
+                  onMove={moveQuoteTableColumn}
+                  onReset={resetQuoteTableColumns}
+                />
+                <button onClick={openNewQuoteModal} style={{...btnSt("primary"),padding:"7px 12px",fontSize:12}}>Teklif Olustur</button>
+              </div>
             </div>
             <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
               <div style={{overflowX:"auto"}}>
-                <table style={{width:"100%",minWidth:1080,borderCollapse:"collapse",fontSize:12}}>
+                <table style={{width:"100%",minWidth:quoteTableMinWidth,borderCollapse:"collapse",fontSize:12}}>
                   <thead>
                     <tr style={{background:C.surface,color:C.muted2,textAlign:"left"}}>
-                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Teklif No</th>
-                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Firma Adi</th>
-                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Gecerlilik</th>
-                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Teklif Asamasi</th>
-                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:"right"}}>Genel Toplam</th>
-                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:"right"}}>Islem</th>
+                      {visibleQuoteTableColumns.map(col=>(
+                        <th key={col.id} style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:col.align||"left"}}>{col.label}</th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
@@ -5346,30 +5624,13 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                       const quoteNet=(qr.lines||[]).reduce((sum,line)=>sum+lineTotal(line).net,0);
                       return (
                         <tr key={qr.id} style={{borderBottom:`1px solid ${C.border}`}}>
-                          <td style={{padding:"10px 12px"}}>
-                            <div style={{fontFamily:"monospace",fontWeight:700,color:C.text}}>{qr.code||"-"}</div>
-                            <div style={{fontSize:11,color:C.muted2}}>Satir: {(qr.lines||[]).length}</div>
-                          </td>
-                          <td style={{padding:"10px 12px",color:C.text,fontWeight:600}}>{qr.customerName||"-"}</td>
-                          <td style={{padding:"10px 12px",color:C.muted2}}>{qr.validUntil||"-"}</td>
-                          <td style={{padding:"10px 12px"}}><Badge label={statusLabel(qr.status)} color={statusColor(qr.status)}/></td>
-                          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:C.text}}>{formatByCurrency(quoteNet,qr.currency||defaultQuoteCurrency)}</td>
-                          <td style={{padding:"10px 12px"}}>
-                            <div style={{display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
-                              <button onClick={()=>openEditQuoteModal(qr)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Duzenle</button>
-                              <button onClick={()=>printQuote(qr)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>PDF</button>
-                              <button onClick={()=>duplicateQuote(qr)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Kopyala</button>
-                              <button onClick={()=>setQuoteStatus(qr,"approved")} style={{...btnSt("green"),padding:"5px 8px",fontSize:11,opacity:(qr.status||"")==="approved"?0.7:1}} disabled={(qr.status||"")==="approved"}>{(qr.status||"")==="approved"?"Onayli":"Onay"}</button>
-                              <button onClick={()=>convertQuoteToOrder(qr)} disabled={(qr.status||"")!=="approved"} style={{...btnSt("primary"),padding:"5px 8px",fontSize:11,opacity:(qr.status||"")==="approved"?1:0.6,cursor:(qr.status||"")==="approved"?"pointer":"not-allowed"}}>Siparise Donustur</button>
-                              <button onClick={()=>setQuoteStatus(qr,"cancelled")} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Iptal</button>
-                            </div>
-                          </td>
+                          {visibleQuoteTableColumns.map(col=>renderQuoteTableCell(qr,quoteNet,col))}
                         </tr>
                       );
                     })}
                     {filteredQuotes.length===0&&(
                       <tr>
-                        <td colSpan={6} style={{padding:"26px 12px",textAlign:"center",color:C.muted2}}>Filtreye uygun teklif bulunamadi.</td>
+                        <td colSpan={Math.max(1,visibleQuoteTableColumns.length)} style={{padding:"26px 12px",textAlign:"center",color:C.muted2}}>Filtreye uygun teklif bulunamadi.</td>
                       </tr>
                     )}
                   </tbody>
@@ -5409,33 +5670,38 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                 <div style={{fontSize:12,color:C.muted2}}>Toplam Siparis: {filteredOrders.length}</div>
                 <button onClick={()=>setOrderSortDir(v=>v==="desc"?"asc":"desc")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Sirala: {orderSortDir==="desc"?"Yeniden Eskiye":"Eskiden Yeniye"}</button>
               </div>
-              <button onClick={()=>{
-                setOrderForm({
-                  code:nextCode("SIP",salesOrders,/^SIP-(\d+)$/),
-                  customerId:"",
-                  dueDate:todayStr(),
-                  paymentTermDays:"30",
-                  priority:"normal",
-                  note:"",
-                  lines:[makeDraftLine()],
-                });
-                setQuoteEditId("");
-                setShowQuoteModal(false);
-                setShowOrderModal(true);
-              }} style={{...btnSt("primary"),padding:"7px 12px",fontSize:12}}>Siparis Olustur</button>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <TableColumnEditor
+                  title="Siparis Tablosu"
+                  columns={orderTableColumns}
+                  onToggle={toggleOrderTableColumn}
+                  onMove={moveOrderTableColumn}
+                  onReset={resetOrderTableColumns}
+                />
+                <button onClick={()=>{
+                  setOrderForm({
+                    code:nextCode("SIP",salesOrders,/^SIP-(\d+)$/),
+                    customerId:"",
+                    dueDate:todayStr(),
+                    paymentTermDays:"30",
+                    priority:"normal",
+                    note:"",
+                    lines:[makeDraftLine()],
+                  });
+                  setQuoteEditId("");
+                  setShowQuoteModal(false);
+                  setShowOrderModal(true);
+                }} style={{...btnSt("primary"),padding:"7px 12px",fontSize:12}}>Siparis Olustur</button>
+              </div>
             </div>
             <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
               <div style={{overflowX:"auto"}}>
-                <table style={{width:"100%",minWidth:1320,borderCollapse:"collapse",fontSize:12}}>
+                <table style={{width:"100%",minWidth:orderTableMinWidth,borderCollapse:"collapse",fontSize:12}}>
                   <thead>
                     <tr style={{background:C.surface,color:C.muted2,textAlign:"left"}}>
-                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Siparis No</th>
-                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Musteri</th>
-                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Termin</th>
-                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Durum</th>
-                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:"right"}}>Kalan / Toplam</th>
-                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Belge</th>
-                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:"right"}}>Islem</th>
+                      {visibleOrderTableColumns.map(col=>(
+                        <th key={col.id} style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:col.align||"left"}}>{col.label}</th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
@@ -5443,43 +5709,13 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                       const remaining=Math.max(0,safeNum(o.qty)-safeNum(o.deliveredQty));
                       return (
                         <tr key={o.id} style={{borderBottom:`1px solid ${C.border}`}}>
-                          <td style={{padding:"10px 12px"}}>
-                            <div style={{fontFamily:"monospace",fontWeight:700,color:C.text}}>{o.code||"-"}</div>
-                            {o.sourceQuoteCode&&<div style={{fontSize:11,color:C.muted2}}>Teklif: {o.sourceQuoteCode}</div>}
-                          </td>
-                          <td style={{padding:"10px 12px"}}>
-                            <div style={{fontWeight:600,color:C.text}}>{o.customerName||"-"}</div>
-                            <div style={{fontSize:11,color:C.muted2}}>Adet: {safeNum(o.qty)} · Teslim: {safeNum(o.deliveredQty)}</div>
-                            <div style={{fontSize:11,color:C.muted2}}>Vade: {Math.max(0,safeNum(o.paymentTermDays??30))} gun</div>
-                            {(o.deliveries||[]).length>0&&<div style={{fontSize:11,color:C.muted2}}>Son: {(o.deliveries||[]).slice(-1)[0]?.date||"-"}</div>}
-                          </td>
-                          <td style={{padding:"10px 12px",color:C.muted2}}>{o.dueDate||"-"}</td>
-                          <td style={{padding:"10px 12px"}}><Badge label={statusLabel(o.status)} color={statusColor(o.status)}/></td>
-                          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:C.text}}>{remaining} / {safeNum(o.qty)}</td>
-                          <td style={{padding:"10px 12px",color:C.muted2,fontSize:11}}>
-                            {o.dispatchRef?`Irsaliye: ${o.dispatchRef}`:"-"}
-                            {o.invoiceRef?` · Fatura: ${o.invoiceRef}`:""}
-                          </td>
-                          <td style={{padding:"10px 12px"}}>
-                            <div style={{display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
-                              <button onClick={()=>printOrder(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>PDF</button>
-                              <button onClick={()=>duplicateSalesOrder(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Kopyala</button>
-                              <button onClick={()=>setOrderStatus(o,"in_production")} style={{...btnSt("primary"),padding:"5px 8px",fontSize:11,opacity:(o.status||"")==="in_production"?0.7:1}} disabled={(o.status||"")==="in_production"}>Uretimde</button>
-                              <button onClick={()=>addDelivery(o)} style={{...btnSt("green"),padding:"5px 8px",fontSize:11}}>Kismi Teslim</button>
-                              <button onClick={()=>convertOrderToWorkOrders(o)} style={{...(o.workOrderIds&&o.workOrderIds.length>0?btnSt("ghost"):btnSt("primary")),padding:"5px 8px",fontSize:11}}>
-                                {(o.workOrderIds&&o.workOrderIds.length>0)?"Is Emirleri":"Is Emri"}
-                              </button>
-                              <button onClick={()=>markExternalDoc(o,"dispatch")} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Irsaliye</button>
-                              <button onClick={()=>markExternalDoc(o,"invoice")} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Fatura</button>
-                              <button onClick={()=>setOrderStatus(o,"cancelled")} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11,opacity:(o.status||"")==="cancelled"?0.7:1}} disabled={(o.status||"")==="cancelled"}>Iptal</button>
-                            </div>
-                          </td>
+                          {visibleOrderTableColumns.map(col=>renderSalesOrderTableCell(o,remaining,col))}
                         </tr>
                       );
                     })}
                     {filteredOrders.length===0&&(
                       <tr>
-                        <td colSpan={7} style={{padding:"26px 12px",textAlign:"center",color:C.muted2}}>Filtreye uygun siparis bulunamadi.</td>
+                        <td colSpan={Math.max(1,visibleOrderTableColumns.length)} style={{padding:"26px 12px",textAlign:"center",color:C.muted2}}>Filtreye uygun siparis bulunamadi.</td>
                       </tr>
                     )}
                   </tbody>
@@ -5903,6 +6139,14 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   const [viewOrderMoves,setViewOrderMoves]=useState([]);
   const [previewFile,setPreviewFile]=useState(null);
   const [uploading,setUploading]=useState(false);
+  const {
+    columns:workOrderTableColumns,
+    visibleColumns:visibleWorkOrderTableColumns,
+    tableMinWidth:workOrderTableMinWidth,
+    moveColumn:moveWorkOrderTableColumn,
+    toggleColumn:toggleWorkOrderTableColumn,
+    resetColumns:resetWorkOrderTableColumns,
+  }=useTableColumnLayout("work_orders_list",WORK_ORDER_LIST_COLUMNS);
   const fileRef=useRef();
   const emptyForm={code:"",name:"",partId:"",partNo:"",revision:"A",customerPartCode:"",partSnapshot:null,customerId:"",material:"",qty:"1",dueDate:todayStr(),priority:"normal",dependencies:[],partSec:"",machines:[],notes:"",files:[],status:"planned",sourceType:"manual"};
   const [form,setForm]=useState(emptyForm);
@@ -6113,6 +6357,64 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   ORDER_STATUS_OPTIONS.forEach(st=>{
     orderStatusCountMap[st.id]=orders.filter(o=>(o.status||"passive")===st.id).length;
   });
+  const renderWorkOrderTableCell=(o,usage,produced,priorityLabel,col)=>{
+    if(col.id==="work_order"){
+      return (
+        <td key={col.id} style={{padding:"10px 12px",minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+            <span style={{fontWeight:800,fontSize:13,fontFamily:"monospace",color:C.text,whiteSpace:"nowrap"}}>{o.code}</span>
+            {(o.files||[]).length>0&&<Badge label={`${o.files.length} dosya`} color={C.purple}/>}
+          </div>
+          <div style={{fontSize:12,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.name||"-"}</div>
+          <div style={{fontSize:11,color:C.muted2,marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+            {o.sourceType==="sales_auto"?"Siparisten Otomatik":"Manuel"}{(o.dependencies||[]).length>0?` · ${o.dependencies.length} bagimlilik`:""}
+          </div>
+        </td>
+      );
+    }
+    if(col.id==="customer_part"){
+      return (
+        <td key={col.id} style={{padding:"10px 12px",fontSize:12,color:C.muted2,minWidth:0}}>
+          <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:C.text,fontWeight:600}}>{o.customerName||"-"}</div>
+          <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.partNo||"-"}{o.revision?` Rev.${o.revision}`:""}</div>
+          <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.material||"-"}</div>
+        </td>
+      );
+    }
+    if(col.id==="due"){
+      return (
+        <td key={col.id} style={{padding:"10px 12px",fontSize:12,color:C.muted2}}>
+          <div>{o.dueDate||"-"}</div>
+          <div>{safeNum(o.qty)} adet</div>
+          <div>{priorityLabel}</div>
+        </td>
+      );
+    }
+    if(col.id==="status_production"){
+      return (
+        <td key={col.id} style={{padding:"10px 12px",fontSize:12,color:C.muted2}}>
+          <div style={{marginBottom:4}}><Badge label={getOrderStatusMeta(o.status).label} color={getOrderStatusMeta(o.status).color}/></div>
+          <div>Uretim: {produced}</div>
+          <div>Takim: {usage}</div>
+        </td>
+      );
+    }
+    if(col.id==="actions"){
+      return (
+        <td key={col.id} style={{padding:"10px 12px"}}>
+          <div style={{display:"flex",gap:6,justifyContent:"flex-end",alignItems:"center",flexWrap:"wrap"}}>
+            <button onClick={()=>setViewOrder(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Goruntule</button>
+            <button onClick={()=>{setForm({code:o.code,name:o.name,partId:o.partId||"",partNo:o.partNo||"",revision:o.revision||"A",customerPartCode:o.customerPartCode||"",partSnapshot:(o.partSnapshot&&typeof o.partSnapshot==="object")?o.partSnapshot:null,customerId:o.customerId||"",material:o.material||"",qty:String(o.qty??"1"),dueDate:o.dueDate||todayStr(),priority:o.priority||"normal",dependencies:o.dependencies||[],partSec:o.partSec,machines:o.machines||[],notes:o.notes||"",files:o.files||[],status:o.status||"planned",sourceType:o.sourceType||"manual"});setEditId(o.id);setShowForm(true);}} style={{...btnSt(),padding:"5px 8px",fontSize:11}}>Duzenle</button>
+            <button onClick={()=>duplicateWorkOrder(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Kopyala</button>
+            <select style={{...inputSt,width:130,padding:"5px 8px",fontSize:11}} value={o.status||"passive"} onChange={e=>setOrderStatus(o,e.target.value)}>
+              {ORDER_STATUS_OPTIONS.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
+            </select>
+          </div>
+        </td>
+      );
+    }
+    return null;
+  };
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
   const materialOptions=(form.material&& !materials.some(x=>x.name===form.material))
@@ -6302,17 +6604,22 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
         <div style={{flex:"1 1 760px",minWidth:0,display:"flex",flexDirection:"column",gap:8}}>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <div style={{fontSize:12,color:C.muted2}}>Gosterilen Kayit: {filteredOrders.length}</div>
+            <TableColumnEditor
+              title="Is Emri Tablosu"
+              columns={workOrderTableColumns}
+              onToggle={toggleWorkOrderTableColumn}
+              onMove={moveWorkOrderTableColumn}
+              onReset={resetWorkOrderTableColumns}
+            />
           </div>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
             <div style={{overflowX:"auto"}}>
-              <table style={{width:"100%",minWidth:1220,borderCollapse:"collapse",fontSize:12}}>
+              <table style={{width:"100%",minWidth:workOrderTableMinWidth,borderCollapse:"collapse",fontSize:12}}>
                 <thead>
                   <tr style={{background:C.surface,color:C.muted2,textAlign:"left"}}>
-                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Is Emri</th>
-                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Musteri / Parca</th>
-                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Termin</th>
-                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Durum / Uretim</th>
-                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:"right"}}>Islem</th>
+                    {visibleWorkOrderTableColumns.map(col=>(
+                      <th key={col.id} style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:col.align||"left"}}>{col.label}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -6322,52 +6629,18 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
                     const priorityLabel=(PRIORITY_OPTIONS.find(p=>p.id===o.priority)||{}).label||"Normal";
                     return (
                       <tr key={o.id} style={{borderBottom:`1px solid ${C.border}`,opacity:(o.status==="passive"||o.status==="liquidation")?0.6:1}}>
-                        <td style={{padding:"10px 12px",minWidth:0}}>
-                          <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
-                            <span style={{fontWeight:800,fontSize:13,fontFamily:"monospace",color:C.text,whiteSpace:"nowrap"}}>{o.code}</span>
-                            {(o.files||[]).length>0&&<Badge label={`${o.files.length} dosya`} color={C.purple}/>}
-                          </div>
-                          <div style={{fontSize:12,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.name||"-"}</div>
-                          <div style={{fontSize:11,color:C.muted2,marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                            {o.sourceType==="sales_auto"?"Siparisten Otomatik":"Manuel"}{(o.dependencies||[]).length>0?` · ${o.dependencies.length} bagimlilik`:""}
-                          </div>
-                        </td>
-                        <td style={{padding:"10px 12px",fontSize:12,color:C.muted2,minWidth:0}}>
-                          <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:C.text,fontWeight:600}}>{o.customerName||"-"}</div>
-                          <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.partNo||"-"}{o.revision?` Rev.${o.revision}`:""}</div>
-                          <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.material||"-"}</div>
-                        </td>
-                        <td style={{padding:"10px 12px",fontSize:12,color:C.muted2}}>
-                          <div>{o.dueDate||"-"}</div>
-                          <div>{safeNum(o.qty)} adet</div>
-                          <div>{priorityLabel}</div>
-                        </td>
-                        <td style={{padding:"10px 12px",fontSize:12,color:C.muted2}}>
-                          <div style={{marginBottom:4}}><Badge label={getOrderStatusMeta(o.status).label} color={getOrderStatusMeta(o.status).color}/></div>
-                          <div>Uretim: {produced}</div>
-                          <div>Takim: {usage}</div>
-                        </td>
-                        <td style={{padding:"10px 12px"}}>
-                          <div style={{display:"flex",gap:6,justifyContent:"flex-end",alignItems:"center",flexWrap:"wrap"}}>
-                            <button onClick={()=>setViewOrder(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Goruntule</button>
-                            <button onClick={()=>{setForm({code:o.code,name:o.name,partId:o.partId||"",partNo:o.partNo||"",revision:o.revision||"A",customerPartCode:o.customerPartCode||"",partSnapshot:(o.partSnapshot&&typeof o.partSnapshot==="object")?o.partSnapshot:null,customerId:o.customerId||"",material:o.material||"",qty:String(o.qty??"1"),dueDate:o.dueDate||todayStr(),priority:o.priority||"normal",dependencies:o.dependencies||[],partSec:o.partSec,machines:o.machines||[],notes:o.notes||"",files:o.files||[],status:o.status||"planned",sourceType:o.sourceType||"manual"});setEditId(o.id);setShowForm(true);}} style={{...btnSt(),padding:"5px 8px",fontSize:11}}>Duzenle</button>
-                            <button onClick={()=>duplicateWorkOrder(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Kopyala</button>
-                            <select style={{...inputSt,width:130,padding:"5px 8px",fontSize:11}} value={o.status||"passive"} onChange={e=>setOrderStatus(o,e.target.value)}>
-                              {ORDER_STATUS_OPTIONS.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
-                            </select>
-                          </div>
-                        </td>
+                        {visibleWorkOrderTableColumns.map(col=>renderWorkOrderTableCell(o,usage,produced,priorityLabel,col))}
                       </tr>
                     );
                   })}
                   {orders.length===0&&(
                     <tr>
-                      <td colSpan={5} style={{padding:"26px 12px",textAlign:"center",color:C.muted2}}>Henuz is emri yok.</td>
+                      <td colSpan={Math.max(1,visibleWorkOrderTableColumns.length)} style={{padding:"26px 12px",textAlign:"center",color:C.muted2}}>Henuz is emri yok.</td>
                     </tr>
                   )}
                   {orders.length>0&&filteredOrders.length===0&&(
                     <tr>
-                      <td colSpan={5} style={{padding:"26px 12px",textAlign:"center",color:C.muted2}}>Filtreye uygun is emri bulunamadi.</td>
+                      <td colSpan={Math.max(1,visibleWorkOrderTableColumns.length)} style={{padding:"26px 12px",textAlign:"center",color:C.muted2}}>Filtreye uygun is emri bulunamadi.</td>
                     </tr>
                   )}
                 </tbody>
