@@ -5201,6 +5201,24 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   ];
   const statusLabel=s=>getSalesStatusMeta(s).label;
   const statusColor=s=>getSalesStatusMeta(s).color;
+  const filterPanelStyle={
+    flex:"0 0 250px",
+    width:"100%",
+    maxWidth:280,
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    padding:12,
+    display:"flex",
+    flexDirection:"column",
+    gap:10,
+    alignSelf:"flex-start",
+    position:"sticky",
+    top:12,
+    maxHeight:"calc(100dvh - 92px)",
+    overflowY:"auto",
+    scrollbarGutter:"stable",
+  };
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
 
@@ -5285,7 +5303,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
 
       {view==="quotes"&&(
         <div style={{display:"flex",gap:10,alignItems:"flex-start",flexWrap:"wrap"}}>
-          <div style={{flex:"0 0 250px",width:"100%",maxWidth:280,background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12,display:"flex",flexDirection:"column",gap:10}}>
+          <div style={filterPanelStyle}>
             <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Teklifler</div>
             <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod, musteri, durum ara"/>
             <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Teklif Asamasi</div>
@@ -5364,7 +5382,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
 
       {view==="orders"&&(
         <div style={{display:"flex",gap:10,alignItems:"flex-start",flexWrap:"wrap"}}>
-          <div style={{flex:"0 0 250px",width:"100%",maxWidth:280,background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12,display:"flex",flexDirection:"column",gap:10}}>
+          <div style={filterPanelStyle}>
             <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Siparisler</div>
             <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod, musteri, durum ara"/>
             <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Siparis Durumu</div>
