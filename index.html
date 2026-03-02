@@ -224,11 +224,65 @@ const { useState, useEffect, useCallback, useRef, useMemo } = React;
 
 // ── CONSTANTS ────────────────────────────────────────────────
 const DEFAULT_MACHINES = ["CNC-1","CNC-2","CNC-3","CNC-4"];
+function normalizeMachineList(list,fallback=DEFAULT_MACHINES){
+  const src=Array.isArray(list)?list:[];
+  const used=new Set();
+  const cleaned=[];
+  src.forEach(item=>{
+    const v=String(item||"").trim();
+    if(!v) return;
+    const k=v.toLocaleLowerCase("tr");
+    if(used.has(k)) return;
+    used.add(k);
+    cleaned.push(v);
+  });
+  if(cleaned.length>0) return cleaned;
+  return [...(Array.isArray(fallback)&&fallback.length>0?fallback:DEFAULT_MACHINES)];
+}
+function machineNamesFromConnectors(rows){
+  return normalizeMachineList((Array.isArray(rows)?rows:[]).map(r=>r?.machineName||""),[]);
+}
+function sameMachineList(a,b){
+  const left=normalizeMachineList(a,[]);
+  const right=normalizeMachineList(b,[]);
+  if(left.length!==right.length) return false;
+  for(let i=0;i<left.length;i+=1){
+    if(left[i]!==right[i]) return false;
+  }
+  return true;
+}
 const SHIFTS = [
   { id:"sabah", label:"Sabah", time:"06:00–14:00" },
   { id:"ogleden", label:"Öğleden Sonra", time:"14:00–22:00" },
   { id:"gece", label:"Gece", time:"22:00–06:00" },
 ];
+function normalizeShiftToken(value){
+  return String(value||"")
+    .toLowerCase()
+    .replace(/[çÇ]/g,"c")
+    .replace(/[ğĞ]/g,"g")
+    .replace(/[ıİ]/g,"i")
+    .replace(/[öÖ]/g,"o")
+    .replace(/[şŞ]/g,"s")
+    .replace(/[üÜ]/g,"u")
+    .replace(/[^a-z0-9]+/g,"_")
+    .replace(/^_+|_+$/g,"");
+}
+function shiftIdFromLabel(value,index=0){
+  const token=normalizeShiftToken(value);
+  return token||`shift_${index+1}`;
+}
+function uniqueShiftId(preferred,used,index=0){
+  const base=shiftIdFromLabel(preferred,index);
+  let id=base;
+  let seq=2;
+  while(used.has(id)){
+    id=`${base}_${seq}`;
+    seq+=1;
+  }
+  used.add(id);
+  return id;
+}
 function normalizeHm(value,fallback="00:00"){
   const raw=String(value||"").trim();
   const m=/^(\d{1,2}):(\d{2})$/.exec(raw);
@@ -262,22 +316,64 @@ const DEFAULT_KIOSK_SETTINGS = {
 function normalizeKioskSettings(raw){
   const src=(raw&&typeof raw==="object")?raw:{};
   const inputList=Array.isArray(src.shiftWindows)?src.shiftWindows:(Array.isArray(src.shifts)?src.shifts:[]);
-  const shiftWindows=SHIFTS.map(base=>{
-    const fallback=DEFAULT_SHIFT_WINDOWS.find(row=>row.id===base.id)||{id:base.id,label:base.label,start:"00:00",end:"00:00"};
-    const row=inputList.find(item=>String(item?.id||"")===base.id)||{};
+  const baseRows=(inputList.length>0?inputList:DEFAULT_SHIFT_WINDOWS).filter(Boolean);
+  const usedShiftIds=new Set();
+  const shiftWindows=baseRows.map((rawRow,idx)=>{
+    const fallback=DEFAULT_SHIFT_WINDOWS[idx]||DEFAULT_SHIFT_WINDOWS[0]||{id:`shift_${idx+1}`,label:`Vardiya ${idx+1}`,start:"00:00",end:"00:00"};
+    const row=(rawRow&&typeof rawRow==="object")?rawRow:{};
+    const parsedRange=row.time?parseShiftRangeText(row.time):null;
+    const label=String(row.label||row.name||fallback.label||`Vardiya ${idx+1}`).trim()||`Vardiya ${idx+1}`;
+    const id=uniqueShiftId(String(row.id||label),usedShiftIds,idx);
+    const start=normalizeHm(row.start??parsedRange?.start,fallback.start);
+    const end=normalizeHm(row.end??parsedRange?.end,fallback.end);
     return {
-      id:base.id,
-      label:base.label,
-      start:normalizeHm(row.start,fallback.start),
-      end:normalizeHm(row.end,fallback.end),
+      id,
+      label,
+      start,
+      end,
     };
   });
+  const fallbackUsed=new Set();
+  const safeShiftWindows=shiftWindows.length>0?shiftWindows:DEFAULT_SHIFT_WINDOWS.map((row,idx)=>({
+    id:uniqueShiftId(row.id||row.label,fallbackUsed,idx),
+    label:String(row.label||`Vardiya ${idx+1}`),
+    start:normalizeHm(row.start,"00:00"),
+    end:normalizeHm(row.end,"00:00"),
+  }));
   const thresholdRaw=src.cycleDeviationThresholdSec??src.cycleDeviationThreshold;
   return {
-    shiftWindows,
+    shiftWindows:safeShiftWindows,
     cycleDeviationNotificationEnabled:Boolean(src.cycleDeviationNotificationEnabled??src.notifyCycleDeviation),
     cycleDeviationThresholdSec:Math.max(1,Math.round(safeNum(thresholdRaw||DEFAULT_KIOSK_SETTINGS.cycleDeviationThresholdSec))),
   };
+}
+function useShiftWindows(){
+  const [rows,setRows]=useState(DEFAULT_SHIFT_WINDOWS);
+  useEffect(()=>{
+    let disposed=false;
+    async function load(){
+      const doc=await window.DB.getDoc("config","kioskSettings");
+      if(disposed) return;
+      const cfg=normalizeKioskSettings(doc||{});
+      setRows((cfg.shiftWindows&&cfg.shiftWindows.length>0)?cfg.shiftWindows:DEFAULT_SHIFT_WINDOWS);
+    }
+    function onUpdated(e){
+      if(disposed) return;
+      const cfg=normalizeKioskSettings(e?.detail||{});
+      setRows((cfg.shiftWindows&&cfg.shiftWindows.length>0)?cfg.shiftWindows:DEFAULT_SHIFT_WINDOWS);
+    }
+    load();
+    if(typeof window!=="undefined"){
+      window.addEventListener("kiosk_settings_updated",onUpdated);
+    }
+    return ()=>{
+      disposed=true;
+      if(typeof window!=="undefined"){
+        window.removeEventListener("kiosk_settings_updated",onUpdated);
+      }
+    };
+  },[]);
+  return (rows&&rows.length>0)?rows:DEFAULT_SHIFT_WINDOWS;
 }
 function hmToMinute(value){
   const hm=normalizeHm(value,"");
@@ -291,20 +387,21 @@ function hmToMinute(value){
 }
 function resolveShiftIdByMinute(shiftWindows,minute){
   const rows=(Array.isArray(shiftWindows)&&shiftWindows.length>0)?shiftWindows:DEFAULT_SHIFT_WINDOWS;
-  if(!Number.isFinite(minute)) return rows[0]?.id||"sabah";
+  const fallbackId=rows[0]?.id||DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1";
+  if(!Number.isFinite(minute)) return fallbackId;
   const m=Math.max(0,Math.min(1439,Math.floor(minute)));
   for(const row of rows){
     const start=hmToMinute(row.start);
     const end=hmToMinute(row.end);
     if(start===null||end===null) continue;
-    if(start===end) return row.id||rows[0]?.id||"sabah";
+    if(start===end) return row.id||fallbackId;
     if(start<end){
-      if(m>=start&&m<end) return row.id||rows[0]?.id||"sabah";
+      if(m>=start&&m<end) return row.id||fallbackId;
     }else{
-      if(m>=start||m<end) return row.id||rows[0]?.id||"sabah";
+      if(m>=start||m<end) return row.id||fallbackId;
     }
   }
-  return rows[0]?.id||"sabah";
+  return fallbackId;
 }
 function minuteFromIsoLike(value){
   if(typeof value!=="string"||!value) return null;
@@ -1251,53 +1348,6 @@ function NavIcon({name,size=18}) {
   return null;
 }
 
-// ════════════════════════════════════════════════════════════
-//  MACHINE SETTINGS
-// ════════════════════════════════════════════════════════════
-function MachineSettings({machines,onUpdate}) {
-  const [editing,setEditing]=useState(false);
-  const [draft,setDraft]=useState([...machines]);
-  const [newName,setNewName]=useState("");
-
-  async function save() {
-    const cleaned=draft.map(m=>m.trim()).filter(Boolean);
-    if(cleaned.length===0){alert("En az 1 tezgah gerekli!");return;}
-    await onUpdate(cleaned); setEditing(false);
-  }
-  return (
-    <div style={{marginBottom:24}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-        <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600}}>Tezgah İsimleri</div>
-        {!editing&&<button onClick={()=>{setDraft([...machines]);setEditing(true);}} style={{...btnSt("ghost"),padding:"6px 12px",fontSize:12}}>✏️ Düzenle</button>}
-      </div>
-      {!editing?(
-        <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-          {machines.map((m,i)=><div key={i} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:9,padding:"8px 14px",fontSize:13,fontWeight:600,color:C.text}}>{m}</div>)}
-        </div>
-      ):(
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-          <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:12}}>
-            {draft.map((m,i)=>(
-              <div key={i} style={{display:"flex",gap:8,alignItems:"center"}}>
-                <input value={m} onChange={e=>setDraft(d=>d.map((x,idx)=>idx===i?e.target.value:x))} style={{...inputSt,flex:1,padding:"9px 12px",fontSize:13}}/>
-                <button onClick={()=>setDraft(d=>d.filter((_,idx)=>idx!==i))} style={{background:"transparent",border:`1px solid ${C.red}50`,borderRadius:8,color:C.red,width:34,height:34,cursor:"pointer",fontSize:16,flexShrink:0}}>×</button>
-              </div>
-            ))}
-          </div>
-          <div style={{display:"flex",gap:8,marginBottom:12}}>
-            <input value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&newName.trim()){setDraft(d=>[...d,newName.trim()]);setNewName("");}}} placeholder="Yeni tezgah adı..." style={{...inputSt,flex:1,padding:"9px 12px",fontSize:13}}/>
-            <button onClick={()=>{if(newName.trim()){setDraft(d=>[...d,newName.trim()]);setNewName("");}}} style={{...btnSt("primary"),padding:"9px 14px",fontSize:13,flexShrink:0}}>+ Ekle</button>
-          </div>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={save} style={{...btnSt("green"),flex:1,padding:10}}>💾 Kaydet</button>
-            <button onClick={()=>setEditing(false)} style={{...btnSt("ghost"),padding:10}}>İptal</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function resolveOperatorBaseUrl(){
   if(typeof window==="undefined") return "";
   return `${window.location.origin}${window.location.pathname}`;
@@ -1468,6 +1518,27 @@ function KioskProductionSettings({currentUser}) {
       shiftWindows:(prev.shiftWindows||[]).map(row=>row.id===shiftId?{...row,[key]:value}:row),
     }));
   }
+  function addShiftWindow(){
+    setConfig(prev=>{
+      const list=[...(prev.shiftWindows||[])];
+      const nextIdx=list.length+1;
+      const label=`Vardiya ${nextIdx}`;
+      const used=new Set(list.map(row=>String(row.id||"")).filter(Boolean));
+      const id=uniqueShiftId(label,used,nextIdx-1);
+      list.push({id,label,start:"00:00",end:"00:00"});
+      return {...prev,shiftWindows:list};
+    });
+  }
+  function removeShiftWindow(shiftId){
+    setConfig(prev=>{
+      const list=[...(prev.shiftWindows||[])];
+      if(list.length<=1){
+        alert("En az 1 vardiya tanimli olmali.");
+        return prev;
+      }
+      return {...prev,shiftWindows:list.filter(row=>row.id!==shiftId)};
+    });
+  }
   function setThreshold(value){
     setConfig(prev=>({...prev,cycleDeviationThresholdSec:value}));
   }
@@ -1497,15 +1568,20 @@ function KioskProductionSettings({currentUser}) {
       <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Kiosk Vardiya ve Cevrim Ayarlari</div>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
         <div style={{fontSize:12,color:C.muted2,marginBottom:10}}>Vardiya otomasyonu kiosk ekraninda bu saat araliklarina gore calisir.</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+          <div style={{fontSize:11,color:C.muted2}}>Vardiya sayisi ve adlari buradan ayarlanir.</div>
+          <button onClick={addShiftWindow} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>+ Vardiya Ekle</button>
+        </div>
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 120px 120px",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700}}>
-            <div>Vardiya</div><div>Baslangic</div><div>Bitis</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 120px 120px 74px",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700}}>
+            <div>Vardiya Adi</div><div>Baslangic</div><div>Bitis</div><div/>
           </div>
           {(config.shiftWindows||[]).map(row=>(
-            <div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 120px 120px",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
-              <div style={{fontSize:12,color:C.text,fontWeight:700}}>{row.label}</div>
+            <div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 120px 120px 74px",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
+              <input value={row.label||""} onChange={e=>setShiftValue(row.id,"label",e.target.value)} placeholder="Vardiya adi" style={{...inputSt,padding:"6px 8px",fontSize:12}}/>
               <input type="time" value={normalizeHm(row.start,"00:00")} onChange={e=>setShiftValue(row.id,"start",e.target.value)} style={{...inputSt,padding:"6px 8px",fontSize:12}}/>
               <input type="time" value={normalizeHm(row.end,"00:00")} onChange={e=>setShiftValue(row.id,"end",e.target.value)} style={{...inputSt,padding:"6px 8px",fontSize:12}}/>
+              <button onClick={()=>removeShiftWindow(row.id)} style={{...btnSt("danger"),padding:"6px 8px",fontSize:11,opacity:(config.shiftWindows||[]).length<=1?0.5:1}} disabled={(config.shiftWindows||[]).length<=1}>Sil</button>
             </div>
           ))}
         </div>
@@ -1788,7 +1864,7 @@ function SalesCurrencySettings({currentUser}) {
 // ════════════════════════════════════════════════════════════
 //  ADMIN USERS
 // ════════════════════════════════════════════════════════════
-function AdminUsers({currentUser,machines,onMachinesUpdate,currentLogo,onLogoUpdate}) {
+function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate}) {
   const [users,setUsers]=useState([]);
   const [loading,setLoading]=useState(true);
   const [expanded,setExpanded]=useState(null);
@@ -1871,7 +1947,7 @@ function AdminUsers({currentUser,machines,onMachinesUpdate,currentLogo,onLogoUpd
   const settingsTabs=[
     {id:"genel",label:"Genel",desc:"Logo ve uygulama gorunumu"},
     {id:"ticari",label:"Ticari",desc:"Teklif sablonu ve para birimi"},
-    {id:"uretim",label:"Uretim",desc:"Tezgah, operator ve rota ayarlari"},
+    {id:"uretim",label:"Uretim",desc:"Operator, kiosk ve rota ayarlari"},
     {id:"kullanicilar",label:"Kullanicilar",desc:"Yetki, rol ve hesap onaylari"},
   ];
 
@@ -1973,7 +2049,6 @@ function AdminUsers({currentUser,machines,onMachinesUpdate,currentLogo,onLogoUpd
       {settingsView==="uretim"&&(
         <>
           <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Uretim Ayarlari</div>
-          <MachineSettings machines={machines} onUpdate={onMachinesUpdate}/>
           <OperatorUrlSettings machines={machines}/>
           <KioskProductionSettings currentUser={currentUser}/>
           <RoutingOperationTypeSettings currentUser={currentUser}/>
@@ -5535,7 +5610,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const [form,setForm]=useState({
     entryDate:todayStr(),
     machine:machines[0]||"CNC-1",
-    shift:"sabah",
+    shift:DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1",
     selectedOrder:null,
     correct:"",
     wrong:"",
@@ -5589,6 +5664,13 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
       }
     };
   },[]);
+  useEffect(()=>{
+    if(!kioskMode||!showPicker) return;
+    if(typeof document==="undefined") return;
+    const prev=document.body.style.overflow;
+    document.body.style.overflow="hidden";
+    return ()=>{ document.body.style.overflow=prev; };
+  },[kioskMode,showPicker]);
 
   useEffect(()=>{
     if(typeof window==="undefined") return;
@@ -5720,7 +5802,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const resetEntryForm=()=>setForm(p=>({
     entryDate:p.entryDate,
     machine:p.machine||machines[0]||"CNC-1",
-    shift:p.shift||"sabah",
+    shift:p.shift||(DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1"),
     selectedOrder:null,
     correct:"",
     wrong:"",
@@ -5738,7 +5820,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     const d=parseYmdLocal(form.entryDate);
     const entry={
       date:ymdLocal(d), week:weekStart(d), month:monthStr(d),
-      machine:form.machine, shift:form.shift,
+      machine:form.machine, shift:form.shift, shiftLabel:selectedShiftMeta.label||form.shift||"",
       operatorId:currentUser.id, operatorName:currentUser.fullName,
       jobCode:form.selectedOrder.code, jobName:form.selectedOrder.name,
       partSec:Number(form.selectedOrder.partSec),
@@ -5788,7 +5870,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     setForm({
       entryDate:entry.date||todayStr(),
       machine:entry.machine||machines[0]||"CNC-1",
-      shift:entry.shift||"sabah",
+      shift:entry.shift||(DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1"),
       selectedOrder,
       correct:String(entry.correct??""),
       wrong:String(entry.wrong??0),
@@ -5914,7 +5996,20 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     if(!kioskMode) return;
     setForm(prev=>prev.shift===autoShiftId?prev:{...prev,shift:autoShiftId});
   },[kioskMode,autoShiftId]);
-  const selectedShiftMeta=shiftWindowMap[form.shift]||SHIFTS.find(s=>s.id===form.shift)||{label:form.shift,time:""};
+  const shiftOptions=(kioskSettings.shiftWindows&&kioskSettings.shiftWindows.length>0)?kioskSettings.shiftWindows:DEFAULT_SHIFT_WINDOWS;
+  useEffect(()=>{
+    const fallbackId=shiftOptions[0]?.id||DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1";
+    setForm(prev=>{
+      if(!prev.shift) return {...prev,shift:fallbackId};
+      if(shiftOptions.some(row=>row.id===prev.shift)) return prev;
+      return {...prev,shift:fallbackId};
+    });
+  },[shiftOptions]);
+  const fallbackShiftRow=shiftOptions.find(row=>row.id===form.shift)||shiftOptions[0]||DEFAULT_SHIFT_WINDOWS[0]||{id:"shift_1",label:"Vardiya",start:"00:00",end:"00:00"};
+  const selectedShiftMeta=shiftWindowMap[form.shift]||{
+    label:fallbackShiftRow.label||form.shift||"Vardiya",
+    time:`${normalizeHm(fallbackShiftRow.start,"00:00")}-${normalizeHm(fallbackShiftRow.end,normalizeHm(fallbackShiftRow.start,"00:00"))}`,
+  };
   const statusMeta=(()=>{
     if(machineStatus==="running") return {label:"ÇALIŞIYOR",color:"#27d67a",mode:"running"};
     if(machineStatus==="setup") return {label:"AYARDA",color:"#ffb247",mode:"idle"};
@@ -6219,7 +6314,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                 <div style={{fontSize:20,fontWeight:700,marginTop:6}}>Tezgah: {form.machine}</div>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:7,alignItems:"flex-start"}}>
-                <button onClick={()=>setShowPicker(v=>!v)} style={{border:"1px solid rgba(255,255,255,.45)",background:topHeaderTheme.controlBg,color:topHeaderTheme.controlText,borderRadius:10,padding:"8px 12px",fontWeight:700,fontSize:14,cursor:"pointer"}}>
+                <button onClick={()=>setShowPicker(true)} style={{border:"1px solid rgba(255,255,255,.45)",background:topHeaderTheme.controlBg,color:topHeaderTheme.controlText,borderRadius:10,padding:"8px 12px",fontWeight:700,fontSize:14,cursor:"pointer"}}>
                   {form.selectedOrder?`İş Emri: ${form.selectedOrder.code}`:"İş Emri Seç"}
                 </button>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
@@ -6251,25 +6346,6 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                 </div>
               ))}
             </div>
-
-            {showPicker&&(
-              <div style={{padding:"10px 14px",background:"#f1f5fb",borderBottom:"1px solid #d5dde8"}}>
-                <div style={{display:"grid",gridTemplateColumns:"minmax(220px,380px) 1fr auto",gap:8,alignItems:"center"}}>
-                  <input style={{...inputSt,padding:"9px 10px",fontSize:13}} placeholder="İş emri ara..." value={search} onChange={e=>setSearch(e.target.value)} autoFocus/>
-                  <div style={{fontSize:12,color:"#7f8da3"}}>{filtered.length} iş emri</div>
-                  <button onClick={()=>setShowPicker(false)} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Kapat</button>
-                </div>
-                <div style={{marginTop:8,maxHeight:170,overflowY:"auto",background:"#fff",border:"1px solid #d8dfe9",borderRadius:10}}>
-                  {filtered.length===0&&<div style={{padding:12,fontSize:12,color:"#8c98aa",textAlign:"center"}}>Sonuç bulunamadı.</div>}
-                  {filtered.map(o=>(
-                    <div key={o.id} onClick={()=>{fv("selectedOrder",o);setShowPicker(false);setSearch("");}} style={{padding:"9px 10px",cursor:"pointer",borderBottom:"1px solid #edf1f6"}}>
-                      <div style={{fontSize:12,fontFamily:"monospace",fontWeight:800,color:"#344154"}}>{o.code}</div>
-                      <div style={{fontSize:11,color:"#75849b",marginTop:2}}>{o.name} · {(o.machines||[]).join(", ")||"-"}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
 
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",alignItems:"stretch",minHeight:296,borderBottom:"1px solid #d5dde8",background:"#eef2f7"}}>
               <div style={{padding:"24px 20px",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",gap:8}}>
@@ -6340,13 +6416,46 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             </div>
 
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",background:"#fff"}}>
-              <button onClick={()=>setShowPicker(v=>!v)} style={{...actionBtnStyle,fontSize:26,color:"#9aa8bb"}}>☰</button>
+              <button onClick={()=>setShowPicker(true)} style={{...actionBtnStyle,fontSize:26,color:"#9aa8bb"}}>☰</button>
               <button onClick={openShiftEndModal} style={actionBtnStyle}>⏹ İşi Durdur</button>
               <button onClick={openRejectPartsModal} style={actionBtnStyle}>⊘ Hata Girişi</button>
               <button onClick={openToolChangeModal} style={{...actionBtnStyle,borderRight:"none"}}>💬 Kategori</button>
             </div>
           </div>
         </div>
+        {showPicker&&(
+          <div style={{position:"fixed",inset:0,background:"rgba(8,12,18,.78)",zIndex:55,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>{setShowPicker(false);setSearch("");}}>
+            <div style={{width:"100%",maxWidth:1120,height:"min(88vh,860px)",background:"#f3f6fb",border:"1px solid #cfd8e4",borderRadius:16,overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 24px 60px rgba(0,0,0,.35)"}} onClick={e=>e.stopPropagation()}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"12px 14px",borderBottom:"1px solid #d4dce7",background:"#fff"}}>
+                <div>
+                  <div style={{fontSize:12,color:"#7787a1",letterSpacing:.5,textTransform:"uppercase",fontWeight:700}}>Kiosk</div>
+                  <div style={{fontSize:18,color:"#32435b",fontWeight:800}}>İş Emri Seçimi</div>
+                </div>
+                <button onClick={()=>{setShowPicker(false);setSearch("");}} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
+              </div>
+              <div style={{padding:12,display:"grid",gridTemplateColumns:"minmax(240px,420px) 1fr",gap:10,alignItems:"center",borderBottom:"1px solid #d4dce7",background:"#f7f9fd"}}>
+                <input style={{...inputSt,padding:"11px 12px",fontSize:14,background:"#fff"}} placeholder="İş emri ara..." value={search} onChange={e=>setSearch(e.target.value)} autoFocus/>
+                <div style={{fontSize:13,color:"#6f8097",fontWeight:700}}>{filtered.length} iş emri bulundu</div>
+              </div>
+              <div style={{flex:1,minHeight:0,overflowY:"auto",padding:12}}>
+                {filtered.length===0&&<div style={{height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:"#8a98ac",fontWeight:700}}>Sonuç bulunamadı.</div>}
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))",gap:10}}>
+                  {filtered.map(o=>(
+                    <button
+                      key={o.id}
+                      onClick={()=>{fv("selectedOrder",o);setShowPicker(false);setSearch("");}}
+                      style={{textAlign:"left",background:"#fff",border:"1px solid #d6dfeb",borderRadius:12,padding:"12px 12px",cursor:"pointer",display:"flex",flexDirection:"column",gap:4}}
+                    >
+                      <div style={{fontSize:13,fontFamily:"monospace",fontWeight:800,color:"#31425a"}}>{o.code}</div>
+                      <div style={{fontSize:12,color:"#667892",fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.name||"-"}</div>
+                      <div style={{fontSize:11,color:"#8594aa",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{(o.machines||[]).join(", ")||"Tezgah tanımsız"}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {showToolModal&&(
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={()=>setShowToolModal(false)}>
             <div style={{width:"100%",maxWidth:680,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16}} onClick={e=>e.stopPropagation()}>
@@ -6433,7 +6542,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               {statusMeta.label}
             </span>
             <input type="date" max={todayStr()} value={form.entryDate} onChange={e=>fv("entryDate",e.target.value||todayStr())} style={{...inputSt,...themedInputStyle,padding:"8px 10px",fontSize:12,width:160}}/>
-            {SHIFTS.map(s=><button key={s.id} onClick={()=>fv("shift",s.id)} style={shiftButtonStyle(form.shift===s.id)}>{s.label}</button>)}
+            {shiftOptions.map(s=><button key={s.id} onClick={()=>fv("shift",s.id)} style={shiftButtonStyle(form.shift===s.id)}>{s.label}</button>)}
           </div>
         </div>
 
@@ -6561,7 +6670,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                 {recentMachineEntries.map(e=>(
                   <div key={e.id} style={{...rowCardStyle,display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:opTheme.textDim}}>
                     <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:180}}>{e.jobCode} · ✅{safeNum(e.correct)} / ❌{safeNum(e.wrong)}</span>
-                    <span>{e.shift||"-"}</span>
+                    <span>{shiftWindowMap[e.shift]?.label||e.shift||"-"}</span>
                   </div>
                 ))}
               </div>
@@ -6685,7 +6794,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               <div key={e.id} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",marginBottom:8}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <div><span style={{fontWeight:700,fontSize:13,fontFamily:"monospace",color:C.text}}>{e.jobCode}</span><span style={{fontSize:12,color:C.muted2,marginLeft:6}}>{e.jobName}</span></div>
-                  <div style={{display:"flex",gap:5}}><Badge label={e.machine} color={C.accent}/><Badge label={e.shift} color={C.muted2}/></div>
+                  <div style={{display:"flex",gap:5}}><Badge label={e.machine} color={C.accent}/><Badge label={shiftWindowMap[e.shift]?.label||e.shift||"-"} color={C.muted2}/></div>
                 </div>
                 <div style={{display:"flex",gap:12,marginTop:7,fontSize:13}}>
                   <span style={{color:C.green,fontWeight:600}}>✅ {e.correct}</span>
@@ -6721,8 +6830,10 @@ function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule})
   const [downtimeEvents,setDowntimeEvents]=useState([]);
   const [telemetryRows,setTelemetryRows]=useState([]);
   const [inspections,setInspections]=useState([]);
+  const shiftRows=useShiftWindows();
+  const fallbackShiftId=shiftRows[0]?.id||DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1";
   const [selectedMachine,setSelectedMachine]=useState(machines[0]||"CNC-1");
-  const [selectedShift,setSelectedShift]=useState("sabah");
+  const [selectedShift,setSelectedShift]=useState(fallbackShiftId);
   const [selectedOrderId,setSelectedOrderId]=useState("");
   const [entryForm,setEntryForm]=useState({correct:"",wrong:""});
   const [downtimeForm,setDowntimeForm]=useState({typeId:"",minutes:"10",reason:""});
@@ -6778,6 +6889,9 @@ function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule})
   useEffect(()=>{
     if(!machines.includes(selectedMachine)) setSelectedMachine(machines[0]||"CNC-1");
   },[machines.join("|"),selectedMachine]);
+  useEffect(()=>{
+    setSelectedShift(prev=>shiftRows.some(row=>row.id===prev)?prev:fallbackShiftId);
+  },[shiftRows,fallbackShiftId]);
 
   const machineOrders=orders.filter(o=>{
     const m=o.machines||[];
@@ -6796,6 +6910,7 @@ function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule})
   });
   const selectedTelemetry=latestByMachine[selectedMachine]||null;
   const selectedOrder=machineOrders.find(o=>o.id===selectedOrderId)||null;
+  const selectedShiftRow=shiftRows.find(row=>row.id===selectedShift)||shiftRows[0]||DEFAULT_SHIFT_WINDOWS[0];
   const today=todayStr();
   const todayEntries=entries.filter(e=>e.date===today&&e.operatorId===currentUser.id&&e.machine===selectedMachine);
   const todayGood=todayEntries.reduce((s,e)=>s+safeNum(e.correct),0);
@@ -6828,6 +6943,7 @@ function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule})
       month:monthStr(d),
       machine:selectedMachine,
       shift:selectedShift,
+      shiftLabel:selectedShiftRow?.label||selectedShift,
       operatorId:currentUser.id,
       operatorName:currentUser.fullName||currentUser.id,
       jobCode:selectedOrder.code||"",
@@ -6870,6 +6986,7 @@ function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule})
       operatorId:currentUser.id,
       reason:downtimeForm.reason.trim(),
       shift:selectedShift,
+      shiftLabel:selectedShiftRow?.label||selectedShift,
       createdBy:currentUser.id,
       updatedAt:new Date().toISOString(),
     };
@@ -6961,7 +7078,7 @@ function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule})
             })}
           </div>
           <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:isWide?"flex-end":"flex-start"}}>
-            {SHIFTS.map(s=><button key={s.id} onClick={()=>setSelectedShift(s.id)} style={{...chip(selectedShift===s.id,C.accent),padding:"8px 10px",fontSize:12}}>{s.label}</button>)}
+            {shiftRows.map(s=><button key={s.id} onClick={()=>setSelectedShift(s.id)} style={{...chip(selectedShift===s.id,C.accent),padding:"8px 10px",fontSize:12}}>{s.label}</button>)}
           </div>
         </div>
       </div>
@@ -9174,7 +9291,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
 // ════════════════════════════════════════════════════════════
 //  MACHINE CONNECTIVITY PREP
 // ════════════════════════════════════════════════════════════
-function MachineConnectivityPrep({currentUser,machines=DEFAULT_MACHINES}) {
+function MachineConnectivityPrep({currentUser,machines=DEFAULT_MACHINES,onMachinesSync}) {
   const emptyForm={
     code:"",
     machineName:machines[0]||"CNC-1",
@@ -9207,6 +9324,12 @@ function MachineConnectivityPrep({currentUser,machines=DEFAULT_MACHINES}) {
     syncBatch:200,
     timezone:"Europe/Istanbul",
   });
+  const syncMachines=useCallback((rows)=>{
+    if(typeof onMachinesSync!=="function") return;
+    const names=machineNamesFromConnectors(rows);
+    if(names.length===0) return;
+    onMachinesSync(names);
+  },[onMachinesSync]);
 
   const load=useCallback(async()=>{
     const [rows,edgeDoc,mockRows]=await Promise.all([
@@ -9214,7 +9337,9 @@ function MachineConnectivityPrep({currentUser,machines=DEFAULT_MACHINES}) {
       window.DB.getDoc("config","edgeConnectivity"),
       window.DB.getAll("machineTelemetryMock"),
     ]);
-    setProfiles(rows.sort((a,b)=>(a.machineName||"").localeCompare(b.machineName||"","tr")));
+    const sortedRows=rows.sort((a,b)=>(a.machineName||"").localeCompare(b.machineName||"","tr"));
+    setProfiles(sortedRows);
+    syncMachines(sortedRows);
     if(edgeDoc){
       setEdgeConfig(prev=>({
         ...prev,
@@ -9236,7 +9361,7 @@ function MachineConnectivityPrep({currentUser,machines=DEFAULT_MACHINES}) {
       });
     setSimMap(latest);
     setLoading(false);
-  },[]);
+  },[syncMachines]);
   useEffect(()=>{load();},[load]);
   useEffect(()=>{
     function onTabAction(ev){
@@ -9321,11 +9446,19 @@ function MachineConnectivityPrep({currentUser,machines=DEFAULT_MACHINES}) {
     if(editId){
       const ok=await window.DB.updateDoc("machineConnectors",editId,payload);
       if(!ok){alert("Makina profili guncellenemedi.");return;}
-      setProfiles(prev=>prev.map(x=>x.id===editId?{...x,...payload}:x).sort((a,b)=>(a.machineName||"").localeCompare(b.machineName||"","tr")));
+      setProfiles(prev=>{
+        const nextRows=prev.map(x=>x.id===editId?{...x,...payload}:x).sort((a,b)=>(a.machineName||"").localeCompare(b.machineName||"","tr"));
+        syncMachines(nextRows);
+        return nextRows;
+      });
     }else{
       const id=await window.DB.addDoc("machineConnectors",payload);
       if(!id){alert("Makina profili kaydedilemedi.");return;}
-      setProfiles(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev].sort((a,b)=>(a.machineName||"").localeCompare(b.machineName||"","tr")));
+      setProfiles(prev=>{
+        const nextRows=[{id,...payload,createdAt:new Date().toISOString()},...prev].sort((a,b)=>(a.machineName||"").localeCompare(b.machineName||"","tr"));
+        syncMachines(nextRows);
+        return nextRows;
+      });
     }
     setEditId(null);
     setShowForm(false);
@@ -9363,7 +9496,11 @@ function MachineConnectivityPrep({currentUser,machines=DEFAULT_MACHINES}) {
     if(!confirm(`"${row.machineName||row.code||"Makina"}" profili silinsin mi?`)) return;
     const ok=await window.DB.deleteDoc("machineConnectors",row.id);
     if(!ok){alert("Makina profili silinemedi.");return;}
-    setProfiles(prev=>prev.filter(x=>x.id!==row.id));
+    setProfiles(prev=>{
+      const nextRows=prev.filter(x=>x.id!==row.id);
+      syncMachines(nextRows);
+      return nextRows;
+    });
     setSimMap(prev=>{const n={...prev};delete n[row.id];return n;});
     if(editId===row.id){
       setEditId(null);
@@ -9421,6 +9558,10 @@ function MachineConnectivityPrep({currentUser,machines=DEFAULT_MACHINES}) {
   }
 
   const q=search.trim().toLowerCase();
+  const machineNameOptions=useMemo(
+    ()=>normalizeMachineList([...(machines||[]),...profiles.map(r=>r.machineName||"")],[]),
+    [machines,profiles]
+  );
   const filtered=profiles.filter(r=>{
     if(!q) return true;
     return (r.machineName||"").toLowerCase().includes(q)||
@@ -9607,9 +9748,10 @@ function MachineConnectivityPrep({currentUser,machines=DEFAULT_MACHINES}) {
             <div><span style={labelSt}>Profil Kodu</span><input style={{...inputSt,background:C.surface,color:C.muted2}} value={form.code||nextConnectorCode()} readOnly/></div>
             <div>
               <span style={labelSt}>Makina</span>
-              <select style={inputSt} value={form.machineName} onChange={e=>fv("machineName",e.target.value)}>
-                {machines.map(m=><option key={m} value={m}>{m}</option>)}
-              </select>
+              <input list="machine-name-options" style={inputSt} value={form.machineName} onChange={e=>fv("machineName",e.target.value)} placeholder="CNC-101"/>
+              <datalist id="machine-name-options">
+                {machineNameOptions.map(m=><option key={m} value={m}/>)}
+              </datalist>
             </div>
             <div>
               <span style={labelSt}>Marka</span>
@@ -10134,17 +10276,17 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
   });
   const statusMeta=s=>{
     const key=String(s||"offline").toLowerCase();
-    if(["running","live"].includes(key)) return {key:"running",label:"Calisiyor",color:"#13a14c",banner:"linear-gradient(145deg,#21b85b 0%,#109245 100%)"};
+    if(["running","live"].includes(key)) return {key:"running",label:"Çalışıyor",color:"#13a14c",banner:"linear-gradient(145deg,#21b85b 0%,#109245 100%)"};
     if(key==="setup") return {key:"setup",label:"Kurulum",color:"#c9860f",banner:"linear-gradient(145deg,#f0af3f 0%,#cf8a1a 100%)"};
     if(["idle","simulation"].includes(key)) return {key:"idle",label:"Beklemede",color:"#2c7be5",banner:"linear-gradient(145deg,#5c96e6 0%,#2b68cf 100%)"};
     if(key==="alarm") return {key:"alarm",label:"Alarm",color:"#cf2f49",banner:"linear-gradient(145deg,#eb5470 0%,#cd2f4a 100%)"};
-    return {key:"offline",label:"Bagli Degil",color:"#6b7280",banner:"linear-gradient(145deg,#8b929d 0%,#6e7580 100%)"};
+    return {key:"offline",label:"Bağlı Değil",color:"#6b7280",banner:"linear-gradient(145deg,#8b929d 0%,#6e7580 100%)"};
   };
   function formatAge(sec){
     const v=Math.max(0,Math.floor(safeNum(sec)));
     if(v<60) return `${v}s`;
-    if(v<3600) return `${Math.floor(v/60)}d`;
-    return `${Math.floor(v/3600)}s`;
+    if(v<3600) return `${Math.floor(v/60)}dk`;
+    return `${Math.floor(v/3600)}sa`;
   }
   function toneByRow(row){
     const meta=statusMeta(row.status);
@@ -10190,20 +10332,20 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
   const totalParts=machineRowsSorted.reduce((s,r)=>s+Math.max(safeNum(r.partCounter),safeNum(r.produced)),0);
   const runningPct=machineCount?Math.round((safeNum(statusCounts.running)/machineCount)*100):0;
   const kpiCards=[
-    {label:"Calisan Tezgah",value:`${statusCounts.running}/${machineCount}`,sub:`%${runningPct} aktif`,tone:"#13a14c"},
+    {label:"Çalışan Tezgah",value:`${statusCounts.running}/${machineCount}`,sub:`%${runningPct} aktif`,tone:"#13a14c"},
     {label:"Ortalama OEE",value:`%${avgOee}`,sub:`A %${avgAvailability} · Q %${avgQuality}`,tone:avgOee>=75?C.green:(avgOee>=55?C.warn:C.red)},
-    {label:"Toplam Uretim",value:String(totalParts),sub:"Bugun toplam parca",tone:C.accent},
-    {label:"Alarmli Tezgah",value:String(statusCounts.alarm),sub:statusCounts.alarm>0?"Anlik mudahale gerekli":"Alarm yok",tone:statusCounts.alarm>0?C.red:C.green},
-    {label:"Geciken Is",value:String(lateOrders.length),sub:lateOrders.length>0?"Termin riski var":"Takvimde gecikme yok",tone:lateOrders.length>0?C.red:C.green},
-    {label:"Acil Satin Alma",value:String(pendingPr.length),sub:pendingPr.length>0?"Bekleyen talep var":"Acil talep yok",tone:pendingPr.length>0?C.warn:C.green},
+    {label:"Toplam Üretim",value:String(totalParts),sub:"Bugün toplam parça",tone:C.accent},
+    {label:"Alarmlı Tezgah",value:String(statusCounts.alarm),sub:statusCounts.alarm>0?"Anlık müdahale gerekli":"Alarm yok",tone:statusCounts.alarm>0?C.red:C.green},
+    {label:"Geciken İş",value:String(lateOrders.length),sub:lateOrders.length>0?"Termin riski var":"Takvimde gecikme yok",tone:lateOrders.length>0?C.red:C.green},
+    {label:"Acil Satın Alma",value:String(pendingPr.length),sub:pendingPr.length>0?"Bekleyen talep var":"Acil talep yok",tone:pendingPr.length>0?C.warn:C.green},
   ];
   const filterButtons=[
-    {id:"all",label:"Tum Durumlar"},
-    {id:"running",label:"Calisiyor"},
+    {id:"all",label:"Tüm Durumlar"},
+    {id:"running",label:"Çalışıyor"},
     {id:"idle",label:"Beklemede"},
     {id:"setup",label:"Kurulum"},
     {id:"alarm",label:"Alarm"},
-    {id:"offline",label:"Bagli Degil"},
+    {id:"offline",label:"Bağlı Değil"},
   ];
   const lastLoadText=lastLoadedAt?new Intl.DateTimeFormat("tr-TR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(new Date(lastLoadedAt)):"-";
   const userLabel=String(currentUser?.fullName||"").trim();
@@ -10213,10 +10355,10 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
           <div>
-            <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase"}}>Canli Uretim Panosu</div>
-            <div style={{fontWeight:800,color:C.text,fontSize:20}}>Gosterge Paneli</div>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase"}}>Canlı Üretim Panosu</div>
+            <div style={{fontWeight:800,color:C.text,fontSize:20}}>Gösterge Paneli</div>
             <div style={{fontSize:12,color:C.muted2,marginTop:2}}>
-              Tarih: {today} · Son guncelleme: {lastLoadText}{userLabel?` · ${userLabel}`:""}
+              Tarih: {today} · Son güncelleme: {lastLoadText}{userLabel?` · ${userLabel}`:""}
             </div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
@@ -10246,7 +10388,7 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
           <div>
-            <div style={{fontWeight:800,color:C.text,fontSize:16}}>Tezgah Performans Gorunumu</div>
+            <div style={{fontWeight:800,color:C.text,fontSize:16}}>Tezgah Performans Görünümü</div>
             <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{filteredMachineRows.length} tezgah listeleniyor</div>
           </div>
           <Badge label={`Alarm: ${statusCounts.alarm}`} color={statusCounts.alarm>0?C.red:C.green}/>
@@ -10272,7 +10414,7 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
                   </div>
                   <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
                     <span style={{fontSize:10,fontWeight:800,color:"#fff",padding:"4px 7px",borderRadius:999,border:"1px solid rgba(255,255,255,.45)",background:"rgba(0,0,0,.12)",letterSpacing:.4}}>{meta.label}</span>
-                    <span style={{fontSize:10,color:"#f3f7ff"}}>Veri yasi: {m.freshSec===null?"-":formatAge(m.freshSec)}</span>
+                    <span style={{fontSize:10,color:"#f3f7ff"}}>Veri yaşı: {m.freshSec===null?"-":formatAge(m.freshSec)}</span>
                   </div>
                 </div>
                 <div style={{padding:10,display:"grid",gridTemplateColumns:"122px minmax(0,1fr)",gap:10,alignItems:"center",flex:1}}>
@@ -10290,7 +10432,7 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
-                      <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Parca</div>
+                      <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Parça</div>
                       <div style={{fontSize:16,color:C.text,fontWeight:800,marginTop:1}}>{Math.max(m.partCounter,m.produced)}</div>
                     </div>
                     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
@@ -10315,7 +10457,7 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
                       </div>
                     ))}
                   </div>
-                  <div style={{fontSize:10,color:C.muted2,marginTop:5}}>A %{m.availability} · P %{m.performance} · Q %{m.quality} · Durus {fmtMinute(m.stopMin)}</div>
+                  <div style={{fontSize:10,color:C.muted2,marginTop:5}}>A %{m.availability} · P %{m.performance} · Q %{m.quality} · Duruş {fmtMinute(m.stopMin)}</div>
                 </div>
               </div>
             );
@@ -10323,30 +10465,51 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
           </div>
           {filteredMachineRows.length===0&&(
             <div style={{padding:"26px 12px",textAlign:"center",color:C.muted2,fontSize:12}}>
-              Secili filtrede tezgah bulunamadi.
+              Seçili filtrede tezgah bulunamadı.
             </div>
           )}
         </div>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:12}}>
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-          <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Termin Riski Olan Is Emirleri</div>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Termin Riski Olan İş Emirleri</div>
           {lateOrders.slice(0,8).map(o=>(
             <div key={o.id} style={{padding:"7px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.muted2}}>
               <span style={{color:C.text,fontWeight:700,fontFamily:"monospace"}}>{o.code}</span> · {o.name||"-"} · {o.dueDate||"-"}
             </div>
           ))}
-          {lateOrders.length===0&&<div style={{fontSize:12,color:C.muted2}}>Geciken is emri yok.</div>}
+          {lateOrders.length===0&&<div style={{fontSize:12,color:C.muted2}}>Geciken iş emri yok.</div>}
         </div>
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-          <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Yaklasan Satis Terminleri (3 Gun)</div>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Yaklaşan Satış Terminleri (3 Gün)</div>
           {nearSales.slice(0,8).map(s=>(
             <div key={s.id} style={{padding:"7px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.muted2}}>
               <span style={{color:C.text,fontWeight:700,fontFamily:"monospace"}}>{s.code||"-"}</span> · {s.customerName||"-"} · {s.dueDate||"-"}
             </div>
           ))}
-          {nearSales.length===0&&<div style={{fontSize:12,color:C.muted2}}>Yaklasan termin bulunmuyor.</div>}
+          {nearSales.length===0&&<div style={{fontSize:12,color:C.muted2}}>Yaklaşan termin bulunmuyor.</div>}
+        </div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Anlık Operasyon Uyarıları</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:9,padding:"8px 9px"}}>
+              <div style={{fontSize:10,color:C.muted2}}>Kritik Stok</div>
+              <div style={{fontSize:20,fontWeight:800,color:lowStocks.length>0?C.warn:C.green,lineHeight:1.15}}>{lowStocks.length}</div>
+            </div>
+            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:9,padding:"8px 9px"}}>
+              <div style={{fontSize:10,color:C.muted2}}>Bekleyen Bildirim</div>
+              <div style={{fontSize:20,fontWeight:800,color:unresolvedNotifs.length>0?C.red:C.green,lineHeight:1.15}}>{unresolvedNotifs.length}</div>
+            </div>
+            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:9,padding:"8px 9px"}}>
+              <div style={{fontSize:10,color:C.muted2}}>Kritik Takım Ömrü</div>
+              <div style={{fontSize:20,fontWeight:800,color:lowLifeTools.length>0?C.red:C.green,lineHeight:1.15}}>{lowLifeTools.length}</div>
+            </div>
+            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:9,padding:"8px 9px"}}>
+              <div style={{fontSize:10,color:C.muted2}}>Kurulum/Bekleme</div>
+              <div style={{fontSize:20,fontWeight:800,color:(statusCounts.setup+statusCounts.idle)>0?C.warn:C.green,lineHeight:1.15}}>{safeNum(statusCounts.setup)+safeNum(statusCounts.idle)}</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -10824,8 +10987,10 @@ function DowntimeModule({currentUser,machines=DEFAULT_MACHINES}){
   const [loading,setLoading]=useState(true);
   const [types,setTypes]=useState([]);
   const [events,setEvents]=useState([]);
+  const shiftRows=useShiftWindows();
+  const fallbackShiftId=shiftRows[0]?.id||DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1";
   const [typeForm,setTypeForm]=useState({code:"",name:"",category:"ariza",requireReason:true,notifyMaintenance:true});
-  const [eventForm,setEventForm]=useState({machine:machines[0]||"CNC-1",typeId:"",startAt:`${todayStr()}T08:00`,endAt:`${todayStr()}T09:00`,operatorId:currentUser.id||"",reason:"",shift:"sabah"});
+  const [eventForm,setEventForm]=useState({machine:machines[0]||"CNC-1",typeId:"",startAt:`${todayStr()}T08:00`,endAt:`${todayStr()}T09:00`,operatorId:currentUser.id||"",reason:"",shift:fallbackShiftId});
 
   const load=useCallback(async()=>{
     const [t,e]=await Promise.all([window.DB.getAll("downtimeTypes"),window.DB.getAll("downtimeEvents")]);
@@ -10841,6 +11006,9 @@ function DowntimeModule({currentUser,machines=DEFAULT_MACHINES}){
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    setEventForm(prev=>shiftRows.some(row=>row.id===prev.shift)?prev:{...prev,shift:fallbackShiftId});
+  },[shiftRows,fallbackShiftId]);
 
   async function saveType(){
     if(!typeForm.name.trim()){alert("Durus tipi adi zorunlu.");return;}
@@ -10852,13 +11020,14 @@ function DowntimeModule({currentUser,machines=DEFAULT_MACHINES}){
   }
   async function saveEvent(){
     const type=types.find(t=>t.id===eventForm.typeId);
+    const selectedShiftRow=shiftRows.find(row=>row.id===eventForm.shift)||shiftRows[0]||DEFAULT_SHIFT_WINDOWS[0];
     if(!type){alert("Durus tipi secin.");return;}
     if(type.requireReason&&!eventForm.reason.trim()){alert("Bu durus tipi icin neden girisi zorunlu.");return;}
     const startIso=new Date(eventForm.startAt).toISOString();
     const endIso=new Date(eventForm.endAt).toISOString();
     const durationMin=Math.max(0,Math.round((new Date(endIso)-new Date(startIso))/60000));
     if(durationMin<=0){alert("Bitis zamani baslangictan buyuk olmali.");return;}
-    const payload={machine:eventForm.machine,typeId:type.id,typeCode:type.code||"",typeName:type.name||"",category:type.category||"",startAt:startIso,endAt:endIso,durationMin,date:eventForm.startAt.slice(0,10),operatorId:eventForm.operatorId||"",reason:eventForm.reason.trim(),shift:eventForm.shift||"",createdBy:currentUser.id,updatedAt:new Date().toISOString()};
+    const payload={machine:eventForm.machine,typeId:type.id,typeCode:type.code||"",typeName:type.name||"",category:type.category||"",startAt:startIso,endAt:endIso,durationMin,date:eventForm.startAt.slice(0,10),operatorId:eventForm.operatorId||"",reason:eventForm.reason.trim(),shift:eventForm.shift||"",shiftLabel:selectedShiftRow?.label||eventForm.shift||"",createdBy:currentUser.id,updatedAt:new Date().toISOString()};
     const id=await window.DB.addDoc("downtimeEvents",payload);
     if(!id){alert("Durus kaydedilemedi.");return;}
     if(type.notifyMaintenance){
@@ -10887,7 +11056,7 @@ function DowntimeModule({currentUser,machines=DEFAULT_MACHINES}){
           <div><span style={labelSt}>Baslangic</span><input style={inputSt} type="datetime-local" value={eventForm.startAt} onChange={e=>setEventForm(f=>({...f,startAt:e.target.value}))}/></div>
           <div><span style={labelSt}>Bitis</span><input style={inputSt} type="datetime-local" value={eventForm.endAt} onChange={e=>setEventForm(f=>({...f,endAt:e.target.value}))}/></div>
           <div><span style={labelSt}>Operator</span><input style={inputSt} value={eventForm.operatorId} onChange={e=>setEventForm(f=>({...f,operatorId:e.target.value}))}/></div>
-          <div><span style={labelSt}>Vardiya</span><select style={inputSt} value={eventForm.shift} onChange={e=>setEventForm(f=>({...f,shift:e.target.value}))}>{SHIFTS.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
+          <div><span style={labelSt}>Vardiya</span><select style={inputSt} value={eventForm.shift} onChange={e=>setEventForm(f=>({...f,shift:e.target.value}))}>{shiftRows.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
           <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Neden</span><input style={inputSt} value={eventForm.reason} onChange={e=>setEventForm(f=>({...f,reason:e.target.value}))} placeholder="Ariza detayi / malzeme yok vb."/></div>
         </div>
         <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}><button onClick={saveEvent} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Durus Kaydet</button></div>
@@ -12269,12 +12438,29 @@ function App() {
   const [desktopMenuCollapsed,setDesktopMenuCollapsed]=useState(false);
   const [kioskMachine,setKioskMachine]=useState(()=>detectLockedMachineFromUrl());
   const tabFromUrlAppliedRef=useRef(false);
+  const machinesRef=useRef(DEFAULT_MACHINES);
+  useEffect(()=>{machinesRef.current=machines;},[machines]);
 
   useEffect(()=>{
     async function init() {
-      const mc=await window.DB.getDoc("config","machines");
-      if(mc&&mc.list&&mc.list.length>0) setMachines(mc.list);
-      const branding=await window.DB.getDoc("config","branding");
+      const [mc,connectorRows,branding]=await Promise.all([
+        window.DB.getDoc("config","machines"),
+        window.DB.getAll("machineConnectors"),
+        window.DB.getDoc("config","branding"),
+      ]);
+      const connectorMachines=machineNamesFromConnectors(connectorRows);
+      const configMachines=normalizeMachineList(mc?.list||[],[]);
+      const initialMachines=connectorMachines.length>0
+        ? connectorMachines
+        : (configMachines.length>0?configMachines:DEFAULT_MACHINES);
+      setMachines(initialMachines);
+      if(connectorMachines.length>0&&!sameMachineList(configMachines,connectorMachines)){
+        await window.DB.setDoc("config","machines",{
+          list:connectorMachines,
+          source:"machineprep",
+          updatedAt:new Date().toISOString(),
+        });
+      }
       if(branding&&branding.logo) setLogoSrc(branding.logo);
       if(branding&&["light","dark"].includes(branding.themeMode||"")) setThemeMode(branding.themeMode);
       const session=window.Session.get();
@@ -12347,10 +12533,16 @@ function App() {
     };
   },[currentUser]);
 
-  async function updateMachines(list){
-    setMachines(list);
-    await window.DB.setDoc("config","machines",{list});
-  }
+  const updateMachines=useCallback(async(list)=>{
+    const next=normalizeMachineList(list);
+    if(sameMachineList(machinesRef.current,next)) return;
+    setMachines(prev=>sameMachineList(prev,next)?prev:next);
+    await window.DB.setDoc("config","machines",{
+      list:next,
+      source:"machineprep",
+      updatedAt:new Date().toISOString(),
+    });
+  },[]);
   async function updateLogo(logoData){
     const next=logoData||LOGO_SRC;
     setLogoSrc(next);
@@ -12491,7 +12683,7 @@ function App() {
   function getActiveView() {
     if(tab==="giris") return <DataEntry currentUser={currentUser} machines={machines}/>;
     if(tab==="planning") return <Planning currentUser={currentUser} machines={machines}/>;
-    if(tab==="machineprep") return <MachineConnectivityPrep currentUser={currentUser} machines={machines}/>;
+    if(tab==="machineprep") return <MachineConnectivityPrep currentUser={currentUser} machines={machines} onMachinesSync={updateMachines}/>;
     if(tab==="customers") return <Customers/>;
     if(tab==="materials") return <MaterialLibrary/>;
     if(tab==="parts") return <PartProductManagement currentUser={currentUser} machines={machines}/>;
@@ -12499,7 +12691,7 @@ function App() {
     if(tab==="rapor") return <Report currentUser={currentUser} machines={machines}/>;
     if(tab==="tools") return <ToolStock currentUser={currentUser} machines={machines}/>;
     if(tab==="orders") return <WorkOrders currentUser={currentUser} machines={machines}/>;
-    if(tab==="users") return <AdminUsers currentUser={currentUser} machines={machines} onMachinesUpdate={updateMachines} currentLogo={logoSrc} onLogoUpdate={updateLogo}/>;
+    if(tab==="users") return <AdminUsers currentUser={currentUser} machines={machines} currentLogo={logoSrc} onLogoUpdate={updateLogo}/>;
     if(tab==="dashboard") return <MRPDashboard currentUser={currentUser} machines={machines}/>;
     if(tab==="cncmonitor") return <CncMonitorWall currentUser={currentUser} machines={machines}/>;
     if(tab==="mrp") return <MRPRunModule currentUser={currentUser}/>;
