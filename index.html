@@ -6783,8 +6783,8 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
           </div>
         </div>
 
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:10}}>
-          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:10,display:"flex",flexDirection:"column",gap:8,minHeight:520}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr",gap:10}}>
+          <div style={{order:2,background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:10,display:"flex",flexDirection:"column",gap:8,minHeight:520}}>
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:6}}>
               <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 9px"}}>
                 <div style={{fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Açık İş Emri</div>
@@ -6850,7 +6850,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
             </div>
           </div>
 
-          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:10,minHeight:520}}>
+          <div style={{order:1,background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:10,minHeight:520}}>
             {monthOrders.length>0&&<div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:10}}>
               {monthOrders.map(o=><span key={o.id} style={{display:"inline-flex",alignItems:"center",gap:6,background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px",fontSize:11,color:C.muted2}}><span style={{width:10,height:10,borderRadius:3,background:o.color,display:"inline-block"}}/>{o.code?`${o.code} - ${o.name||""}${o.customer?` - ${o.customer}`:""}`:(o.name||"İş Emri")}</span>)}
             </div>}
