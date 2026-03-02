@@ -4172,6 +4172,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
   const [editId,setEditId]=useState(null);
   const [showToolModal,setShowToolModal]=useState(false);
   const [showShiftModal,setShowShiftModal]=useState(false);
+  const [previewFile,setPreviewFile]=useState(null);
   const [toolDraft,setToolDraft]=useState({machineToolId:"",machineToolQty:"1"});
   const [shiftDraft,setShiftDraft]=useState({correct:"",wrong:""});
   const [form,setForm]=useState({
@@ -4200,6 +4201,11 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
   const filtered=orders.filter(o=>o.code.toLowerCase().includes(search.toLowerCase())||o.name.toLowerCase().includes(search.toLowerCase()));
   const toolOptions=[...tools].sort((a,b)=>(a.code||"").localeCompare(b.code||""));
+  const stockedTools=[...tools].filter(t=>safeNum(t.qty)>0).sort((a,b)=>{
+    const qd=safeNum(b.qty)-safeNum(a.qty);
+    if(qd!==0) return qd;
+    return (a.code||"").localeCompare(b.code||"","tr");
+  });
   const addUsage=(map,id,qty)=>{
     if(!id) return;
     const q=Number(qty)||0;
@@ -4410,8 +4416,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
 
   function openShiftEndModal(){
     setShiftDraft({
-      correct:String(form.correct||""),
-      wrong:String(form.wrong||0),
+      correct:String(shiftDraft.correct||form.correct||""),
+      wrong:String(shiftDraft.wrong||form.wrong||0),
     });
     setShowShiftModal(true);
   }
@@ -4422,79 +4428,222 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
   }
 
   const machineToolPicked=tools.find(t=>t.id===form.machineToolId);
+  const selectedOrderFiles=Array.isArray(form.selectedOrder?.files)?form.selectedOrder.files.filter(f=>f&&f.data):[];
+  const selectedShiftMeta=SHIFTS.find(s=>s.id===form.shift)||{label:form.shift,time:""};
+  function downloadOrderFile(file){
+    if(!(file&&file.data)) return;
+    const a=document.createElement("a");
+    a.href=file.data;
+    a.download=file.name||"dokuman";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+  function openOrderFile(file){
+    if(!file) return;
+    if(canFilePreview(file)) setPreviewFile(file);
+    else downloadOrderFile(file);
+  }
+  const opTheme={
+    shell:"#0f1419",
+    panel:"#1d9944",
+    panelDark:"#177f38",
+    panelSoft:"#21a94b",
+    border:"rgba(255,255,255,.24)",
+    text:"#ecfff2",
+    textDim:"#cbf1d6",
+    textMuted:"#a6dfb8",
+    danger:"#ffb1b1",
+    warn:"#ffe18f",
+  };
+  const orderDayEntries=form.selectedOrder
+    ? todayEntries.filter(e=>e.machine===form.machine&&e.jobCode===form.selectedOrder.code)
+    : [];
+  const producedQty=orderDayEntries.reduce((s,e)=>s+safeNum(e.correct),0);
+  const scrapQty=orderDayEntries.reduce((s,e)=>s+safeNum(e.wrong),0);
+  const selectedOrderQty=Math.max(0,safeNum(form.selectedOrder?.qty));
+  const remainingQty=selectedOrderQty>0?Math.max(0,selectedOrderQty-(producedQty+scrapQty)):0;
+  const qualityPct=(producedQty+scrapQty)>0?Math.round((producedQty/(producedQty+scrapQty))*100):100;
+  const progressPct=selectedOrderQty>0?Math.min(100,Math.round((producedQty/selectedOrderQty)*100)):0;
+  const recentMachineEntries=todayEntries
+    .filter(e=>e.machine===form.machine)
+    .sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||""))
+    .slice(0,3);
 
   return (
-    <div style={{padding:16,display:"flex",flexDirection:"column",gap:14}}>
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-        <div style={{fontSize:13,fontWeight:600,color:C.text,textTransform:"capitalize"}}>{selectedDateLabel}</div>
-        <div style={{minWidth:170}}>
-          <input style={{...inputSt,padding:"8px 10px",fontSize:13}} type="date" max={todayStr()} value={form.entryDate} onChange={e=>fv("entryDate",e.target.value||todayStr())}/>
-        </div>
-      </div>
-      {editId&&(
-        <div style={{background:C.warnDim,border:`1px solid ${C.warn}50`,borderRadius:10,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
-          <span style={{fontSize:12,color:C.warn,fontWeight:700}}>Düzenleme modu açık</span>
-          <button onClick={()=>{setEditId(null);resetEntryForm();}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>İptal</button>
-        </div>
-      )}
-      <div>
-        <span style={labelSt}>Tezgah</span>
-        <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-          {machines.map(m=><button key={m} onClick={()=>selectMachine(m)} style={chip(form.machine===m)}>{m}</button>)}
-        </div>
-      </div>
-      <div>
-        <span style={labelSt}>Vardiya</span>
-        <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-          {SHIFTS.map(s=><button key={s.id} onClick={()=>fv("shift",s.id)} style={chip(form.shift===s.id)}>{s.label}<br/><span style={{fontSize:10,color:form.shift===s.id?C.accent:C.muted}}>{s.time}</span></button>)}
-        </div>
-      </div>
-      <div>
-        <span style={labelSt}>İş Emri *</span>
-        {form.selectedOrder?(
-          <div style={{background:C.surface,border:`1px solid ${C.accent}50`,borderRadius:10,padding:"12px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div>
-              <div style={{fontWeight:700,fontFamily:"monospace",fontSize:14,color:C.text}}>{form.selectedOrder.code}</div>
-              <div style={{fontSize:12,color:C.muted2,marginTop:1}}>{form.selectedOrder.name} · {fmtSec(form.selectedOrder.partSec)} · Maks: {Number(form.selectedOrder.partSec)>0?Math.floor(EFFECTIVE_SECONDS/form.selectedOrder.partSec):"-"} adet/gün</div>
-              {form.selectedOrder.material&&<div style={{fontSize:11,color:C.muted,marginTop:1}}>🔩 {form.selectedOrder.material}</div>}
-            </div>
-            <button onClick={()=>fv("selectedOrder",null)} style={{background:"transparent",border:"none",color:C.red,fontSize:20,cursor:"pointer"}}>×</button>
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:opTheme.shell,borderRadius:18,border:`1px solid ${C.border}`,padding:10}}>
+        <div style={{background:opTheme.panelDark,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:"10px 12px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8,alignItems:"center"}}>
+          <div>
+            <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.7,textTransform:"uppercase"}}>Tezgah</div>
+            <div style={{fontSize:24,fontWeight:800,color:opTheme.text,lineHeight:1.1}}>{form.machine}</div>
           </div>
-        ):(
-          <>
-            <button onClick={()=>setShowPicker(!showPicker)} style={{...inputSt,textAlign:"left",cursor:"pointer",color:C.muted2,display:"block"}}>{orders.length===0?"Aktif iş emri yok":"İş emri seçin..."}</button>
-            {showPicker&&(
-              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,marginTop:4,overflow:"hidden"}}>
-                <input style={{...inputSt,borderRadius:0,borderBottom:`1px solid ${C.border}`}} placeholder="Ara..." value={search} onChange={e=>setSearch(e.target.value)} autoFocus/>
-                <div style={{maxHeight:240,overflowY:"auto"}}>
-                  {filtered.length===0&&<div style={{padding:16,color:C.muted2,textAlign:"center",fontSize:13}}>Sonuç yok</div>}
-                  {filtered.map(o=>(
-                    <div key={o.id} onClick={()=>{fv("selectedOrder",o);setShowPicker(false);setSearch("");}} style={{padding:"12px 14px",cursor:"pointer",borderBottom:`1px solid ${C.border}`}}>
-                      <div style={{fontWeight:700,fontFamily:"monospace",fontSize:13,color:C.text}}>{o.code}</div>
-                      <div style={{fontSize:12,color:C.muted2,marginTop:1}}>{o.name} · ⏱{fmtSec(o.partSec)} · {(o.machines||[]).join(", ")}</div>
+          <div>
+            <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.7,textTransform:"uppercase"}}>Istasyon / Vardiya</div>
+            <div style={{fontSize:17,fontWeight:700,color:opTheme.text}}>{selectedShiftMeta.label} · {selectedShiftMeta.time}</div>
+          </div>
+          <div>
+            <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.7,textTransform:"uppercase"}}>Is Emri</div>
+            <div style={{fontSize:17,fontWeight:700,color:opTheme.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{form.selectedOrder?.code||"-"}{form.selectedOrder?.name?` | ${form.selectedOrder.name}`:""}</div>
+          </div>
+          <div style={{display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
+            <input type="date" max={todayStr()} value={form.entryDate} onChange={e=>fv("entryDate",e.target.value||todayStr())} style={{...inputSt,padding:"8px 10px",fontSize:12,maxWidth:160,background:"rgba(255,255,255,.15)",borderColor:opTheme.border,color:opTheme.text}}/>
+            {SHIFTS.map(s=><button key={s.id} onClick={()=>fv("shift",s.id)} style={{...btnSt(form.shift===s.id?"primary":"ghost"),padding:"7px 9px",fontSize:11,opacity:form.shift===s.id?1:0.95}}>{s.label}</button>)}
+          </div>
+        </div>
+
+        {editId&&(
+          <div style={{marginTop:8,background:"rgba(255,225,143,.2)",border:`1px solid ${opTheme.warn}88`,borderRadius:10,padding:"8px 10px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+            <span style={{fontSize:12,color:opTheme.warn,fontWeight:700}}>Düzenleme modu açık</span>
+            <button onClick={()=>{setEditId(null);resetEntryForm();}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>İptal</button>
+          </div>
+        )}
+
+        <div style={{marginTop:8,display:"flex",gap:7,flexWrap:"wrap"}}>
+          {machines.map(m=><button key={m} onClick={()=>selectMachine(m)} style={{...chip(form.machine===m,form.machine===m?C.accent:C.muted2),padding:"8px 12px",fontSize:12}}>{m}</button>)}
+        </div>
+
+        <div style={{marginTop:10,background:opTheme.panel,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:"12px 10px"}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:10}}>
+            <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:10}}>
+              <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>SET-UP</div>
+              <button onClick={openToolChangeModal} style={{...btnSt("ghost"),width:"100%",padding:"12px 10px",fontSize:13,borderColor:opTheme.border,color:opTheme.text}}>Takım Değişimi</button>
+              <div style={{marginTop:8,fontSize:12,color:opTheme.textDim,textAlign:"center"}}>
+                {machineToolPicked?`${machineToolPicked.code||machineToolPicked.name} x${Math.max(1,Number(form.machineToolQty)||1)}`:"Takım seçilmedi"}
+              </div>
+              <div style={{marginTop:10,fontSize:11,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Stoktaki Takımlar</div>
+              <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:5,maxHeight:130,overflowY:"auto"}}>
+                {stockedTools.slice(0,5).map(t=>(
+                  <div key={t.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:opTheme.textDim,background:"rgba(255,255,255,.08)",border:`1px solid ${opTheme.border}`,borderRadius:8,padding:"6px 7px"}}>
+                    <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:155}}>{t.code||"-"} · {t.name||"Takım"}</span>
+                    <strong>{safeNum(t.qty)}</strong>
+                  </div>
+                ))}
+                {stockedTools.length===0&&<div style={{fontSize:11,color:opTheme.warn}}>Stokta takım yok.</div>}
+              </div>
+            </div>
+
+            <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:10}}>
+              <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>PRODUCTION</div>
+              <div>
+                <span style={{...labelSt,color:opTheme.textMuted}}>İş Emri</span>
+                {form.selectedOrder?(
+                  <div style={{background:"rgba(255,255,255,.12)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:"9px 10px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontWeight:700,fontFamily:"monospace",fontSize:13,color:opTheme.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{form.selectedOrder.code}</div>
+                      <div style={{fontSize:11,color:opTheme.textDim,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{form.selectedOrder.name||"-"} · {fmtSec(form.selectedOrder.partSec)}</div>
+                    </div>
+                    <button onClick={()=>fv("selectedOrder",null)} style={{background:"transparent",border:"none",color:opTheme.danger,fontSize:18,cursor:"pointer"}}>×</button>
+                  </div>
+                ):(
+                  <>
+                    <button onClick={()=>setShowPicker(!showPicker)} style={{...inputSt,textAlign:"left",cursor:"pointer",color:opTheme.textDim,display:"block",background:"rgba(255,255,255,.12)",borderColor:opTheme.border}}>
+                      {orders.length===0?"Aktif iş emri yok":"İş emri seçin..."}
+                    </button>
+                    {showPicker&&(
+                      <div style={{background:"rgba(0,0,0,.18)",border:`1px solid ${opTheme.border}`,borderRadius:10,marginTop:4,overflow:"hidden"}}>
+                        <input style={{...inputSt,borderRadius:0,borderBottom:`1px solid ${opTheme.border}`,background:"rgba(255,255,255,.12)",borderColor:opTheme.border,color:opTheme.text}} placeholder="Ara..." value={search} onChange={e=>setSearch(e.target.value)} autoFocus/>
+                        <div style={{maxHeight:170,overflowY:"auto"}}>
+                          {filtered.length===0&&<div style={{padding:12,color:opTheme.textDim,textAlign:"center",fontSize:12}}>Sonuç yok</div>}
+                          {filtered.map(o=>(
+                            <div key={o.id} onClick={()=>{fv("selectedOrder",o);setShowPicker(false);setSearch("");}} style={{padding:"10px 11px",cursor:"pointer",borderBottom:`1px solid ${opTheme.border}`}}>
+                              <div style={{fontWeight:700,fontFamily:"monospace",fontSize:12,color:opTheme.text}}>{o.code}</div>
+                              <div style={{fontSize:11,color:opTheme.textDim,marginTop:1}}>{o.name} · {(o.machines||[]).join(", ")}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}>
+                <div><span style={{...labelSt,color:opTheme.textMuted}}>Doğru</span><input style={{...inputSt,padding:"12px 10px",fontSize:20,fontWeight:800,textAlign:"center",background:"rgba(255,255,255,.12)",borderColor:opTheme.border,color:opTheme.text}} type="number" min="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>
+                <div><span style={{...labelSt,color:opTheme.textMuted}}>Scrap</span><input style={{...inputSt,padding:"12px 10px",fontSize:20,fontWeight:800,textAlign:"center",background:"rgba(255,255,255,.12)",borderColor:opTheme.border,color:opTheme.text}} type="number" min="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>
+              </div>
+              <button onClick={openShiftEndModal} style={{...btnSt(saved?"green":"primary"),width:"100%",padding:"12px 10px",fontSize:13,marginTop:9}}>
+                {editId?"Vardiya Sonu Güncelle":"Vardiya Sonu Onayla"}
+              </button>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:7,marginTop:9}}>
+                <div style={{background:"rgba(255,255,255,.12)",border:`1px solid ${opTheme.border}`,borderRadius:8,padding:"6px 7px",textAlign:"center"}}><div style={{fontSize:10,color:opTheme.textMuted}}>Hedef</div><div style={{fontSize:14,color:opTheme.text,fontWeight:800}}>{selectedOrderQty||"-"}</div></div>
+                <div style={{background:"rgba(255,255,255,.12)",border:`1px solid ${opTheme.border}`,borderRadius:8,padding:"6px 7px",textAlign:"center"}}><div style={{fontSize:10,color:opTheme.textMuted}}>Kalan</div><div style={{fontSize:14,color:opTheme.text,fontWeight:800}}>{selectedOrderQty?remainingQty:"-"}</div></div>
+                <div style={{background:"rgba(255,255,255,.12)",border:`1px solid ${opTheme.border}`,borderRadius:8,padding:"6px 7px",textAlign:"center"}}><div style={{fontSize:10,color:opTheme.textMuted}}>İlerleme</div><div style={{fontSize:14,color:opTheme.text,fontWeight:800}}>{selectedOrderQty?`%${progressPct}`:"-"}</div></div>
+              </div>
+            </div>
+
+            <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:10}}>
+              <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>BREAKDOWN / STOP</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <div style={{background:"rgba(255,255,255,.12)",border:`1px solid ${opTheme.border}`,borderRadius:9,padding:"8px 9px",textAlign:"center"}}>
+                  <div style={{fontSize:10,color:opTheme.textMuted}}>Kalite</div>
+                  <div style={{fontSize:20,fontWeight:800,color:qualityPct<90?opTheme.warn:opTheme.text}}>%{qualityPct}</div>
+                </div>
+                <div style={{background:"rgba(255,255,255,.12)",border:`1px solid ${opTheme.border}`,borderRadius:9,padding:"8px 9px",textAlign:"center"}}>
+                  <div style={{fontSize:10,color:opTheme.textMuted}}>Parça Süresi</div>
+                  <div style={{fontSize:20,fontWeight:800,color:opTheme.text}}>{form.selectedOrder?fmtSec(form.selectedOrder.partSec):"--:--"}</div>
+                </div>
+              </div>
+              <button onClick={openShiftEndModal} style={{...btnSt("ghost"),width:"100%",padding:"11px 10px",fontSize:13,marginTop:8,borderColor:opTheme.border,color:opTheme.text}}>Finish / Stop</button>
+              <div style={{marginTop:9,fontSize:11,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Son 3 Kayıt</div>
+              <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:5}}>
+                {recentMachineEntries.length===0&&<div style={{fontSize:11,color:opTheme.textDim}}>Kayıt yok.</div>}
+                {recentMachineEntries.map(e=>(
+                  <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:opTheme.textDim,background:"rgba(255,255,255,.08)",border:`1px solid ${opTheme.border}`,borderRadius:8,padding:"6px 7px"}}>
+                    <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:180}}>{e.jobCode} · ✅{safeNum(e.correct)} / ❌{safeNum(e.wrong)}</span>
+                    <span>{e.shift||"-"}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{marginTop:10,background:opTheme.panelSoft,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:10}}>
+          <div style={{fontSize:19,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>STOCK INFORMATIONS</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:10}}>
+            <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:"10px 9px"}}>
+              <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.6,textTransform:"uppercase",marginBottom:6}}>İş Emri Teknik Dokümanları ({selectedOrderFiles.length})</div>
+              {selectedOrderFiles.length===0&&<div style={{fontSize:12,color:opTheme.textDim}}>Doküman yok.</div>}
+              {selectedOrderFiles.length>0&&(
+                <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:170,overflowY:"auto"}}>
+                  {selectedOrderFiles.map((f,i)=>(
+                    <div key={`${f.name||"file"}_${i}`} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 8px",border:`1px solid ${opTheme.border}`,background:"rgba(255,255,255,.1)",borderRadius:8}}>
+                      <div style={{fontSize:16,lineHeight:1}}>{getFileIcon(f.name)}</div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:11,color:opTheme.text,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name||"Dokuman"}</div>
+                        <div style={{fontSize:10,color:opTheme.textDim}}>{formatBytes(Number(f.size)||0)}</div>
+                      </div>
+                      <button onClick={()=>openOrderFile(f)} style={{...btnSt("ghost"),padding:"4px 8px",fontSize:10,borderColor:opTheme.border,color:opTheme.text}}>{canFilePreview(f)?"Önizle":"İndir"}</button>
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-      <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px"}}>
-        <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,marginBottom:8}}>Seçili Takım Değişimi</div>
-        {machineToolPicked?(
-          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-            {machineToolPicked&&<Badge label={`İş Emri: ${machineToolPicked.code||machineToolPicked.name} x${Math.max(1,Number(form.machineToolQty)||1)}`} color={C.warn}/>}
+              )}
+            </div>
+            <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:"10px 9px"}}>
+              <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.6,textTransform:"uppercase",marginBottom:6}}>Takım Stokları ({stockedTools.length})</div>
+              {stockedTools.length===0&&<div style={{fontSize:12,color:opTheme.warn}}>Stokta takım yok.</div>}
+              {stockedTools.length>0&&(
+                <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:170,overflowY:"auto"}}>
+                  {stockedTools.slice(0,12).map(t=>{
+                    const qty=safeNum(t.qty);
+                    const min=Math.max(0,safeNum(t.minQty));
+                    const critical=qty<=min;
+                    return (
+                      <div key={t.id} style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"center",gap:8,padding:"7px 8px",border:`1px solid ${opTheme.border}`,background:"rgba(255,255,255,.1)",borderRadius:8}}>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:11,color:opTheme.text,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.code||"-"} · {t.name||"Takım"}</div>
+                          <div style={{fontSize:10,color:opTheme.textDim}}>{t.location||"Lokasyon yok"}</div>
+                        </div>
+                        <div style={{fontSize:11,color:critical?opTheme.danger:opTheme.text,fontWeight:800,textAlign:"right"}}>{qty}<div style={{fontSize:10,color:opTheme.textDim}}>Min {min}</div></div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
-        ):(
-          <div style={{fontSize:12,color:C.muted2}}>Takım değişimi seçilmedi</div>
-        )}
+        </div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-        <button onClick={openToolChangeModal} style={{...btnSt("ghost"),padding:14,fontSize:14,borderColor:C.warn+"55",color:C.warn}}>Takım Değişimi</button>
-        <button onClick={openShiftEndModal} style={{...btnSt(saved?"green":"primary"),padding:14,fontSize:14}}>{editId?"Vardiya Sonu Güncelle":"Vardiya Sonu"}</button>
-      </div>
-      {tools.length===0&&<div style={{fontSize:12,color:C.warn}}>Takım stoğunda kayıt yok. Önce Takım Stoğu ekranından takım ekleyin.</div>}
       <div style={{fontSize:12,color:C.muted2}}>Kayıt, yalnızca <strong>Vardiya Sonu</strong> onaylandığında oluşturulur.</div>
       {showToolModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={()=>setShowToolModal(false)}>
@@ -4530,6 +4679,26 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
             <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
               <button onClick={()=>setShowShiftModal(false)} style={{...btnSt("ghost"),padding:"10px 14px"}}>İptal</button>
               <button onClick={approveShiftEnd} style={{...btnSt(saved?"green":"primary"),padding:"10px 14px"}}>{editId?"Güncellemeyi Onayla":"Vardiyayı Onayla"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {previewFile&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.72)",zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setPreviewFile(null)}>
+          <div style={{width:"100%",maxWidth:960,maxHeight:"88vh",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>
+              <div style={{fontSize:13,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{previewFile.name}</div>
+              <button onClick={()=>setPreviewFile(null)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kapat</button>
+            </div>
+            <div style={{padding:10,overflow:"auto",background:C.surface}}>
+              {isImageFile(previewFile)&&<img src={previewFile.data} alt={previewFile.name} style={{width:"100%",height:"auto",borderRadius:10,border:`1px solid ${C.border}`}}/>}
+              {isPdfFile(previewFile)&&<iframe title={previewFile.name} src={previewFile.data} style={{width:"100%",height:"70vh",border:`1px solid ${C.border}`,borderRadius:10,background:"#fff"}}/>}
+              {isStepFile(previewFile)&&<StepFileViewer file={previewFile}/>}
+              {!canFilePreview(previewFile)&&(
+                <div style={{padding:22,textAlign:"center",color:C.muted2,fontSize:13,border:`1px dashed ${C.border}`,borderRadius:10,background:C.card}}>
+                  Bu dosya turu icin onizleme yok. Dosyayi indirip harici uygulamada acabilirsiniz.
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -5852,6 +6021,8 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const [mpsForm,setMpsForm]=useState({partNo:"",weekStart:startOfWeekYmd(todayStr()),plannedQty:"0",note:""});
   const [dragPlanId,setDragPlanId]=useState(null);
   const [exporting,setExporting]=useState(false);
+  const [planQuery,setPlanQuery]=useState("");
+  const [machineFilter,setMachineFilter]=useState("all");
   const ganttRef=useRef(null);
 
   const load=useCallback(async()=>{
@@ -5895,6 +6066,9 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       setForm(f=>({...f,machine:machines[0]||"CNC-1"}));
     }
   },[machines.join(","),form.machine]);
+  useEffect(()=>{
+    if(machineFilter!=="all"&&!machines.includes(machineFilter)) setMachineFilter("all");
+  },[machines.join(","),machineFilter]);
 
   const fv=(k,v)=>setForm(f=>({...f,[k]:v}));
   const selectedOrder=orders.find(o=>o.id===form.orderId)||null;
@@ -5977,6 +6151,23 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const monthOrderMap={};
   monthPlans.forEach(p=>{if(p.orderId&&!monthOrderMap[p.orderId]) monthOrderMap[p.orderId]={id:p.orderId,code:p.orderCode,name:p.orderName,customer:p.orderCustomerName||"",color:colorFromOrder(p.orderId)};});
   const monthOrders=Object.values(monthOrderMap);
+  const dayColWidth=26;
+  const machineColWidth=144;
+  const ganttMinWidth=Math.max(980,machineColWidth+(ganttDays.length*dayColWidth));
+  const planQueryText=String(planQuery||"").trim().toLowerCase();
+  const filteredPlanSegments=sortedPlanSegments.filter(seg=>{
+    if(machineFilter!=="all"&&seg.machine!==machineFilter) return false;
+    if(!planQueryText) return true;
+    const hay=[
+      seg.orderCode||"",
+      seg.orderName||"",
+      seg.orderCustomerName||"",
+      seg.machine||"",
+      seg.note||"",
+    ].join(" ").toLowerCase();
+    return hay.includes(planQueryText);
+  });
+  const filteredGanttRows=ganttRows.filter(row=>machineFilter==="all"||row.machine===machineFilter);
   function shiftGanttMonth(delta){
     const [y,m]=ganttMonth.split("-").map(Number);
     const d=new Date(y,m-1+delta,1);
@@ -6282,67 +6473,163 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     }
   }
 
+  const selectedPlanSegment=selectedPlan?findSegmentForPlan(selectedPlan):null;
+  const selectedSegmentId=selectedPlan?(selectedPlan._segmentId||selectedPlanSegment?.id||""):"";
+
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
 
   return (
     <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
-          <div style={{fontWeight:700,color:C.text}}>Aylık Plan Gantt</div>
+          <div>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Üretim Planlama</div>
+            <div style={{fontWeight:800,color:C.text,fontSize:17}}>Planlama Merkezi</div>
+          </div>
           <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
             <button onClick={()=>shiftGanttMonth(-1)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>◀</button>
-            <div style={{fontSize:13,color:C.text,minWidth:140,textAlign:"center",textTransform:"capitalize"}}>{ganttMonthLabel}</div>
+            <div style={{fontSize:13,color:C.text,minWidth:150,textAlign:"center",textTransform:"capitalize",fontWeight:700}}>{ganttMonthLabel}</div>
             <button onClick={()=>shiftGanttMonth(1)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>▶</button>
             <button onClick={()=>setGanttMonth(monthStr())} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Bu Ay</button>
-            <button onClick={()=>setShowMpsModal(true)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}>MPS Run</button>
+            <button
+              onClick={()=>{
+                const today=todayStr();
+                setEditId(null);
+                setForm({startDate:today,endDate:today,machine:machineFilter!=="all"?machineFilter:(machines[0]||"CNC-1"),orderId:"",note:""});
+                setShowPlanModal(true);
+              }}
+              style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}
+            >
+              Yeni Planlama
+            </button>
+            <button onClick={()=>setShowMpsModal(true)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>MPS Run</button>
             <button onClick={exportGanttPng} disabled={exporting} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,opacity:exporting?0.7:1}}>PNG</button>
             <button onClick={exportGanttPdf} disabled={exporting} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,opacity:exporting?0.7:1}}>PDF</button>
           </div>
         </div>
-        {monthOrders.length>0&&<div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:10}}>
-          {monthOrders.map(o=><span key={o.id} style={{display:"inline-flex",alignItems:"center",gap:6,background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px",fontSize:11,color:C.muted2}}><span style={{width:10,height:10,borderRadius:3,background:o.color,display:"inline-block"}}/>{o.code?`${o.code} - ${o.name||""}${o.customer?` - ${o.customer}`:""}`:(o.name||"İş Emri")}</span>)}
-        </div>}
-        <div style={{overflowX:"hidden"}} ref={ganttRef}>
-          <div>
-            <div style={{display:"grid",gridTemplateColumns:`92px repeat(${ganttDays.length}, minmax(0,1fr))`,columnGap:1,rowGap:2,alignItems:"center",marginBottom:6}}>
-              <div style={{fontSize:10,color:C.muted2,fontWeight:700,textTransform:"uppercase",letterSpacing:.6}}>Tezgah</div>
-              {ganttDays.map((d,i)=>{
-                const wd=parseYmdLocal(d).getDay();
-                const weekend=wd===0||wd===6;
-                return <div key={d} style={{fontSize:9,textAlign:"center",color:weekend?C.warn:C.muted2,opacity:weekend?0.95:0.85,lineHeight:1}}>{i+1}</div>;
+
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:10}}>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:10,display:"flex",flexDirection:"column",gap:8,minHeight:520}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:6}}>
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 9px"}}>
+                <div style={{fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Açık İş Emri</div>
+                <div style={{fontSize:18,color:C.text,fontWeight:800}}>{orders.length}</div>
+              </div>
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 9px"}}>
+                <div style={{fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Aylık Blok</div>
+                <div style={{fontSize:18,color:C.text,fontWeight:800}}>{monthPlans.length}</div>
+              </div>
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 9px"}}>
+                <div style={{fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Filtreli</div>
+                <div style={{fontSize:18,color:C.text,fontWeight:800}}>{filteredPlanSegments.length}</div>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+              <div>
+                <span style={labelSt}>Tezgah Filtresi</span>
+                <select value={machineFilter} onChange={e=>setMachineFilter(e.target.value)} style={{...inputSt,padding:"8px 9px",fontSize:12}}>
+                  <option value="all">Tum Tezgahlar</option>
+                  {machines.map(m=><option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              <div>
+                <span style={labelSt}>Tarih Filtresi</span>
+                <div style={{display:"flex",gap:5}}>
+                  <input type="date" value={dateFilter} onChange={e=>setDateFilter(e.target.value)} style={{...inputSt,padding:"8px 9px",fontSize:12,minWidth:0}}/>
+                  {dateFilter&&<button onClick={()=>setDateFilter("")} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:11}}>Tümü</button>}
+                </div>
+              </div>
+            </div>
+            <div>
+              <span style={labelSt}>Plan Ara</span>
+              <input value={planQuery} onChange={e=>setPlanQuery(e.target.value)} placeholder="İş emri, müşteri, not..." style={{...inputSt,padding:"8px 10px",fontSize:12}}/>
+            </div>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase"}}>Plan Havuzu</div>
+            <div style={{display:"flex",flexDirection:"column",gap:7,overflowY:"auto",paddingRight:2,flex:1}}>
+              {filteredPlanSegments.length===0&&(
+                <div style={{textAlign:"center",color:C.muted2,padding:"24px 10px",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,fontSize:12}}>
+                  Filtreye uygun plan bulunamadı.
+                </div>
+              )}
+              {filteredPlanSegments.map(seg=>{
+                const segColor=colorFromOrder(seg.orderId||seg.orderCode||seg.orderName);
+                const isActive=selectedSegmentId===seg.id;
+                return (
+                  <div key={seg.id} onClick={()=>setSelectedPlan((seg.plans&&seg.plans[0])||seg)} style={{background:C.card,border:`1px solid ${isActive?segColor:C.border}`,borderRadius:10,padding:"8px 9px",cursor:"pointer",boxShadow:isActive?`0 0 0 1px ${segColor}55`:"none"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontWeight:800,color:C.text,fontSize:12,fontFamily:"monospace",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{seg.orderCode||"-"} · {seg.machine||"-"}</div>
+                        <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{seg.orderName||"-"}{seg.orderCustomerName?` · ${seg.orderCustomerName}`:""}</div>
+                      </div>
+                      <span style={{width:10,height:10,borderRadius:3,background:segColor,marginTop:2,flexShrink:0}}/>
+                    </div>
+                    <div style={{fontSize:11,color:C.muted2,marginTop:4}}>{seg.startDate||"-"}{seg.endDate&&seg.endDate!==seg.startDate?` - ${seg.endDate}`:""}</div>
+                    {seg.note&&<div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{seg.note}</div>}
+                    <div style={{display:"flex",gap:6,marginTop:6}}>
+                      <button onClick={e=>{e.stopPropagation();startEdit(seg);}} style={{...btnSt("ghost"),padding:"4px 8px",fontSize:11}}>Düzenle</button>
+                      <button onClick={e=>{e.stopPropagation();removePlan(seg);}} style={{...btnSt("danger"),padding:"4px 8px",fontSize:11}}>Sil</button>
+                    </div>
+                  </div>
+                );
               })}
             </div>
-            {ganttRows.map(row=>(
-              <div key={row.machine} style={{display:"grid",gridTemplateColumns:`92px repeat(${ganttDays.length}, minmax(0,1fr))`,columnGap:1,rowGap:2,alignItems:"center",marginBottom:4}}>
-                <div style={{fontSize:11,fontWeight:700,color:C.text,paddingRight:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{row.machine}</div>
-                {ganttDays.map(d=>{
-                  const p=row.byDate[d];
-                  if(!p) return <div key={d} onDragOver={e=>e.preventDefault()} onDrop={async e=>{e.preventDefault();const raw=e.dataTransfer.getData("text/plain")||dragPlanId;if(!raw) return;let payload=null;try{payload=JSON.parse(raw);}catch{}if(payload&&payload.type&&payload.segmentId){await resizeSegment(payload.segmentId,d,payload.type);}setDragPlanId(null);}} style={{height:16,borderRadius:3,background:C.surface,border:`1px solid ${C.border}`}}/>;
-                  const col=colorFromOrder(p.orderId||p.orderCode||p.orderName);
-                  return <div
-                    key={d}
-                    title={`${d} · ${row.machine} · ${p.orderCode||""} ${p.orderName||""}${p.orderCustomerName?` · ${p.orderCustomerName}`:""}`}
-                    onDragOver={e=>e.preventDefault()}
-                    onDrop={async e=>{e.preventDefault();const raw=e.dataTransfer.getData("text/plain")||dragPlanId;if(!raw) return;let payload=null;try{payload=JSON.parse(raw);}catch{}if(payload&&payload.type&&payload.segmentId){await resizeSegment(payload.segmentId,d,payload.type);}setDragPlanId(null);}}
-                    onClick={()=>setSelectedPlan(p)}
-                    style={{height:16,borderRadius:3,background:col,border:`1px solid ${col}99`,boxShadow:`inset 0 0 0 1px ${col}99`,cursor:"pointer",position:"relative"}}
-                  >
-                    {p._isStart&&<span
-                      draggable
-                      onDragStart={e=>{const payload=JSON.stringify({type:"start",segmentId:p._segmentId});setDragPlanId(payload);e.dataTransfer.setData("text/plain",payload);}}
-                      title="Başlangıcı sürükle"
-                      style={{position:"absolute",left:0,top:0,bottom:0,width:5,background:"rgba(0,0,0,.35)",cursor:"ew-resize"}}
-                    />}
-                    {p._isEnd&&<span
-                      draggable
-                      onDragStart={e=>{const payload=JSON.stringify({type:"end",segmentId:p._segmentId});setDragPlanId(payload);e.dataTransfer.setData("text/plain",payload);}}
-                      title="Bitişi sürükle"
-                      style={{position:"absolute",right:0,top:0,bottom:0,width:5,background:"rgba(0,0,0,.35)",cursor:"ew-resize"}}
-                    />}
-                  </div>;
-                })}
+          </div>
+
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:10,minHeight:520}}>
+            {monthOrders.length>0&&<div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:10}}>
+              {monthOrders.map(o=><span key={o.id} style={{display:"inline-flex",alignItems:"center",gap:6,background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px",fontSize:11,color:C.muted2}}><span style={{width:10,height:10,borderRadius:3,background:o.color,display:"inline-block"}}/>{o.code?`${o.code} - ${o.name||""}${o.customer?` - ${o.customer}`:""}`:(o.name||"İş Emri")}</span>)}
+            </div>}
+            <div ref={ganttRef} style={{overflow:"auto",border:`1px solid ${C.border}`,borderRadius:10,background:C.card}}>
+              <div style={{minWidth:ganttMinWidth,padding:8}}>
+                <div style={{display:"grid",gridTemplateColumns:`${machineColWidth}px repeat(${ganttDays.length}, ${dayColWidth}px)`,columnGap:1,rowGap:1,alignItems:"center",marginBottom:4}}>
+                  <div style={{fontSize:10,color:C.muted2,fontWeight:700,textTransform:"uppercase",letterSpacing:.6,paddingLeft:4}}>Tezgah</div>
+                  {ganttDays.map((d,i)=>{
+                    const wd=parseYmdLocal(d).getDay();
+                    const weekend=wd===0||wd===6;
+                    return <div key={d} style={{fontSize:10,textAlign:"center",color:weekend?C.warn:C.muted2,opacity:weekend?0.95:0.85,lineHeight:1,padding:"2px 0"}}>{i+1}</div>;
+                  })}
+                </div>
+                {filteredGanttRows.map(row=>(
+                  <div key={row.machine} style={{display:"grid",gridTemplateColumns:`${machineColWidth}px repeat(${ganttDays.length}, ${dayColWidth}px)`,columnGap:1,rowGap:1,alignItems:"center",marginBottom:3}}>
+                    <div style={{fontSize:12,fontWeight:700,color:C.text,padding:"0 6px 0 4px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{row.machine}</div>
+                    {ganttDays.map(d=>{
+                      const p=row.byDate[d];
+                      const wd=parseYmdLocal(d).getDay();
+                      const weekend=wd===0||wd===6;
+                      if(!p) return <div key={d} onDragOver={e=>e.preventDefault()} onDrop={async e=>{e.preventDefault();const raw=e.dataTransfer.getData("text/plain")||dragPlanId;if(!raw) return;let payload=null;try{payload=JSON.parse(raw);}catch{}if(payload&&payload.type&&payload.segmentId){await resizeSegment(payload.segmentId,d,payload.type);}setDragPlanId(null);}} style={{height:20,borderRadius:3,background:weekend?C.surface2:C.surface,border:`1px solid ${C.border}`}}/>;
+                      const col=colorFromOrder(p.orderId||p.orderCode||p.orderName);
+                      const isSelected=p._segmentId===selectedSegmentId;
+                      return <div
+                        key={d}
+                        title={`${d} · ${row.machine} · ${p.orderCode||""} ${p.orderName||""}${p.orderCustomerName?` · ${p.orderCustomerName}`:""}`}
+                        onDragOver={e=>e.preventDefault()}
+                        onDrop={async e=>{e.preventDefault();const raw=e.dataTransfer.getData("text/plain")||dragPlanId;if(!raw) return;let payload=null;try{payload=JSON.parse(raw);}catch{}if(payload&&payload.type&&payload.segmentId){await resizeSegment(payload.segmentId,d,payload.type);}setDragPlanId(null);}}
+                        onClick={()=>setSelectedPlan(p)}
+                        style={{height:20,borderRadius:3,background:col,border:`1px solid ${isSelected?C.text:col}99`,boxShadow:isSelected?`inset 0 0 0 1px ${C.text}aa`:`inset 0 0 0 1px ${col}99`,cursor:"pointer",position:"relative"}}
+                      >
+                        {p._isStart&&<span
+                          draggable
+                          onDragStart={e=>{const payload=JSON.stringify({type:"start",segmentId:p._segmentId});setDragPlanId(payload);e.dataTransfer.setData("text/plain",payload);}}
+                          title="Başlangıcı sürükle"
+                          style={{position:"absolute",left:0,top:0,bottom:0,width:5,background:"rgba(0,0,0,.35)",cursor:"ew-resize"}}
+                        />}
+                        {p._isEnd&&<span
+                          draggable
+                          onDragStart={e=>{const payload=JSON.stringify({type:"end",segmentId:p._segmentId});setDragPlanId(payload);e.dataTransfer.setData("text/plain",payload);}}
+                          title="Bitişi sürükle"
+                          style={{position:"absolute",right:0,top:0,bottom:0,width:5,background:"rgba(0,0,0,.35)",cursor:"ew-resize"}}
+                        />}
+                      </div>;
+                    })}
+                  </div>
+                ))}
+                {filteredGanttRows.length===0&&(
+                  <div style={{fontSize:12,color:C.muted2,textAlign:"center",padding:"30px 12px"}}>
+                    Seçili filtreye ait tezgah satırı yok.
+                  </div>
+                )}
               </div>
-            ))}
+            </div>
           </div>
         </div>
       </div>
@@ -6351,11 +6638,12 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
           <div style={{width:"100%",maxWidth:520,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16}} onClick={e=>e.stopPropagation()}>
             <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>Plan Detayı</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,fontSize:13,color:C.muted2}}>
-              <div><strong>Tarih:</strong> {selectedPlan.date||"-"}</div>
+              <div><strong>Tarih:</strong> {(selectedPlanSegment?.startDate||selectedPlan.date||"-")}{(selectedPlanSegment?.endDate&&selectedPlanSegment.endDate!==(selectedPlanSegment.startDate||selectedPlan.date))?` - ${selectedPlanSegment.endDate}`:""}</div>
               <div><strong>Tezgah:</strong> {selectedPlan.machine||"-"}</div>
               <div><strong>İş Emri:</strong> {selectedPlan.orderCode||"-"}</div>
               <div><strong>Ad:</strong> {selectedPlan.orderName||"-"}</div>
               <div><strong>Firma:</strong> {selectedPlan.orderCustomerName||"-"}</div>
+              <div><strong>Gün:</strong> {(selectedPlanSegment?.plans||[]).length||1}</div>
             </div>
             {selectedPlan.note&&<div style={{marginTop:10,fontSize:13,color:C.muted2}}>{selectedPlan.note}</div>}
             <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
@@ -6441,34 +6729,6 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
         </div>
       )}
 
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-        <div style={{fontSize:12,color:C.muted2}}>Planlar ({sortedPlanSegments.length})</div>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          <input type="date" value={dateFilter} onChange={e=>setDateFilter(e.target.value)} style={{...inputSt,padding:"7px 9px",fontSize:12,minWidth:150}}/>
-          {dateFilter&&<button onClick={()=>setDateFilter("")} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Tümü</button>}
-        </div>
-      </div>
-
-      {sortedPlanSegments.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"28px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Plan bulunamadı</div>}
-      {sortedPlanSegments.map(seg=>(
-        <div key={seg.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"12px 14px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-            <div>
-              <div style={{fontWeight:800,fontFamily:"monospace",fontSize:14,color:C.text}}>{seg.orderCode}</div>
-              <div style={{fontSize:12,color:C.muted2,marginTop:2}}>{seg.orderName}{seg.orderCustomerName?` - ${seg.orderCustomerName}`:""}</div>
-            </div>
-            <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
-              <Badge label={`${seg.startDate||"-"}${seg.endDate&&seg.endDate!==seg.startDate?` - ${seg.endDate}`:""}`} color={C.accent}/>
-              <Badge label={seg.machine||"-"} color={C.warn}/>
-            </div>
-          </div>
-          {seg.note&&<div style={{marginTop:8,fontSize:12,color:C.muted2}}>{seg.note}</div>}
-          <div style={{marginTop:9,display:"flex",gap:8}}>
-            <button onClick={()=>startEdit((seg.plans&&seg.plans[0])||seg)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Düzenle</button>
-            <button onClick={()=>removePlan(seg)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
-          </div>
-        </div>
-      ))}
     </div>
   );
 }
@@ -8444,6 +8704,7 @@ function App() {
 
   const userForPerm=currentUser||{role:"viewer",permissions:[],fullName:""};
   const isAdmin=userForPerm.role==="admin";
+  const isOperatorRole=userForPerm.role==="operator";
   const canEntry=hasPermission(userForPerm,"data_entry");
   const canReport=hasPermission(userForPerm,"view_reports");
   const canOrders=hasPermission(userForPerm,"manage_orders")||isAdmin;
@@ -8458,31 +8719,38 @@ function App() {
   const canTools=canOrders||canPurchasing||canEntry;
   const canMachinePrep=canOrders;
   const canSmartFactory=canOrders||canReport||canEntry||canPurchasing||canQuality;
-  const allTabs=useMemo(()=>[
-    {id:"dashboard",icon:"dashboard",label:"Gösterge Paneli",group:"Planlama",enabled:(canEntry||canOrders||canReport||canSales||canPurchasing)},
-    {id:"planning",icon:"planning",label:"Planlama",group:"Planlama",enabled:canPlanning},
-    {id:"parts",icon:"parts",label:"Parça Yönetimi",group:"Planlama",enabled:canPlanning},
-    {id:"quotes",icon:"quotes",label:"Teklif Yonetimi",group:"Planlama",enabled:canSales},
-    {id:"sales",icon:"sales",label:"Satis Siparisleri",group:"Planlama",enabled:canSales},
-    {id:"orders",icon:"orders",label:"Is Emirleri",group:"Operasyon",enabled:canOrders},
-    {id:"giris",icon:"giris",label:"Uretim Girisi",group:"Operasyon",enabled:canEntry},
-    {id:"downtime",icon:"downtime",label:"Durus Yonetimi",group:"Operasyon",enabled:canDowntime},
-    {id:"quality",icon:"quality",label:"Kalite ve Izlenebilirlik",group:"Operasyon",enabled:canQuality},
-    {id:"materials",icon:"materials",label:"Malzeme Kutuphanesi",group:"Tedarik ve Stok",enabled:(canOrders||canPurchasing)},
-    {id:"tools",icon:"tools",label:"Takim Yonetimi",group:"Tedarik ve Stok",enabled:canTools},
-    {id:"purchase",icon:"purchase",label:"Satin Alma Planlama",group:"Tedarik ve Stok",enabled:canPurchasing},
-    {id:"customers",icon:"customers",label:"Musteriler",group:"Tedarik ve Stok",enabled:(canCustomers||canSales)},
-    {id:"rapor",icon:"rapor",label:"Raporlar",group:"Analiz ve Yonetim",enabled:canReport},
-    {id:"notifications",icon:"notifications",label:"Bildirim Merkezi",group:"Analiz ve Yonetim",enabled:(canNotifications||canUsers||canSales||canPurchasing)},
-    {id:"cost",icon:"cost",label:"Maliyetleme",group:"Analiz ve Yonetim",enabled:(canOrders||canReport||canSales)},
-    {id:"materialquote",icon:"cost",label:"Malzeme Teklif",group:"Analiz ve Yonetim",enabled:(canOrders||canSales||canPurchasing||canReport)},
-    {id:"progenergy",icon:"integration",label:"Program ve Enerji",group:"Analiz ve Yonetim",enabled:canSmartFactory},
-    {id:"toolcycle",icon:"tools",label:"Takim ve Cevrim",group:"Operasyon",enabled:canSmartFactory},
-    {id:"closedloop",icon:"quality",label:"Olcum ve Depo",group:"Tedarik ve Stok",enabled:canSmartFactory},
-    {id:"machineprep",icon:"machines",label:"Makina Hazirlik",group:"Sistem",enabled:canMachinePrep},
-    {id:"integrations",icon:"integration",label:"Entegrasyonlar",group:"Sistem",enabled:(canUsers||isAdmin)},
-    {id:"users",icon:"users",label:"Ayarlar ve Guvenlik",group:"Sistem",enabled:canUsers},
-  ],[canEntry,canOrders,canSales,canPurchasing,canQuality,canDowntime,canNotifications,canReport,canPlanning,canTools,canCustomers,canMachinePrep,canUsers,isAdmin,canSmartFactory]);
+  const allTabs=useMemo(()=>{
+    if(isOperatorRole){
+      return [
+        {id:"giris",icon:"giris",label:"Uretim Girisi",group:"Operasyon",enabled:canEntry},
+      ];
+    }
+    return [
+      {id:"dashboard",icon:"dashboard",label:"Gösterge Paneli",group:"Planlama",enabled:(canEntry||canOrders||canReport||canSales||canPurchasing)},
+      {id:"planning",icon:"planning",label:"Planlama",group:"Planlama",enabled:canPlanning},
+      {id:"parts",icon:"parts",label:"Parça Yönetimi",group:"Planlama",enabled:canPlanning},
+      {id:"quotes",icon:"quotes",label:"Teklif Yonetimi",group:"Planlama",enabled:canSales},
+      {id:"sales",icon:"sales",label:"Satis Siparisleri",group:"Planlama",enabled:canSales},
+      {id:"orders",icon:"orders",label:"Is Emirleri",group:"Operasyon",enabled:canOrders},
+      {id:"giris",icon:"giris",label:"Uretim Girisi",group:"Operasyon",enabled:canEntry},
+      {id:"downtime",icon:"downtime",label:"Durus Yonetimi",group:"Operasyon",enabled:canDowntime},
+      {id:"quality",icon:"quality",label:"Kalite ve Izlenebilirlik",group:"Operasyon",enabled:canQuality},
+      {id:"materials",icon:"materials",label:"Malzeme Kutuphanesi",group:"Tedarik ve Stok",enabled:(canOrders||canPurchasing)},
+      {id:"tools",icon:"tools",label:"Takim Yonetimi",group:"Tedarik ve Stok",enabled:canTools},
+      {id:"purchase",icon:"purchase",label:"Satin Alma Planlama",group:"Tedarik ve Stok",enabled:canPurchasing},
+      {id:"customers",icon:"customers",label:"Musteriler",group:"Tedarik ve Stok",enabled:(canCustomers||canSales)},
+      {id:"rapor",icon:"rapor",label:"Raporlar",group:"Analiz ve Yonetim",enabled:canReport},
+      {id:"notifications",icon:"notifications",label:"Bildirim Merkezi",group:"Analiz ve Yonetim",enabled:(canNotifications||canUsers||canSales||canPurchasing)},
+      {id:"cost",icon:"cost",label:"Maliyetleme",group:"Analiz ve Yonetim",enabled:(canOrders||canReport||canSales)},
+      {id:"materialquote",icon:"cost",label:"Malzeme Teklif",group:"Analiz ve Yonetim",enabled:(canOrders||canSales||canPurchasing||canReport)},
+      {id:"progenergy",icon:"integration",label:"Program ve Enerji",group:"Analiz ve Yonetim",enabled:canSmartFactory},
+      {id:"toolcycle",icon:"tools",label:"Takim ve Cevrim",group:"Operasyon",enabled:canSmartFactory},
+      {id:"closedloop",icon:"quality",label:"Olcum ve Depo",group:"Tedarik ve Stok",enabled:canSmartFactory},
+      {id:"machineprep",icon:"machines",label:"Makina Hazirlik",group:"Sistem",enabled:canMachinePrep},
+      {id:"integrations",icon:"integration",label:"Entegrasyonlar",group:"Sistem",enabled:(canUsers||isAdmin)},
+      {id:"users",icon:"users",label:"Ayarlar ve Guvenlik",group:"Sistem",enabled:canUsers},
+    ];
+  },[canEntry,canOrders,canSales,canPurchasing,canQuality,canDowntime,canNotifications,canReport,canPlanning,canTools,canCustomers,canMachinePrep,canUsers,isAdmin,canSmartFactory,isOperatorRole]);
   const enabledTabs=useMemo(()=>allTabs.filter(t=>t.enabled),[allTabs]);
   const tabs=enabledTabs;
   const visibleTabs=useMemo(()=>{
