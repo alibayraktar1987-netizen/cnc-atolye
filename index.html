@@ -1012,6 +1012,22 @@ function ToolStock({currentUser}) {
     const next=(nums.length?Math.max(...nums):0)+1;
     return `TKM-${String(next).padStart(3,"0")}`;
   },[tools]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="tools") return;
+      if(d.type==="refresh"){load(); return;}
+      if(d.type==="new"&&isAdmin){
+        resetForm();
+        setEditId(null);
+        setForm(p=>({...p,code:nextToolCode()}));
+        setShowForm(true);
+        window.scrollTo({top:0,behavior:"smooth"});
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[isAdmin,load,nextToolCode]);
 
   async function saveTool(){
     if(!form.name.trim()){alert("Takim adi zorunlu.");return;}
@@ -1244,12 +1260,12 @@ function Customers() {
   const [search,setSearch]=useState("");
   const [loading,setLoading]=useState(true);
 
-  useEffect(()=>{
-    window.DB.getAll("customers").then(list=>{
-      setCustomers(list.sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
-      setLoading(false);
-    });
+  const load=useCallback(async()=>{
+    const list=await window.DB.getAll("customers");
+    setCustomers(list.sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
+    setLoading(false);
   },[]);
+  useEffect(()=>{load();},[load]);
 
   function nextCustomerCode(list=customers){
     const nums=list.map(c=>{
@@ -1259,6 +1275,21 @@ function Customers() {
     const next=(nums.length?Math.max(...nums):0)+1;
     return `FRM-${String(next).padStart(3,"0")}`;
   }
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="customers") return;
+      if(d.type==="refresh"){load(); return;}
+      if(d.type==="new"){
+        setEditId(null);
+        setForm({...emptyForm,code:nextCustomerCode()});
+        setSearch("");
+        window.scrollTo({top:0,behavior:"smooth"});
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[customers,load]);
 
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
   const q=search.trim().toLowerCase();
@@ -1350,23 +1381,31 @@ function Customers() {
         <input style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:220}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Firma adı, kod veya yetkili ara..."/>
       </div>
 
-      {filtered.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"28px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Müşteri bulunamadı</div>}
-      {filtered.map(c=>(
-        <div key={c.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"12px 14px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
-            <div>
-              <div style={{fontWeight:700,color:C.text,fontSize:14}}>{c.name}</div>
-              <div style={{fontSize:12,color:C.muted2,marginTop:2}}>{c.code||"-"} {c.contact?`· ${c.contact}`:""}</div>
-              <div style={{fontSize:11,color:C.muted,marginTop:2}}>{c.phone||""} {c.email?`· ${c.email}`:""}</div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1.6fr 1fr 1fr auto",gap:10,padding:"10px 12px",fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700,background:C.surface,borderBottom:`1px solid ${C.border}`}}>
+          <div>Musteri</div>
+          <div>Iletisim</div>
+          <div>Kod</div>
+          <div style={{textAlign:"right"}}>Islem</div>
+        </div>
+        {filtered.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"22px 14px"}}>Müşteri bulunamadı</div>}
+        {filtered.map(c=>(
+          <div key={c.id} style={{display:"grid",gridTemplateColumns:"1.6fr 1fr 1fr auto",gap:10,padding:"11px 12px",borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
+            <div style={{minWidth:0}}>
+              <div style={{fontWeight:700,color:C.text,fontSize:13,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.name}</div>
+              {c.notes&&<div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.notes}</div>}
             </div>
-            <div style={{display:"flex",gap:7}}>
-              <button onClick={()=>startEdit(c)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Düzenle</button>
+            <div style={{fontSize:12,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+              {c.contact||"-"} {c.phone?`· ${c.phone}`:""}
+            </div>
+            <div style={{fontSize:12,color:C.muted2}}>{c.code||"-"}</div>
+            <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+              <button onClick={()=>startEdit(c)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
               <button onClick={()=>removeCustomer(c)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
             </div>
           </div>
-          {c.notes&&<div style={{fontSize:12,color:C.muted2,marginTop:8}}>{c.notes}</div>}
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
@@ -1431,6 +1470,21 @@ function MaterialLibrary() {
     if(editId) return;
     setForm(prev=>({...prev,code:nextMaterialCode()}));
   },[editId,nextMaterialCode]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="materials") return;
+      if(d.type==="refresh"){load(); return;}
+      if(d.type==="new"){
+        setEditId(null);
+        setShowForm(true);
+        setForm({name:"",code:nextMaterialCode(),density:"",stock:"",type:"raw",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""});
+        window.scrollTo({top:0,behavior:"smooth"});
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load,nextMaterialCode]);
 
   async function saveMaterial(){
     if(!form.name.trim()){alert("Malzeme adı zorunlu.");return;}
@@ -1941,6 +1995,31 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   },[nextCode]);
   useEffect(()=>{load();},[load]);
   useEffect(()=>{setView(defaultView==="quotes"?"quotes":"orders");},[defaultView]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="sales"&&d.tab!=="quotes") return;
+      if(d.type==="refresh"){load(); return;}
+      if(d.type==="new"){
+        if(d.tab==="quotes"){
+          setView("quotes");
+          setQuoteForm({
+            code:nextCode("TKL",quotes,/^TKL-(\d+)$/),
+            customerId:"",
+            validUntil:todayStr(),
+            priority:"normal",
+            note:"",
+            lines:[{partNo:"",partName:"",revision:"A",qty:"1",unitPrice:"0",discountPct:"0",dueDate:todayStr(),partSec:"60",machine:(machines[0]||"CNC-1")}],
+          });
+        } else {
+          setView("orders");
+        }
+        window.scrollTo({top:0,behavior:"smooth"});
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load,machines,nextCode,quotes]);
 
   const resetCustomerForm=()=>{ setCustomerEditId(""); setCustomerForm({name:"",code:"",contact:"",phone:"",email:"",discountPct:"0"}); };
   const resetPriceForm=()=>{ setPriceEditId(""); setPriceForm({customerId:"",partNo:"",price:"",discountPct:"0",currency:"TRY"}); };
@@ -2738,6 +2817,23 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="orders") return;
+      if(d.type==="refresh"){load(); return;}
+      if(d.type==="new"){
+        setPreviewFile(null);
+        setViewOrder(null);
+        setEditId(null);
+        setForm({...emptyForm,code:nextOrderCode()});
+        setShowForm(true);
+        window.scrollTo({top:0,behavior:"smooth"});
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load,nextOrderCode]);
   const entryToolChanges=entries
     .filter(e=>(Number(e.machineToolQty??e.machineToolChange??0)>0)&&(e.jobCode||""))
     .map(e=>({
@@ -4685,6 +4781,19 @@ function MachineConnectivityPrep({currentUser,machines=DEFAULT_MACHINES}) {
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="machineprep") return;
+      if(d.type==="refresh"){load(); return;}
+      if(d.type==="new"){
+        startCreate();
+        window.scrollTo({top:0,behavior:"smooth"});
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load,profiles,machines,edgeConfig.ipcName]);
 
   useEffect(()=>{
     const options=MACHINE_PROTOCOL_OPTIONS[form.brand]||[];
@@ -6263,10 +6372,23 @@ function App() {
   const activeTabMeta=tabs.find(t=>t.id===tab)||null;
   const activeContextLabel=activeTabMeta?.label||"Modul";
   const menuResultText=`${visibleTabs.length}/${tabs.length} modul`;
+  const createActions={
+    customers:"Yeni Musteri",
+    materials:"Yeni Malzeme",
+    tools:"Yeni Takim",
+    orders:"Yeni Is Emri",
+    quotes:"Yeni Teklif",
+    machineprep:"Yeni Makina Profili",
+  };
+  const canCreateInTab=Boolean(createActions[tab]);
+  const createLabel=createActions[tab]||"Yeni Ekle";
   const desktopMenuIconOnly=layoutMode==="desktop"&&desktopMenuCollapsed;
   const sidebarWidth=layoutMode==="desktop"
     ? (desktopMenuCollapsed?desktopSidebarCollapsedW:desktopSidebarW)
     : tabletSidebarW;
+  function emitTabAction(type){
+    window.dispatchEvent(new CustomEvent("mrp:tab-action",{detail:{type,tab,tabMeta:activeTabMeta||null}}));
+  }
   function toggleDesktopMenuCollapse(){
     setDesktopMenuCollapsed(prev=>{
       const next=!prev;
@@ -6350,6 +6472,22 @@ function App() {
     </div>
     );
   };
+  const commandBar=(
+    <div className="mrp-panel" style={{background:C.surface,border:`1px solid ${C.border}`,padding:"10px 12px",marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+      <div>
+        <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>
+          {activeTabMeta?.group||"Modul"} / {activeTabMeta?.label||"Modul"}
+        </div>
+        <div style={{fontSize:12,color:C.muted2,marginTop:3}}>Dynamics tarzı komut çubuğu</div>
+      </div>
+      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        <button onClick={()=>emitTabAction("refresh")} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12}}>Yenile</button>
+        {canCreateInTab&&(
+          <button onClick={()=>emitTabAction("new")} style={{...btnSt("primary"),padding:"7px 12px",fontSize:12}}>+ {createLabel}</button>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <div style={{background:C.bg,minHeight:"100vh",color:C.text}}>
@@ -6409,13 +6547,19 @@ function App() {
                 {menuSection({compact:layoutMode!=="desktop"||desktopMenuIconOnly,iconOnly:desktopMenuIconOnly})}
               </div>
             </div>
-            <div style={{minWidth:0}}>{activeView}</div>
+            <div style={{minWidth:0}}>
+              {commandBar}
+              {activeView}
+            </div>
           </div>
         )}
 
         {isMobile&&(
           <>
-            <div style={{paddingBottom:76}}>{activeView}</div>
+            <div style={{paddingBottom:76}}>
+              {commandBar}
+              {activeView}
+            </div>
             <div className="mrp-bottom-nav" style={{position:"fixed",left:0,right:0,bottom:0,background:`${C.surface}f0`,borderTop:`1px solid ${C.border}`,zIndex:24}}>
               <div style={{width:"100%",maxWidth:contentMaxWidth,margin:"0 auto",display:"grid",gridTemplateColumns:`repeat(${mobilePrimary.length+1},minmax(0,1fr))`,alignItems:"stretch"}}>
                 {mobilePrimary.map(t=>(
