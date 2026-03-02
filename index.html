@@ -1828,6 +1828,7 @@ function MaterialLibrary() {
 function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
   const emptyPartForm={
     partNo:"",
+    customerPartCode:"",
     name:"",
     material:"",
     revision:"A",
@@ -1861,10 +1862,18 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
   useEffect(()=>{load();},[load]);
 
   const selectedPart=parts.find(p=>p.id===selectedPartId)||null;
+  const nextPartNo=useCallback((list=parts)=>{
+    const nums=list.map(p=>{
+      const m=String(p.partNo||"").toUpperCase().match(/^PRT-(\d+)$/);
+      return m?Number(m[1]):0;
+    }).filter(Boolean);
+    const next=(nums.length?Math.max(...nums):0)+1;
+    return `PRT-${String(next).padStart(4,"0")}`;
+  },[parts]);
   const filtered=parts.filter(p=>{
     const q=search.toLowerCase().trim();
     if(!q) return true;
-    return (p.partNo||"").toLowerCase().includes(q)||(p.name||"").toLowerCase().includes(q)||(p.material||"").toLowerCase().includes(q);
+    return (p.partNo||"").toLowerCase().includes(q)||(p.customerPartCode||"").toLowerCase().includes(q)||(p.name||"").toLowerCase().includes(q)||(p.material||"").toLowerCase().includes(q);
   });
   const BAR_LENGTH_MM=3000;
   const normalized=s=>String(s||"").trim().toUpperCase();
@@ -1917,7 +1926,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
   const fv=(k,v)=>setPartForm(f=>({...f,[k]:v}));
   const openCreatePartModal=()=>{
     setSelectedPartId("");
-    setPartForm({...emptyPartForm});
+    setPartForm({...emptyPartForm,partNo:nextPartNo()});
     setShowPartModal(true);
   };
   const openEditPartModal=(part)=>{
@@ -1926,7 +1935,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
       loadPartToForm(part);
     }else{
       setSelectedPartId("");
-      setPartForm({...emptyPartForm});
+      setPartForm({...emptyPartForm,partNo:nextPartNo()});
     }
     setShowPartModal(true);
   };
@@ -1959,9 +1968,11 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
   const removePartDocument=(docId)=>setPartForm(f=>({...f,documents:(f.documents||[]).filter(d=>d.id!==docId)}));
 
   async function savePart(){
-    if(!partForm.partNo.trim()||!partForm.name.trim()){alert("Parca no ve ad zorunlu.");return;}
+    if(!partForm.name.trim()){alert("Parca adi zorunlu.");return;}
+    const computedPartNo=(String(partForm.partNo||"").trim().toUpperCase()||nextPartNo());
     const payload={
-      partNo:partForm.partNo.trim().toUpperCase(),
+      partNo:computedPartNo,
+      customerPartCode:String(partForm.customerPartCode||"").trim().toUpperCase(),
       name:partForm.name.trim(),
       material:partForm.material.trim(),
       revision:(partForm.revision||"A").trim().toUpperCase(),
@@ -2006,6 +2017,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
       : (p.drawingFile?[{...p.drawingFile,id:`legacy_${p.id||Date.now()}`}]:[]);
     setPartForm({
       partNo:p.partNo||"",
+      customerPartCode:p.customerPartCode||"",
       name:p.name||"",
       material:p.material||"",
       revision:p.revision||"A",
@@ -2100,12 +2112,14 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
             <button onClick={openCreatePartModal} style={{...btnSt("primary"),padding:"6px 10px",fontSize:11}}>+ Parca Ekle</button>
           </div>
         </div>
-        <input style={{...inputSt,padding:"8px 10px",fontSize:12,marginBottom:8}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Parca no / ad / malzeme ara..."/>
+        <input style={{...inputSt,padding:"8px 10px",fontSize:12,marginBottom:8}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Parca no / musteri kodu / ad / malzeme ara..."/>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:8}}>
           {filtered.map(p=>(
             <button key={p.id} onClick={()=>{setSelectedPartId(p.id);loadPartToForm(p);}} style={{width:"100%",textAlign:"left",background:selectedPartId===p.id?C.accent+"16":C.surface,border:`1px solid ${selectedPartId===p.id?C.accent+"50":C.border}`,borderRadius:10,padding:"10px 11px",color:C.text,cursor:"pointer",fontFamily:"inherit",minHeight:72}}>
               <div style={{fontSize:13,fontWeight:700}}>{p.partNo}</div>
-              <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{p.name||"-"} · Rev.{p.revision||"A"} · {safeNum(p.unitCost).toFixed(2)} TRY</div>
+              <div style={{fontSize:11,color:C.muted2,marginTop:2}}>
+                {p.name||"-"} · Rev.{p.revision||"A"}{p.customerPartCode?` · Musteri Kod: ${p.customerPartCode}`:""} · {safeNum(p.unitCost).toFixed(2)} TRY
+              </div>
             </button>
           ))}
           {filtered.length===0&&<div style={{fontSize:12,color:C.muted2,padding:"6px 2px"}}>Parca bulunamadi</div>}
@@ -2123,7 +2137,8 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
               </div>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-              <div><span style={labelSt}>Parca No *</span><input style={inputSt} value={partForm.partNo} onChange={e=>fv("partNo",e.target.value)} placeholder="PRT-001"/></div>
+              <div><span style={labelSt}>Parca No (Otomatik)</span><input style={{...inputSt,background:C.surface,color:C.muted2}} value={partForm.partNo||nextPartNo()} readOnly/></div>
+              <div><span style={labelSt}>Parca Musteri Kodu</span><input style={inputSt} value={partForm.customerPartCode} onChange={e=>fv("customerPartCode",e.target.value)} placeholder="MUS-PRC-001"/></div>
               <div><span style={labelSt}>Parca Adi *</span><input style={inputSt} value={partForm.name} onChange={e=>fv("name",e.target.value)} placeholder="Govde"/></div>
               <div><span style={labelSt}>Revizyon</span><input style={inputSt} value={partForm.revision} onChange={e=>fv("revision",e.target.value)}/></div>
               <div>
@@ -2465,6 +2480,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     const machineCost=((setupSec+cycleSec)/3600)*600;
     const payload={
       partNo,
+      customerPartCode:"",
       name:partName,
       material:String(quickPartForm.material||"").trim(),
       revision:normalizePartNo(quickPartForm.revision||"A")||"A",
