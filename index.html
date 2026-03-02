@@ -983,7 +983,7 @@ function ToolStock({currentUser}) {
   const [search,setSearch]=useState("");
   const [showForm,setShowForm]=useState(false);
   const [editId,setEditId]=useState(null);
-  const [form,setForm]=useState({code:"",name:"",category:"",qty:"",minQty:"",location:"",geometry:"",toolMaterial:"",expectedLife:"",remainingLifePct:"100",assignedProgram:"",assignedWorkOrder:"",presetterOffset:"",notes:""});
+  const [form,setForm]=useState({code:"",name:"",category:"",qty:"",minQty:"",location:"",geometry:"",toolMaterial:"",expectedLife:"",notes:""});
   const [orders,setOrders]=useState([]);
   const [movements,setMovements]=useState([]);
   const [moveOpenId,setMoveOpenId]=useState(null);
@@ -1002,7 +1002,7 @@ function ToolStock({currentUser}) {
   },[]);
   useEffect(()=>{load();},[load]);
 
-  const resetForm=()=>setForm({code:"",name:"",category:"",qty:"",minQty:"",location:"",geometry:"",toolMaterial:"",expectedLife:"",remainingLifePct:"100",assignedProgram:"",assignedWorkOrder:"",presetterOffset:"",notes:""});
+  const resetForm=()=>setForm({code:"",name:"",category:"",qty:"",minQty:"",location:"",geometry:"",toolMaterial:"",expectedLife:"",notes:""});
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
   const nextToolCode=useCallback((list=tools)=>{
     const nums=list.map(t=>{
@@ -1041,10 +1041,6 @@ function ToolStock({currentUser}) {
       geometry:form.geometry.trim(),
       toolMaterial:form.toolMaterial.trim(),
       expectedLife:Math.max(0,Number(form.expectedLife)||0),
-      remainingLifePct:Math.max(0,Math.min(100,Number(form.remainingLifePct)||0)),
-      assignedProgram:form.assignedProgram.trim(),
-      assignedWorkOrder:form.assignedWorkOrder.trim(),
-      presetterOffset:form.presetterOffset.trim(),
       notes:form.notes.trim(),
       updatedAt:new Date().toISOString(),
     };
@@ -1110,12 +1106,9 @@ function ToolStock({currentUser}) {
     return (t.name||"").toLowerCase().includes(q)||
       (t.code||"").toLowerCase().includes(q)||
       (t.category||"").toLowerCase().includes(q)||
-      (t.location||"").toLowerCase().includes(q)||
-      (t.assignedProgram||"").toLowerCase().includes(q)||
-      (t.assignedWorkOrder||"").toLowerCase().includes(q);
+      (t.location||"").toLowerCase().includes(q);
   });
   const lowCount=tools.filter(t=>(Number(t.qty)||0)<=Math.max(Number(t.minQty)||0,0)).length;
-  const lowLifeCount=tools.filter(t=>Math.max(0,Number(t.remainingLifePct)||0)<=20).length;
   const stockedTools=[...tools].filter(t=>(Number(t.qty)||0)>0).sort((a,b)=>(Number(b.qty)||0)-(Number(a.qty)||0));
   const categoryOptions=(form.category&& !TOOL_CATEGORY_OPTIONS.includes(form.category))
     ? [...TOOL_CATEGORY_OPTIONS,form.category]
@@ -1149,10 +1142,6 @@ function ToolStock({currentUser}) {
             <div><span style={labelSt}>Geometri</span><input style={inputSt} value={form.geometry} onChange={e=>fv("geometry",e.target.value)} placeholder="D12 L75"/></div>
             <div><span style={labelSt}>Takim Malzemesi</span><input style={inputSt} value={form.toolMaterial} onChange={e=>fv("toolMaterial",e.target.value)} placeholder="Carbide / HSS"/></div>
             <div><span style={labelSt}>Beklenen Omur (cevrim)</span><input style={inputSt} type="number" min="0" value={form.expectedLife} onChange={e=>fv("expectedLife",e.target.value)} placeholder="1200"/></div>
-            <div><span style={labelSt}>Kalan Omur %</span><input style={inputSt} type="number" min="0" max="100" value={form.remainingLifePct} onChange={e=>fv("remainingLifePct",e.target.value)} placeholder="100"/></div>
-            <div><span style={labelSt}>Atanmis NC Program</span><input style={inputSt} value={form.assignedProgram} onChange={e=>fv("assignedProgram",e.target.value)} placeholder="O2345"/></div>
-            <div><span style={labelSt}>Atanmis Is Emri</span><input style={inputSt} value={form.assignedWorkOrder} onChange={e=>fv("assignedWorkOrder",e.target.value)} placeholder="IE-012"/></div>
-            <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Presetter Offset (ops.)</span><input style={inputSt} value={form.presetterOffset} onChange={e=>fv("presetterOffset",e.target.value)} placeholder="X:0.012 / Z:-0.004"/></div>
             <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Not</span><textarea style={{...inputSt,resize:"vertical",minHeight:70}} value={form.notes} onChange={e=>fv("notes",e.target.value)} placeholder="Aciklama..."/></div>
             <div style={{gridColumn:"1 / -1",display:"flex",gap:8}}>
               <button onClick={saveTool} style={{...btnSt("primary"),padding:"10px 14px"}}>Kaydet</button>
@@ -1171,7 +1160,7 @@ function ToolStock({currentUser}) {
         )}
       </div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:8,flexWrap:"wrap"}}>
-        <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>Takim Stogu · {tools.length} kayit · {lowCount} kritik stok · {lowLifeCount} kritik omur</div>
+        <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>Takim Stogu · {tools.length} kayit · {lowCount} kritik stok</div>
       </div>
       <div style={{marginBottom:12}}>
         <input style={{...inputSt,padding:"9px 12px",fontSize:13}} placeholder="Takim adi, kod, kategori veya konum ara..." value={search} onChange={e=>setSearch(e.target.value)}/>
@@ -1191,24 +1180,20 @@ function ToolStock({currentUser}) {
               <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
                 <Badge label={`Stok ${qty}`} color={critical?C.red:C.green}/>
                 <Badge label={`Min ${min}`} color={C.muted2}/>
-                <Badge label={`Omur %${Math.max(0,Number(t.remainingLifePct)||0)}`} color={(Number(t.remainingLifePct)||0)<=20?C.red:C.warn}/>
               </div>
             </div>
             <div style={{display:"flex",gap:7,flexWrap:"wrap",fontSize:11,color:C.muted2,marginBottom:8}}>
               {t.location&&<span style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"3px 8px"}}>Konum: {t.location}</span>}
               {t.geometry&&<span style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"3px 8px"}}>Geo: {t.geometry}</span>}
               {t.toolMaterial&&<span style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"3px 8px"}}>{t.toolMaterial}</span>}
-              {t.assignedProgram&&<span style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"3px 8px"}}>NC: {t.assignedProgram}</span>}
-              {t.assignedWorkOrder&&<span style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"3px 8px"}}>IE: {t.assignedWorkOrder}</span>}
               {critical&&<span style={{background:C.redDim,border:`1px solid ${C.red}44`,borderRadius:8,padding:"3px 8px",color:C.red}}>Stok kritik</span>}
-              {(Number(t.remainingLifePct)||0)<=20&&<span style={{background:C.redDim,border:`1px solid ${C.red}44`,borderRadius:8,padding:"3px 8px",color:C.red}}>Takim omru kritik</span>}
             </div>
             {t.notes&&<div style={{fontSize:12,color:C.muted2,marginBottom:8}}>{t.notes}</div>}
             {isAdmin&&(
               <div style={{display:"flex",gap:7}}>
                 <button onClick={()=>openMovement(t.id,"in")} style={{...btnSt("green"),padding:"6px 10px",fontSize:12}}>Stok Girisi</button>
                 <button onClick={()=>openMovement(t.id,"out")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Stok Cikisi</button>
-                <button onClick={()=>{setEditId(t.id);setForm({code:t.code||"",name:t.name||"",category:t.category||"",qty:String(qty),minQty:String(min),location:t.location||"",geometry:t.geometry||"",toolMaterial:t.toolMaterial||"",expectedLife:String(t.expectedLife??""),remainingLifePct:String(t.remainingLifePct??"100"),assignedProgram:t.assignedProgram||"",assignedWorkOrder:t.assignedWorkOrder||"",presetterOffset:t.presetterOffset||"",notes:t.notes||""});setShowForm(true);}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
+                <button onClick={()=>{setEditId(t.id);setForm({code:t.code||"",name:t.name||"",category:t.category||"",qty:String(qty),minQty:String(min),location:t.location||"",geometry:t.geometry||"",toolMaterial:t.toolMaterial||"",expectedLife:String(t.expectedLife??""),notes:t.notes||""});setShowForm(true);}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
                 <button onClick={()=>removeTool(t.id,t.name||"Takim")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
               </div>
             )}
@@ -1634,23 +1619,45 @@ function MaterialLibrary() {
         <input style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:220}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Malzeme adi veya kod ara..."/>
       </div>
 
-      {filtered.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"28px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Malzeme bulunamadi</div>}
-      {filtered.map(m=>(
-        <div key={m.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"12px 14px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
-            <div>
-              <div style={{fontWeight:700,color:C.text,fontSize:14}}>{m.name}</div>
-              <div style={{fontSize:12,color:C.muted2,marginTop:2}}>{m.code||"-"}{Number(m.density)>0?` · ${Number(m.density).toFixed(3)} g/cm3`:""} · Stok: {Number(m.stock)||0} · ROP: {safeNum(m.reorderPoint)} · SS: {safeNum(m.safetyStock)}</div>
-              <div style={{fontSize:11,color:C.muted,marginTop:2}}>{m.type||"raw"} · Lead {safeNum(m.leadTimeDays)}g · {m.trackingMode||"lot"} · {String(m.valuationMethod||"fifo").toUpperCase()}</div>
-            </div>
-            <div style={{display:"flex",gap:7}}>
-              <button onClick={()=>{setEditId(m.id);setShowForm(true);setForm({name:m.name||"",code:m.code||"",density:String(m.density??""),stock:String(m.stock??""),type:m.type||"raw",reorderPoint:String(m.reorderPoint??0),safetyStock:String(m.safetyStock??0),leadTimeDays:String(m.leadTimeDays??5),trackingMode:m.trackingMode||"lot",valuationMethod:m.valuationMethod||"fifo",note:m.note||""});}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
-              <button onClick={()=>removeMaterial(m)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
-            </div>
-          </div>
-          {m.note&&<div style={{fontSize:12,color:C.muted2,marginTop:8}}>{m.note}</div>}
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1.8fr 1.15fr 1fr auto",gap:10,padding:"10px 12px",fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700,background:C.surface,borderBottom:`1px solid ${C.border}`}}>
+          <div>Malzeme</div>
+          <div>Stok Politikasi</div>
+          <div>Tedarik</div>
+          <div style={{textAlign:"right"}}>Islem</div>
         </div>
-      ))}
+        {filtered.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"22px 14px"}}>Malzeme bulunamadi</div>}
+        {filtered.map(m=>{
+          const stock=safeNum(m.stock);
+          const reorder=safeNum(m.reorderPoint);
+          const safety=safeNum(m.safetyStock);
+          const critical=stock<=Math.max(reorder,safety);
+          return (
+            <div key={m.id} style={{display:"grid",gridTemplateColumns:"1.8fr 1.15fr 1fr auto",gap:10,padding:"11px 12px",borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
+              <div style={{minWidth:0}}>
+                <div style={{fontWeight:700,color:C.text,fontSize:13,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.name||"-"}</div>
+                <div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                  {m.code||"-"}{Number(m.density)>0?` · ${Number(m.density).toFixed(3)} g/cm3`:""} · {m.type||"raw"} · {m.trackingMode||"lot"}
+                </div>
+                {m.note&&<div style={{fontSize:11,color:C.muted,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.note}</div>}
+              </div>
+              <div style={{fontSize:12,color:C.muted2}}>
+                <div>Stok: <span style={{color:C.text,fontWeight:700}}>{stock}</span></div>
+                <div>ROP: {reorder} · SS: {safety}</div>
+                {critical&&<div style={{color:C.red,fontSize:11,marginTop:2}}>Kritik stok</div>}
+              </div>
+              <div style={{fontSize:12,color:C.muted2}}>
+                <div>Lead: {safeNum(m.leadTimeDays)} gun</div>
+                <div>{String(m.valuationMethod||"fifo").toUpperCase()}</div>
+              </div>
+              <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                <button onClick={()=>{setEditId(m.id);setShowForm(true);setForm({name:m.name||"",code:m.code||"",density:String(m.density??""),stock:String(m.stock??""),type:m.type||"raw",reorderPoint:String(m.reorderPoint??0),safetyStock:String(m.safetyStock??0),leadTimeDays:String(m.leadTimeDays??5),trackingMode:m.trackingMode||"lot",valuationMethod:m.valuationMethod||"fifo",note:m.note||""});}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
+                <button onClick={()=>removeMaterial(m)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -3118,33 +3125,58 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
       </div>
       {orders.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"40px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}><div style={{fontSize:36,marginBottom:10}}>📋</div>Henüz iş emri yok</div>}
       {orders.length>0&&filteredOrders.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"24px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Filtreye uygun iş emri bulunamadı</div>}
-      {filteredOrders.map(o=>(
-        <div key={o.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"13px 15px",marginBottom:10,opacity:(o.status==="passive"||o.status==="liquidation")?.6:1}}>
-          <div style={{marginBottom:8}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-              <span style={{fontWeight:800,fontSize:14,fontFamily:"monospace",color:C.text}}>{o.code}</span>
-              <Badge label={getOrderStatusMeta(o.status).label} color={getOrderStatusMeta(o.status).color}/>
-              {(o.files||[]).length>0&&<Badge label={`${o.files.length} dosya`} color={C.purple}/>}
-              {(usageCountByOrder[o.id]||usageCountByOrder[o.code])>0&&<Badge label={`${usageCountByOrder[o.id]||usageCountByOrder[o.code]} takım`} color={C.warn}/>}
-              {(productionByOrder[o.code]?.total||0)>0&&<Badge label={`${productionByOrder[o.code].total} adet`} color={C.green}/>}
-            </div>
-            <div style={{fontSize:13,color:C.muted2,marginTop:3}}>{o.name}</div>
-            {o.partNo&&<div style={{fontSize:11,color:C.muted2,marginTop:1}}>🧩 {o.partNo}{o.revision?` Rev.${o.revision}`:""}</div>}
-            {o.customerName&&<div style={{fontSize:11,color:C.accent,marginTop:1}}>🏢 {o.customerName}</div>}
-            {o.material&&<div style={{fontSize:11,color:C.muted,marginTop:1}}>🔩 {o.material}</div>}
-            <div style={{fontSize:11,color:C.muted,marginTop:1}}>⏱ {fmtSec(o.partSec)} · {(o.machines||[]).join(", ")}</div>
-            <div style={{fontSize:11,color:C.muted2,marginTop:1}}>📅 {o.dueDate||"-"} · 🔢 {safeNum(o.qty)} adet · 🚦 {(PRIORITY_OPTIONS.find(p=>p.id===o.priority)||{}).label||"Normal"}</div>
-            <div style={{fontSize:11,color:C.muted2,marginTop:1}}>🏷 {o.sourceType==="sales_auto"?"Siparisten Otomatik":"Manuel"}{(o.dependencies||[]).length>0?` · ⛓ ${o.dependencies.length} bagimlilik`:""}</div>
+      {filteredOrders.length>0&&(
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1.4fr 1.15fr 1fr 1fr auto",gap:10,padding:"10px 12px",fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700,background:C.surface,borderBottom:`1px solid ${C.border}`}}>
+            <div>Is Emri</div>
+            <div>Musteri / Parca</div>
+            <div>Termin</div>
+            <div>Durum / Uretim</div>
+            <div style={{textAlign:"right"}}>Islem</div>
           </div>
-          <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-            <button onClick={()=>setViewOrder(o)} style={{...btnSt("ghost"),padding:"6px 12px",fontSize:12}}>👁 Görüntüle</button>
-            <button onClick={()=>{setForm({code:o.code,name:o.name,partNo:o.partNo||"",revision:o.revision||"A",customerId:o.customerId||"",material:o.material||"",qty:String(o.qty??"1"),dueDate:o.dueDate||todayStr(),priority:o.priority||"normal",dependencies:o.dependencies||[],partSec:o.partSec,machines:o.machines||[],notes:o.notes||"",files:o.files||[],status:o.status||"planned",sourceType:o.sourceType||"manual"});setEditId(o.id);setShowForm(true);}} style={{...btnSt(),padding:"6px 12px",fontSize:12}}>✏️ Düzenle</button>
-            <select style={{...inputSt,width:150,padding:"6px 10px",fontSize:12}} value={o.status||"passive"} onChange={e=>setOrderStatus(o,e.target.value)}>
-              {ORDER_STATUS_OPTIONS.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
-            </select>
-          </div>
+          {filteredOrders.map(o=>{
+            const usage=safeNum(usageCountByOrder[o.id]||usageCountByOrder[o.code]);
+            const produced=safeNum(productionByOrder[o.code]?.total);
+            const priorityLabel=(PRIORITY_OPTIONS.find(p=>p.id===o.priority)||{}).label||"Normal";
+            return (
+              <div key={o.id} style={{display:"grid",gridTemplateColumns:"1.4fr 1.15fr 1fr 1fr auto",gap:10,padding:"11px 12px",borderBottom:`1px solid ${C.border}`,alignItems:"center",opacity:(o.status==="passive"||o.status==="liquidation")?.6:1}}>
+                <div style={{minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+                    <span style={{fontWeight:800,fontSize:13,fontFamily:"monospace",color:C.text,whiteSpace:"nowrap"}}>{o.code}</span>
+                    {(o.files||[]).length>0&&<Badge label={`${o.files.length} dosya`} color={C.purple}/>}
+                  </div>
+                  <div style={{fontSize:12,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.name||"-"}</div>
+                  <div style={{fontSize:11,color:C.muted2,marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                    {o.sourceType==="sales_auto"?"Siparisten Otomatik":"Manuel"}{(o.dependencies||[]).length>0?` · ${o.dependencies.length} bagimlilik`:""}
+                  </div>
+                </div>
+                <div style={{fontSize:12,color:C.muted2,minWidth:0}}>
+                  <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:C.text,fontWeight:600}}>{o.customerName||"-"}</div>
+                  <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.partNo||"-"}{o.revision?` Rev.${o.revision}`:""}</div>
+                  <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.material||"-"}</div>
+                </div>
+                <div style={{fontSize:12,color:C.muted2}}>
+                  <div>{o.dueDate||"-"}</div>
+                  <div>{safeNum(o.qty)} adet</div>
+                  <div>{priorityLabel}</div>
+                </div>
+                <div style={{fontSize:12,color:C.muted2}}>
+                  <div style={{marginBottom:4}}><Badge label={getOrderStatusMeta(o.status).label} color={getOrderStatusMeta(o.status).color}/></div>
+                  <div>Uretim: {produced}</div>
+                  <div>Takim: {usage}</div>
+                </div>
+                <div style={{display:"flex",gap:6,justifyContent:"flex-end",alignItems:"center"}}>
+                  <button onClick={()=>setViewOrder(o)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Goruntule</button>
+                  <button onClick={()=>{setForm({code:o.code,name:o.name,partNo:o.partNo||"",revision:o.revision||"A",customerId:o.customerId||"",material:o.material||"",qty:String(o.qty??"1"),dueDate:o.dueDate||todayStr(),priority:o.priority||"normal",dependencies:o.dependencies||[],partSec:o.partSec,machines:o.machines||[],notes:o.notes||"",files:o.files||[],status:o.status||"planned",sourceType:o.sourceType||"manual"});setEditId(o.id);setShowForm(true);}} style={{...btnSt(),padding:"6px 10px",fontSize:12}}>Duzenle</button>
+                  <select style={{...inputSt,width:132,padding:"6px 8px",fontSize:12}} value={o.status||"passive"} onChange={e=>setOrderStatus(o,e.target.value)}>
+                    {ORDER_STATUS_OPTIONS.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
+                  </select>
+                </div>
+              </div>
+            );
+          })}
         </div>
-      ))}
+      )}
     </div>
   );
 }
@@ -5160,7 +5192,7 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
   const lowStocks=data.materials.filter(m=>(safeNum(m.stock)<=Math.max(safeNum(m.reorderPoint),safeNum(m.safetyStock),0)));
   const pendingPr=data.prs.filter(r=>!["received","cancelled","closed"].includes(r.status||""));
   const unresolvedNotifs=data.notifs.filter(n=>!["resolved","closed"].includes(n.status||""));
-  const lowLifeTools=data.tools.filter(t=>safeNum(t.remainingLifePct)<=20);
+  const lowLifeTools=data.tools.filter(t=>t.remainingLifePct!==undefined&&t.remainingLifePct!==null&&safeNum(t.remainingLifePct)<=20);
 
   const latestTelemetry={};
   [...data.telemetry].sort((a,b)=>(b.collectedAtUtc||"").localeCompare(a.collectedAtUtc||"")).forEach(t=>{
@@ -5983,7 +6015,7 @@ function NotificationCenterModule({currentUser}){
         for(const m of lows) await emit({type:r.type,severity:"high",title:r.name,message:`${m.code||m.name} kritik stok`,sourceKey:`mat:${m.id}`,channels:r.channels||["inapp"]});
       }
       if(r.type==="tool_life"){
-        const lows=tools.filter(t=>safeNum(t.remainingLifePct)<=safeNum(r.threshold));
+        const lows=tools.filter(t=>t.remainingLifePct!==undefined&&t.remainingLifePct!==null&&safeNum(t.remainingLifePct)<=safeNum(r.threshold));
         for(const t of lows) await emit({type:r.type,severity:"medium",title:r.name,message:`${t.code||t.name} takim omru dusuk`,sourceKey:`tool:${t.id}`,channels:r.channels||["inapp"]});
       }
       if(r.type==="machine_alarm"){
@@ -6312,7 +6344,7 @@ function App() {
   const canTools=canOrders||canPurchasing||canEntry;
   const canMachinePrep=canOrders;
   const allTabs=useMemo(()=>[
-    {id:"dashboard",icon:"dashboard",label:"MRP Panel",group:"Planlama",enabled:(canEntry||canOrders||canReport||canSales||canPurchasing)},
+    {id:"dashboard",icon:"dashboard",label:"Gösterge Paneli",group:"Planlama",enabled:(canEntry||canOrders||canReport||canSales||canPurchasing)},
     {id:"planning",icon:"planning",label:"Cizelgeleme",group:"Planlama",enabled:canPlanning},
     {id:"mps",icon:"mps",label:"MPS",group:"Planlama",enabled:canPlanning},
     {id:"mrp",icon:"mrp",label:"MRP Run",group:"Planlama",enabled:canPlanning},
@@ -6376,6 +6408,7 @@ function App() {
     customers:"Yeni Musteri",
     materials:"Yeni Malzeme",
     tools:"Yeni Takim",
+    sales:"Yeni Siparis",
     orders:"Yeni Is Emri",
     quotes:"Yeni Teklif",
     machineprep:"Yeni Makina Profili",
@@ -6395,6 +6428,17 @@ function App() {
       if(next) setMenuQuery("");
       return next;
     });
+  }
+  function SidebarToggleIcon({collapsed,size=16}){
+    return (
+      <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <rect x="1.5" y="2.5" width="13" height="11" rx="1.6" stroke="currentColor" strokeWidth="1.2"/>
+        <path d="M5.5 3.2V12.8" stroke="currentColor" strokeWidth="1.2"/>
+        {collapsed
+          ? <path d="M8.7 6.1L11.2 8L8.7 9.9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+          : <path d="M10.9 6.1L8.4 8L10.9 9.9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>}
+      </svg>
+    );
   }
 
   function getActiveView() {
@@ -6511,8 +6555,13 @@ function App() {
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:isMobile?"flex-start":"flex-end"}}>
                   {layoutMode==="desktop"&&(
-                    <button onClick={toggleDesktopMenuCollapse} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:112}}>
-                      {desktopMenuCollapsed?"Menuyu Ac":"Menuyu Daralt"}
+                    <button
+                      onClick={toggleDesktopMenuCollapse}
+                      title={desktopMenuCollapsed?"Menuyu Ac":"Menuyu Daralt"}
+                      aria-label={desktopMenuCollapsed?"Menuyu Ac":"Menuyu Daralt"}
+                      style={{...btnSt("ghost"),width:38,height:34,padding:0,display:"inline-flex",alignItems:"center",justifyContent:"center"}}
+                    >
+                      <SidebarToggleIcon collapsed={desktopMenuCollapsed} size={16}/>
                     </button>
                   )}
                   {isMobile&&(
@@ -6538,8 +6587,13 @@ function App() {
                 {layoutMode==="desktop"&&(
                   <div style={{display:"flex",justifyContent:desktopMenuIconOnly?"center":"space-between",alignItems:"center",marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${C.border}`}}>
                     {!desktopMenuIconOnly&&<div style={{fontSize:11,fontWeight:700,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>MRP Menu</div>}
-                    <button onClick={toggleDesktopMenuCollapse} title={desktopMenuIconOnly?"Menuyu Genislet":"Menuyu Daralt"} style={{...btnSt("ghost"),padding:"6px 8px",fontSize:11,minWidth:desktopMenuIconOnly?40:88}}>
-                      {desktopMenuIconOnly?"→":"Daralt"}
+                    <button
+                      onClick={toggleDesktopMenuCollapse}
+                      title={desktopMenuIconOnly?"Menuyu Genislet":"Menuyu Daralt"}
+                      aria-label={desktopMenuIconOnly?"Menuyu Genislet":"Menuyu Daralt"}
+                      style={{...btnSt("ghost"),padding:0,width:32,height:30,display:"inline-flex",alignItems:"center",justifyContent:"center"}}
+                    >
+                      <SidebarToggleIcon collapsed={desktopMenuCollapsed} size={14}/>
                     </button>
                   </div>
                 )}
