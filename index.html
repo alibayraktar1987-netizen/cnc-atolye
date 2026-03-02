@@ -1266,7 +1266,7 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
                 </div>
                 <div>
                   <div style={{fontWeight:800,fontSize:18,color:C.text,letterSpacing:-.3}}>Yönetici Paneli</div>
-                  <div style={{fontSize:12,color:C.muted2}}>Dashboard erişimi</div>
+                  <div style={{fontSize:12,color:C.muted2}}>Gosterge paneli erisimi</div>
                 </div>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10}}>
@@ -1774,14 +1774,14 @@ function RoutingOperationTypeSettings({currentUser}) {
               <input style={{...inputSt,padding:"9px 8px",fontSize:12}} value={form.color} onChange={e=>setForm(f=>({...f,color:e.target.value}))} placeholder="#0f6cbd"/>
             </div>
           </div>
-          <div><span style={labelSt}>Vars. Setup(sn)</span><input style={inputSt} type="number" min="0" value={form.defaultSetupSec} onChange={e=>setForm(f=>({...f,defaultSetupSec:e.target.value}))}/></div>
-          <div><span style={labelSt}>Vars. Cycle(sn)</span><input style={inputSt} type="number" min="0" value={form.defaultCycleSec} onChange={e=>setForm(f=>({...f,defaultCycleSec:e.target.value}))}/></div>
+          <div><span style={labelSt}>Vars. Kurulum(sn)</span><input style={inputSt} type="number" min="0" value={form.defaultSetupSec} onChange={e=>setForm(f=>({...f,defaultSetupSec:e.target.value}))}/></div>
+          <div><span style={labelSt}>Vars. Cevrim(sn)</span><input style={inputSt} type="number" min="0" value={form.defaultCycleSec} onChange={e=>setForm(f=>({...f,defaultCycleSec:e.target.value}))}/></div>
           <button onClick={saveForm} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,whiteSpace:"nowrap"}} disabled={saving||loading}>{editId?"Guncelle":"Ekle"}</button>
           <button onClick={resetForm} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,whiteSpace:"nowrap"}} disabled={saving||loading}>Temizle</button>
         </div>
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
           <div style={{display:"grid",gridTemplateColumns:".5fr .9fr 1.4fr .6fr .8fr .7fr .7fr 1fr",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700}}>
-            <div>Sira</div><div>Kod</div><div>Ad</div><div>Ikon</div><div>Renk</div><div>Setup</div><div>Cycle</div><div style={{textAlign:"right"}}>Aksiyon</div>
+            <div>Sira</div><div>Kod</div><div>Ad</div><div>Ikon</div><div>Renk</div><div>Kurulum</div><div>Cevrim</div><div style={{textAlign:"right"}}>Aksiyon</div>
           </div>
           {loading&&<div style={{padding:"10px 12px",fontSize:12,color:C.muted2}}>Yukleniyor...</div>}
           {!loading&&rows.map((row,idx)=>(
@@ -3392,7 +3392,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
                     <div style={{minWidth:0}}>
                       <div style={{fontSize:12,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name||"-"}</div>
                       <div style={{fontSize:10,color:C.muted2,marginTop:2}}>
-                        Setup {safeNum(p.setupSec)} sn · Cycle {safeNum(p.cycleSec)} sn
+                        Kurulum {safeNum(p.setupSec)} sn · Cevrim {safeNum(p.cycleSec)} sn
                       </div>
                     </div>
                     <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{companyName}</div>
@@ -3433,8 +3433,8 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
                   {materials.map(m=><option key={m.id} value={m.name||""}>{m.code?`${m.code} - `:""}{m.name||""}</option>)}
                 </select>
               </div>
-              <div><span style={labelSt}>Setup (sn)</span><input style={inputSt} type="number" min="0" value={partForm.setupSec} onChange={e=>fv("setupSec",e.target.value)}/></div>
-              <div><span style={labelSt}>Cycle (sn)</span><input style={inputSt} type="number" min="0" value={partForm.cycleSec} onChange={e=>fv("cycleSec",e.target.value)}/></div>
+              <div><span style={labelSt}>Kurulum (sn)</span><input style={inputSt} type="number" min="0" value={partForm.setupSec} onChange={e=>fv("setupSec",e.target.value)}/></div>
+              <div><span style={labelSt}>Cevrim (sn)</span><input style={inputSt} type="number" min="0" value={partForm.cycleSec} onChange={e=>fv("cycleSec",e.target.value)}/></div>
               <div><span style={labelSt}>Hammadde Miktar</span><input style={inputSt} type="number" min="0" value={partForm.qtyPerRaw} onChange={e=>fv("qtyPerRaw",e.target.value)}/></div>
               <div><span style={labelSt}>Hammadde Birim Maliyet</span><input style={inputSt} type="number" min="0" value={partForm.rawUnitCost} onChange={e=>fv("rawUnitCost",e.target.value)}/></div>
               <div><span style={labelSt}>NC Program Versiyon</span><input style={inputSt} value={partForm.ncProgramVersion} onChange={e=>fv("ncProgramVersion",e.target.value)} placeholder="V1"/></div>
@@ -3486,13 +3486,13 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
                   {operationTypes.map(op=><option key={op.id} value={op.id}>{op.icon||"⚙️"} {op.code} - {op.name}</option>)}
                 </select>
                 <select style={{...inputSt,padding:"7px 9px",fontSize:12}} value={routingForm.machine} onChange={e=>setRoutingForm(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
-                <input style={{...inputSt,padding:"7px 9px",fontSize:12}} type="number" min="0" placeholder="Setup sn" value={routingForm.setupSec} onChange={e=>setRoutingForm(f=>({...f,setupSec:e.target.value}))}/>
-                <input style={{...inputSt,padding:"7px 9px",fontSize:12}} type="number" min="0" placeholder="Cycle sn" value={routingForm.cycleSec} onChange={e=>setRoutingForm(f=>({...f,cycleSec:e.target.value}))}/>
+                <input style={{...inputSt,padding:"7px 9px",fontSize:12}} type="number" min="0" placeholder="Kurulum sn" value={routingForm.setupSec} onChange={e=>setRoutingForm(f=>({...f,setupSec:e.target.value}))}/>
+                <input style={{...inputSt,padding:"7px 9px",fontSize:12}} type="number" min="0" placeholder="Cevrim sn" value={routingForm.cycleSec} onChange={e=>setRoutingForm(f=>({...f,cycleSec:e.target.value}))}/>
                 <button onClick={addRoutingOp} style={{...btnSt("green"),padding:"7px 9px",fontSize:12}} disabled={operationTypes.length===0}>Ekle</button>
               </div>
               {selectedOperationType&&(
                 <div style={{fontSize:11,color:C.muted2,marginTop:6}}>
-                  Secili tip: <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"2px 8px",borderRadius:999,border:`1px solid ${normalizeHexColor(selectedOperationType.color)}66`,background:normalizeHexColor(selectedOperationType.color)+"22",color:normalizeHexColor(selectedOperationType.color),fontWeight:700}}>{selectedOperationType.icon||"⚙️"} {selectedOperationType.code} - {selectedOperationType.name}</span> · Varsayilan Setup {safeNum(selectedOperationType.defaultSetupSec)}sn · Cycle {safeNum(selectedOperationType.defaultCycleSec)}sn
+                  Secili tip: <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"2px 8px",borderRadius:999,border:`1px solid ${normalizeHexColor(selectedOperationType.color)}66`,background:normalizeHexColor(selectedOperationType.color)+"22",color:normalizeHexColor(selectedOperationType.color),fontWeight:700}}>{selectedOperationType.icon||"⚙️"} {selectedOperationType.code} - {selectedOperationType.name}</span> · Varsayilan Kurulum {safeNum(selectedOperationType.defaultSetupSec)}sn · Cevrim {safeNum(selectedOperationType.defaultCycleSec)}sn
                 </div>
               )}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginTop:6}}>
@@ -3504,7 +3504,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
                   <div style={{fontSize:12,color:C.muted2}}>
                     <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"2px 8px",borderRadius:999,border:`1px solid ${normalizeHexColor(op.operationColor)}66`,background:normalizeHexColor(op.operationColor)+"22",color:normalizeHexColor(op.operationColor),fontWeight:700}}>
                       {op.operationIcon||"⚙️"} {op.operationCode?`${op.operationCode} - `:""}{op.operationName||op.operation||"-"}
-                    </span> · {op.machine} · Setup {safeNum(op.setupSec)}sn · Cycle {safeNum(op.cycleSec)}sn {op.ncProgram?`· NC ${op.ncProgram}`:""}
+                    </span> · {op.machine} · Kurulum {safeNum(op.setupSec)}sn · Cevrim {safeNum(op.cycleSec)}sn {op.ncProgram?`· NC ${op.ncProgram}`:""}
                   </div>
                   <div style={{display:"flex",gap:6}}>
                     <button onClick={()=>moveRoutingOp(op.id,-1)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}} disabled={idx===0}>↑</button>
@@ -6744,7 +6744,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               <div style={{fontSize:15,fontWeight:800,color:opTheme.text,marginTop:2}}>{producedQty}</div>
             </div>
             <div style={{...rowCardStyle,padding:"8px 10px"}}>
-              <div style={{fontSize:10,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Scrap</div>
+              <div style={{fontSize:10,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Hurda</div>
               <div style={{fontSize:15,fontWeight:800,color:opTheme.danger,marginTop:2}}>{scrapQty}</div>
             </div>
             <div style={{...rowCardStyle,padding:"8px 10px"}}>
@@ -6756,7 +6756,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
           <div style={opsPanelStyle}>
             <div style={opsGridStyle}>
               <div style={{...sectionCardStyle,...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
-              <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>SET-UP</div>
+              <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>KURULUM</div>
               <button onClick={openToolChangeModal} style={{...btnSt("ghost"),width:"100%",padding:"12px 10px",fontSize:13,borderColor:opTheme.borderStrong,color:opTheme.text,background:opTheme.cardBgSoft,fontWeight:700}}>Takım Değişimi</button>
               <div style={{marginTop:8,fontSize:12,color:opTheme.textDim,textAlign:"center"}}>
                 {machineToolPicked?`${machineToolPicked.code||machineToolPicked.name} x${Math.max(1,Number(form.machineToolQty)||1)}`:"Takım seçilmedi"}
@@ -6774,7 +6774,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             </div>
 
               <div style={{...sectionCardStyle,...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
-              <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>PRODUCTION</div>
+              <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>URETIM</div>
               <div>
                 <span style={{...labelSt,color:opTheme.textMuted}}>İş Emri</span>
                 {form.selectedOrder?(
@@ -6809,7 +6809,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}>
                 <div><span style={{...labelSt,color:opTheme.textMuted}}>Doğru</span><input style={{...inputSt,...themedInputStyle,padding:"12px 10px",fontSize:20,fontWeight:800,textAlign:"center"}} type="number" min="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>
-                <div><span style={{...labelSt,color:opTheme.textMuted}}>Scrap</span><input style={{...inputSt,...themedInputStyle,padding:"12px 10px",fontSize:20,fontWeight:800,textAlign:"center"}} type="number" min="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>
+                <div><span style={{...labelSt,color:opTheme.textMuted}}>Hurda</span><input style={{...inputSt,...themedInputStyle,padding:"12px 10px",fontSize:20,fontWeight:800,textAlign:"center"}} type="number" min="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>
               </div>
               <button onClick={openShiftEndModal} style={{...btnSt(saved?"green":"primary"),width:"100%",padding:"12px 10px",fontSize:13,marginTop:9,borderColor:"transparent",fontWeight:700,boxShadow:"0 8px 16px rgba(0,0,0,.22)"}}>
                 {editId?"Vardiya Sonu Güncelle":"Vardiya Sonu Onayla"}
@@ -6822,7 +6822,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             </div>
 
               <div style={{...sectionCardStyle,...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
-              <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>BREAKDOWN / STOP</div>
+              <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>ARIZA / DURUS</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 <div style={{...rowCardStyle,padding:"8px 9px",textAlign:"center"}}>
                   <div style={{fontSize:10,color:opTheme.textMuted}}>Kalite</div>
@@ -6833,7 +6833,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                   <div style={{fontSize:20,fontWeight:800,color:opTheme.text}}>{form.selectedOrder?fmtSec(form.selectedOrder.partSec):"--:--"}</div>
                 </div>
               </div>
-              <button onClick={openShiftEndModal} style={{...btnSt("ghost"),width:"100%",padding:"11px 10px",fontSize:13,marginTop:8,borderColor:opTheme.borderStrong,color:opTheme.text,background:opTheme.cardBgSoft,fontWeight:700}}>Finish / Stop</button>
+              <button onClick={openShiftEndModal} style={{...btnSt("ghost"),width:"100%",padding:"11px 10px",fontSize:13,marginTop:8,borderColor:opTheme.borderStrong,color:opTheme.text,background:opTheme.cardBgSoft,fontWeight:700}}>Bitir / Durdur</button>
               <div style={{marginTop:9,fontSize:11,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Son 3 Kayıt</div>
               <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:5}}>
                 {recentMachineEntries.length===0&&<div style={{fontSize:11,color:opTheme.textDim}}>Kayıt yok.</div>}
