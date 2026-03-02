@@ -291,17 +291,28 @@ function normalizeSalesCurrencies(raw){
   return {list:sorted,defaultCurrency};
 }
 const DEFAULT_ROUTING_OPERATION_TYPES = [
-  { id:"op10", code:"OP-10", name:"Kesim ve Hazirlik", icon:"🪚", color:"#6f86ff", defaultSetupSec:300, defaultCycleSec:60, sortOrder:10 },
+  { id:"op10", code:"OP-10", name:"Kesim ve Hazirlik", icon:"🧰", color:"#6f86ff", defaultSetupSec:300, defaultCycleSec:60, sortOrder:10 },
   { id:"op20", code:"OP-20", name:"Kaba Isleme", icon:"⚙️", color:"#0f6cbd", defaultSetupSec:240, defaultCycleSec:90, sortOrder:20 },
-  { id:"op30", code:"OP-30", name:"Finis Isleme", icon:"✨", color:"#00a78f", defaultSetupSec:180, defaultCycleSec:80, sortOrder:30 },
+  { id:"op30", code:"OP-30", name:"Finis Isleme", icon:"🔩", color:"#00a78f", defaultSetupSec:180, defaultCycleSec:80, sortOrder:30 },
   { id:"op40", code:"OP-40", name:"Delik Delme ve Klavuz", icon:"🧵", color:"#b15e00", defaultSetupSec:120, defaultCycleSec:45, sortOrder:40 },
   { id:"op50", code:"OP-50", name:"Olcum ve Kontrol", icon:"📏", color:"#8c6cff", defaultSetupSec:90, defaultCycleSec:30, sortOrder:50 },
 ];
-const OPERATION_ICON_OPTIONS = ["⚙️","🔧","🛠️","🪚","🧵","📏","✨","🧪","🔩","🧰"];
+const OPERATION_ICON_OPTIONS = ["⚙️","🛠️","🔧","🪛","🔩","🧰","🪚","🧵","📏","🏭"];
+const LEGACY_OPERATION_ICON_MAP = {
+  "✨":"🔩",
+  "🧪":"📏",
+};
 function normalizeHexColor(value,fallback="#0f6cbd"){
   const raw=String(value||"").trim();
   if(/^#?[0-9a-fA-F]{6}$/.test(raw)) return raw.startsWith("#")?raw:`#${raw}`;
   return fallback;
+}
+function normalizeOperationIcon(icon,fallback){
+  const base=String(icon||"").trim();
+  const remapped=LEGACY_OPERATION_ICON_MAP[base]||base;
+  const pick=String(fallback||"⚙️").trim()||"⚙️";
+  if(OPERATION_ICON_OPTIONS.includes(remapped)) return remapped;
+  return OPERATION_ICON_OPTIONS.includes(pick)?pick:"⚙️";
 }
 function normalizeRoutingOperationTypes(raw){
   const list=Array.isArray(raw?.list)?raw.list:[];
@@ -314,7 +325,7 @@ function normalizeRoutingOperationTypes(raw){
       id:String(row?.id||`op_${Date.now().toString(36)}_${idx}`),
       code,
       name,
-      icon:String(row?.icon||fallback?.icon||"⚙️").trim()||"⚙️",
+      icon:normalizeOperationIcon(row?.icon,fallback?.icon||"⚙️"),
       color:normalizeHexColor(row?.color,fallback?.color||"#0f6cbd"),
       defaultSetupSec:Math.max(0,safeNum(row?.defaultSetupSec)),
       defaultCycleSec:Math.max(0,safeNum(row?.defaultCycleSec)),
