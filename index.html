@@ -7998,6 +7998,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const [planMachineFilter,setPlanMachineFilter]=useState("all");
   const [planDateFrom,setPlanDateFrom]=useState("");
   const [planDateTo,setPlanDateTo]=useState("");
+  const [showGanttDetail,setShowGanttDetail]=useState(false);
   const ganttRef=useRef(null);
 
   const load=useCallback(async()=>{
@@ -8562,6 +8563,116 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const selectedPlanSegment=selectedPlan?findSegmentForPlan(selectedPlan):null;
   const selectedSegmentId=selectedPlan?(selectedPlan._segmentId||selectedPlanSegment?.id||""):"";
   const selectedPlanOperationMeta=(selectedPlan&&selectedPlan.orderId)?(orderOperationMetaById[selectedPlan.orderId]||null):null;
+  const planningToday=todayStr();
+  const orderById={};
+  orders.forEach(o=>{orderById[o.id]=o;});
+  function segmentDurationLabel(seg){
+    const days=Math.max(1,dayDiff(seg.startDate||planningToday,seg.endDate||seg.startDate||planningToday)+1);
+    return days===1?"1 gun":`${days} gun`;
+  }
+  function machineRowStateLabel(row){
+    if(row.activeSegment) return `Active | ${segmentDurationLabel(row.activeSegment)}`;
+    if(row.segments.length>0) return `Queue | ${row.segments.length} is`;
+    return "Idle";
+  }
+  function segmentRiskType(seg){
+    const due=String(orderById[seg.orderId]?.dueDate||"");
+    if(!due) return "normal";
+    if(due<planningToday) return "critical";
+    if((seg.endDate||seg.startDate||planningToday)>due) return "warning";
+    return "normal";
+  }
+  function segmentTone(seg){
+    const risk=segmentRiskType(seg);
+    if(risk==="critical") return {
+      header:"linear-gradient(145deg,#eb3b3b 0%,#c92a2a 100%)",
+      border:"#e55d5d",
+      bg:"#fff7f7",
+      text:"#7f1d1d",
+      badge:"#ffe1e1",
+      badgeText:"#b42323",
+    };
+    if(risk==="warning") return {
+      header:"linear-gradient(145deg,#f59e0b 0%,#e27f18 100%)",
+      border:"#efb351",
+      bg:"#fffaf0",
+      text:"#8a4b08",
+      badge:"#ffedd1",
+      badgeText:"#a76200",
+    };
+    return {
+      header:"linear-gradient(145deg,#5a6fdb 0%,#445ac7 100%)",
+      border:"#97a7ea",
+      bg:"#f8f9ff",
+      text:"#2b3a8a",
+      badge:"#e8edff",
+      badgeText:"#445ac7",
+    };
+  }
+  function buildSegmentCard(seg,{active=false}={}){
+    if(!seg) return null;
+    const ord=orderById[seg.orderId]||null;
+    const op=orderOperationMetaById[seg.orderId]||null;
+    const tone=segmentTone(seg);
+    const qty=Math.max(0,safeNum(ord?.qty));
+    const due=String(ord?.dueDate||seg.endDate||"-");
+    const spanLabel=`${seg.startDate||"-"}${seg.endDate&&seg.endDate!==seg.startDate?` - ${seg.endDate}`:""}`;
+    return {
+      id:seg.id,
+      orderCode:seg.orderCode||"-",
+      orderName:seg.orderName||"-",
+      customer:seg.orderCustomerName||ord?.customerName||"",
+      qty,
+      due,
+      spanLabel,
+      tone,
+      op,
+      active,
+      segment:seg,
+      seedPlan:(seg.plans&&seg.plans[0])?seg.plans[0]:null,
+    };
+  }
+  const machineBoardRows=machines.map(machine=>{
+    const segs=filteredPlanSegments
+      .filter(seg=>seg.machine===machine)
+      .sort((a,b)=>{
+        const s=String(a.startDate||"").localeCompare(String(b.startDate||""));
+        if(s!==0) return s;
+        return String(a.orderCode||"").localeCompare(String(b.orderCode||""),"tr");
+      });
+    const activeSegment=segs.find(seg=>(seg.startDate||"")<=planningToday&&(seg.endDate||seg.startDate||"")>=planningToday)||null;
+    const nextSegments=segs
+      .filter(seg=>!activeSegment||seg.id!==activeSegment.id)
+      .filter(seg=>(seg.endDate||seg.startDate||"")>=planningToday)
+      .slice(0,3);
+    const readyHours=activeSegment?Math.max(1,dayDiff(activeSegment.startDate||planningToday,planningToday)+1):0;
+    return {
+      machine,
+      segments:segs,
+      activeSegment,
+      nextSegments,
+      readyHours,
+      activeCard:buildSegmentCard(activeSegment,{active:true}),
+      nextCards:nextSegments.map(seg=>buildSegmentCard(seg)),
+    };
+  });
+  const dueKnownSegments=filteredPlanSegments.filter(seg=>String(orderById[seg.orderId]?.dueDate||"").trim()!=="");
+  const overdueCount=dueKnownSegments.filter(seg=>String(orderById[seg.orderId]?.dueDate||"")<planningToday).length;
+  const behindCount=dueKnownSegments.filter(seg=>(seg.endDate||seg.startDate||planningToday)>String(orderById[seg.orderId]?.dueDate||"")).length;
+  const dueTodayCount=dueKnownSegments.filter(seg=>String(orderById[seg.orderId]?.dueDate||"")===planningToday).length;
+  const activeCount=machineBoardRows.filter(r=>Boolean(r.activeSegment)).length;
+  const scheduledCount=filteredPlanSegments.length;
+  const onTimePct=dueKnownSegments.length>0?Math.max(0,Math.min(100,Math.round(((dueKnownSegments.length-behindCount)/dueKnownSegments.length)*100))):100;
+  const setupCount=machines.reduce((sum,m)=>sum+Math.max(0,((monthSegmentsByMachine[m]||[]).length-1)),0);
+  const summaryCards=[
+    {label:"Active",value:String(activeCount),sub:"No Change"},
+    {label:"Scheduled",value:String(scheduledCount),sub:"No Change"},
+    {label:"Due Today",value:String(dueTodayCount),sub:"No Change"},
+    {label:"Overdue",value:String(overdueCount),sub:"No Change",tone:overdueCount>0?C.red:C.text},
+    {label:"Behind",value:String(behindCount),sub:"No Change",tone:behindCount>0?C.warn:C.text},
+    {label:"On Time",value:`%${onTimePct}`,sub:"Tracking"},
+    {label:"Setups",value:String(setupCount),sub:"This month"},
+  ];
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
 
