@@ -5537,9 +5537,6 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     ...(salesListPanelsStacked
       ? {}
       : {
-        alignSelf:"flex-start",
-        position:"sticky",
-        top:12,
         minHeight:salesListPanelHeightPx,
         maxHeight:salesListPanelHeightPx,
         overflowY:"auto",
@@ -5696,7 +5693,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                   <thead>
                     <tr style={{background:C.surface,color:C.muted2,textAlign:"left"}}>
                       {visibleQuoteTableColumns.map(col=>(
-                        <th key={col.id} style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:col.align||"left"}}>{col.label}</th>
+                        <th key={col.id} style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:col.align||"left",position:"sticky",top:0,zIndex:2,background:C.surface}}>{col.label}</th>
                       ))}
                     </tr>
                   </thead>
@@ -5781,7 +5778,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                   <thead>
                     <tr style={{background:C.surface,color:C.muted2,textAlign:"left"}}>
                       {visibleOrderTableColumns.map(col=>(
-                        <th key={col.id} style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:col.align||"left"}}>{col.label}</th>
+                        <th key={col.id} style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:col.align||"left",position:"sticky",top:0,zIndex:2,background:C.surface}}>{col.label}</th>
                       ))}
                     </tr>
                   </thead>
@@ -6529,9 +6526,6 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
     ...(workListPanelsStacked
       ? {}
       : {
-        alignSelf:"flex-start",
-        position:"sticky",
-        top:12,
         minHeight:workListPanelHeightPx,
         maxHeight:workListPanelHeightPx,
         overflowY:"auto",
@@ -6767,7 +6761,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
                 <thead>
                   <tr style={{background:C.surface,color:C.muted2,textAlign:"left"}}>
                     {visibleWorkOrderTableColumns.map(col=>(
-                      <th key={col.id} style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:col.align||"left"}}>{col.label}</th>
+                      <th key={col.id} style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:col.align||"left",position:"sticky",top:0,zIndex:2,background:C.surface}}>{col.label}</th>
                     ))}
                   </tr>
                 </thead>
