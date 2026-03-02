@@ -261,6 +261,33 @@ const DEFAULT_QUOTE_TEMPLATE = {
   accentColor:"#0f6cbd",
   showLogo:false,
 };
+const DEFAULT_ROUTING_OPERATION_TYPES = [
+  { id:"op10", code:"OP-10", name:"Kesim ve Hazirlik", defaultSetupSec:300, defaultCycleSec:60, sortOrder:10 },
+  { id:"op20", code:"OP-20", name:"Kaba Isleme", defaultSetupSec:240, defaultCycleSec:90, sortOrder:20 },
+  { id:"op30", code:"OP-30", name:"Finis Isleme", defaultSetupSec:180, defaultCycleSec:80, sortOrder:30 },
+  { id:"op40", code:"OP-40", name:"Delik Delme ve Klavuz", defaultSetupSec:120, defaultCycleSec:45, sortOrder:40 },
+  { id:"op50", code:"OP-50", name:"Olcum ve Kontrol", defaultSetupSec:90, defaultCycleSec:30, sortOrder:50 },
+];
+function normalizeRoutingOperationTypes(raw){
+  const list=Array.isArray(raw?.list)?raw.list:[];
+  const src=list.length>0?list:DEFAULT_ROUTING_OPERATION_TYPES;
+  return src.map((row,idx)=>{
+    const code=String(row?.code||`OP-${pad2((idx+1)*10)}`).trim().toUpperCase();
+    const name=String(row?.name||`Operasyon ${idx+1}`).trim()||`Operasyon ${idx+1}`;
+    return {
+      id:String(row?.id||`op_${Date.now().toString(36)}_${idx}`),
+      code,
+      name,
+      defaultSetupSec:Math.max(0,safeNum(row?.defaultSetupSec)),
+      defaultCycleSec:Math.max(0,safeNum(row?.defaultCycleSec)),
+      sortOrder:Math.max(1,safeNum(row?.sortOrder)||((idx+1)*10)),
+    };
+  }).sort((a,b)=>{
+    const s=safeNum(a.sortOrder)-safeNum(b.sortOrder);
+    if(s!==0) return s;
+    return (a.code||"").localeCompare(b.code||"","tr");
+  });
+}
 function normalizeQuoteTemplate(raw){
   const src=raw||{};
   const pick=(k,d)=>typeof src[k]==="string"?src[k]:d;
@@ -1098,6 +1125,131 @@ function OperatorUrlSettings({machines}) {
   );
 }
 
+function RoutingOperationTypeSettings({currentUser}) {
+  const [rows,setRows]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [editId,setEditId]=useState("");
+  const [form,setForm]=useState({code:"",name:"",defaultSetupSec:"0",defaultCycleSec:"0"});
+
+  const load=useCallback(async()=>{
+    const doc=await window.DB.getDoc("config","routingOperationTypes");
+    setRows(normalizeRoutingOperationTypes(doc||{}));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  function resetForm(){
+    setEditId("");
+    setForm({code:"",name:"",defaultSetupSec:"0",defaultCycleSec:"0"});
+  }
+  function startEdit(row){
+    setEditId(row.id);
+    setForm({
+      code:row.code||"",
+      name:row.name||"",
+      defaultSetupSec:String(Math.max(0,safeNum(row.defaultSetupSec))),
+      defaultCycleSec:String(Math.max(0,safeNum(row.defaultCycleSec))),
+    });
+  }
+
+  async function persist(list){
+    const normalized=normalizeRoutingOperationTypes({list:list.map((r,idx)=>({...r,sortOrder:(idx+1)*10}))});
+    setSaving(true);
+    const ok=await window.DB.setDoc("config","routingOperationTypes",{
+      list:normalized,
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser?.id||"",
+    });
+    setSaving(false);
+    if(!ok){alert("Rota operasyon tipleri kaydedilemedi.");return false;}
+    setRows(normalized);
+    return true;
+  }
+
+  async function saveForm(){
+    const code=String(form.code||"").trim().toUpperCase();
+    const name=String(form.name||"").trim();
+    if(!code||!name){alert("Kod ve ad zorunlu.");return;}
+    const setup=Math.max(0,safeNum(form.defaultSetupSec));
+    const cycle=Math.max(0,safeNum(form.defaultCycleSec));
+    const duplicate=rows.find(r=>r.code===code&&r.id!==editId);
+    if(duplicate){alert("Ayni kodda operasyon tipi var.");return;}
+    let next=[...rows];
+    if(editId){
+      next=next.map(r=>r.id===editId?{...r,code,name,defaultSetupSec:setup,defaultCycleSec:cycle}:r);
+    }else{
+      next.push({
+        id:`op_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`,
+        code,
+        name,
+        defaultSetupSec:setup,
+        defaultCycleSec:cycle,
+        sortOrder:(next.length+1)*10,
+      });
+    }
+    const ok=await persist(next);
+    if(ok) resetForm();
+  }
+
+  async function removeRow(id){
+    const row=rows.find(r=>r.id===id);
+    if(!row) return;
+    if(!confirm(`${row.code} silinsin mi?`)) return;
+    await persist(rows.filter(r=>r.id!==id));
+    if(editId===id) resetForm();
+  }
+
+  async function moveRow(id,dir){
+    const idx=rows.findIndex(r=>r.id===id);
+    if(idx<0) return;
+    const target=idx+dir;
+    if(target<0||target>=rows.length) return;
+    const next=[...rows];
+    const temp=next[idx];
+    next[idx]=next[target];
+    next[target]=temp;
+    await persist(next);
+  }
+
+  return (
+    <div style={{marginBottom:18}}>
+      <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Rota ve Operasyon Tipleri</div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1.4fr .7fr .7fr auto auto",gap:8,alignItems:"end",marginBottom:10}}>
+          <div><span style={labelSt}>Kod *</span><input style={inputSt} value={form.code} onChange={e=>setForm(f=>({...f,code:e.target.value}))} placeholder="OP-10"/></div>
+          <div><span style={labelSt}>Operasyon Adi *</span><input style={inputSt} value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Kaba Isleme"/></div>
+          <div><span style={labelSt}>Vars. Setup(sn)</span><input style={inputSt} type="number" min="0" value={form.defaultSetupSec} onChange={e=>setForm(f=>({...f,defaultSetupSec:e.target.value}))}/></div>
+          <div><span style={labelSt}>Vars. Cycle(sn)</span><input style={inputSt} type="number" min="0" value={form.defaultCycleSec} onChange={e=>setForm(f=>({...f,defaultCycleSec:e.target.value}))}/></div>
+          <button onClick={saveForm} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,whiteSpace:"nowrap"}} disabled={saving||loading}>{editId?"Guncelle":"Ekle"}</button>
+          <button onClick={resetForm} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,whiteSpace:"nowrap"}} disabled={saving||loading}>Temizle</button>
+        </div>
+        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:".5fr .9fr 1.5fr .7fr .7fr 1fr",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700}}>
+            <div>Sira</div><div>Kod</div><div>Ad</div><div>Setup</div><div>Cycle</div><div style={{textAlign:"right"}}>Aksiyon</div>
+          </div>
+          {loading&&<div style={{padding:"10px 12px",fontSize:12,color:C.muted2}}>Yukleniyor...</div>}
+          {!loading&&rows.map((row,idx)=>(
+            <div key={row.id} style={{display:"grid",gridTemplateColumns:".5fr .9fr 1.5fr .7fr .7fr 1fr",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,alignItems:"center",fontSize:12,color:C.text}}>
+              <div>{idx+1}</div>
+              <div style={{fontFamily:"monospace",fontWeight:700}}>{row.code}</div>
+              <div style={{minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{row.name}</div>
+              <div>{safeNum(row.defaultSetupSec)}</div>
+              <div>{safeNum(row.defaultCycleSec)}</div>
+              <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                <button onClick={()=>moveRow(row.id,-1)} style={{...btnSt("ghost"),padding:"4px 7px",fontSize:11}} disabled={saving||idx===0}>↑</button>
+                <button onClick={()=>moveRow(row.id,1)} style={{...btnSt("ghost"),padding:"4px 7px",fontSize:11}} disabled={saving||idx===rows.length-1}>↓</button>
+                <button onClick={()=>startEdit(row)} style={{...btnSt("ghost"),padding:"4px 7px",fontSize:11}} disabled={saving}>Duzenle</button>
+                <button onClick={()=>removeRow(row.id)} style={{...btnSt("danger"),padding:"4px 7px",fontSize:11}} disabled={saving}>Sil</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ════════════════════════════════════════════════════════════
 //  ADMIN USERS
 // ════════════════════════════════════════════════════════════
@@ -1229,6 +1381,7 @@ function AdminUsers({currentUser,machines,onMachinesUpdate,currentLogo,onLogoUpd
       </div>
       <MachineSettings machines={machines} onUpdate={onMachinesUpdate}/>
       <OperatorUrlSettings machines={machines}/>
+      <RoutingOperationTypeSettings currentUser={currentUser}/>
       <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>Ayarlar · Kullanıcı Yönetimi · {list.length} kullanıcı</div>
       {list.map(u=>(
         <div key={u.id} style={{background:C.card,border:`1px solid ${u.status==="pending"?C.warn+"60":C.border}`,borderRadius:14,padding:"14px 16px",marginBottom:10}}>
@@ -1997,6 +2150,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
   };
   const [parts,setParts]=useState([]);
   const [materials,setMaterials]=useState([]);
+  const [operationTypes,setOperationTypes]=useState(DEFAULT_ROUTING_OPERATION_TYPES);
   const [loading,setLoading]=useState(true);
   const [search,setSearch]=useState("");
   const [selectedPartId,setSelectedPartId]=useState("");
@@ -2004,15 +2158,27 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
   const [showPartModal,setShowPartModal]=useState(false);
   const [partForm,setPartForm]=useState(emptyPartForm);
   const [bomForm,setBomForm]=useState({componentType:"raw_material",componentCode:"",componentName:"",qtyPer:"1",scrapPct:"0",cutLengthMm:"0",barDiameterMm:"0"});
-  const [routingForm,setRoutingForm]=useState({operation:"Op-10",machine:machines[0]||"CNC-1",setupSec:"300",cycleSec:"60",ncProgram:"",tooling:""});
+  const [routingForm,setRoutingForm]=useState({operationTypeId:"",machine:machines[0]||"CNC-1",setupSec:"300",cycleSec:"60",ncProgram:"",tooling:""});
 
   const load=useCallback(async()=>{
-    const [p,m]=await Promise.all([window.DB.getAll("parts"),window.DB.getAll("materials")]);
+    const [p,m,opDoc]=await Promise.all([
+      window.DB.getAll("parts"),
+      window.DB.getAll("materials"),
+      window.DB.getDoc("config","routingOperationTypes"),
+    ]);
     setParts(p.sort((a,b)=>(a.partNo||"").localeCompare(b.partNo||"","tr")));
     setMaterials(m.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    setOperationTypes(normalizeRoutingOperationTypes(opDoc||{}));
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    if(operationTypes.length===0) return;
+    setRoutingForm(f=>{
+      if(f.operationTypeId&&operationTypes.some(x=>x.id===f.operationTypeId)) return f;
+      return {...f,operationTypeId:operationTypes[0].id};
+    });
+  },[operationTypes]);
 
   const selectedPart=parts.find(p=>p.id===selectedPartId)||null;
   const nextPartNo=useCallback((list=parts)=>{
@@ -2075,6 +2241,16 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
     const unitCost=materialCost+laborCost+machineCost;
     return {materialCost,laborCost,machineCost,unitCost};
   })();
+  const selectedOperationType=operationTypes.find(o=>o.id===routingForm.operationTypeId)||operationTypes[0]||null;
+  function setRoutingOperationType(operationTypeId){
+    const picked=operationTypes.find(o=>o.id===operationTypeId)||null;
+    setRoutingForm(f=>({
+      ...f,
+      operationTypeId,
+      setupSec:String(picked?.defaultSetupSec??f.setupSec),
+      cycleSec:String(picked?.defaultCycleSec??f.cycleSec),
+    }));
+  }
 
   const fv=(k,v)=>setPartForm(f=>({...f,[k]:v}));
   const openCreatePartModal=()=>{
@@ -2229,10 +2405,14 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
 
   async function addRoutingOp(){
     if(!selectedPart){alert("Once parca secin.");return;}
-    if(!routingForm.operation.trim()){alert("Operasyon adi zorunlu.");return;}
+    const pickedType=operationTypes.find(o=>o.id===routingForm.operationTypeId)||null;
+    if(!pickedType){alert("Operasyon tipi secin.");return;}
     const op={
       id:`op_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`,
-      operation:routingForm.operation.trim(),
+      operationTypeId:pickedType.id,
+      operationCode:pickedType.code||"",
+      operationName:pickedType.name||"",
+      operation:`${pickedType.code||""}${pickedType.name?` - ${pickedType.name}`:""}`.trim(),
       machine:routingForm.machine||machines[0]||"CNC-1",
       setupSec:Math.max(0,safeNum(routingForm.setupSec)),
       cycleSec:Math.max(0,safeNum(routingForm.cycleSec)),
@@ -2243,12 +2423,34 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
     const ok=await window.DB.updateDoc("parts",selectedPart.id,{routingOps:next,updatedAt:new Date().toISOString(),updatedBy:currentUser.id});
     if(!ok){alert("Rota adimi eklenemedi.");return;}
     setParts(prev=>prev.map(x=>x.id===selectedPart.id?{...x,routingOps:next}:x));
-    setRoutingForm({operation:"Op-10",machine:machines[0]||"CNC-1",setupSec:"300",cycleSec:"60",ncProgram:"",tooling:""});
+    setRoutingForm({
+      operationTypeId:pickedType.id,
+      machine:routingForm.machine||machines[0]||"CNC-1",
+      setupSec:String(pickedType.defaultSetupSec??300),
+      cycleSec:String(pickedType.defaultCycleSec??60),
+      ncProgram:"",
+      tooling:"",
+    });
   }
   async function removeRoutingOp(opId){
     if(!selectedPart) return;
     const next=(selectedPart.routingOps||[]).filter(x=>x.id!==opId);
     await window.DB.updateDoc("parts",selectedPart.id,{routingOps:next,updatedAt:new Date().toISOString(),updatedBy:currentUser.id});
+    setParts(prev=>prev.map(x=>x.id===selectedPart.id?{...x,routingOps:next}:x));
+  }
+  async function moveRoutingOp(opId,dir){
+    if(!selectedPart) return;
+    const rows=[...(selectedPart.routingOps||[])];
+    const idx=rows.findIndex(x=>x.id===opId);
+    if(idx<0) return;
+    const nextIdx=idx+dir;
+    if(nextIdx<0||nextIdx>=rows.length) return;
+    const next=[...rows];
+    const temp=next[idx];
+    next[idx]=next[nextIdx];
+    next[nextIdx]=temp;
+    const ok=await window.DB.updateDoc("parts",selectedPart.id,{routingOps:next,updatedAt:new Date().toISOString(),updatedBy:currentUser.id});
+    if(!ok){alert("Rota sirasi guncellenemedi.");return;}
     setParts(prev=>prev.map(x=>x.id===selectedPart.id?{...x,routingOps:next}:x));
   }
 
@@ -2399,54 +2601,38 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
       )}
 
       {selectedPart&&(
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(360px,1fr))",gap:12}}>
-            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-              <div style={{fontWeight:700,color:C.text,marginBottom:10}}>BOM (Urun Agaci)</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr .7fr .7fr .9fr .9fr auto",gap:6}}>
-                <select style={{...inputSt,padding:"7px 9px",fontSize:12}} value={bomForm.componentType} onChange={e=>setBomForm(f=>({...f,componentType:e.target.value}))}><option value="raw_material">Hammadde</option><option value="semi_finished">Yari Mamul</option><option value="consumable">Sarf</option></select>
-                <input style={{...inputSt,padding:"7px 9px",fontSize:12}} placeholder="Kod" value={bomForm.componentCode} onChange={e=>setBomForm(f=>({...f,componentCode:e.target.value}))}/>
-                <input style={{...inputSt,padding:"7px 9px",fontSize:12}} placeholder="Ad (opsiyonel)" value={bomForm.componentName} onChange={e=>setBomForm(f=>({...f,componentName:e.target.value}))}/>
-                <input style={{...inputSt,padding:"7px 9px",fontSize:12}} placeholder="Miktar" type="number" min="0" value={bomForm.qtyPer} onChange={e=>setBomForm(f=>({...f,qtyPer:e.target.value}))}/>
-                <input style={{...inputSt,padding:"7px 9px",fontSize:12}} placeholder="Hurda%" type="number" min="0" max="100" value={bomForm.scrapPct} onChange={e=>setBomForm(f=>({...f,scrapPct:e.target.value}))}/>
-                <input style={{...inputSt,padding:"7px 9px",fontSize:12}} placeholder="Kesim Boyu (mm)" type="number" min="0" value={bomForm.cutLengthMm} onChange={e=>setBomForm(f=>({...f,cutLengthMm:e.target.value}))}/>
-                <input style={{...inputSt,padding:"7px 9px",fontSize:12}} placeholder="Cubuk Cap (mm)" type="number" min="0" value={bomForm.barDiameterMm} onChange={e=>setBomForm(f=>({...f,barDiameterMm:e.target.value}))}/>
-                <button onClick={addBomLine} style={{...btnSt("green"),padding:"7px 9px",fontSize:12}}>Ekle</button>
-              </div>
-              <div style={{marginTop:8,padding:"8px 10px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,fontSize:12,color:C.muted2}}>
-                <div>3m Cubuk Ihtiyaci: <span style={{color:C.text,fontWeight:700}}>{bomBarPreview.barCount3m}</span> adet · Gerekli Boy: <span style={{color:C.text,fontWeight:700}}>{(bomBarPreview.requiredWithScrapMm/1000).toFixed(3)}</span> m</div>
-                <div style={{marginTop:2}}>Agirlik (Net): <span style={{color:C.text,fontWeight:700}}>{safeNum(bomBarPreview.netWeightKg).toFixed(3)}</span> kg · Satin Alma Agirligi: <span style={{color:C.text,fontWeight:700}}>{safeNum(bomBarPreview.purchaseWeightKg).toFixed(3)}</span> kg {bomMaterial&&safeNum(bomMaterial.density)>0?`· Yogunluk ${safeNum(bomMaterial.density).toFixed(3)} g/cm3`:""}</div>
-              </div>
-              {(selectedPart.bomLines||[]).map(line=>(
-                <div key={line.id} style={{marginTop:8,padding:"8px 10px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-                  <div style={{fontSize:12,color:C.muted2}}>
-                    {line.componentType} · <span style={{color:C.text,fontWeight:700}}>{line.componentCode}</span>{line.componentName?` - ${line.componentName}`:""} · Qty: {safeNum(line.qtyPer)} · Hurda %{safeNum(line.scrapPct)}
-                    {(safeNum(line.cutLengthMm)>0||safeNum(line.barDiameterMm)>0||safeNum(line.barCount3m)>0)&&(
-                      <span> · Kesim {safeNum(line.cutLengthMm)} mm · Cap {safeNum(line.barDiameterMm)} mm · 3m Cubuk {safeNum(line.barCount3m)} ad · Agirlik {safeNum(line.purchaseWeightKg).toFixed(3)} kg</span>
-                    )}
-                  </div>
-                  <button onClick={()=>removeBomLine(line.id)} style={{...btnSt("danger"),padding:"5px 9px",fontSize:11}}>Sil</button>
-                </div>
-              ))}
-              {(selectedPart.bomLines||[]).length===0&&<div style={{fontSize:12,color:C.muted2,marginTop:8}}>BOM satiri yok.</div>}
-            </div>
-
+        <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12}}>
             <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
               <div style={{fontWeight:700,color:C.text,marginBottom:10}}>Rota ve Operasyonlar</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr .8fr .8fr auto",gap:6}}>
-                <input style={{...inputSt,padding:"7px 9px",fontSize:12}} placeholder="Operasyon" value={routingForm.operation} onChange={e=>setRoutingForm(f=>({...f,operation:e.target.value}))}/>
+              <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr .8fr .8fr auto",gap:6}}>
+                <select style={{...inputSt,padding:"7px 9px",fontSize:12}} value={routingForm.operationTypeId} onChange={e=>setRoutingOperationType(e.target.value)}>
+                  {operationTypes.length===0&&<option value="">Ayarlar > Rota ve Operasyon Tipleri</option>}
+                  {operationTypes.map(op=><option key={op.id} value={op.id}>{op.code} - {op.name}</option>)}
+                </select>
                 <select style={{...inputSt,padding:"7px 9px",fontSize:12}} value={routingForm.machine} onChange={e=>setRoutingForm(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
                 <input style={{...inputSt,padding:"7px 9px",fontSize:12}} type="number" min="0" placeholder="Setup sn" value={routingForm.setupSec} onChange={e=>setRoutingForm(f=>({...f,setupSec:e.target.value}))}/>
                 <input style={{...inputSt,padding:"7px 9px",fontSize:12}} type="number" min="0" placeholder="Cycle sn" value={routingForm.cycleSec} onChange={e=>setRoutingForm(f=>({...f,cycleSec:e.target.value}))}/>
-                <button onClick={addRoutingOp} style={{...btnSt("green"),padding:"7px 9px",fontSize:12}}>Ekle</button>
+                <button onClick={addRoutingOp} style={{...btnSt("green"),padding:"7px 9px",fontSize:12}} disabled={operationTypes.length===0}>Ekle</button>
               </div>
+              {selectedOperationType&&(
+                <div style={{fontSize:11,color:C.muted2,marginTop:6}}>
+                  Secili tip: <strong style={{color:C.text}}>{selectedOperationType.code} - {selectedOperationType.name}</strong> · Varsayilan Setup {safeNum(selectedOperationType.defaultSetupSec)}sn · Cycle {safeNum(selectedOperationType.defaultCycleSec)}sn
+                </div>
+              )}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginTop:6}}>
                 <input style={{...inputSt,padding:"7px 9px",fontSize:12}} placeholder="NC Program (opsiyonel)" value={routingForm.ncProgram} onChange={e=>setRoutingForm(f=>({...f,ncProgram:e.target.value}))}/>
                 <input style={{...inputSt,padding:"7px 9px",fontSize:12}} placeholder="Takim Notu (opsiyonel)" value={routingForm.tooling} onChange={e=>setRoutingForm(f=>({...f,tooling:e.target.value}))}/>
               </div>
-              {(selectedPart.routingOps||[]).map(op=>(
+              {(selectedPart.routingOps||[]).map((op,idx,arr)=>(
                 <div key={op.id} style={{marginTop:8,padding:"8px 10px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-                  <div style={{fontSize:12,color:C.muted2}}><span style={{color:C.text,fontWeight:700}}>{op.operation}</span> · {op.machine} · Setup {safeNum(op.setupSec)}sn · Cycle {safeNum(op.cycleSec)}sn {op.ncProgram?`· NC ${op.ncProgram}`:""}</div>
-                  <button onClick={()=>removeRoutingOp(op.id)} style={{...btnSt("danger"),padding:"5px 9px",fontSize:11}}>Sil</button>
+                  <div style={{fontSize:12,color:C.muted2}}>
+                    <span style={{color:C.text,fontWeight:700}}>{op.operationCode?`${op.operationCode} - `:""}{op.operationName||op.operation||"-"}</span> · {op.machine} · Setup {safeNum(op.setupSec)}sn · Cycle {safeNum(op.cycleSec)}sn {op.ncProgram?`· NC ${op.ncProgram}`:""}
+                  </div>
+                  <div style={{display:"flex",gap:6}}>
+                    <button onClick={()=>moveRoutingOp(op.id,-1)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}} disabled={idx===0}>↑</button>
+                    <button onClick={()=>moveRoutingOp(op.id,1)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}} disabled={idx===arr.length-1}>↓</button>
+                    <button onClick={()=>removeRoutingOp(op.id)} style={{...btnSt("danger"),padding:"5px 9px",fontSize:11}}>Sil</button>
+                  </div>
                 </div>
               ))}
               {(selectedPart.routingOps||[]).length===0&&<div style={{fontSize:12,color:C.muted2,marginTop:8}}>Rota adimi yok.</div>}
