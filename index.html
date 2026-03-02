@@ -1245,6 +1245,9 @@ function NavIcon({name,size=18}) {
   if(name==="machines") return (
     <svg viewBox="0 0 24 24" style={st}><rect {...p} x="3" y="5" width="18" height="12" rx="2"/><path {...p} d="M7 17v2m10-2v2M6 9h12M8 13h2m4 0h2"/></svg>
   );
+  if(name==="monitor") return (
+    <svg viewBox="0 0 24 24" style={st}><rect {...p} x="3" y="4" width="18" height="13" rx="2"/><path {...p} d="M8 20h8M12 17v3"/><path {...p} d="M7 12l2-2 2 1 3-3 3 2"/></svg>
+  );
   return null;
 }
 
@@ -9451,6 +9454,341 @@ function MachineConnectivityPrep({currentUser,machines=DEFAULT_MACHINES}) {
   );
 }
 
+function CncMonitorWall({currentUser,machines=DEFAULT_MACHINES}){
+  const [loading,setLoading]=useState(true);
+  const [data,setData]=useState({connectors:[],telemetry:[],entries:[],plans:[],orders:[],kioskSettings:DEFAULT_KIOSK_SETTINGS});
+  const [refreshTick,setRefreshTick]=useState(Date.now());
+  const [isFullscreen,setIsFullscreen]=useState(()=>typeof document!=="undefined"&&Boolean(document.fullscreenElement));
+  const [fsError,setFsError]=useState("");
+  const wallRef=useRef(null);
+
+  const load=useCallback(async()=>{
+    const [connectors,telemetry,entries,plans,orders,kioskCfg]=await Promise.all([
+      window.DB.getAll("machineConnectors"),
+      window.DB.getAll("machineTelemetryMock"),
+      window.DB.getAll("entries"),
+      window.DB.getAll("plans"),
+      window.DB.getAll("orders"),
+      window.DB.getDoc("config","kioskSettings"),
+    ]);
+    setData({
+      connectors,
+      telemetry,
+      entries,
+      plans,
+      orders,
+      kioskSettings:normalizeKioskSettings(kioskCfg||{}),
+    });
+    setRefreshTick(Date.now());
+    setLoading(false);
+  },[]);
+
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    const timer=setInterval(()=>{load();},12000);
+    return ()=>clearInterval(timer);
+  },[load]);
+  useEffect(()=>{
+    if(typeof document==="undefined") return;
+    const onFs=()=>setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange",onFs);
+    return ()=>document.removeEventListener("fullscreenchange",onFs);
+  },[]);
+
+  async function toggleFullscreen(){
+    if(typeof document==="undefined") return;
+    setFsError("");
+    try{
+      if(document.fullscreenElement){
+        await document.exitFullscreen();
+      }else if(wallRef.current&&wallRef.current.requestFullscreen){
+        await wallRef.current.requestFullscreen();
+      }
+    }catch{
+      setFsError("Tam ekran acilamadi.");
+    }
+  }
+
+  function formatCompactDuration(totalSec){
+    const sec=Math.max(0,Math.floor(safeNum(totalSec)));
+    if(sec>=604800) return `${Math.floor(sec/604800)}w`;
+    if(sec>=86400) return `${Math.floor(sec/86400)}d`;
+    if(sec>=3600) return `${Math.floor(sec/3600)}h`;
+    if(sec>=60) return `${Math.floor(sec/60)}m`;
+    return `${sec}s`;
+  }
+  function statusKeyOf(value){
+    const key=String(value||"offline").toLowerCase();
+    if(["running","live"].includes(key)) return "running";
+    if(["idle","waiting"].includes(key)) return "idle";
+    if(["setup"].includes(key)) return "setup";
+    if(["alarm"].includes(key)) return "alarm";
+    if(["stopped","down"].includes(key)) return "stopped";
+    return "offline";
+  }
+  function statusLabelOf(key){
+    if(key==="running") return "Active";
+    if(key==="idle") return "Idle";
+    if(key==="setup") return "Setup";
+    if(key==="alarm") return "Alarm";
+    if(key==="stopped") return "Stopped";
+    return "Not Reported";
+  }
+  function shiftBoundsForNow(now,row){
+    const startMin=hmToMinute(row?.start);
+    const endMin=hmToMinute(row?.end);
+    const base=new Date(now);
+    base.setHours(0,0,0,0);
+    const start=new Date(base);
+    const end=new Date(base);
+    start.setMinutes(startMin===null?360:startMin);
+    end.setMinutes(endMin===null?840:endMin);
+    const s=startMin===null?360:startMin;
+    const e=endMin===null?840:endMin;
+    const nowMin=now.getHours()*60+now.getMinutes();
+    if(s===e){
+      end.setTime(start.getTime()+(8*3600*1000));
+    }else if(s<e){
+      if(nowMin<e&&nowMin<s){
+        start.setDate(start.getDate()-1);
+        end.setDate(end.getDate()-1);
+      }
+    }else{
+      if(nowMin<e){
+        start.setDate(start.getDate()-1);
+      }else{
+        end.setDate(end.getDate()+1);
+      }
+    }
+    if(end<=start) end.setTime(start.getTime()+(8*3600*1000));
+    return {start,end};
+  }
+  function cardPalette(statusKey,score,hasTelemetry){
+    if(!hasTelemetry||statusKey==="offline"){
+      return {
+        header:"linear-gradient(180deg,#8f9398 0%,#7a7f85 100%)",
+        middle:"linear-gradient(180deg,#666a70 0%,#5a5e63 100%)",
+        strip:"#71767b",
+        stripText:"#eef0f2",
+        footer:"linear-gradient(180deg,#9ea2a7 0%,#8f9499 100%)",
+        ringTrack:"rgba(255,255,255,.32)",
+        ring:"rgba(232,236,240,.78)",
+        bar:"#f1f4f6",
+      };
+    }
+    const red={
+      header:"linear-gradient(180deg,#e44765 0%,#ce2d4a 100%)",
+      middle:"linear-gradient(180deg,#f20f41 0%,#e81e4b 100%)",
+      strip:"#cf1840",
+      stripText:"#ffe7ed",
+      footer:"linear-gradient(180deg,#ec5b79 0%,#df4f6d 100%)",
+      ringTrack:"rgba(255,255,255,.35)",
+      ring:"rgba(132,14,38,.72)",
+      bar:"#8f1231",
+    };
+    const orange={
+      header:"linear-gradient(180deg,#5fbb58 0%,#4dae46 100%)",
+      middle:"linear-gradient(180deg,#ff861e 0%,#ff7a16 100%)",
+      strip:"#ea6e10",
+      stripText:"#ffe8d5",
+      footer:"linear-gradient(180deg,#f7a35c 0%,#f1994f 100%)",
+      ringTrack:"rgba(255,255,255,.35)",
+      ring:"rgba(130,56,17,.72)",
+      bar:"#a24d1b",
+    };
+    const green={
+      header:"linear-gradient(180deg,#63c45d 0%,#4db447 100%)",
+      middle:"linear-gradient(180deg,#23b013 0%,#1fa80f 100%)",
+      strip:"#16990f",
+      stripText:"#daffda",
+      footer:"linear-gradient(180deg,#7ccc75 0%,#68bf61 100%)",
+      ringTrack:"rgba(255,255,255,.34)",
+      ring:"rgba(10,111,16,.72)",
+      bar:"#107214",
+    };
+    const base=score>=95?green:(score>=75?orange:red);
+    if(statusKey==="idle"||statusKey==="setup"){
+      return {...base,header:"linear-gradient(180deg,#4e90cc 0%,#3e7fb9 100%)"};
+    }
+    if(statusKey==="alarm"||statusKey==="stopped") return red;
+    return base;
+  }
+
+  if(loading){
+    return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>CNC monitor yukleniyor...</div>;
+  }
+
+  const now=new Date(refreshTick||Date.now());
+  const nowIso=now.toISOString();
+  const today=todayStr();
+  const kioskCfg=normalizeKioskSettings(data.kioskSettings||{});
+  const shiftRows=(kioskCfg.shiftWindows&&kioskCfg.shiftWindows.length>0)?kioskCfg.shiftWindows:DEFAULT_SHIFT_WINDOWS;
+  const nowMinute=(now.getHours()*60)+now.getMinutes();
+  const activeShiftId=resolveShiftIdByMinute(shiftRows,nowMinute);
+  const activeShift=shiftRows.find(s=>s.id===activeShiftId)||shiftRows[0]||DEFAULT_SHIFT_WINDOWS[0];
+  const activeShiftBounds=shiftBoundsForNow(now,activeShift);
+
+  const latestByMachineId={};
+  const latestByMachineName={};
+  [...data.telemetry].sort((a,b)=>(b.collectedAtUtc||b.createdAt||"").localeCompare(a.collectedAtUtc||a.createdAt||"")).forEach(t=>{
+    if(t.machineId&&!latestByMachineId[t.machineId]) latestByMachineId[t.machineId]=t;
+    const key=(t.machineName||t.machine||t.machineCode||"").trim();
+    if(key&&!latestByMachineName[key]) latestByMachineName[key]=t;
+  });
+  const entriesByMachine={};
+  data.entries.filter(e=>e.date===today).forEach(e=>{
+    const key=String(e.machine||"").trim();
+    if(!key) return;
+    if(!entriesByMachine[key]) entriesByMachine[key]=[];
+    entriesByMachine[key].push(e);
+  });
+  Object.keys(entriesByMachine).forEach(key=>{
+    entriesByMachine[key].sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||""));
+  });
+  const planByMachine={};
+  data.plans.forEach(p=>{
+    if(p.date!==today||!p.machine||planByMachine[p.machine]) return;
+    planByMachine[p.machine]=p;
+  });
+  const orderById={};
+  const orderByCode={};
+  data.orders.forEach(o=>{
+    orderById[o.id]=o;
+    const code=String(o.code||"").toUpperCase();
+    if(code&&!orderByCode[code]) orderByCode[code]=o;
+  });
+
+  const baseRows=(data.connectors.length?data.connectors:machines.map((m,idx)=>({id:`virt_${idx}`,machineName:m,code:m}))).map((row,idx)=>({
+    id:row.id||`virt_${idx}`,
+    machineName:row.machineName||row.code||`CNC-${idx+1}`,
+  }));
+
+  const cards=[...baseRows].map((row,idx)=>{
+    const telemetry=latestByMachineId[row.id]||latestByMachineName[row.machineName]||null;
+    const status=statusKeyOf(telemetry?.status);
+    const hasTelemetry=Boolean(telemetry);
+    const dayRows=entriesByMachine[row.machineName]||[];
+    const produced=dayRows.reduce((sum,e)=>sum+safeNum(e.correct)+safeNum(e.wrong),0);
+    const correct=dayRows.reduce((sum,e)=>sum+safeNum(e.correct),0);
+    const plan=planByMachine[row.machineName]||null;
+    const plannedOrder=plan?(orderById[plan.orderId]||orderByCode[String(plan.orderCode||"").toUpperCase()]||null):null;
+    const plannedCycleSec=Math.max(1,safeNum(plannedOrder?.partSec||plan?.orderPartSec||telemetry?.expectedCycleSec||60));
+    const shiftTotalSec=Math.max(1,Math.floor((activeShiftBounds.end.getTime()-activeShiftBounds.start.getTime())/1000));
+    const shiftElapsedSec=Math.max(0,Math.min(shiftTotalSec,Math.floor((now.getTime()-activeShiftBounds.start.getTime())/1000)));
+    const expectedQty=Math.floor(shiftElapsedSec/plannedCycleSec);
+    const deltaQty=produced-expectedQty;
+    let score=expectedQty>0?Math.round((produced/Math.max(1,expectedQty))*100):Math.round(safeNum(telemetry?.oeePct||telemetry?.oee||0));
+    if((!score||score<=0)&&safeNum(telemetry?.utilizationPct)>0) score=Math.round(safeNum(telemetry?.utilizationPct));
+    score=Math.max(0,Math.min(160,score||0));
+    const ringPct=Math.max(0,Math.min(100,score));
+    const partCount=Math.max(safeNum(telemetry?.partCounter),produced,correct);
+    const ts=telemetry?.collectedAtUtc||telemetry?.createdAt||nowIso;
+    const ageSec=Math.max(0,Math.floor((now.getTime()-new Date(ts).getTime())/1000));
+    const runtimeRaw=safeNum(telemetry?.activeSec||telemetry?.runtimeSec||telemetry?.runSec||telemetry?.statusDurationSec);
+    const statusSec=runtimeRaw>0?runtimeRaw:(hasTelemetry?ageSec:(14*24*3600));
+    const statusLine=`${formatCompactDuration(statusSec)} · ${statusLabelOf(status)}`;
+    const bars=dayRows.slice(0,5).reverse().map(e=>Math.max(0,safeNum(e.correct)));
+    while(bars.length<5) bars.unshift(0);
+    const maxBar=Math.max(1,...bars);
+    const gapSec=Math.abs(deltaQty)*plannedCycleSec;
+    const alertCode=`${String(Math.floor(gapSec/60)).padStart(4,"0")}:${pad2(gapSec%60)}`;
+    const flowText=!hasTelemetry
+      ? "No telemetry"
+      : `${alertCode}: ${Math.abs(deltaQty)} parts ${deltaQty>=0?"ahead":"behind"}`;
+    const palette=cardPalette(status,score,hasTelemetry);
+    return {
+      id:row.id||`row_${idx}`,
+      machineName:row.machineName,
+      statusLine,
+      score,
+      ringPct,
+      partCount,
+      flowText,
+      flowTone:deltaQty>=0?"#d8ffd8":"#ffe1e5",
+      bars,
+      maxBar,
+      palette,
+    };
+  }).sort((a,b)=>(a.machineName||"").localeCompare(b.machineName||"","tr"));
+
+  const shiftLabel=activeShift?.label||activeShiftId||"-";
+  const shiftStart=normalizeHm(activeShift?.start,"00:00");
+  const shiftEnd=normalizeHm(activeShift?.end,"00:00");
+  const updateText=new Intl.DateTimeFormat("tr-TR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(now);
+  const monitorUser=String(currentUser?.fullName||"").trim();
+
+  return (
+    <div style={{padding:10}}>
+      <div ref={wallRef} style={{background:"#00050a",borderRadius:24,padding:12,boxShadow:"0 20px 55px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06)"}}>
+        <div style={{borderRadius:16,padding:10,background:"linear-gradient(180deg,#f3f5f8 0%,#d8dde4 100%)",border:"1px solid #b9c1cd"}}>
+          <div style={{background:"#0a0d12",borderRadius:12,padding:10,border:"1px solid #1d2430"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:10}}>
+              <div>
+                <div style={{fontSize:18,fontWeight:800,color:"#f2f6ff",letterSpacing:.4}}>CNC MONITOR</div>
+                <div style={{fontSize:12,color:"#b6c1d4",marginTop:2}}>Vardiya: {shiftLabel} ({shiftStart} - {shiftEnd}) · Son guncelleme: {updateText}{monitorUser?` · ${monitorUser}`:""}</div>
+              </div>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                {fsError&&<span style={{fontSize:11,color:"#ff9b9b"}}>{fsError}</span>}
+                <button onClick={load} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12,borderColor:"#334155",color:"#d5dfef",background:"#101826"}}>Yenile</button>
+                <button onClick={toggleFullscreen} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12,borderColor:"#334155",color:"#d5dfef",background:"#101826"}}>{isFullscreen?"Tam Ekrandan Cik":"Tam Ekran"}</button>
+              </div>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))",gap:8}}>
+              {cards.map(card=>{
+                const ringSize=130;
+                const ringStroke=10;
+                const radius=(ringSize-ringStroke)/2;
+                const circ=2*Math.PI*radius;
+                const dash=(card.ringPct/100)*circ;
+                return (
+                  <div key={card.id} style={{background:"#c9d1dc",borderRadius:7,padding:1,overflow:"hidden",display:"flex",flexDirection:"column",minHeight:300}}>
+                    <div style={{background:card.palette.header,padding:"8px 8px 7px",textAlign:"center",color:"#fff"}}>
+                      <div style={{fontWeight:800,fontSize:"clamp(24px,1.7vw,34px)",lineHeight:.98,textShadow:"0 1px 2px rgba(0,0,0,.35)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.machineName}</div>
+                      <div style={{fontSize:"clamp(12px,.95vw,18px)",fontWeight:600,marginTop:3,opacity:.95,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.statusLine}</div>
+                    </div>
+                    <div style={{background:card.palette.middle,display:"flex",flexDirection:"column",flex:1,minHeight:0}}>
+                      <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"8px 8px 6px"}}>
+                        <div style={{position:"relative",width:ringSize,height:ringSize}}>
+                          <svg width={ringSize} height={ringSize} viewBox={`0 0 ${ringSize} ${ringSize}`}>
+                            <circle cx={ringSize/2} cy={ringSize/2} r={radius} stroke={card.palette.ringTrack} strokeWidth={ringStroke} fill="none"/>
+                            <circle cx={ringSize/2} cy={ringSize/2} r={radius} stroke={card.palette.ring} strokeWidth={ringStroke} fill="none" strokeLinecap="round" strokeDasharray={`${dash} ${Math.max(0,circ-dash)}`} transform={`rotate(-90 ${ringSize/2} ${ringSize/2})`}/>
+                          </svg>
+                          <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",color:"#fff",textShadow:"0 1px 1px rgba(0,0,0,.34)"}}>
+                            <div style={{fontSize:"clamp(28px,2vw,42px)",fontWeight:800,lineHeight:1}}>{card.score>0?`${card.score}%`:"-"}</div>
+                            <div style={{fontSize:12,fontWeight:700,letterSpacing:.6,marginTop:2}}>OEE</div>
+                            <div style={{fontSize:"clamp(32px,2.3vw,48px)",fontWeight:800,lineHeight:1.04,marginTop:2}}>{card.partCount}</div>
+                            <div style={{fontSize:12,fontWeight:700,letterSpacing:.5}}>PARTS</div>
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{background:card.palette.strip,color:card.flowTone,padding:"3px 6px",textAlign:"center",fontSize:12,fontWeight:700,letterSpacing:.2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                        {card.flowText}
+                      </div>
+                    </div>
+                    <div style={{background:card.palette.footer,padding:"6px 6px 4px"}}>
+                      <div style={{height:56,display:"flex",alignItems:"flex-end",gap:5}}>
+                        {card.bars.map((v,idx)=>{
+                          const h=v>0?Math.max(4,Math.round((v/card.maxBar)*52)):4;
+                          return <div key={idx} style={{flex:1,height:h,borderRadius:"1px 1px 0 0",background:card.palette.bar,opacity:v>0?0.95:0.35}}/>;
+                        })}
+                      </div>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:3,fontSize:10,fontWeight:700,color:"#ecffef"}}>
+                        <span>{shiftStart}</span>
+                        <span>{shiftEnd}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
   const [loading,setLoading]=useState(true);
   const [data,setData]=useState({orders:[],sales:[],materials:[],prs:[],connectors:[],telemetry:[],downtimes:[],entries:[],notifs:[],tools:[]});
@@ -11653,6 +11991,7 @@ function App() {
   const canTools=canOrders||canPurchasing||canEntry;
   const canMachinePrep=canOrders;
   const canSmartFactory=canOrders||canReport||canEntry||canPurchasing||canQuality;
+  const canMonitor=canOrders||canReport||canEntry;
   const allTabs=useMemo(()=>{
     if(isOperatorRole){
       return [
@@ -11667,6 +12006,7 @@ function App() {
       {id:"sales",icon:"sales",label:"Satis Siparisleri",group:"Planlama",enabled:canSales},
       {id:"orders",icon:"orders",label:"Is Emirleri",group:"Operasyon",enabled:canOrders},
       {id:"giris",icon:"giris",label:"Uretim Girisi",group:"Operasyon",enabled:canEntry},
+      {id:"cncmonitor",icon:"monitor",label:"CNC Monitor",group:"Operasyon",enabled:canMonitor},
       {id:"downtime",icon:"downtime",label:"Durus Yonetimi",group:"Operasyon",enabled:canDowntime},
       {id:"quality",icon:"quality",label:"Kalite ve Izlenebilirlik",group:"Operasyon",enabled:canQuality},
       {id:"materials",icon:"materials",label:"Malzeme Kutuphanesi",group:"Tedarik ve Stok",enabled:(canOrders||canPurchasing)},
@@ -11684,7 +12024,7 @@ function App() {
       {id:"integrations",icon:"integration",label:"Entegrasyonlar",group:"Sistem",enabled:(canUsers||isAdmin)},
       {id:"users",icon:"users",label:"Ayarlar ve Guvenlik",group:"Sistem",enabled:canUsers},
     ];
-  },[canEntry,canOrders,canSales,canPurchasing,canQuality,canDowntime,canNotifications,canReport,canPlanning,canTools,canCustomers,canMachinePrep,canUsers,isAdmin,canSmartFactory,isOperatorRole]);
+  },[canEntry,canOrders,canSales,canPurchasing,canQuality,canDowntime,canNotifications,canReport,canPlanning,canTools,canCustomers,canMachinePrep,canUsers,isAdmin,canSmartFactory,isOperatorRole,canMonitor]);
   const enabledTabs=useMemo(()=>allTabs.filter(t=>t.enabled),[allTabs]);
   const tabs=enabledTabs;
   const visibleTabs=useMemo(()=>{
@@ -11769,6 +12109,7 @@ function App() {
     if(tab==="orders") return <WorkOrders currentUser={currentUser} machines={machines}/>;
     if(tab==="users") return <AdminUsers currentUser={currentUser} machines={machines} onMachinesUpdate={updateMachines} currentLogo={logoSrc} onLogoUpdate={updateLogo}/>;
     if(tab==="dashboard") return <MRPDashboard currentUser={currentUser} machines={machines}/>;
+    if(tab==="cncmonitor") return <CncMonitorWall currentUser={currentUser} machines={machines}/>;
     if(tab==="mrp") return <MRPRunModule currentUser={currentUser}/>;
     if(tab==="quotes") return <SalesManagement currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")} defaultView="quotes"/>;
     if(tab==="purchase") return <PurchasingModule currentUser={currentUser}/>;
