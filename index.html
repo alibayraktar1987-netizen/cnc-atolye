@@ -4319,7 +4319,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
 // ════════════════════════════════════════════════════════════
 //  DATA ENTRY
 // ════════════════════════════════════════════════════════════
-function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
+function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const [orders,setOrders]=useState([]);
   const [tools,setTools]=useState([]);
   const [plans,setPlans]=useState([]);
@@ -4721,10 +4721,19 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
     .filter(e=>e.machine===form.machine)
     .sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||""))
     .slice(0,3);
+  const entryRootStyle=kioskMode
+    ? {padding:8,display:"flex",flexDirection:"column",gap:10,width:"100%",height:"100dvh",minHeight:"100vh",overflow:"hidden"}
+    : {padding:16,display:"flex",flexDirection:"column",gap:12};
+  const shellStyle=kioskMode
+    ? {background:opTheme.shell,borderRadius:18,border:`1px solid ${C.border}`,padding:10,display:"flex",flexDirection:"column",flex:1,minHeight:0,overflow:"hidden"}
+    : {background:opTheme.shell,borderRadius:18,border:`1px solid ${C.border}`,padding:10};
+  const contentStackStyle=kioskMode
+    ? {marginTop:10,display:"flex",flexDirection:"column",gap:10,flex:1,minHeight:0,overflowY:"auto",paddingRight:2}
+    : {marginTop:10,display:"flex",flexDirection:"column",gap:10};
 
   return (
-    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{background:opTheme.shell,borderRadius:18,border:`1px solid ${C.border}`,padding:10}}>
+    <div style={entryRootStyle}>
+      <div style={shellStyle}>
         <div style={{background:opTheme.panelDark,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:"10px 12px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8,alignItems:"center"}}>
           <div>
             <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.7,textTransform:"uppercase"}}>Tezgah</div>
@@ -4767,9 +4776,10 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
           </div>
         )}
 
-        <div style={{marginTop:10,background:opTheme.panel,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:"12px 10px"}}>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:10}}>
-            <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:10}}>
+        <div style={contentStackStyle}>
+          <div style={{background:opTheme.panel,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:"12px 10px"}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:10}}>
+              <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:10}}>
               <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>SET-UP</div>
               <button onClick={openToolChangeModal} style={{...btnSt("ghost"),width:"100%",padding:"12px 10px",fontSize:13,borderColor:opTheme.border,color:opTheme.text}}>Takım Değişimi</button>
               <div style={{marginTop:8,fontSize:12,color:opTheme.textDim,textAlign:"center"}}>
@@ -4787,7 +4797,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
               </div>
             </div>
 
-            <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:10}}>
+              <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:10}}>
               <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>PRODUCTION</div>
               <div>
                 <span style={{...labelSt,color:opTheme.textMuted}}>İş Emri</span>
@@ -4835,7 +4845,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
               </div>
             </div>
 
-            <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:10}}>
+              <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:10}}>
               <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>BREAKDOWN / STOP</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 <div style={{background:"rgba(255,255,255,.12)",border:`1px solid ${opTheme.border}`,borderRadius:9,padding:"8px 9px",textAlign:"center"}}>
@@ -4859,13 +4869,13 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
                 ))}
               </div>
             </div>
+            </div>
           </div>
-        </div>
 
-        <div style={{marginTop:10,background:opTheme.panelSoft,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:10}}>
-          <div style={{fontSize:19,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>STOCK INFORMATIONS</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:10}}>
-            <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:"10px 9px"}}>
+          <div style={{background:opTheme.panelSoft,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:10}}>
+            <div style={{fontSize:19,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>STOCK INFORMATIONS</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:10}}>
+              <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:"10px 9px"}}>
               <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.6,textTransform:"uppercase",marginBottom:6}}>İş Emri Teknik Dokümanları ({selectedOrderFiles.length})</div>
               {selectedOrderFiles.length===0&&<div style={{fontSize:12,color:opTheme.textDim}}>Doküman yok.</div>}
               {selectedOrderFiles.length>0&&(
@@ -4883,7 +4893,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
                 </div>
               )}
             </div>
-            <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:"10px 9px"}}>
+              <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:"10px 9px"}}>
               <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.6,textTransform:"uppercase",marginBottom:6}}>Takım Stokları ({stockedTools.length})</div>
               {stockedTools.length===0&&<div style={{fontSize:12,color:opTheme.warn}}>Stokta takım yok.</div>}
               {stockedTools.length>0&&(
@@ -4904,11 +4914,12 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
                   })}
                 </div>
               )}
+              </div>
             </div>
           </div>
         </div>
       </div>
-      <div style={{fontSize:12,color:C.muted2}}>Kayıt, yalnızca <strong>Vardiya Sonu</strong> onaylandığında oluşturulur.</div>
+      {!kioskMode&&<div style={{fontSize:12,color:C.muted2}}>Kayıt, yalnızca <strong>Vardiya Sonu</strong> onaylandığında oluşturulur.</div>}
       {showToolModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={()=>setShowToolModal(false)}>
           <div style={{width:"100%",maxWidth:680,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16}} onClick={e=>e.stopPropagation()}>
@@ -4967,7 +4978,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
           </div>
         </div>
       )}
-      {todayEntries.length>0&&(
+      {!kioskMode&&todayEntries.length>0&&(
         <div>
           <span style={{...labelSt,marginTop:4}}>Seçili Gün Girişlerim</span>
           {todayEntries.slice(0,5).map(e=>{
@@ -9130,8 +9141,8 @@ function App() {
   if(!currentUser) return <AuthScreen onLogin={u=>setCurrentUser(u)} logoSrc={logoSrc} themeMode={themeMode} onThemeToggle={()=>updateTheme(themeMode==="dark"?"light":"dark")}/>;
   if(kioskMachine){
     return (
-      <div style={{background:C.bg,minHeight:"100vh",color:C.text}}>
-        <DataEntry currentUser={currentUser} machines={machines}/>
+      <div style={{background:C.bg,color:C.text,width:"100vw",height:"100dvh",minHeight:"100vh",overflow:"hidden"}}>
+        <DataEntry currentUser={currentUser} machines={machines} kioskMode/>
       </div>
     );
   }
