@@ -4375,7 +4375,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       code:String(quote.code||"").toUpperCase(),
       customerId:quote.customerId||"",
       validUntil:quote.validUntil||todayStr(),
-      paymentTermDays:String(Math.max(0,safeNum(quote.paymentTermDays)||30)),
+      paymentTermDays:String(Math.max(0,safeNum(quote.paymentTermDays??30))),
       priority:quote.priority||"normal",
       note:quote.note||"",
       lines:(quote.lines&&quote.lines.length
@@ -4572,7 +4572,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       customerId:customer?.id||"",
       customerName:customer?.name||"",
       validUntil:quoteForm.validUntil||todayStr(),
-      paymentTermDays:Math.max(0,safeNum(quoteForm.paymentTermDays)||0),
+      paymentTermDays:Math.max(0,safeNum(quoteForm.paymentTermDays??30)),
       priority:quoteForm.priority||"normal",
       note:quoteForm.note.trim(),
       lines:normalizedLines,
@@ -4629,7 +4629,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       lines,
       qty:qtyTotal,
       dueDate:earliestDue,
-      paymentTermDays:Math.max(0,safeNum(orderForm.paymentTermDays)||0),
+      paymentTermDays:Math.max(0,safeNum(orderForm.paymentTermDays??30)),
       priority:orderForm.priority||"normal",
       totalAmount:orderTotals.net,
       deliveredQty:0,
@@ -4668,7 +4668,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       customerId:q.customerId||"",
       customerName:q.customerName||"",
       validUntil:q.validUntil||todayStr(),
-      paymentTermDays:Math.max(0,safeNum(q.paymentTermDays)||0),
+      paymentTermDays:Math.max(0,safeNum(q.paymentTermDays??30)),
       priority:q.priority||"normal",
       note:(q.note||"").trim(),
       lines,
@@ -4702,7 +4702,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       lines,
       qty:qty>0?qty:Math.max(0,safeNum(o.qty)),
       dueDate:o.dueDate||todayStr(),
-      paymentTermDays:Math.max(0,safeNum(o.paymentTermDays)||0),
+      paymentTermDays:Math.max(0,safeNum(o.paymentTermDays??30)),
       priority:o.priority||"normal",
       totalAmount:net,
       deliveredQty:0,
@@ -4807,7 +4807,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       lines:normalizedQuoteLines,
       qty:qtyTotal,
       dueDate,
-      paymentTermDays:Math.max(0,safeNum(q.paymentTermDays)||0),
+      paymentTermDays:Math.max(0,safeNum(q.paymentTermDays??30)),
       priority:q.priority||"normal",
       totalAmount:safeNum(q.totalAmount),
       deliveredQty:0,
@@ -5068,7 +5068,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     const ok=await window.DB.updateDoc("salesOrders",order.id,patch);
     if(!ok){alert("Teslim kaydi eklenemedi.");return;}
     await addAuditLog(currentUser.id,"salesOrder",order.id,"delivery_add",order,{...order,...patch},{module:"sales"});
-    const paymentTermDays=Math.max(0,safeNum(order.paymentTermDays)||0);
+    const paymentTermDays=Math.max(0,safeNum(order.paymentTermDays??30));
     const amount=Math.max(0,estimateDeliveryAmount(order,qty));
     if(amount>0){
       const dueDate=addDays(deliveryDate,paymentTermDays);
@@ -5432,7 +5432,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                           <td style={{padding:"10px 12px"}}>
                             <div style={{fontWeight:600,color:C.text}}>{o.customerName||"-"}</div>
                             <div style={{fontSize:11,color:C.muted2}}>Adet: {safeNum(o.qty)} · Teslim: {safeNum(o.deliveredQty)}</div>
-                            <div style={{fontSize:11,color:C.muted2}}>Vade: {Math.max(0,safeNum(o.paymentTermDays)||0)} gun</div>
+                            <div style={{fontSize:11,color:C.muted2}}>Vade: {Math.max(0,safeNum(o.paymentTermDays??30))} gun</div>
                             {(o.deliveries||[]).length>0&&<div style={{fontSize:11,color:C.muted2}}>Son: {(o.deliveries||[]).slice(-1)[0]?.date||"-"}</div>}
                           </td>
                           <td style={{padding:"10px 12px",color:C.muted2}}>{o.dueDate||"-"}</td>
@@ -12425,7 +12425,7 @@ function PurchasingModule({currentUser}){
     const supplier=suppliers.find(s=>s.id===quoteForm.supplierId);
     if(!req||!supplier){alert("Talep veya tedarikci bulunamadi.");return;}
     const supplierGroup=resolveSupplierGroup(supplier);
-    const payload={requestId:req.id,requestCode:req.code||"",supplierId:supplier.id,supplierName:supplier.name||"",supplierGroupId:supplierGroup.id||"",supplierGroupName:supplierGroup.name||"Grupsuz",supplierGroupColor:supplierGroup.color||"#64748b",unitPrice:Math.max(0,safeNum(quoteForm.unitPrice)),leadTimeDays:Math.max(0,safeNum(quoteForm.leadTimeDays)),paymentTermDays:Math.max(0,safeNum(quoteForm.paymentTermDays)||0),currency:quoteForm.currency||supplier.currency||"TRY",total:Math.max(0,safeNum(quoteForm.unitPrice))*safeNum(req.qty),note:quoteForm.note.trim(),status:"new",updatedAt:new Date().toISOString()};
+    const payload={requestId:req.id,requestCode:req.code||"",supplierId:supplier.id,supplierName:supplier.name||"",supplierGroupId:supplierGroup.id||"",supplierGroupName:supplierGroup.name||"Grupsuz",supplierGroupColor:supplierGroup.color||"#64748b",unitPrice:Math.max(0,safeNum(quoteForm.unitPrice)),leadTimeDays:Math.max(0,safeNum(quoteForm.leadTimeDays)),paymentTermDays:Math.max(0,safeNum(quoteForm.paymentTermDays??30)),currency:quoteForm.currency||supplier.currency||"TRY",total:Math.max(0,safeNum(quoteForm.unitPrice))*safeNum(req.qty),note:quoteForm.note.trim(),status:"new",updatedAt:new Date().toISOString()};
     const id=await window.DB.addDoc("supplierQuotes",payload);
     if(!id){alert("Teklif kaydedilemedi.");return;}
     setQuotes(prev=>[{id,...payload},...prev]);
@@ -12434,7 +12434,7 @@ function PurchasingModule({currentUser}){
   async function quoteToPo(q){
     const req=reqById[q.requestId];
     if(!req){alert("Talep bulunamadi.");return;}
-    const payload={code:`PO-${String(Date.now()).slice(-6)}`,requestId:req.id,requestCode:req.code||"",supplierId:q.supplierId,supplierName:q.supplierName||"",supplierGroupId:q.supplierGroupId||"",supplierGroupName:q.supplierGroupName||"",supplierGroupColor:q.supplierGroupColor||"",materialId:req.materialId||"",materialCode:req.materialCode||"",materialName:req.materialName||"",qty:safeNum(req.qty),unitPrice:safeNum(q.unitPrice),currency:q.currency||"TRY",total:safeNum(req.qty)*safeNum(q.unitPrice),orderDate:todayStr(),expectedDate:addDays(todayStr(),safeNum(q.leadTimeDays)),paymentTermDays:Math.max(0,safeNum(q.paymentTermDays)||0),receivedQty:0,rejectedQty:0,status:"ordered",createdBy:currentUser.id,updatedAt:new Date().toISOString()};
+    const payload={code:`PO-${String(Date.now()).slice(-6)}`,requestId:req.id,requestCode:req.code||"",supplierId:q.supplierId,supplierName:q.supplierName||"",supplierGroupId:q.supplierGroupId||"",supplierGroupName:q.supplierGroupName||"",supplierGroupColor:q.supplierGroupColor||"",materialId:req.materialId||"",materialCode:req.materialCode||"",materialName:req.materialName||"",qty:safeNum(req.qty),unitPrice:safeNum(q.unitPrice),currency:q.currency||"TRY",total:safeNum(req.qty)*safeNum(q.unitPrice),orderDate:todayStr(),expectedDate:addDays(todayStr(),safeNum(q.leadTimeDays)),paymentTermDays:Math.max(0,safeNum(q.paymentTermDays??30)),receivedQty:0,rejectedQty:0,status:"ordered",createdBy:currentUser.id,updatedAt:new Date().toISOString()};
     const id=await window.DB.addDoc("purchaseOrders",payload);
     if(!id){alert("PO olusturulamadi.");return;}
     await setRequestStatus(req,"ordered");
@@ -12459,7 +12459,7 @@ function PurchasingModule({currentUser}){
       if(mat) await window.DB.updateDoc("materials",mat.id,{stock:safeNum(mat.stock)+accepted,updatedAt:new Date().toISOString()});
     }
     if(accepted>0){
-      const paymentTermDays=Math.max(0,safeNum(po.paymentTermDays)||0);
+      const paymentTermDays=Math.max(0,safeNum(po.paymentTermDays??30));
       const dueDate=addDays(recvForm.receiptDate||todayStr(),paymentTermDays);
       const amount=Math.max(0,accepted*safeNum(po.unitPrice));
       if(amount>0){
@@ -12602,7 +12602,7 @@ function PurchasingModule({currentUser}){
                 <div style={{color:C.text,fontWeight:700}}>{q.requestCode} · {q.supplierName} {q.supplierGroupName?`· ${q.supplierGroupName}`:""}</div>
                 <div style={{color:C.muted2}}>{moneyFmt(q.unitPrice)} / {q.currency}</div>
                 <div style={{color:C.muted2}}>Toplam {moneyFmt(q.total)}</div>
-                <div style={{color:C.muted2}}>LT {q.leadTimeDays}g · Vade {Math.max(0,safeNum(q.paymentTermDays)||0)}g</div>
+                <div style={{color:C.muted2}}>LT {q.leadTimeDays}g · Vade {Math.max(0,safeNum(q.paymentTermDays??30))}g</div>
                 <button onClick={()=>quoteToPo(q)} style={{...btnSt("green"),padding:"6px 8px",fontSize:11}}>PO Olustur</button>
               </div>
             ))}
@@ -13664,6 +13664,211 @@ function CostingModule(){
   );
 }
 
+function FinanceModule({currentUser}){
+  const [loading,setLoading]=useState(true);
+  const [rows,setRows]=useState([]);
+  const [flowFilter,setFlowFilter]=useState("all");
+  const [statusFilter,setStatusFilter]=useState("all");
+  const [dateFrom,setDateFrom]=useState("");
+  const [dateTo,setDateTo]=useState("");
+  const [search,setSearch]=useState("");
+  const [sortDir,setSortDir]=useState("asc");
+
+  const load=useCallback(async()=>{
+    const list=await window.DB.getAll("financeLedger");
+    setRows(list.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="finance") return;
+      if(d.type==="refresh") load();
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load]);
+
+  function statusBucket(row){
+    const s=String(row?.status||"planned").toLowerCase();
+    if(["collected","paid"].includes(s)) return "completed";
+    if(s==="cancelled") return "cancelled";
+    return "planned";
+  }
+  function statusLabel(row){
+    const bucket=statusBucket(row);
+    if(bucket==="completed") return row.flow==="tahsilat"?"Tahsil Edildi":"Odendi";
+    if(bucket==="cancelled") return "Iptal";
+    return "Planlandi";
+  }
+  function statusColor(row){
+    const bucket=statusBucket(row);
+    if(bucket==="completed") return C.green;
+    if(bucket==="cancelled") return C.red;
+    return C.warn;
+  }
+  function flowLabel(flow){
+    return flow==="odeme"?"Odeme":"Tahsilat";
+  }
+  function amountText(row){
+    return `${safeNum(row.amount).toFixed(2)} ${String(row.currency||"TRY").toUpperCase()}`;
+  }
+  function sumByCurrency(list){
+    const map={};
+    (Array.isArray(list)?list:[]).forEach(row=>{
+      const code=String(row?.currency||"TRY").toUpperCase();
+      if(!map[code]) map[code]=0;
+      map[code]+=safeNum(row?.amount);
+    });
+    return map;
+  }
+  function formatCurrencyMap(map){
+    const keys=Object.keys(map||{});
+    if(keys.length===0) return "0.00 TRY";
+    return keys.sort().map(code=>`${safeNum(map[code]).toFixed(2)} ${code}`).join(" + ");
+  }
+  function netCurrencyMap(inMap,outMap){
+    const keys=[...new Set([...Object.keys(inMap||{}),...Object.keys(outMap||{})])].sort();
+    if(keys.length===0) return "0.00 TRY";
+    return keys.map(code=>`${(safeNum(inMap?.[code])-safeNum(outMap?.[code])).toFixed(2)} ${code}`).join(" + ");
+  }
+  function inRange(row){
+    const ymd=String(row.dueDate||row.eventDate||"");
+    if(dateFrom&&(!ymd||ymd<dateFrom)) return false;
+    if(dateTo&&(!ymd||ymd>dateTo)) return false;
+    return true;
+  }
+  async function setLedgerStatus(row,next){
+    if((row.status||"planned")===next) return;
+    const patch={status:next,updatedAt:new Date().toISOString(),updatedBy:currentUser?.id||""};
+    const ok=await window.DB.updateDoc("financeLedger",row.id,patch);
+    if(!ok){alert("Finans satiri guncellenemedi.");return;}
+    setRows(prev=>prev.map(x=>x.id===row.id?{...x,...patch}:x));
+  }
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+
+  const q=search.trim().toLowerCase();
+  const filtered=rows.filter(row=>{
+    if(flowFilter!=="all"&&(row.flow||"tahsilat")!==flowFilter) return false;
+    if(statusFilter!=="all"&&statusBucket(row)!==statusFilter) return false;
+    if(!inRange(row)) return false;
+    if(!q) return true;
+    return (
+      (row.customerName||"").toLowerCase().includes(q)||
+      (row.supplierName||"").toLowerCase().includes(q)||
+      (row.orderCode||"").toLowerCase().includes(q)||
+      (row.poCode||"").toLowerCase().includes(q)||
+      (row.sourceCode||"").toLowerCase().includes(q)
+    );
+  });
+  const sorted=[...filtered].sort((a,b)=>{
+    const av=String(a.dueDate||a.eventDate||a.createdAt||"");
+    const bv=String(b.dueDate||b.eventDate||b.createdAt||"");
+    const cmp=av.localeCompare(bv);
+    return sortDir==="asc"?cmp:-cmp;
+  });
+  const openTahsilatMap=sumByCurrency(rows.filter(r=>(r.flow||"tahsilat")==="tahsilat"&&statusBucket(r)==="planned"));
+  const openOdemeMap=sumByCurrency(rows.filter(r=>(r.flow||"tahsilat")==="odeme"&&statusBucket(r)==="planned"));
+  const doneTahsilatMap=sumByCurrency(rows.filter(r=>(r.flow||"tahsilat")==="tahsilat"&&statusBucket(r)==="completed"));
+  const doneOdemeMap=sumByCurrency(rows.filter(r=>(r.flow||"tahsilat")==="odeme"&&statusBucket(r)==="completed"));
+  const openTahsilatText=formatCurrencyMap(openTahsilatMap);
+  const openOdemeText=formatCurrencyMap(openOdemeMap);
+  const doneTahsilatText=formatCurrencyMap(doneTahsilatMap);
+  const doneOdemeText=formatCurrencyMap(doneOdemeMap);
+  const netOpenText=netCurrencyMap(openTahsilatMap,openOdemeMap);
+
+  return (
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:8}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Acik Tahsilat</div><div style={{fontSize:18,color:C.green,fontWeight:800}}>{openTahsilatText}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Acik Odeme</div><div style={{fontSize:18,color:C.red,fontWeight:800}}>{openOdemeText}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Kapanan Tahsilat</div><div style={{fontSize:18,color:C.green,fontWeight:800}}>{doneTahsilatText}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Kapanan Odeme</div><div style={{fontSize:18,color:C.red,fontWeight:800}}>{doneOdemeText}</div></div>
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
+        <div style={{gridColumn:"1 / -1"}}>
+          <span style={labelSt}>Ara (cari / belge)</span>
+          <input style={inputSt} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Musteri, tedarikci, SIP/PO kodu"/>
+        </div>
+        <div>
+          <span style={labelSt}>Akis</span>
+          <select style={inputSt} value={flowFilter} onChange={e=>setFlowFilter(e.target.value)}>
+            <option value="all">Tum Akislar</option>
+            <option value="tahsilat">Tahsilat</option>
+            <option value="odeme">Odeme</option>
+          </select>
+        </div>
+        <div>
+          <span style={labelSt}>Durum</span>
+          <select style={inputSt} value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
+            <option value="all">Tum Durumlar</option>
+            <option value="planned">Planlandi</option>
+            <option value="completed">Tamamlandi</option>
+            <option value="cancelled">Iptal</option>
+          </select>
+        </div>
+        <div>
+          <span style={labelSt}>Vade Baslangic</span>
+          <input style={inputSt} type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value||"")}/>
+        </div>
+        <div>
+          <span style={labelSt}>Vade Bitis</span>
+          <input style={inputSt} type="date" value={dateTo} onChange={e=>setDateTo(e.target.value||"")}/>
+        </div>
+        <div style={{display:"flex",alignItems:"flex-end"}}>
+          <button onClick={()=>setSortDir(v=>v==="asc"?"desc":"asc")} style={{...btnSt("ghost"),padding:"9px 10px",fontSize:12,width:"100%"}}>Sirala: {sortDir==="asc"?"Eski->Yeni":"Yeni->Eski"}</button>
+        </div>
+        <div style={{display:"flex",alignItems:"flex-end"}}>
+          <button onClick={()=>{setFlowFilter("all");setStatusFilter("all");setDateFrom("");setDateTo("");setSearch("");}} style={{...btnSt("ghost"),padding:"9px 10px",fontSize:12,width:"100%"}}>Filtreleri Temizle</button>
+        </div>
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:8,flexWrap:"wrap"}}>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Finans Akisi ({sorted.length})</div>
+          <div style={{fontSize:12,color:C.accent,fontWeight:700}}>Acik Net: {netOpenText}</div>
+        </div>
+        {sorted.map(row=>(
+          <div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr auto",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,alignItems:"center"}}>
+            <div>
+              <div style={{color:C.text,fontWeight:700}}>{row.dueDate||"-"}</div>
+              <div style={{fontSize:11,color:C.muted2}}>Kayit: {row.eventDate||"-"}</div>
+            </div>
+            <div>
+              <Badge label={flowLabel(row.flow||"tahsilat")} color={(row.flow||"tahsilat")==="tahsilat"?C.accent:C.warn}/>
+              <div style={{fontSize:11,color:C.muted2,marginTop:3}}>Vade {Math.max(0,safeNum(row.paymentTermDays??30))} gun</div>
+            </div>
+            <div>
+              <div style={{color:C.text,fontWeight:700}}>{amountText(row)}</div>
+              <div style={{fontSize:11,color:C.muted2}}>Miktar {safeNum(row.qty)}</div>
+            </div>
+            <div style={{color:C.muted2}}>
+              <div style={{color:C.text,fontWeight:700}}>{row.customerName||row.supplierName||"-"}</div>
+              <div style={{fontSize:11}}>Kod: {(row.customerId||row.supplierId||"-")}</div>
+            </div>
+            <div style={{color:C.muted2}}>
+              <div style={{color:C.text,fontWeight:700}}>{row.sourceCode||row.orderCode||row.poCode||"-"}</div>
+              <div style={{fontSize:11}}>{row.sourceType==="purchase_receipt"?"Mal Kabul":"Teslimat"}</div>
+            </div>
+            <div style={{display:"flex",gap:6,justifyContent:"flex-end",alignItems:"center",flexWrap:"wrap"}}>
+              <Badge label={statusLabel(row)} color={statusColor(row)}/>
+              <button onClick={()=>setLedgerStatus(row,"planned")} style={{...btnSt("ghost"),padding:"5px 7px",fontSize:11,opacity:statusBucket(row)==="planned"?0.7:1}} disabled={statusBucket(row)==="planned"}>Plan</button>
+              {(row.flow||"tahsilat")==="tahsilat"
+                ? <button onClick={()=>setLedgerStatus(row,"collected")} style={{...btnSt("green"),padding:"5px 7px",fontSize:11,opacity:(row.status||"")==="collected"?0.7:1}} disabled={(row.status||"")==="collected"}>Tahsil</button>
+                : <button onClick={()=>setLedgerStatus(row,"paid")} style={{...btnSt("green"),padding:"5px 7px",fontSize:11,opacity:(row.status||"")==="paid"?0.7:1}} disabled={(row.status||"")==="paid"}>Odendi</button>}
+              <button onClick={()=>setLedgerStatus(row,"cancelled")} style={{...btnSt("danger"),padding:"5px 7px",fontSize:11,opacity:(row.status||"")==="cancelled"?0.7:1}} disabled={(row.status||"")==="cancelled"}>Iptal</button>
+            </div>
+          </div>
+        ))}
+        {sorted.length===0&&<div style={{fontSize:12,color:C.muted2,padding:"8px 2px"}}>Filtreye uygun finans satiri yok.</div>}
+      </div>
+    </div>
+  );
+}
+
 function IntegrationsReadinessModule(){
   return (
     <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
@@ -14291,6 +14496,7 @@ function App() {
       {id:"customers",icon:"customers",label:"Musteriler",group:"Tedarik ve Stok",enabled:(canCustomers||canSales)},
       {id:"rapor",icon:"rapor",label:"Raporlar",group:"Analiz ve Yonetim",enabled:canReport},
       {id:"notifications",icon:"notifications",label:"Bildirim Merkezi",group:"Analiz ve Yonetim",enabled:(canNotifications||canUsers||canSales||canPurchasing)},
+      {id:"finance",icon:"cost",label:"Finans",group:"Analiz ve Yonetim",enabled:(canSales||canPurchasing||canReport)},
       {id:"cost",icon:"cost",label:"Maliyetleme",group:"Analiz ve Yonetim",enabled:(canOrders||canReport||canSales)},
       {id:"materialquote",icon:"cost",label:"Malzeme Teklif",group:"Analiz ve Yonetim",enabled:(canOrders||canSales||canPurchasing||canReport)},
       {id:"progenergy",icon:"integration",label:"Program ve Enerji",group:"Analiz ve Yonetim",enabled:canSmartFactory},
@@ -14398,6 +14604,7 @@ function App() {
     if(tab==="downtime") return <DowntimeModule currentUser={currentUser} machines={machines}/>;
     if(tab==="quality") return <QualityTraceabilityModule currentUser={currentUser} machines={machines}/>;
     if(tab==="notifications") return <NotificationCenterModule currentUser={currentUser}/>;
+    if(tab==="finance") return <FinanceModule currentUser={currentUser}/>;
     if(tab==="cost") return <CostingModule/>;
     if(tab==="materialquote") return <MaterialQuoteBridgeModule/>;
     if(tab==="progenergy") return <ProgramAndEnergyModule currentUser={currentUser} machines={machines}/>;
