@@ -5677,10 +5677,10 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const machineTelemetry=latestTelemetryByMachine[form.machine]||null;
   const machineStatus=String(machineTelemetry?.status||"offline").toLowerCase();
   const statusMeta=(()=>{
-    if(machineStatus==="running") return {label:"CALISIYOR",color:"#27d67a",mode:"running"};
-    if(machineStatus==="idle"||machineStatus==="setup") return {label:"DURMADA",color:"#ffb247",mode:"idle"};
+    if(machineStatus==="running") return {label:"ÇALIŞIYOR",color:"#27d67a",mode:"running"};
+    if(machineStatus==="idle"||machineStatus==="setup") return {label:"BEKLEMEDE",color:"#ffb247",mode:"idle"};
     if(machineStatus==="alarm") return {label:"ALARM",color:"#ff6161",mode:"alarm"};
-    return {label:"OFFLINE",color:"#ff6161",mode:"offline"};
+    return {label:"ÇEVRİMDIŞI",color:"#ff6161",mode:"offline"};
   })();
   const opTheme=(()=>{
     if(statusMeta.mode==="running"){
@@ -5863,12 +5863,12 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const partBars=recentMachineEntries.slice(0,6).reverse();
   const maxPartBar=Math.max(1,...partBars.map(r=>safeNum(r.correct)));
   const cycleRows=[
-    {label:"Curr",value:cycleCurrentSec,color:"#b58ef4"},
-    {label:"Ave",value:cycleAvgSec,color:"#c7cfe0"},
-    {label:"Exp",value:cycleExpectedSec,color:"#d4dce9"},
-    {label:"Last",value:cycleLastSec,color:"#d4dce9"},
-    {label:"Wst",value:cycleWorstSec,color:"#d4dce9"},
-    {label:"Bst",value:cycleBestSec,color:"#d4dce9"},
+    {label:"Anlık",value:cycleCurrentSec,color:"#b58ef4"},
+    {label:"Ort",value:cycleAvgSec,color:"#c7cfe0"},
+    {label:"Hedef",value:cycleExpectedSec,color:"#d4dce9"},
+    {label:"Son",value:cycleLastSec,color:"#d4dce9"},
+    {label:"Maks",value:cycleWorstSec,color:"#d4dce9"},
+    {label:"Min",value:cycleBestSec,color:"#d4dce9"},
   ];
   const cycleMax=Math.max(1,...cycleRows.map(r=>Math.max(1,safeNum(r.value))));
   const actionBtnStyle={
@@ -5893,8 +5893,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
           <div style={{background:"#edf1f6",borderRadius:14,overflow:"hidden",border:"1px solid #cdd5e0"}}>
             <div style={{background:"linear-gradient(120deg,#3ca36b 0%,#68b993 100%)",padding:"18px 22px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:12,alignItems:"center",color:"#e7fff2"}}>
               <div>
-                <div style={{fontSize:40,fontWeight:800,lineHeight:1,letterSpacing:.4}}>{form.selectedOrder?.code||"JOB-0000"}</div>
-                <div style={{fontSize:20,fontWeight:700,marginTop:6}}>Machine: {form.machine}</div>
+                <div style={{fontSize:40,fontWeight:800,lineHeight:1,letterSpacing:.4}}>{form.selectedOrder?.code||"IE-0000"}</div>
+                <div style={{fontSize:20,fontWeight:700,marginTop:6}}>Tezgah: {form.machine}</div>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:7,alignItems:"flex-start"}}>
                 <button onClick={()=>setShowPicker(v=>!v)} style={{border:"1px solid rgba(255,255,255,.45)",background:"rgba(8,29,19,.22)",color:"#f2fff7",borderRadius:10,padding:"8px 12px",fontWeight:700,fontSize:14,cursor:"pointer"}}>
@@ -5913,14 +5913,14 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",justifyContent:"center",gap:4}}>
                 <div style={{display:"flex",alignItems:"center",gap:9,fontSize:34,fontWeight:800,color:"#f4fff8"}}>
                   <span style={{width:12,height:12,borderRadius:"50%",background:statusMeta.color,display:"inline-block"}}/>
-                  Active : {fmtActiveShort(activeSec)}
+                  Aktif : {fmtActiveShort(activeSec)}
                 </div>
                 <div style={{fontSize:15,fontWeight:700,color:"rgba(236,255,247,.9)"}}>{statusMeta.label} · {selectedShiftMeta.label}</div>
               </div>
             </div>
 
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",borderBottom:"1px solid #d5dde8",background:"#f7f9fc"}}>
-              {[["Part Count",`${producedQty} Parts`],["All Downtime",fmtDurationLong(allDowntimeSec)],["Active Alarms",String(activeAlarmCount)],["Current Cycle Time",`${Math.round(cycleCurrentSec)}s`],["Parts Goal",selectedOrderQty>0?`%${goalPct}`:"-"],["Utilization",`%${utilizationPct}`],["OEE",`%${oeePct}`]].map(([label,val],idx)=>(
+              {[["Parça Sayısı",`${producedQty} Adet`],["Toplam Duruş",fmtDurationLong(allDowntimeSec)],["Aktif Alarm",String(activeAlarmCount)],["Anlık Çevrim",`${Math.round(cycleCurrentSec)}s`],["Hedef Oranı",selectedOrderQty>0?`%${goalPct}`:"-"],["Kullanım",`%${utilizationPct}`],["OEE",`%${oeePct}`]].map(([label,val],idx)=>(
                 <div key={label} style={{padding:"12px 10px",borderRight:idx===6?"none":"1px solid #d5dde8",textAlign:"center"}}>
                   <div style={{fontSize:14,color:"#8594aa",fontWeight:700}}>{label}</div>
                   <div style={{fontSize:37,color:"#49566e",fontWeight:800,marginTop:2}}>{val}</div>
@@ -5949,7 +5949,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
 
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",alignItems:"stretch",minHeight:296,borderBottom:"1px solid #d5dde8",background:"#eef2f7"}}>
               <div style={{padding:"24px 20px",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",gap:8}}>
-                <div style={{fontSize:56,color:"#667790",fontWeight:600,textAlign:"center"}}>You Have Made</div>
+                <div style={{fontSize:56,color:"#667790",fontWeight:600,textAlign:"center"}}>Üretilen</div>
                 <div style={{fontSize:134,color:"#43546c",fontWeight:800,lineHeight:.95}}>{producedQty}</div>
               </div>
               <div style={{padding:"10px 0",display:"flex",justifyContent:"center",alignItems:"center"}}>
@@ -5960,21 +5960,21 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                   </svg>
                   <div style={{position:"absolute",textAlign:"center",color:"#5b6b83"}}>
                     <div style={{fontSize:69,fontWeight:800,color:"#4b5b73",lineHeight:1}}>{behindQty}</div>
-                    <div style={{fontSize:23,fontWeight:600}}>Parts Behind</div>
+                    <div style={{fontSize:23,fontWeight:600}}>Eksik Parça</div>
                     <div style={{marginTop:10,fontSize:62,fontWeight:800,color:scrapQty>0?"#c95757":"#4b5b73",lineHeight:1}}>{scrapQty}</div>
-                    <div style={{fontSize:20,fontWeight:600}}>Rejects</div>
+                    <div style={{fontSize:20,fontWeight:600}}>Hatalı Parça</div>
                   </div>
                 </div>
               </div>
               <div style={{padding:"24px 20px",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",gap:8}}>
-                <div style={{fontSize:52,color:"#667790",fontWeight:600,textAlign:"center"}}>Expected To Have Made</div>
+                <div style={{fontSize:52,color:"#667790",fontWeight:600,textAlign:"center"}}>Beklenen Üretim</div>
                 <div style={{fontSize:134,color:"#65758d",fontWeight:800,lineHeight:.95}}>{expectedQty||"-"}</div>
               </div>
             </div>
 
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:18,padding:"14px 16px",background:"#f2f5fa",borderBottom:"1px solid #d5dde8"}}>
               <div style={{background:"#fff",border:"1px solid #d8dfe9",borderRadius:10,padding:"10px 12px"}}>
-                <div style={{fontSize:17,fontWeight:800,color:"#4b5a72",marginBottom:8}}>Parts Made</div>
+                <div style={{fontSize:17,fontWeight:800,color:"#4b5a72",marginBottom:8}}>Parça Üretimi</div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(6,minmax(0,1fr))",gap:8,alignItems:"end",height:120}}>
                   {(partBars.length?partBars:[{id:"x1",correct:0,createdAt:""},{id:"x2",correct:0,createdAt:""},{id:"x3",correct:0,createdAt:""},{id:"x4",correct:0,createdAt:""},{id:"x5",correct:0,createdAt:""},{id:"x6",correct:0,createdAt:""}]).map((r,idx)=>{
                     const val=Math.max(0,safeNum(r.correct));
@@ -5991,7 +5991,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                 </div>
               </div>
               <div style={{background:"#fff",border:"1px solid #d8dfe9",borderRadius:10,padding:"10px 12px"}}>
-                <div style={{fontSize:17,fontWeight:800,color:"#4b5a72",marginBottom:8}}>Cycle Time</div>
+                <div style={{fontSize:17,fontWeight:800,color:"#4b5a72",marginBottom:8}}>Çevrim Süresi</div>
                 <div style={{display:"flex",flexDirection:"column",gap:6}}>
                   {cycleRows.map(row=>(
                     <div key={row.label} style={{display:"grid",gridTemplateColumns:"42px 1fr auto",alignItems:"center",gap:8}}>
@@ -6008,9 +6008,9 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
 
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",background:"#fff"}}>
               <button onClick={()=>setShowPicker(v=>!v)} style={{...actionBtnStyle,fontSize:26,color:"#9aa8bb"}}>☰</button>
-              <button onClick={openShiftEndModal} style={actionBtnStyle}>⏹ Stop Job</button>
-              <button onClick={openShiftEndModal} style={actionBtnStyle}>⊘ Reject Parts</button>
-              <button onClick={openToolChangeModal} style={{...actionBtnStyle,borderRight:"none"}}>💬 Categorize</button>
+              <button onClick={openShiftEndModal} style={actionBtnStyle}>⏹ İşi Durdur</button>
+              <button onClick={openShiftEndModal} style={actionBtnStyle}>⊘ Hata Girişi</button>
+              <button onClick={openToolChangeModal} style={{...actionBtnStyle,borderRight:"none"}}>💬 Kategori</button>
             </div>
           </div>
         </div>
