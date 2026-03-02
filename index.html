@@ -649,7 +649,13 @@ async function autoBalloonPdfDrawing(file,{pageNumber=1,maxItems=260}={}){
     if(Math.abs(dy)>6) return dy;
     return a.x-b.x;
   });
-  const limited=uniqueRows.slice(0,Math.max(1,Math.min(500,Number(maxItems)||260)));
+    const limited=uniqueRows.slice(0,Math.max(1,Math.min(500,Number(maxItems)||260)));
+  const tokens=uniqueRows.map(row=>({
+    text:row.text,
+    page:safePage,
+    xPct:Math.max(0,Math.min(100,(row.x/Math.max(1,viewport.width))*100)),
+    yPct:Math.max(0,Math.min(100,(row.yTop/Math.max(1,viewport.height))*100)),
+  }));
   const balloons=limited.map((row,idx)=>({
     no:idx+1,
     text:row.text,
@@ -668,6 +674,7 @@ async function autoBalloonPdfDrawing(file,{pageNumber=1,maxItems=260}={}){
     pageWidth:viewport.width,
     pageHeight:viewport.height,
     previewDataUrl:canvas.toDataURL("image/png"),
+    tokens,
     balloons,
   };
 }
@@ -9479,9 +9486,13 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
   const [balloonForm,setBalloonForm]=useState({orderId:"",fileId:"",page:"1"});
   const [balloonBusy,setBalloonBusy]=useState(false);
   const [balloonSaveBusy,setBalloonSaveBusy]=useState(false);
+  const [balloonDeleteBusyId,setBalloonDeleteBusyId]=useState("");
   const [balloonError,setBalloonError]=useState("");
   const [balloonPreview,setBalloonPreview]=useState(null);
   const [editableBalloons,setEditableBalloons]=useState([]);
+  const [drawSelection,setDrawSelection]=useState(null);
+  const [lastSelection,setLastSelection]=useState(null);
+  const previewDrawRef=useRef(null);
   const load=useCallback(async()=>{
     const [o,s,t,i,f,b]=await Promise.all([
       window.DB.getAll("orders"),
@@ -9588,6 +9599,120 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
       }];
     });
   }
+  function clampPct(v){
+    return Math.max(0,Math.min(100,safeNum(v)));
+  }
+  function normalizeSelectionRect(sel){
+    if(!sel) return null;
+    const x1=clampPct(sel.x1);
+    const y1=clampPct(sel.y1);
+    const x2=clampPct(sel.x2);
+    const y2=clampPct(sel.y2);
+    const left=Math.min(x1,x2);
+    const top=Math.min(y1,y2);
+    const width=Math.abs(x2-x1);
+    const height=Math.abs(y2-y1);
+    return {xPct:left,yPct:top,wPct:width,hPct:height};
+  }
+  function previewPointFromEvent(ev){
+    const host=previewDrawRef.current;
+    if(!host) return null;
+    const rect=host.getBoundingClientRect();
+    if(!rect||rect.width<=0||rect.height<=0) return null;
+    const xPct=((ev.clientX-rect.left)/rect.width)*100;
+    const yPct=((ev.clientY-rect.top)/rect.height)*100;
+    return {xPct:clampPct(xPct),yPct:clampPct(yPct)};
+  }
+  function appendSelectionAsDimensions(rect){
+    const tokens=Array.isArray(balloonPreview?.tokens)?balloonPreview.tokens:[];
+    if(tokens.length===0){
+      alert("Secim icin kullanilabilir olcu verisi yok. Once Oto Balonla calistirin.");
+      return;
+    }
+    const xMin=rect.xPct;
+    const xMax=rect.xPct+rect.wPct;
+    const yMin=rect.yPct;
+    const yMax=rect.yPct+rect.hPct;
+    const picked=tokens.filter(t=>safeNum(t.xPct)>=xMin&&safeNum(t.xPct)<=xMax&&safeNum(t.yPct)>=yMin&&safeNum(t.yPct)<=yMax);
+    if(picked.length===0){
+      alert("Secilen alanda olcu bulunamadi.");
+      return;
+    }
+    const existingKeySet=new Set(editableBalloons.map(r=>`${String(r.text||"").trim().toUpperCase()}|${Math.round(safeNum(r.xPct)*10)/10}|${Math.round(safeNum(r.yPct)*10)/10}`));
+    const dedupeToken={};
+    const toAdd=[];
+    picked.forEach(t=>{
+      const key=`${String(t.text||"").trim().toUpperCase()}|${Math.round(safeNum(t.xPct)*10)/10}|${Math.round(safeNum(t.yPct)*10)/10}`;
+      if(existingKeySet.has(key)||dedupeToken[key]) return;
+      dedupeToken[key]=true;
+      toAdd.push({
+        no:0,
+        text:String(t.text||"").trim(),
+        page:Math.max(1,safeNum(t.page)||Math.max(1,safeNum(balloonForm.page)||1)),
+        xPct:clampPct(t.xPct),
+        yPct:clampPct(t.yPct),
+      });
+    });
+    if(toAdd.length===0){
+      alert("Secimdeki olculer zaten listede var.");
+      return;
+    }
+    setEditableBalloons(prev=>[...prev,...toAdd].map((row,idx)=>({...row,no:idx+1})));
+  }
+  function onPreviewMouseDown(ev){
+    if(!(balloonPreview&&Array.isArray(balloonPreview.tokens)&&balloonPreview.tokens.length>0)) return;
+    const pt=previewPointFromEvent(ev);
+    if(!pt) return;
+    setDrawSelection({active:true,x1:pt.xPct,y1:pt.yPct,x2:pt.xPct,y2:pt.yPct});
+    setLastSelection(null);
+  }
+  function onPreviewMouseMove(ev){
+    if(!(drawSelection&&drawSelection.active)) return;
+    const pt=previewPointFromEvent(ev);
+    if(!pt) return;
+    setDrawSelection(sel=>sel?{...sel,x2:pt.xPct,y2:pt.yPct}:sel);
+  }
+  function finalizePreviewSelection(ev){
+    if(!(drawSelection&&drawSelection.active)) return;
+    const pt=ev?previewPointFromEvent(ev):null;
+    const finalSel={...drawSelection,x2:pt?pt.xPct:drawSelection.x2,y2:pt?pt.yPct:drawSelection.y2,active:false};
+    const rect=normalizeSelectionRect(finalSel);
+    setDrawSelection(null);
+    if(!rect||rect.wPct<0.7||rect.hPct<0.7){
+      setLastSelection(null);
+      return;
+    }
+    setLastSelection(rect);
+    appendSelectionAsDimensions(rect);
+  }
+  async function openPreviewForRun(run){
+    if(!run){setBalloonPreview(null);return;}
+    const wo=pdfOrderById[run.orderId];
+    if(!wo){setBalloonPreview(null);return;}
+    const pdfRows=(wo.files||[]).filter(f=>f&&f.data&&isPdfFile(f)).map((f,idx)=>({...f,_pickId:String(f.id||`pdf_${idx}`)}));
+    const picked=pdfRows.find(f=>f._pickId===run.filePickId)||pdfRows[0]||null;
+    if(!picked){setBalloonPreview(null);return;}
+    setBalloonForm(f=>({...f,orderId:wo.id||f.orderId,fileId:picked._pickId,page:String(run.page||1)}));
+    setBalloonBusy(true);
+    setBalloonError("");
+    try{
+      const result=await autoBalloonPdfDrawing(picked,{pageNumber:Math.max(1,safeNum(run.page)||1)});
+      setBalloonPreview({
+        runId:run.id||"",
+        previewDataUrl:result.previewDataUrl,
+        balloons:Array.isArray(run.dimensions)?run.dimensions:[],
+        tokens:result.tokens||[],
+        fileName:run.fileName||picked.name||"drawing.pdf",
+        page:result.page,
+      });
+      setLastSelection(null);
+    }catch{
+      setBalloonPreview(null);
+      setBalloonError("Secili run icin PDF onizleme yuklenemedi.");
+    }finally{
+      setBalloonBusy(false);
+    }
+  }
   function removeEditableBalloonRow(idx){
     setEditableBalloons(prev=>prev.filter((_,i)=>i!==idx).map((row,i)=>({...row,no:i+1})));
   }
@@ -9623,6 +9748,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
         pageCount:Math.max(1,safeNum(balloonForm.page)||1),
         dimensionCount:rows.length,
         dimensions:rows,
+        detectedTokens:Array.isArray(balloonPreview?.tokens)?balloonPreview.tokens:[],
         source:"manual",
         status:"draft",
         createdBy:currentUser.id,
@@ -9637,6 +9763,52 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
       setEditableBalloons(rows);
     }finally{
       setBalloonSaveBusy(false);
+    }
+  }
+  async function removeBalloonRun(runId){
+    const id=String(runId||"").trim();
+    if(!id) return;
+    const run=balloonRuns.find(r=>r.id===id)||null;
+    if(!run) return;
+    const linkedFai=fai.filter(r=>r.balloonRunId===id);
+    const warn=linkedFai.length>0
+      ? `Bu balon run ${linkedFai.length} FAI kaydina bagli. Baglantilar temizlenerek silinsin mi?`
+      : `Balon run silinsin mi? (${run.fileName||"PDF"} · ${run.dimensionCount||0} olcu)`;
+    if(!confirm(warn)) return;
+    setBalloonDeleteBusyId(id);
+    try{
+      if(linkedFai.length>0){
+        for(const rec of linkedFai){
+          const patch={
+            balloonRunId:"",
+            balloonCount:0,
+            drawingFileName:"",
+            updatedAt:new Date().toISOString(),
+            updatedBy:currentUser.id,
+          };
+          const okPatch=await window.DB.updateDoc("faiRecords",rec.id,patch);
+          if(!okPatch){
+            alert("FAI baglantisi temizlenemedi. Silme iptal edildi.");
+            return;
+          }
+        }
+        setFai(prev=>prev.map(r=>linkedFai.some(x=>x.id===r.id)?{...r,balloonRunId:"",balloonCount:0,drawingFileName:""}:r));
+      }
+      const ok=await window.DB.deleteDoc("faiBalloonRuns",id);
+      if(!ok){alert("Balon run silinemedi.");return;}
+      setBalloonRuns(prev=>prev.filter(r=>r.id!==id));
+      setFaiForm(prev=>prev.balloonRunId===id?{...prev,balloonRunId:""}:prev);
+      if((faiForm.balloonRunId||"")===id){
+        setEditableBalloons([]);
+        setLastSelection(null);
+      }
+      if(balloonPreview&&balloonPreview.runId===id){
+        setBalloonPreview(null);
+        setEditableBalloons([]);
+        setLastSelection(null);
+      }
+    }finally{
+      setBalloonDeleteBusyId("");
     }
   }
 
@@ -9686,6 +9858,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
           xPct:d.xPct,
           yPct:d.yPct,
         })),
+        detectedTokens:result.tokens||[],
         source:"auto_pdfjs",
         status:"draft",
         createdBy:currentUser.id,
@@ -9700,9 +9873,11 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
         runId:id,
         previewDataUrl:result.previewDataUrl,
         balloons:result.balloons||[],
+        tokens:result.tokens||[],
         fileName:payload.fileName,
         page:payload.page,
       });
+      setLastSelection(null);
       setEditableBalloons((result.balloons||[]).map((row,idx)=>({
         no:idx+1,
         text:String(row.text||""),
@@ -9730,7 +9905,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
       return;
     }
     loadEditableBalloonsFromRun(run);
-    setBalloonPreview(prev=>prev&&prev.runId===run.id?prev:null);
+    if(run&&run.id) openPreviewForRun(run);
     setFaiForm(f=>({
       ...f,
       orderId:f.orderId||run.orderId||"",
@@ -9860,6 +10035,9 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
                 <button onClick={saveEditableBalloons} disabled={balloonSaveBusy||editableBalloons.length===0} style={{...btnSt("green"),padding:"8px 12px",fontSize:12,opacity:(balloonSaveBusy||editableBalloons.length===0)?0.65:1}}>
                   {balloonSaveBusy?"Kaydediliyor...":"Olculeri Kaydet"}
                 </button>
+                <button onClick={()=>removeBalloonRun(faiForm.balloonRunId)} disabled={!faiForm.balloonRunId||Boolean(balloonDeleteBusyId)} style={{...btnSt("danger"),padding:"8px 12px",fontSize:12,opacity:(!faiForm.balloonRunId||Boolean(balloonDeleteBusyId))?0.65:1}}>
+                  {balloonDeleteBusyId? "Run Siliniyor..." : "Run Sil"}
+                </button>
               </div>
               <div style={{fontSize:12,color:C.muted2}}>
                 {selectedBalloonRun?`Bagli run: ${selectedBalloonRun.fileName||"-"} · ${selectedBalloonRun.dimensionCount||0} olcu`:`Run secilmedi (manuel kayitta yeni run acilir)`}
@@ -9870,11 +10048,25 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
               <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1.3fr .9fr",gap:10}}>
                 <div style={{border:`1px solid ${C.border}`,borderRadius:8,overflow:"auto",maxHeight:520,background:"#fff"}}>
                   {balloonPreview?(
-                    <div style={{position:"relative",minWidth:420}}>
+                    <div
+                      ref={previewDrawRef}
+                      onMouseDown={onPreviewMouseDown}
+                      onMouseMove={onPreviewMouseMove}
+                      onMouseUp={finalizePreviewSelection}
+                      onMouseLeave={finalizePreviewSelection}
+                      style={{position:"relative",minWidth:420,cursor:(balloonPreview.tokens||[]).length>0?"crosshair":"default",userSelect:"none"}}
+                    >
                       <img src={balloonPreview.previewDataUrl} alt={balloonPreview.fileName||"PDF"} style={{width:"100%",display:"block"}}/>
                       {editableBalloons.slice(0,300).map(b=>(
                         <span key={`bal_${b.no}_${b.page}`} title={`${b.no} · ${b.text}`} style={{position:"absolute",left:`${b.xPct}%`,top:`${b.yPct}%`,transform:"translate(-50%,-50%)",minWidth:18,height:18,padding:"0 4px",borderRadius:999,background:"#ef4444",color:"#fff",fontSize:10,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center",lineHeight:1,border:"1px solid #fff",boxShadow:"0 1px 2px rgba(0,0,0,.35)",pointerEvents:"none"}}>{b.no}</span>
                       ))}
+                      {(() => {
+                        const rect=drawSelection?normalizeSelectionRect(drawSelection):lastSelection;
+                        if(!rect||rect.wPct<=0||rect.hPct<=0) return null;
+                        return (
+                          <span style={{position:"absolute",left:`${rect.xPct}%`,top:`${rect.yPct}%`,width:`${rect.wPct}%`,height:`${rect.hPct}%`,border:`2px dashed ${C.warn}`,background:"rgba(246,173,85,.15)",pointerEvents:"none"}}/>
+                        );
+                      })()}
                     </div>
                   ):(
                     <div style={{padding:"14px 12px",fontSize:12,color:"#334155"}}>
@@ -9884,6 +10076,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
                 </div>
                 <div style={{border:`1px solid ${C.border}`,borderRadius:8,padding:8,maxHeight:520,overflowY:"auto",background:C.card}}>
                   <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase",marginBottom:6}}>Olcu Listesi ({editableBalloons.length})</div>
+                  {balloonPreview&&<div style={{fontSize:11,color:C.muted2,marginBottom:6}}>PDF ustunde kutu cizerek olcu otomatik ekleyebilirsiniz.</div>}
                   {editableBalloons.length===0&&<div style={{fontSize:12,color:C.muted2}}>Olcu satiri yok. "Manuel Olcu" ile ekleyin.</div>}
                   {editableBalloons.slice(0,260).map((row,idx)=>(
                     <div key={`dim_${row.no}_${idx}`} style={{display:"grid",gridTemplateColumns:"34px 1fr auto",gap:6,padding:"5px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,alignItems:"center"}}>
