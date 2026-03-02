@@ -2477,7 +2477,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       ncProgramVersion:"V1",
       unitCost:materialCost+laborCost+machineCost,
       costBreakdown:{materialCost,laborCost,machineCost},
-      drawingFile:null,
+      documents:[],
       notes:String(quickPartForm.notes||"").trim(),
       bomLines:[],
       routingOps:[],
@@ -8445,7 +8445,7 @@ function App() {
   const allTabs=useMemo(()=>[
     {id:"dashboard",icon:"dashboard",label:"Gösterge Paneli",group:"Planlama",enabled:(canEntry||canOrders||canReport||canSales||canPurchasing)},
     {id:"planning",icon:"planning",label:"Planlama",group:"Planlama",enabled:canPlanning},
-    {id:"parts",icon:"parts",label:"Parca Yonetimi",group:"Planlama",enabled:canPlanning},
+    {id:"parts",icon:"parts",label:"Parça Yönetimi",group:"Planlama",enabled:canPlanning},
     {id:"quotes",icon:"quotes",label:"Teklif Yonetimi",group:"Planlama",enabled:canSales},
     {id:"sales",icon:"sales",label:"Satis Siparisleri",group:"Planlama",enabled:canSales},
     {id:"orders",icon:"orders",label:"Is Emirleri",group:"Operasyon",enabled:canOrders},
