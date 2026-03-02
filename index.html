@@ -6095,7 +6095,6 @@ function App() {
   const [currentUser,setCurrentUser]=useState(null);
   const [loading,setLoading]=useState(true);
   const [tab,setTab]=useState("dashboard");
-  const [workMode,setWorkMode]=useState("planlama");
   const [themeMode,setThemeMode]=useState("light");
   const [machines,setMachines]=useState(DEFAULT_MACHINES);
   const [logoSrc,setLogoSrc]=useState(LOGO_SRC);
@@ -6203,18 +6202,6 @@ function App() {
   const canUsers=hasPermission(userForPerm,"approve_users")||isAdmin;
   const canTools=canOrders||canPurchasing||canEntry;
   const canMachinePrep=canOrders;
-  const MODE_GROUPS={
-    planlama:["Planlama","Tedarik ve Stok"],
-    operasyon:["Operasyon","Tedarik ve Stok","Analiz ve Yonetim"],
-    yonetim:["Planlama","Operasyon","Tedarik ve Stok","Analiz ve Yonetim","Sistem"],
-    operator:["Operasyon"],
-  };
-  const MODE_OPTIONS=[
-    {id:"planlama",label:"Planlama Modu",color:C.accent},
-    {id:"operasyon",label:"Operasyon Modu",color:C.green},
-    {id:"yonetim",label:"Yonetim Modu",color:C.warn},
-    {id:"operator",label:"Operator Modu",color:C.purple},
-  ];
   const allTabs=useMemo(()=>[
     {id:"dashboard",icon:"dashboard",label:"MRP Panel",group:"Planlama",enabled:(canEntry||canOrders||canReport||canSales||canPurchasing)},
     {id:"planning",icon:"planning",label:"Cizelgeleme",group:"Planlama",enabled:canPlanning},
@@ -6240,11 +6227,7 @@ function App() {
     {id:"users",icon:"users",label:"Ayarlar ve Guvenlik",group:"Sistem",enabled:canUsers},
   ],[canEntry,canOrders,canSales,canPurchasing,canQuality,canDowntime,canNotifications,canReport,canPlanning,canTools,canCustomers,canMachinePrep,canUsers,isAdmin]);
   const enabledTabs=useMemo(()=>allTabs.filter(t=>t.enabled),[allTabs]);
-  const activeGroups=MODE_GROUPS[workMode]||MODE_GROUPS.planlama;
-  const tabs=useMemo(()=>{
-    const modeTabs=enabledTabs.filter(t=>activeGroups.includes(t.group));
-    return modeTabs.length>0?modeTabs:enabledTabs;
-  },[enabledTabs,activeGroups.join("|")]);
+  const tabs=enabledTabs;
   const visibleTabs=useMemo(()=>{
     const q=(menuQuery||"").trim().toLowerCase();
     if(!q) return tabs;
@@ -6266,8 +6249,7 @@ function App() {
     if(tabs.length===0) return;
     if(!tabs.some(t=>t.id===tab)) setTab(tabs[0].id);
   },[tabs,tab]);
-  useEffect(()=>{setMobileMenuOpen(false);},[tab,workMode]);
-  useEffect(()=>{setMenuQuery("");},[workMode]);
+  useEffect(()=>{setMobileMenuOpen(false);},[tab]);
 
   const layoutMode=isDesktop?"desktop":(isTablet?"tablet":"mobile");
   const isMobile=layoutMode==="mobile";
@@ -6279,8 +6261,7 @@ function App() {
   const tabletSidebarW=262;
   const mobilePrimary=tabs.slice(0,4);
   const activeTabMeta=tabs.find(t=>t.id===tab)||null;
-  const isOperatorMode=workMode==="operator";
-  const activeContextLabel=isOperatorMode?"Operator Tek Sayfa":(activeTabMeta?.label||"Modul");
+  const activeContextLabel=activeTabMeta?.label||"Modul";
   const menuResultText=`${visibleTabs.length}/${tabs.length} modul`;
   const desktopMenuIconOnly=layoutMode==="desktop"&&desktopMenuCollapsed;
   const sidebarWidth=layoutMode==="desktop"
@@ -6322,16 +6303,6 @@ function App() {
   if(loading) return <div style={{background:C.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12}}><div style={{width:40,height:40,border:`3px solid ${C.border}`,borderTop:`3px solid ${C.accent}`,borderRadius:"50%",animation:"spin 1s linear infinite"}}/><div style={{color:C.muted2,fontSize:13}}>Bağlanıyor...</div><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>;
   if(!currentUser) return <AuthScreen onLogin={u=>setCurrentUser(u)} logoSrc={logoSrc} themeMode={themeMode} onThemeToggle={()=>updateTheme(themeMode==="dark"?"light":"dark")}/>;
   const activeView=getActiveView();
-
-  const modeSwitch=(
-    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,minmax(0,1fr))":"repeat(4,minmax(0,1fr))",gap:6,width:isMobile?"100%":"auto"}}>
-      {MODE_OPTIONS.map(m=>(
-        <button key={m.id} onClick={()=>setWorkMode(m.id)} style={{border:`1px solid ${workMode===m.id?m.color:C.border}`,background:workMode===m.id?m.color:C.surface,color:workMode===m.id?"#fff":C.text,padding:"8px 12px",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",borderRadius:8,letterSpacing:.2,boxShadow:workMode===m.id?"0 6px 14px rgba(0,0,0,.08)":"none"}}>
-          {m.label.replace(" Modu","")}
-        </button>
-      ))}
-    </div>
-  );
 
   const menuSearch=(
     <div style={{marginBottom:12,paddingBottom:10,borderBottom:`1px solid ${C.border}`}}>
@@ -6401,12 +6372,12 @@ function App() {
                   </div>
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:isMobile?"flex-start":"flex-end"}}>
-                  {!isOperatorMode&&layoutMode==="desktop"&&(
+                  {layoutMode==="desktop"&&(
                     <button onClick={toggleDesktopMenuCollapse} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:112}}>
                       {desktopMenuCollapsed?"Menuyu Ac":"Menuyu Daralt"}
                     </button>
                   )}
-                  {!isOperatorMode&&isMobile&&(
+                  {isMobile&&(
                     <button onClick={()=>setMobileMenuOpen(true)} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:82}}>Menu</button>
                   )}
                   <button onClick={()=>updateTheme(themeMode==="dark"?"light":"dark")} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:98}}>
@@ -6415,24 +6386,14 @@ function App() {
                   <button onClick={logout} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:72}}>Cikis</button>
                 </div>
               </div>
-              <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"minmax(360px,1fr) auto",alignItems:"center",gap:10}}>
-                {modeSwitch}
-                <div style={{display:"flex",alignItems:"center",justifyContent:isMobile?"flex-start":"flex-end",gap:8,fontSize:12,color:C.muted}}>
-                  <span>Calisma Alani</span>
-                  <Badge label={(MODE_OPTIONS.find(m=>m.id===workMode)?.label||"").replace(" Modu","")} color={C.accent}/>
-                </div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,fontSize:12,color:C.muted}}>
+                <span>Menu gorunumu kullanici izinlerine gore otomatik filtrelenir.</span>
               </div>
             </div>
           </div>
         </div>
 
-        {isOperatorMode&&(
-          <div style={{padding:isMobile?"8px 8px 78px":shellPadding}}>
-            <OperatorWorkspace currentUser={currentUser} machines={machines} onOpenModule={nextTab=>{setTab(nextTab);setWorkMode("operasyon");}}/>
-          </div>
-        )}
-
-        {!isOperatorMode&&!isMobile&&(
+        {!isMobile&&(
           <div style={{display:"grid",gridTemplateColumns:`${sidebarWidth}px minmax(0,1fr)`,gap:16,alignItems:"start",padding:shellPadding,transition:"grid-template-columns .18s ease"}}>
             <div style={{position:"sticky",top:118}}>
               <div className="mrp-panel mrp-scrollbar" style={{background:C.surface,border:`1px solid ${C.border}`,padding:10,maxHeight:"calc(100vh - 140px)",overflowY:"auto"}}>
@@ -6452,7 +6413,7 @@ function App() {
           </div>
         )}
 
-        {!isOperatorMode&&isMobile&&(
+        {isMobile&&(
           <>
             <div style={{paddingBottom:76}}>{activeView}</div>
             <div className="mrp-bottom-nav" style={{position:"fixed",left:0,right:0,bottom:0,background:`${C.surface}f0`,borderTop:`1px solid ${C.border}`,zIndex:24}}>
