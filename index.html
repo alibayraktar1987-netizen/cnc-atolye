@@ -2319,12 +2319,148 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     setView("quotes");
   }
 
+  async function duplicateQuote(q){
+    const lines=(q.lines||[]).map(l=>({
+      partNo:String(l.partNo||"").trim().toUpperCase(),
+      partName:String(l.partName||"").trim(),
+      revision:String(l.revision||"A").trim().toUpperCase(),
+      qty:Math.max(0,safeNum(l.qty)),
+      unitPrice:Math.max(0,safeNum(l.unitPrice)),
+      discountPct:Math.max(0,Math.min(100,safeNum(l.discountPct))),
+      dueDate:l.dueDate||todayStr(),
+      partSec:Math.max(1,safeNum(l.partSec)||60),
+      machine:l.machine||machines[0]||"CNC-1",
+    }));
+    if(lines.length===0){alert("Kopyalanacak teklif satiri yok.");return;}
+    const gross=lines.reduce((sum,l)=>sum+(safeNum(l.qty)*safeNum(l.unitPrice)),0);
+    const discount=lines.reduce((sum,l)=>sum+((safeNum(l.qty)*safeNum(l.unitPrice))*safeNum(l.discountPct)/100),0);
+    const net=Math.max(0,gross-discount);
+    const payload={
+      code:nextCode("TKL",quotes,/^TKL-(\d+)$/),
+      customerId:q.customerId||"",
+      customerName:q.customerName||"",
+      validUntil:q.validUntil||todayStr(),
+      priority:q.priority||"normal",
+      note:(q.note||"").trim(),
+      lines,
+      grossAmount:gross,
+      discountAmount:discount,
+      totalAmount:net,
+      status:"offer",
+      copiedFromQuoteId:q.id||"",
+      copiedFromQuoteCode:q.code||"",
+      updatedAt:new Date().toISOString(),
+      createdBy:currentUser.id,
+    };
+    const id=await window.DB.addDoc("salesQuotes",payload);
+    if(!id){alert("Teklif kopyalanamadi.");return;}
+    await addAuditLog(currentUser.id,"salesQuote",id,"copy",q,payload,{module:"sales"});
+    setQuotes(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
+    setView("quotes");
+  }
+
+  async function duplicateSalesOrder(o){
+    const lines=(o.lines||[]).map(l=>({
+      partNo:String(l.partNo||"").trim().toUpperCase(),
+      partName:String(l.partName||"").trim(),
+      revision:String(l.revision||"A").trim().toUpperCase(),
+      qty:Math.max(0,safeNum(l.qty)),
+      unitPrice:Math.max(0,safeNum(l.unitPrice)),
+      discountPct:Math.max(0,Math.min(100,safeNum(l.discountPct))),
+      dueDate:l.dueDate||o.dueDate||todayStr(),
+      partSec:Math.max(1,safeNum(l.partSec)||60),
+      machine:l.machine||machines[0]||"CNC-1",
+    }));
+    if(lines.length===0){alert("Kopyalanacak siparis satiri yok.");return;}
+    const qty=lines.reduce((sum,l)=>sum+safeNum(l.qty),0);
+    const gross=lines.reduce((sum,l)=>sum+(safeNum(l.qty)*safeNum(l.unitPrice)),0);
+    const discount=lines.reduce((sum,l)=>sum+((safeNum(l.qty)*safeNum(l.unitPrice))*safeNum(l.discountPct)/100),0);
+    const net=Math.max(0,gross-discount);
+    const payload={
+      code:nextCode("SIP",salesOrders,/^SIP-(\d+)$/),
+      customerId:o.customerId||"",
+      customerName:o.customerName||"",
+      sourceQuoteId:o.sourceQuoteId||"",
+      sourceQuoteCode:o.sourceQuoteCode||"",
+      lines,
+      qty:qty>0?qty:Math.max(0,safeNum(o.qty)),
+      dueDate:o.dueDate||todayStr(),
+      priority:o.priority||"normal",
+      totalAmount:net,
+      deliveredQty:0,
+      deliveries:[],
+      status:"approved",
+      workOrderIds:[],
+      workOrderCodes:[],
+      copiedFromSalesOrderId:o.id||"",
+      copiedFromSalesOrderCode:o.code||"",
+      createdBy:currentUser.id,
+      updatedAt:new Date().toISOString(),
+    };
+    const id=await window.DB.addDoc("salesOrders",payload);
+    if(!id){alert("Siparis kopyalanamadi.");return;}
+    await addAuditLog(currentUser.id,"salesOrder",id,"copy",o,payload,{module:"sales"});
+    setSalesOrders(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
+    setView("orders");
+  }
+
   async function setQuoteStatus(q,status){
     if(q.status===status) return;
     const patch={status,updatedAt:new Date().toISOString(),updatedBy:currentUser.id};
     const ok=await window.DB.updateDoc("salesQuotes",q.id,patch);
     if(!ok){alert("Teklif durumu guncellenemedi.");return;}
     setQuotes(prev=>prev.map(x=>x.id===q.id?{...x,...patch}:x));
+  }
+
+  async function createWorkOrdersFromSalesOrder(order,{openAfter=true}={}){
+    if(!order){return {createdIds:[],createdCodes:[]};}
+    if(order.workOrderIds&&order.workOrderIds.length>0){
+      if(openAfter&&onOpenWorkOrders) onOpenWorkOrders();
+      return {createdIds:[...order.workOrderIds],createdCodes:[...(order.workOrderCodes||[])],existing:true};
+    }
+    if(!order.lines||order.lines.length===0){return {createdIds:[],createdCodes:[]};}
+    const createdIds=[];
+    const createdCodes=[];
+    let seed=[...workOrders];
+    for(const line of order.lines){
+      const code=nextCode("IE",seed,/^IE-(\d+)$/);
+      const woPayload={
+        code,
+        name:line.partName||line.partNo||order.code,
+        customerId:order.customerId||"",
+        customerName:order.customerName||"",
+        material:line.material||order.material||"",
+        partNo:line.partNo||"",
+        revision:line.revision||"",
+        qty:Math.max(0,safeNum(line.qty)),
+        dueDate:line.dueDate||order.dueDate||"",
+        priority:order.priority||"normal",
+        partSec:Math.max(1,safeNum(line.partSec)||60),
+        machines:[line.machine||machines[0]||"CNC-1"],
+        notes:`Siparis ${order.code} otomatik olusturma`,
+        files:[],
+        status:"planned",
+        sourceType:"sales_auto",
+        sourceSalesOrderId:order.id,
+        sourceSalesOrderCode:order.code||"",
+        dependencies:[],
+        createdBy:currentUser.id,
+        updatedAt:new Date().toISOString(),
+      };
+      const id=await window.DB.addDoc("orders",woPayload);
+      if(!id) continue;
+      seed=[{id,...woPayload,createdAt:new Date().toISOString()},...seed];
+      createdIds.push(id);
+      createdCodes.push(code);
+      await addAuditLog(currentUser.id,"workOrder",id,"create_from_sales_order",null,woPayload,{orderId:order.id,module:"sales"});
+    }
+    if(createdIds.length===0){return {createdIds:[],createdCodes:[]};}
+    const patch={workOrderIds:createdIds,workOrderCodes:createdCodes,status:"in_production",updatedAt:new Date().toISOString(),updatedBy:currentUser.id};
+    await window.DB.updateDoc("salesOrders",order.id,patch);
+    setSalesOrders(prev=>prev.map(x=>x.id===order.id?{...x,...patch}:x));
+    setWorkOrders(seed);
+    if(openAfter&&onOpenWorkOrders) onOpenWorkOrders();
+    return {createdIds,createdCodes,existing:false};
   }
 
   async function convertQuoteToOrder(q){
@@ -2356,8 +2492,13 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     if(!id){alert("Siparis olusturulamadi.");return;}
     await window.DB.updateDoc("salesQuotes",q.id,{status:"converted",orderId:id,orderCode:orderCode,updatedAt:new Date().toISOString()});
     await addAuditLog(currentUser.id,"salesOrder",id,"create_from_quote",{quoteId:q.id},{...payload,id},{module:"sales"});
-    setSalesOrders(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
+    const createdOrder={id,...payload,createdAt:new Date().toISOString()};
+    setSalesOrders(prev=>[createdOrder,...prev]);
     setQuotes(prev=>prev.map(x=>x.id===q.id?{...x,status:"converted",orderId:id,orderCode}:x));
+    const woResult=await createWorkOrdersFromSalesOrder(createdOrder,{openAfter:false});
+    if(!woResult.createdIds.length){
+      alert("Siparis olustu ancak otomatik is emri olusturulamadi. Siparis kartindan tekrar deneyebilirsiniz.");
+    }
     setView("orders");
   }
 
@@ -2591,49 +2732,13 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   }
 
   async function convertOrderToWorkOrders(order){
-    if(order.workOrderIds&&order.workOrderIds.length>0){alert("Bu siparis icin is emri olusturulmus.");return;}
     if(!order.lines||order.lines.length===0){alert("Siparis satiri bulunamadi.");return;}
-    const createdIds=[];
-    const createdCodes=[];
-    let seed=[...workOrders];
-    for(const line of order.lines){
-      const code=nextCode("IE",seed,/^IE-(\d+)$/);
-      const woPayload={
-        code,
-        name:line.partName||line.partNo||order.code,
-        customerId:order.customerId||"",
-        customerName:order.customerName||"",
-        material:line.material||"",
-        partNo:line.partNo||"",
-        revision:line.revision||"",
-        qty:Math.max(0,safeNum(line.qty)),
-        dueDate:line.dueDate||order.dueDate||"",
-        priority:order.priority||"normal",
-        partSec:Math.max(1,safeNum(line.partSec)||60),
-        machines:[line.machine||machines[0]||"CNC-1"],
-        notes:`Siparis ${order.code} otomatik olusturma`,
-        files:[],
-        status:"planned",
-        sourceType:"sales_auto",
-        sourceSalesOrderId:order.id,
-        sourceSalesOrderCode:order.code||"",
-        dependencies:[],
-        createdBy:currentUser.id,
-        updatedAt:new Date().toISOString(),
-      };
-      const id=await window.DB.addDoc("orders",woPayload);
-      if(!id) continue;
-      seed=[{id,...woPayload,createdAt:new Date().toISOString()},...seed];
-      createdIds.push(id);
-      createdCodes.push(code);
-      await addAuditLog(currentUser.id,"workOrder",id,"create_from_sales_order",null,woPayload,{orderId:order.id,module:"sales"});
+    const result=await createWorkOrdersFromSalesOrder(order,{openAfter:true});
+    if(result.existing){
+      alert("Bu siparise ait is emirleri zaten mevcut. Is emri sayfasi acildi.");
+      return;
     }
-    if(createdIds.length===0){alert("Is emri olusturulamadi.");return;}
-    const patch={workOrderIds:createdIds,workOrderCodes:createdCodes,status:"in_production",updatedAt:new Date().toISOString(),updatedBy:currentUser.id};
-    await window.DB.updateDoc("salesOrders",order.id,patch);
-    setSalesOrders(prev=>prev.map(x=>x.id===order.id?{...x,...patch}:x));
-    setWorkOrders(seed);
-    if(onOpenWorkOrders) onOpenWorkOrders();
+    if(!result.createdIds.length){alert("Is emri olusturulamadi.");}
   }
 
   const q=search.trim().toLowerCase();
@@ -2787,6 +2892,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                 </div>
                 <div style={{display:"flex",gap:7,flexWrap:"wrap",justifyContent:"flex-end"}}>
                   <button onClick={()=>printQuote(qr)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>PDF Indir</button>
+                  <button onClick={()=>duplicateQuote(qr)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kopyala</button>
                   <button onClick={()=>setQuoteStatus(qr,"approved")} style={{...btnSt("green"),padding:"6px 10px",fontSize:12,opacity:(qr.status||"")==="approved"?0.7:1}} disabled={(qr.status||"")==="approved"}>{(qr.status||"")==="approved"?"Onayli":"Musteri Onayi"}</button>
                   <button onClick={()=>convertQuoteToOrder(qr)} disabled={(qr.status||"")!=="approved"} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12,opacity:(qr.status||"")==="approved"?1:0.6,cursor:(qr.status||"")==="approved"?"pointer":"not-allowed"}}>Siparise Donustur</button>
                   <button onClick={()=>setQuoteStatus(qr,"cancelled")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Iptal</button>
@@ -2824,9 +2930,12 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                   </div>
                   <div style={{display:"flex",gap:7,flexWrap:"wrap",justifyContent:"flex-end"}}>
                     <button onClick={()=>printOrder(o)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Onay PDF</button>
+                    <button onClick={()=>duplicateSalesOrder(o)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kopyala</button>
                     <button onClick={()=>setOrderStatus(o,"in_production")} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12,opacity:(o.status||"")==="in_production"?0.7:1}} disabled={(o.status||"")==="in_production"}>Uretimde</button>
                     <button onClick={()=>addDelivery(o)} style={{...btnSt("green"),padding:"6px 10px",fontSize:12}}>Kismi Teslim</button>
-                    <button onClick={()=>convertOrderToWorkOrders(o)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}>Is Emri Olustur</button>
+                    <button onClick={()=>convertOrderToWorkOrders(o)} style={{...(o.workOrderIds&&o.workOrderIds.length>0?btnSt("ghost"):btnSt("primary")),padding:"6px 10px",fontSize:12}}>
+                      {(o.workOrderIds&&o.workOrderIds.length>0)?"Is Emirlerini Ac":"Is Emri Olustur"}
+                    </button>
                     <button onClick={()=>markExternalDoc(o,"dispatch")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Sevk Irsaliye</button>
                     <button onClick={()=>markExternalDoc(o,"invoice")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Fatura Hazirla</button>
                     <button onClick={()=>setOrderStatus(o,"cancelled")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12,opacity:(o.status||"")==="cancelled"?0.7:1}} disabled={(o.status||"")==="cancelled"}>Iptal</button>
@@ -3223,6 +3332,37 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
     setOrders(orders=>orders.map(x=>x.id===o.id?{...x,status}:x));
   }
 
+  async function duplicateWorkOrder(order){
+    if(!order){return;}
+    const newCode=nextOrderCode(orders);
+    const data={
+      code:newCode.toUpperCase(),
+      name:order.name||"",
+      partNo:(order.partNo||"").trim().toUpperCase(),
+      revision:(order.revision||"A").trim().toUpperCase(),
+      customerId:order.customerId||"",
+      customerName:order.customerName||"",
+      material:order.material||"",
+      qty:Math.max(0,safeNum(order.qty)||0),
+      dueDate:order.dueDate||todayStr(),
+      priority:order.priority||"normal",
+      dependencies:[...(order.dependencies||[])],
+      partSec:Math.max(1,safeNum(order.partSec)||1),
+      machines:[...(order.machines||[])],
+      notes:[(order.notes||""),`Kopya: ${order.code||"-"}`].filter(Boolean).join(" · "),
+      files:[...(order.files||[])],
+      sourceType:order.sourceType||"manual",
+      status:"planned",
+      copiedFromOrderId:order.id||"",
+      copiedFromOrderCode:order.code||"",
+      updatedAt:new Date().toISOString(),
+    };
+    const id=await window.DB.addDoc("orders",{...data,createdBy:currentUser.id});
+    if(!id){alert("Is emri kopyalanamadi.");return;}
+    await addAuditLog(currentUser.id,"workOrder",id,"copy",order,data,{module:"orders"});
+    setOrders(prev=>[{id,...data,createdAt:new Date().toISOString()},...prev]);
+  }
+
   const q=search.trim().toLowerCase();
   const usageCountByOrder={};
   const productionByOrder={};
@@ -3468,6 +3608,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
                 <div style={{display:"flex",gap:6,justifyContent:"flex-end",alignItems:"center"}}>
                   <button onClick={()=>setViewOrder(o)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Goruntule</button>
                   <button onClick={()=>{setForm({code:o.code,name:o.name,partNo:o.partNo||"",revision:o.revision||"A",customerId:o.customerId||"",material:o.material||"",qty:String(o.qty??"1"),dueDate:o.dueDate||todayStr(),priority:o.priority||"normal",dependencies:o.dependencies||[],partSec:o.partSec,machines:o.machines||[],notes:o.notes||"",files:o.files||[],status:o.status||"planned",sourceType:o.sourceType||"manual"});setEditId(o.id);setShowForm(true);}} style={{...btnSt(),padding:"6px 10px",fontSize:12}}>Duzenle</button>
+                  <button onClick={()=>duplicateWorkOrder(o)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kopyala</button>
                   <select style={{...inputSt,width:132,padding:"6px 8px",fontSize:12}} value={o.status||"passive"} onChange={e=>setOrderStatus(o,e.target.value)}>
                     {ORDER_STATUS_OPTIONS.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
                   </select>
