@@ -6381,6 +6381,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const [showShiftModal,setShowShiftModal]=useState(false);
   const [shiftModalMode,setShiftModalMode]=useState("shiftEnd");
   const [previewFile,setPreviewFile]=useState(null);
+  const [showOrderDataPanel,setShowOrderDataPanel]=useState(false);
   const [toolDraft,setToolDraft]=useState({machineToolId:"",machineToolQty:"1"});
   const [shiftDraft,setShiftDraft]=useState({correct:"",wrong:""});
   const [kioskViewport,setKioskViewport]=useState(()=>({
@@ -7463,7 +7464,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             </div>
 
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",background:"#fff"}}>
-              <button disabled style={{...actionBtnStyle,fontSize:17,color:"#7c8ca0",cursor:"default"}}>⦿ Otomatik Plan</button>
+              <button onClick={()=>setShowOrderDataPanel(true)} style={{...actionBtnStyle,fontSize:17}}>📄 Is Emri Dosyalari</button>
               <button onClick={openShiftEndModal} style={actionBtnStyle}>⏹ İşi Durdur</button>
               <button onClick={openRejectPartsModal} style={actionBtnStyle}>⊘ Hata Girişi</button>
               <button onClick={openToolChangeModal} style={{...actionBtnStyle,borderRight:"none"}}>💬 Takım Değişimi</button>
@@ -7473,6 +7474,45 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
       </div>
     </div>
   </div>
+        {showOrderDataPanel&&(
+          <div style={{position:"fixed",inset:0,background:"rgba(7,10,14,.62)",zIndex:58,display:"flex",alignItems:"center",justifyContent:"center",padding:18}} onClick={()=>setShowOrderDataPanel(false)}>
+            <div style={{width:"100%",maxWidth:960,maxHeight:"88vh",display:"flex",flexDirection:"column",background:"#f5f8fc",border:"1px solid #cfd8e4",borderRadius:14,overflow:"hidden",boxShadow:"0 24px 60px rgba(0,0,0,.35)"}} onClick={e=>e.stopPropagation()}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",background:"#fff",borderBottom:"1px solid #d5dde8"}}>
+                <div style={{minWidth:0}}>
+                  <div style={{fontSize:12,color:"#7386a1",fontWeight:700,letterSpacing:.5,textTransform:"uppercase"}}>Kiosk</div>
+                  <div style={{fontSize:17,color:"#33465f",fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                    Is Emri Dosyalari {form.selectedOrder?.code?`· ${form.selectedOrder.code}`:""}
+                  </div>
+                </div>
+                <button onClick={()=>setShowOrderDataPanel(false)} style={{border:"1px solid #d5dde8",background:"#fff",color:"#4d5e77",width:34,height:34,borderRadius:10,fontSize:22,lineHeight:1,cursor:"pointer"}}>×</button>
+              </div>
+              <div style={{padding:12,overflowY:"auto",display:"flex",flexDirection:"column",gap:8}}>
+                {!form.selectedOrder&&(
+                  <div style={{padding:14,border:"1px dashed #c8d2df",borderRadius:10,background:"#fff",fontSize:13,color:"#6e8098",textAlign:"center"}}>
+                    Is emri secili degil.
+                  </div>
+                )}
+                {form.selectedOrder&&selectedOrderFiles.length===0&&(
+                  <div style={{padding:14,border:"1px dashed #c8d2df",borderRadius:10,background:"#fff",fontSize:13,color:"#6e8098",textAlign:"center"}}>
+                    Secili is emrinde dosya yok.
+                  </div>
+                )}
+                {form.selectedOrder&&selectedOrderFiles.length>0&&selectedOrderFiles.map((f,i)=>(
+                  <div key={`${f.name||"file"}_${i}`} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 10px",border:"1px solid #d5dde8",borderRadius:10,background:"#fff"}}>
+                    <div style={{fontSize:18,lineHeight:1}}>{getFileIcon(f.name)}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:700,color:"#32445b",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name||"Dokuman"}</div>
+                      <div style={{fontSize:11,color:"#7d8ea7"}}>{formatBytes(Number(f.size)||0)}</div>
+                    </div>
+                    <button onClick={()=>openOrderFile(f)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11,borderColor:"#c8d3e1",color:"#42566f",background:"#f7faff"}}>
+                      {canFilePreview(f)?"Viewer":"Indir"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
         {showPicker&&!kioskMode&&(
           <div style={{position:"fixed",inset:0,background:"rgba(8,12,18,.78)",zIndex:55,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>{setShowPicker(false);setSearch("");}}>
             <div style={{width:"100%",maxWidth:1120,height:"min(88vh,860px)",background:"#f3f6fb",border:"1px solid #cfd8e4",borderRadius:16,overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 24px 60px rgba(0,0,0,.35)"}} onClick={e=>e.stopPropagation()}>
