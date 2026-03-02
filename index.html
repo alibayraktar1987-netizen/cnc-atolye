@@ -7608,57 +7608,8 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
           </div>
         </div>
 
-        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:10,marginBottom:10}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
-            <div>
-              <div style={{fontSize:11,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Planlama Kuyrugu</div>
-              <div style={{fontWeight:800,color:C.text,fontSize:15}}>Planlanacak Is Emirleri</div>
-            </div>
-            <Badge label={`${ordersToPlan.length} Is Emri`} color={ordersToPlan.length>0?C.warn:C.green}/>
-          </div>
-          {ordersToPlan.length===0&&(
-            <div style={{fontSize:12,color:C.muted2,padding:"6px 2px"}}>
-              Planlanmayi bekleyen is emri yok.
-            </div>
-          )}
-          {ordersToPlan.length>0&&(
-            <div style={{display:"flex",flexDirection:"column",gap:7,maxHeight:190,overflowY:"auto",paddingRight:2}}>
-              {ordersToPlan.map(order=>{
-                const pMeta=PRIORITY_OPTIONS.find(p=>p.id===order.priority)||{label:(order.priority||"Normal"),color:C.muted2};
-                return (
-                  <div key={order.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 9px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                    <div style={{minWidth:210,flex:1}}>
-                      <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                        <span style={{fontWeight:800,color:C.text,fontFamily:"monospace",fontSize:12}}>{order.code||"-"}</span>
-                        <Badge label={pMeta.label||"-"} color={pMeta.color||C.muted2}/>
-                      </div>
-                      <div style={{fontSize:12,color:C.text,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                        {order.name||"-"}{order.customerName?` · ${order.customerName}`:""}
-                      </div>
-                      <div style={{fontSize:11,color:C.muted2,marginTop:2}}>
-                        Termin: {order.dueDate||"-"} · Tezgah: {Array.isArray(order.machines)&&order.machines.length>0?order.machines.join(", "):"-"}
-                      </div>
-                    </div>
-                    <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                      <button onClick={()=>quickPlanToday(order)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>
-                        Bugun
-                      </button>
-                      <button onClick={()=>openWeekPlanModalForOrder(order)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>
-                        Bu Hafta
-                      </button>
-                      <button onClick={()=>openPlanModalForOrder(order)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}>
-                        Planla
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
         <div style={{display:"grid",gridTemplateColumns:"1fr",gap:10}}>
-          <div style={{order:2,background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:10,display:"flex",flexDirection:"column",gap:8,minHeight:520}}>
+          <div style={{order:3,background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:10,display:"flex",flexDirection:"column",gap:8,minHeight:520}}>
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:6}}>
               <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 9px"}}>
                 <div style={{fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Açık İş Emri</div>
@@ -7773,6 +7724,55 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                 )}
               </div>
             </div>
+          </div>
+
+          <div style={{order:2,background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+              <div>
+                <div style={{fontSize:11,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Planlama Kuyrugu</div>
+                <div style={{fontWeight:800,color:C.text,fontSize:15}}>Planlanacak Is Emirleri</div>
+              </div>
+              <Badge label={`${ordersToPlan.length} Is Emri`} color={ordersToPlan.length>0?C.warn:C.green}/>
+            </div>
+            {ordersToPlan.length===0&&(
+              <div style={{fontSize:12,color:C.muted2,padding:"6px 2px"}}>
+                Planlanmayi bekleyen is emri yok.
+              </div>
+            )}
+            {ordersToPlan.length>0&&(
+              <div style={{display:"flex",flexDirection:"column",gap:7,maxHeight:190,overflowY:"auto",paddingRight:2}}>
+                {ordersToPlan.map(order=>{
+                  const pMeta=PRIORITY_OPTIONS.find(p=>p.id===order.priority)||{label:(order.priority||"Normal"),color:C.muted2};
+                  return (
+                    <div key={order.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 9px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                      <div style={{minWidth:210,flex:1}}>
+                        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                          <span style={{fontWeight:800,color:C.text,fontFamily:"monospace",fontSize:12}}>{order.code||"-"}</span>
+                          <Badge label={pMeta.label||"-"} color={pMeta.color||C.muted2}/>
+                        </div>
+                        <div style={{fontSize:12,color:C.text,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                          {order.name||"-"}{order.customerName?` · ${order.customerName}`:""}
+                        </div>
+                        <div style={{fontSize:11,color:C.muted2,marginTop:2}}>
+                          Termin: {order.dueDate||"-"} · Tezgah: {Array.isArray(order.machines)&&order.machines.length>0?order.machines.join(", "):"-"}
+                        </div>
+                      </div>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                        <button onClick={()=>quickPlanToday(order)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>
+                          Bugun
+                        </button>
+                        <button onClick={()=>openWeekPlanModalForOrder(order)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>
+                          Bu Hafta
+                        </button>
+                        <button onClick={()=>openPlanModalForOrder(order)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}>
+                          Planla
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>
