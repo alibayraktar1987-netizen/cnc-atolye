@@ -2059,16 +2059,20 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
 
   return (
-    <div style={{padding:16,display:"grid",gridTemplateColumns:"340px minmax(0,1fr)",gap:12,alignItems:"start"}}>
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12,position:"sticky",top:82}}>
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8}}>
           <div style={{fontWeight:700,color:C.text}}>Parca Kutuphanesi</div>
-          <button onClick={openCreatePartModal} style={{...btnSt("primary"),padding:"6px 10px",fontSize:11}}>+ Parca Ekle</button>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            {selectedPart&&<Badge label={`Secili: ${selectedPart.partNo}`} color={C.accent}/>}
+            {selectedPart&&<button onClick={()=>openEditPartModal(selectedPart)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11}}>Seciliyi Duzenle</button>}
+            <button onClick={openCreatePartModal} style={{...btnSt("primary"),padding:"6px 10px",fontSize:11}}>+ Parca Ekle</button>
+          </div>
         </div>
         <input style={{...inputSt,padding:"8px 10px",fontSize:12,marginBottom:8}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Parca no / ad / malzeme ara..."/>
-        <div style={{maxHeight:"64vh",overflowY:"auto",paddingRight:4}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:8}}>
           {filtered.map(p=>(
-            <button key={p.id} onClick={()=>{setSelectedPartId(p.id);loadPartToForm(p);}} style={{width:"100%",textAlign:"left",marginBottom:7,background:selectedPartId===p.id?C.accent+"16":C.surface,border:`1px solid ${selectedPartId===p.id?C.accent+"50":C.border}`,borderRadius:10,padding:"8px 10px",color:C.text,cursor:"pointer",fontFamily:"inherit"}}>
+            <button key={p.id} onClick={()=>{setSelectedPartId(p.id);loadPartToForm(p);}} style={{width:"100%",textAlign:"left",background:selectedPartId===p.id?C.accent+"16":C.surface,border:`1px solid ${selectedPartId===p.id?C.accent+"50":C.border}`,borderRadius:10,padding:"10px 11px",color:C.text,cursor:"pointer",fontFamily:"inherit",minHeight:72}}>
               <div style={{fontSize:13,fontWeight:700}}>{p.partNo}</div>
               <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{p.name||"-"} · Rev.{p.revision||"A"} · {safeNum(p.unitCost).toFixed(2)} TRY</div>
             </button>
@@ -2077,82 +2081,59 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
         </div>
       </div>
 
-      <div style={{display:"flex",flexDirection:"column",gap:12}}>
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8,flexWrap:"wrap"}}>
-            <button onClick={()=>openEditPartModal(selectedPart)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>
-              Parca Tanimi
-            </button>
-            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-              {selectedPart&&<Badge label={`Secili: ${selectedPart.partNo}`} color={C.accent}/>}
-              <button onClick={openCreatePartModal} style={{...btnSt("primary"),padding:"7px 10px",fontSize:12}}>+ Parca Ekle</button>
+      {showPartModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.68)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:54,padding:14}} onClick={()=>setShowPartModal(false)}>
+          <div style={{width:"100%",maxWidth:980,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16,maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8,flexWrap:"wrap"}}>
+              <div style={{fontWeight:700,color:C.text,fontSize:16}}>Parca Tanimi</div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                {selectedPart&&<Badge label={`Secili: ${selectedPart.partNo}`} color={C.accent}/>}
+                <button onClick={()=>setShowPartModal(false)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+              <div><span style={labelSt}>Parca No *</span><input style={inputSt} value={partForm.partNo} onChange={e=>fv("partNo",e.target.value)} placeholder="PRT-001"/></div>
+              <div><span style={labelSt}>Parca Adi *</span><input style={inputSt} value={partForm.name} onChange={e=>fv("name",e.target.value)} placeholder="Govde"/></div>
+              <div><span style={labelSt}>Revizyon</span><input style={inputSt} value={partForm.revision} onChange={e=>fv("revision",e.target.value)}/></div>
+              <div>
+                <span style={labelSt}>Malzeme</span>
+                <select style={inputSt} value={partForm.material} onChange={e=>fv("material",e.target.value)}>
+                  <option value="">Secin...</option>
+                  {materials.map(m=><option key={m.id} value={m.name||""}>{m.code?`${m.code} - `:""}{m.name||""}</option>)}
+                </select>
+              </div>
+              <div><span style={labelSt}>Setup (sn)</span><input style={inputSt} type="number" min="0" value={partForm.setupSec} onChange={e=>fv("setupSec",e.target.value)}/></div>
+              <div><span style={labelSt}>Cycle (sn)</span><input style={inputSt} type="number" min="0" value={partForm.cycleSec} onChange={e=>fv("cycleSec",e.target.value)}/></div>
+              <div><span style={labelSt}>Hammadde Miktar</span><input style={inputSt} type="number" min="0" value={partForm.qtyPerRaw} onChange={e=>fv("qtyPerRaw",e.target.value)}/></div>
+              <div><span style={labelSt}>Hammadde Birim Maliyet</span><input style={inputSt} type="number" min="0" value={partForm.rawUnitCost} onChange={e=>fv("rawUnitCost",e.target.value)}/></div>
+              <div><span style={labelSt}>NC Program Versiyon</span><input style={inputSt} value={partForm.ncProgramVersion} onChange={e=>fv("ncProgramVersion",e.target.value)} placeholder="V1"/></div>
+              <div><span style={labelSt}>Iscilik Saatlik</span><input style={inputSt} type="number" min="0" value={partForm.laborRateHour} onChange={e=>fv("laborRateHour",e.target.value)}/></div>
+              <div><span style={labelSt}>Tezgah Saatlik</span><input style={inputSt} type="number" min="0" value={partForm.machineRateHour} onChange={e=>fv("machineRateHour",e.target.value)}/></div>
+              <div>
+                <span style={labelSt}>Teknik Resim</span>
+                <label style={{...inputSt,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
+                  <span style={{fontSize:12,color:C.muted2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{partForm.drawingFile?.name||"Dosya sec..."}</span>
+                  <span style={{fontSize:11,color:C.accent}}>{uploading?"Yukleniyor":"Sec"}</span>
+                  <input type="file" accept=".pdf,.dxf,.dwg,image/*" style={{display:"none"}} onChange={pickDrawing}/>
+                </label>
+              </div>
+            </div>
+            <div style={{marginTop:8}}>
+              <span style={labelSt}>Not</span>
+              <textarea rows={2} style={{...inputSt,minHeight:62,resize:"vertical"}} value={partForm.notes} onChange={e=>fv("notes",e.target.value)}/>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:10}}>
+              <div style={{fontSize:12,color:C.muted2}}>
+                Birim Maliyet = Malzeme {partCostCalc.materialCost.toFixed(2)} + Iscilik {partCostCalc.laborCost.toFixed(2)} + Tezgah {partCostCalc.machineCost.toFixed(2)} = <span style={{color:C.text,fontWeight:700}}>{partCostCalc.unitCost.toFixed(2)} TRY</span>
+              </div>
+              <button onClick={savePart} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Parca Kaydet/Guncelle</button>
             </div>
           </div>
-          <div style={{fontSize:12,color:C.muted2}}>
-            Parca tanim kartini acmak icin <strong style={{color:C.text}}>Parca Tanimi</strong> butonuna tiklayin.
-            Yeni kayit icin <strong style={{color:C.text}}>+ Parca Ekle</strong> kullanin.
-          </div>
-          {selectedPart&&(
-            <div style={{marginTop:10,padding:"9px 10px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,fontSize:12,color:C.muted2}}>
-              <div><span style={{color:C.text,fontWeight:700}}>{selectedPart.partNo}</span> · {selectedPart.name||"-"} · Rev.{selectedPart.revision||"A"}</div>
-              <div style={{marginTop:2}}>Birim maliyet: <span style={{color:C.text,fontWeight:700}}>{safeNum(selectedPart.unitCost).toFixed(2)} TRY</span></div>
-            </div>
-          )}
         </div>
+      )}
 
-        {showPartModal&&(
-          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.68)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:54,padding:14}} onClick={()=>setShowPartModal(false)}>
-            <div style={{width:"100%",maxWidth:980,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16,maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8,flexWrap:"wrap"}}>
-                <div style={{fontWeight:700,color:C.text,fontSize:16}}>Parca Tanimi</div>
-                <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  {selectedPart&&<Badge label={`Secili: ${selectedPart.partNo}`} color={C.accent}/>}
-                  <button onClick={()=>setShowPartModal(false)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
-                </div>
-              </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-                <div><span style={labelSt}>Parca No *</span><input style={inputSt} value={partForm.partNo} onChange={e=>fv("partNo",e.target.value)} placeholder="PRT-001"/></div>
-                <div><span style={labelSt}>Parca Adi *</span><input style={inputSt} value={partForm.name} onChange={e=>fv("name",e.target.value)} placeholder="Govde"/></div>
-                <div><span style={labelSt}>Revizyon</span><input style={inputSt} value={partForm.revision} onChange={e=>fv("revision",e.target.value)}/></div>
-                <div>
-                  <span style={labelSt}>Malzeme</span>
-                  <select style={inputSt} value={partForm.material} onChange={e=>fv("material",e.target.value)}>
-                    <option value="">Secin...</option>
-                    {materials.map(m=><option key={m.id} value={m.name||""}>{m.code?`${m.code} - `:""}{m.name||""}</option>)}
-                  </select>
-                </div>
-                <div><span style={labelSt}>Setup (sn)</span><input style={inputSt} type="number" min="0" value={partForm.setupSec} onChange={e=>fv("setupSec",e.target.value)}/></div>
-                <div><span style={labelSt}>Cycle (sn)</span><input style={inputSt} type="number" min="0" value={partForm.cycleSec} onChange={e=>fv("cycleSec",e.target.value)}/></div>
-                <div><span style={labelSt}>Hammadde Miktar</span><input style={inputSt} type="number" min="0" value={partForm.qtyPerRaw} onChange={e=>fv("qtyPerRaw",e.target.value)}/></div>
-                <div><span style={labelSt}>Hammadde Birim Maliyet</span><input style={inputSt} type="number" min="0" value={partForm.rawUnitCost} onChange={e=>fv("rawUnitCost",e.target.value)}/></div>
-                <div><span style={labelSt}>NC Program Versiyon</span><input style={inputSt} value={partForm.ncProgramVersion} onChange={e=>fv("ncProgramVersion",e.target.value)} placeholder="V1"/></div>
-                <div><span style={labelSt}>Iscilik Saatlik</span><input style={inputSt} type="number" min="0" value={partForm.laborRateHour} onChange={e=>fv("laborRateHour",e.target.value)}/></div>
-                <div><span style={labelSt}>Tezgah Saatlik</span><input style={inputSt} type="number" min="0" value={partForm.machineRateHour} onChange={e=>fv("machineRateHour",e.target.value)}/></div>
-                <div>
-                  <span style={labelSt}>Teknik Resim</span>
-                  <label style={{...inputSt,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
-                    <span style={{fontSize:12,color:C.muted2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{partForm.drawingFile?.name||"Dosya sec..."}</span>
-                    <span style={{fontSize:11,color:C.accent}}>{uploading?"Yukleniyor":"Sec"}</span>
-                    <input type="file" accept=".pdf,.dxf,.dwg,image/*" style={{display:"none"}} onChange={pickDrawing}/>
-                  </label>
-                </div>
-              </div>
-              <div style={{marginTop:8}}>
-                <span style={labelSt}>Not</span>
-                <textarea rows={2} style={{...inputSt,minHeight:62,resize:"vertical"}} value={partForm.notes} onChange={e=>fv("notes",e.target.value)}/>
-              </div>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:10}}>
-                <div style={{fontSize:12,color:C.muted2}}>
-                  Birim Maliyet = Malzeme {partCostCalc.materialCost.toFixed(2)} + Iscilik {partCostCalc.laborCost.toFixed(2)} + Tezgah {partCostCalc.machineCost.toFixed(2)} = <span style={{color:C.text,fontWeight:700}}>{partCostCalc.unitCost.toFixed(2)} TRY</span>
-                </div>
-                <button onClick={savePart} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Parca Kaydet/Guncelle</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {selectedPart&&(
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+      {selectedPart&&(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(360px,1fr))",gap:12}}>
             <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
               <div style={{fontWeight:700,color:C.text,marginBottom:10}}>BOM (Urun Agaci)</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr .7fr .7fr .9fr .9fr auto",gap:6}}>
@@ -2204,9 +2185,8 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
               ))}
               {(selectedPart.routingOps||[]).length===0&&<div style={{fontSize:12,color:C.muted2,marginTop:8}}>Rota adimi yok.</div>}
             </div>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3416,14 +3396,14 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
               </div>
 
               <div style={{overflowX:"auto"}}>
-                <div style={{minWidth:1240,display:"flex",flexDirection:"column",gap:7}}>
-                  <div style={{display:"grid",gridTemplateColumns:"120px 180px 72px 84px 94px 88px 132px 94px 130px 104px 44px",gap:7,fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:".35px"}}>
-                    <div>Parca No</div><div>Parca Adi</div><div>Rev.</div><div>Adet</div><div>Birim</div><div>Iskonto %</div><div>Termin</div><div>Cevrim sn</div><div>Tezgah</div><div>Tutar</div><div/>
+                <div style={{minWidth:1110,display:"flex",flexDirection:"column",gap:7}}>
+                  <div style={{display:"grid",gridTemplateColumns:"120px 180px 72px 84px 94px 88px 132px 94px 104px 44px",gap:7,fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:".35px"}}>
+                    <div>Parca No</div><div>Parca Adi</div><div>Rev.</div><div>Adet</div><div>Birim</div><div>Iskonto %</div><div>Termin</div><div>Cevrim sn</div><div>Tutar</div><div/>
                   </div>
                   {orderForm.lines.map((line,idx)=>{
                     const t=lineTotal(line);
                     return (
-                      <div key={idx} style={{display:"grid",gridTemplateColumns:"120px 180px 72px 84px 94px 88px 132px 94px 130px 104px 44px",gap:7}}>
+                      <div key={idx} style={{display:"grid",gridTemplateColumns:"120px 180px 72px 84px 94px 88px 132px 94px 104px 44px",gap:7}}>
                         <input style={inputSt} value={line.partNo} onChange={e=>setOrderLine(idx,"partNo",e.target.value)} onBlur={()=>applyOrderCustomerPrice(idx,line.partNo)} placeholder="P-NO"/>
                         <input style={inputSt} value={line.partName} onChange={e=>setOrderLine(idx,"partName",e.target.value)} placeholder="Parca adi"/>
                         <input style={inputSt} value={line.revision} onChange={e=>setOrderLine(idx,"revision",e.target.value.toUpperCase())} placeholder="A"/>
@@ -3432,7 +3412,6 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                         <input style={inputSt} type="number" min="0" max="100" value={line.discountPct} onChange={e=>setOrderLine(idx,"discountPct",e.target.value)}/>
                         <input style={inputSt} type="date" value={line.dueDate||orderForm.dueDate||todayStr()} onChange={e=>setOrderLine(idx,"dueDate",e.target.value)}/>
                         <input style={inputSt} type="number" min="1" value={line.partSec} onChange={e=>setOrderLine(idx,"partSec",e.target.value)}/>
-                        <select style={inputSt} value={line.machine} onChange={e=>setOrderLine(idx,"machine",e.target.value)}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
                         <div style={{...inputSt,display:"flex",alignItems:"center",justifyContent:"flex-end",fontWeight:700,color:C.text}}>{safeNum(t.net).toFixed(2)}</div>
                         <button onClick={()=>removeOrderLine(idx)} style={{...btnSt("danger"),padding:0,fontSize:16,lineHeight:1}}>×</button>
                       </div>
@@ -8422,7 +8401,6 @@ function App() {
   const allTabs=useMemo(()=>[
     {id:"dashboard",icon:"dashboard",label:"Gösterge Paneli",group:"Planlama",enabled:(canEntry||canOrders||canReport||canSales||canPurchasing)},
     {id:"planning",icon:"planning",label:"Planlama",group:"Planlama",enabled:canPlanning},
-    {id:"mrp",icon:"mrp",label:"MRP Run",group:"Planlama",enabled:canPlanning},
     {id:"parts",icon:"parts",label:"Parca ve BOM",group:"Planlama",enabled:canPlanning},
     {id:"quotes",icon:"quotes",label:"Teklif Yonetimi",group:"Planlama",enabled:canSales},
     {id:"sales",icon:"sales",label:"Satis Siparisleri",group:"Planlama",enabled:canSales},
