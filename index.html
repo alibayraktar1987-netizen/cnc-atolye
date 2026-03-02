@@ -577,6 +577,100 @@ function dataUrlToUint8Array(dataUrl) {
   for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
   return bytes;
 }
+function normalizeDimensionToken(token){
+  return String(token||"").replace(/\s+/g," ").trim().replace(/,+/g,",").replace(/\.+/g,".");
+}
+function isLikelyDimensionToken(token){
+  const raw=normalizeDimensionToken(token);
+  if(!raw) return false;
+  const compact=raw.replace(/\s+/g,"");
+  if(!/\d/.test(compact)) return false;
+  if(compact.length<2||compact.length>28) return false;
+  if(/^[0-9]+$/.test(compact)) return false;
+  const hasMarker=/[Ø⌀R±°]|MM$/i.test(compact)||/M\d+/i.test(compact)||/\d+[.,]\d+/.test(compact)||/\d+[xX]\d+/.test(compact);
+  return hasMarker;
+}
+function extractDimensionTokensFromText(text){
+  const cleaned=String(text||"").replace(/\s+/g," ").trim();
+  if(!cleaned) return [];
+  const regex=/(?:Ø|⌀|R|M)?\s*\d{1,4}(?:[.,]\d{1,3})?(?:\s*[xX]\s*\d{1,4}(?:[.,]\d{1,3})?)*(?:\s*(?:mm|°))?(?:\s*[±]\s*\d+(?:[.,]\d+)?)?/g;
+  const matches=cleaned.match(regex)||[];
+  const uniq={};
+  return matches
+    .map(normalizeDimensionToken)
+    .filter(isLikelyDimensionToken)
+    .filter(token=>{
+      const key=token.toUpperCase();
+      if(uniq[key]) return false;
+      uniq[key]=true;
+      return true;
+    });
+}
+async function autoBalloonPdfDrawing(file,{pageNumber=1,maxItems=260}={}){
+  if(!(file&&file.data)) throw new Error("PDF dosyasi bulunamadi.");
+  const pdfLibSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+  const pdfWorkerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  const ok=await ensureExternalScript(pdfLibSrc,()=>Boolean(window.pdfjsLib&&window.pdfjsLib.getDocument));
+  if(!ok||!window.pdfjsLib||!window.pdfjsLib.getDocument) throw new Error("PDF motoru yuklenemedi.");
+  if(window.pdfjsLib.GlobalWorkerOptions) window.pdfjsLib.GlobalWorkerOptions.workerSrc=pdfWorkerSrc;
+  const bytes=dataUrlToUint8Array(file.data);
+  const task=window.pdfjsLib.getDocument({data:bytes});
+  const pdf=await task.promise;
+  const totalPages=Math.max(1,Number(pdf.numPages)||1);
+  const safePage=Math.min(totalPages,Math.max(1,Number(pageNumber)||1));
+  const page=await pdf.getPage(safePage);
+  const viewport=page.getViewport({scale:1});
+  const textContent=await page.getTextContent();
+  const rows=[];
+  (textContent.items||[]).forEach(item=>{
+    const rawText=String(item?.str||"").trim();
+    if(!rawText) return;
+    const tokens=extractDimensionTokensFromText(rawText);
+    if(tokens.length===0) return;
+    const tr=Array.isArray(item?.transform)?item.transform:[1,0,0,1,0,0];
+    const x=Math.max(0,safeNum(tr[4]));
+    const y=Math.max(0,safeNum(tr[5]));
+    const h=Math.max(7,Math.abs(safeNum(tr[3]))||safeNum(item?.height)||8);
+    const yTop=Math.max(0,viewport.height-y-h);
+    tokens.forEach(token=>{
+      rows.push({text:token,x,yTop,height:h});
+    });
+  });
+  const dedupe={};
+  const uniqueRows=[];
+  rows.forEach(row=>{
+    const key=`${row.text}|${Math.round(row.x)}|${Math.round(row.yTop)}`;
+    if(dedupe[key]) return;
+    dedupe[key]=true;
+    uniqueRows.push(row);
+  });
+  uniqueRows.sort((a,b)=>{
+    const dy=a.yTop-b.yTop;
+    if(Math.abs(dy)>6) return dy;
+    return a.x-b.x;
+  });
+  const limited=uniqueRows.slice(0,Math.max(1,Math.min(500,Number(maxItems)||260)));
+  const balloons=limited.map((row,idx)=>({
+    no:idx+1,
+    text:row.text,
+    page:safePage,
+    xPct:Math.max(0,Math.min(100,(row.x/Math.max(1,viewport.width))*100)),
+    yPct:Math.max(0,Math.min(100,(row.yTop/Math.max(1,viewport.height))*100)),
+  }));
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.max(1,Math.round(viewport.width));
+  canvas.height=Math.max(1,Math.round(viewport.height));
+  const ctx=canvas.getContext("2d");
+  await page.render({canvasContext:ctx,viewport}).promise;
+  return {
+    page:safePage,
+    pageCount:totalPages,
+    pageWidth:viewport.width,
+    pageHeight:viewport.height,
+    previewDataUrl:canvas.toDataURL("image/png"),
+    balloons,
+  };
+}
 function disposeThreeObject(root) {
   if(!(root&&root.traverse)) return;
   root.traverse(node=>{
@@ -9373,19 +9467,79 @@ function DowntimeModule({currentUser,machines=DEFAULT_MACHINES}){
 function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
   const [loading,setLoading]=useState(true);
   const [orders,setOrders]=useState([]);
+  const [salesOrders,setSalesOrders]=useState([]);
   const [traces,setTraces]=useState([]);
   const [inspections,setInspections]=useState([]);
   const [fai,setFai]=useState([]);
+  const [balloonRuns,setBalloonRuns]=useState([]);
   const [view,setView]=useState("trace");
   const [traceForm,setTraceForm]=useState({orderId:"",machine:machines[0]||"CNC-1",operatorId:currentUser.id||"",programVersion:"V1",serialNo:"",timestamp:todayStr()+"T08:00",complaintRef:""});
   const [inspForm,setInspForm]=useState({traceId:"",result:"pass",measurements:"",scrapQty:"0",scrapReason:"",scrapCost:"0"});
-  const [faiForm,setFaiForm]=useState({orderId:"",partNo:"",status:"draft",note:""});
+  const [faiForm,setFaiForm]=useState({orderId:"",partNo:"",status:"draft",note:"",balloonRunId:""});
+  const [balloonForm,setBalloonForm]=useState({orderId:"",fileId:"",page:"1"});
+  const [balloonBusy,setBalloonBusy]=useState(false);
+  const [balloonError,setBalloonError]=useState("");
+  const [balloonPreview,setBalloonPreview]=useState(null);
   const load=useCallback(async()=>{
-    const [o,t,i,f]=await Promise.all([window.DB.getAll("orders"),window.DB.getAll("partTraceability"),window.DB.getAll("qualityInspections"),window.DB.getAll("faiRecords")]);
-    setOrders(o); setTraces(t); setInspections(i); setFai(f); setLoading(false);
+    const [o,s,t,i,f,b]=await Promise.all([
+      window.DB.getAll("orders"),
+      window.DB.getAll("salesOrders"),
+      window.DB.getAll("partTraceability"),
+      window.DB.getAll("qualityInspections"),
+      window.DB.getAll("faiRecords"),
+      window.DB.getAll("faiBalloonRuns"),
+    ]);
+    setOrders(o);
+    setSalesOrders(s);
+    setTraces(t);
+    setInspections(i);
+    setFai(f);
+    setBalloonRuns((b||[]).sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
   const orderById=Object.fromEntries(orders.map(o=>[o.id,o]));
+  const approvedSalesOrderIds=new Set((salesOrders||[])
+    .filter(s=>["approved","in_production","delivered"].includes(s.status||""))
+    .map(s=>s.id));
+  const pdfOrders=(orders||[])
+    .filter(o=>Array.isArray(o.files)&&(o.files||[]).some(f=>f&&f.data&&isPdfFile(f)))
+    .filter(o=>!o.sourceSalesOrderId||approvedSalesOrderIds.has(o.sourceSalesOrderId));
+  const pdfOrderById=Object.fromEntries(pdfOrders.map(o=>[o.id,o]));
+  const selectedPdfOrder=pdfOrderById[balloonForm.orderId]||null;
+  const selectedPdfFiles=selectedPdfOrder
+    ? (selectedPdfOrder.files||[])
+      .filter(f=>f&&f.data&&isPdfFile(f))
+      .map((f,idx)=>({
+        ...f,
+        _pickId:String(f.id||`pdf_${idx}`),
+      }))
+    : [];
+  const selectedPdfFile=selectedPdfFiles.find(f=>f._pickId===balloonForm.fileId)||null;
+  const selectedBalloonRun=balloonRuns.find(r=>r.id===faiForm.balloonRunId)||null;
+  const orderBalloonRuns=balloonForm.orderId
+    ? balloonRuns.filter(r=>r.orderId===balloonForm.orderId)
+    : [];
+  useEffect(()=>{
+    if(!pdfOrders.length) return;
+    if(balloonForm.orderId&&pdfOrderById[balloonForm.orderId]) return;
+    const first=pdfOrders[0];
+    const files=(first.files||[]).filter(f=>f&&f.data&&isPdfFile(f));
+    setBalloonForm({
+      orderId:first.id||"",
+      fileId:String(files[0]?.id||"pdf_0"),
+      page:"1",
+    });
+  },[pdfOrders.map(o=>o.id).join(","),balloonForm.orderId]);
+  useEffect(()=>{
+    if(!selectedPdfOrder) return;
+    if(selectedPdfFiles.length===0){
+      setBalloonForm(f=>({...f,fileId:""}));
+      return;
+    }
+    if(selectedPdfFiles.some(f=>f._pickId===balloonForm.fileId)) return;
+    setBalloonForm(f=>({...f,fileId:selectedPdfFiles[0]._pickId}));
+  },[selectedPdfOrder?.id,selectedPdfFiles.map(f=>f._pickId).join(","),balloonForm.fileId]);
 
   async function saveTrace(){
     const wo=orderById[traceForm.orderId];
@@ -9409,14 +9563,89 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
     setInspections(prev=>[{id,...payload},...prev]);
     setInspForm({traceId:"",result:"pass",measurements:"",scrapQty:"0",scrapReason:"",scrapCost:"0"});
   }
+  async function runAutoBalloon(){
+    const wo=pdfOrderById[balloonForm.orderId];
+    if(!wo){alert("PDF icin is emri secin.");return;}
+    if(!selectedPdfFile){alert("PDF secin.");return;}
+    setBalloonBusy(true);
+    setBalloonError("");
+    try{
+      const result=await autoBalloonPdfDrawing(selectedPdfFile,{pageNumber:Math.max(1,safeNum(balloonForm.page)||1)});
+      const payload={
+        orderId:wo.id||"",
+        orderCode:wo.code||"",
+        partNo:wo.partNo||"",
+        filePickId:selectedPdfFile._pickId,
+        fileName:selectedPdfFile.name||"drawing.pdf",
+        page:result.page,
+        pageCount:result.pageCount,
+        dimensionCount:(result.balloons||[]).length,
+        dimensions:(result.balloons||[]).map(d=>({
+          no:d.no,
+          text:d.text,
+          page:d.page,
+          xPct:d.xPct,
+          yPct:d.yPct,
+        })),
+        source:"auto_pdfjs",
+        status:"draft",
+        createdBy:currentUser.id,
+        createdAt:new Date().toISOString(),
+        updatedAt:new Date().toISOString(),
+      };
+      const id=await window.DB.addDoc("faiBalloonRuns",payload);
+      if(!id){throw new Error("Balon kaydi saklanamadi.");}
+      const saved={id,...payload};
+      setBalloonRuns(prev=>[saved,...prev]);
+      setBalloonPreview({
+        runId:id,
+        previewDataUrl:result.previewDataUrl,
+        balloons:result.balloons||[],
+        fileName:payload.fileName,
+        page:payload.page,
+      });
+      setFaiForm(f=>({
+        ...f,
+        orderId:f.orderId||wo.id||"",
+        partNo:f.partNo||wo.partNo||"",
+        balloonRunId:id,
+      }));
+    }catch(err){
+      setBalloonError(String(err?.message||"Oto balon olusturulamadi."));
+    }finally{
+      setBalloonBusy(false);
+    }
+  }
+  function bindSelectedBalloonRunToFai(runId){
+    const run=balloonRuns.find(r=>r.id===runId)||null;
+    if(!run){return;}
+    setFaiForm(f=>({
+      ...f,
+      orderId:f.orderId||run.orderId||"",
+      partNo:f.partNo||run.partNo||"",
+      balloonRunId:run.id||"",
+    }));
+  }
   async function saveFai(){
     const wo=orderById[faiForm.orderId];
     if(!wo){alert("Is emri secin.");return;}
-    const payload={orderId:wo.id,orderCode:wo.code||"",partNo:faiForm.partNo||wo.partNo||"",status:faiForm.status||"draft",note:faiForm.note.trim(),updatedAt:new Date().toISOString(),updatedBy:currentUser.id};
+    const linkedRun=balloonRuns.find(r=>r.id===faiForm.balloonRunId)||null;
+    const payload={
+      orderId:wo.id,
+      orderCode:wo.code||"",
+      partNo:faiForm.partNo||wo.partNo||"",
+      status:faiForm.status||"draft",
+      note:faiForm.note.trim(),
+      balloonRunId:linkedRun?.id||"",
+      balloonCount:Math.max(0,safeNum(linkedRun?.dimensionCount)),
+      drawingFileName:linkedRun?.fileName||"",
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser.id,
+    };
     const id=await window.DB.addDoc("faiRecords",payload);
     if(!id){alert("FAI kaydi olusturulamadi.");return;}
     setFai(prev=>[{id,...payload},...prev]);
-    setFaiForm({orderId:"",partNo:"",status:"draft",note:""});
+    setFaiForm({orderId:"",partNo:"",status:"draft",note:"",balloonRunId:""});
   }
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
@@ -9479,10 +9708,72 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
       {view==="fai"&&(
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
           <div style={{fontWeight:700,color:C.text,marginBottom:8}}>FAI Akisi</div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10,marginBottom:10}}>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:7}}>Teknik Resim Oto Balon (Beta)</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr .4fr 1fr",gap:8}}>
+              <div>
+                <span style={labelSt}>Onayli Siparisten Gelen Is Emri</span>
+                <select style={inputSt} value={balloonForm.orderId} onChange={e=>{setBalloonForm(f=>({...f,orderId:e.target.value,page:"1"}));setBalloonPreview(null);setBalloonError("");}}>
+                  <option value="">Secin</option>
+                  {pdfOrders.map(o=><option key={o.id} value={o.id}>{o.code} · {o.partNo||o.name||"-"}</option>)}
+                </select>
+              </div>
+              <div>
+                <span style={labelSt}>Teknik Resim PDF</span>
+                <select style={inputSt} value={balloonForm.fileId} onChange={e=>{setBalloonForm(f=>({...f,fileId:e.target.value}));setBalloonPreview(null);setBalloonError("");}}>
+                  <option value="">Secin</option>
+                  {selectedPdfFiles.map(f=><option key={f._pickId} value={f._pickId}>{f.name||"drawing.pdf"}</option>)}
+                </select>
+              </div>
+              <div>
+                <span style={labelSt}>Sayfa</span>
+                <input style={inputSt} type="number" min="1" value={balloonForm.page} onChange={e=>setBalloonForm(f=>({...f,page:e.target.value||"1"}))}/>
+              </div>
+              <div>
+                <span style={labelSt}>Kayitli Balon Run</span>
+                <select style={inputSt} value={faiForm.balloonRunId||""} onChange={e=>{const id=e.target.value;setFaiForm(f=>({...f,balloonRunId:id}));bindSelectedBalloonRunToFai(id);}}>
+                  <option value="">Secin</option>
+                  {orderBalloonRuns.map(r=><option key={r.id} value={r.id}>{r.fileName||"PDF"} · S{r.page||1} · {r.dimensionCount||0} olcu</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8,justifyContent:"space-between",marginTop:8,flexWrap:"wrap"}}>
+              <button onClick={runAutoBalloon} disabled={balloonBusy||!balloonForm.orderId||!balloonForm.fileId} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,opacity:(balloonBusy||!balloonForm.orderId||!balloonForm.fileId)?0.65:1}}>
+                {balloonBusy?"Oto Balonlanıyor...":"Oto Balonla"}
+              </button>
+              <div style={{fontSize:12,color:C.muted2}}>
+                {selectedBalloonRun?`Bagli run: ${selectedBalloonRun.fileName||"-"} · ${selectedBalloonRun.dimensionCount||0} olcu`:`Run secilmedi`}
+              </div>
+            </div>
+            {balloonError&&<div style={{fontSize:12,color:C.red,marginTop:7}}>{balloonError}</div>}
+            {balloonPreview&&(
+              <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1.3fr .9fr",gap:10}}>
+                <div style={{border:`1px solid ${C.border}`,borderRadius:8,overflow:"auto",maxHeight:520,background:"#fff"}}>
+                  <div style={{position:"relative",minWidth:420}}>
+                    <img src={balloonPreview.previewDataUrl} alt={balloonPreview.fileName||"PDF"} style={{width:"100%",display:"block"}}/>
+                    {(balloonPreview.balloons||[]).slice(0,300).map(b=>(
+                      <span key={`bal_${b.no}_${b.page}`} title={`${b.no} · ${b.text}`} style={{position:"absolute",left:`${b.xPct}%`,top:`${b.yPct}%`,transform:"translate(-50%,-50%)",minWidth:18,height:18,padding:"0 4px",borderRadius:999,background:"#ef4444",color:"#fff",fontSize:10,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center",lineHeight:1,border:"1px solid #fff",boxShadow:"0 1px 2px rgba(0,0,0,.35)",pointerEvents:"none"}}>{b.no}</span>
+                    ))}
+                  </div>
+                </div>
+                <div style={{border:`1px solid ${C.border}`,borderRadius:8,padding:8,maxHeight:520,overflowY:"auto",background:C.card}}>
+                  <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase",marginBottom:6}}>Bulunan Olculer ({(balloonPreview.balloons||[]).length})</div>
+                  {(balloonPreview.balloons||[]).length===0&&<div style={{fontSize:12,color:C.muted2}}>Olcu metni bulunamadi.</div>}
+                  {(balloonPreview.balloons||[]).slice(0,220).map(row=>(
+                    <div key={`dim_${row.no}`} style={{display:"grid",gridTemplateColumns:"36px 1fr",gap:6,padding:"4px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
+                      <div style={{fontWeight:700,color:C.accent}}>#{row.no}</div>
+                      <div style={{color:C.text,wordBreak:"break-word"}}>{row.text}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
             <div><span style={labelSt}>Is Emri</span><select style={inputSt} value={faiForm.orderId} onChange={e=>setFaiForm(f=>({...f,orderId:e.target.value}))}><option value="">Secin</option>{orders.map(o=><option key={o.id} value={o.id}>{o.code}</option>)}</select></div>
             <div><span style={labelSt}>Parca No</span><input style={inputSt} value={faiForm.partNo} onChange={e=>setFaiForm(f=>({...f,partNo:e.target.value}))}/></div>
             <div><span style={labelSt}>Durum</span><select style={inputSt} value={faiForm.status} onChange={e=>setFaiForm(f=>({...f,status:e.target.value}))}><option value="draft">Taslak</option><option value="pending">Beklemede</option><option value="approved">Onayli</option><option value="rejected">Reddedildi</option></select></div>
+            <div><span style={labelSt}>Balon Run</span><select style={inputSt} value={faiForm.balloonRunId||""} onChange={e=>setFaiForm(f=>({...f,balloonRunId:e.target.value}))}><option value="">Yok</option>{balloonRuns.filter(r=>!faiForm.orderId||r.orderId===faiForm.orderId).map(r=><option key={r.id} value={r.id}>{r.orderCode||"-"} · {r.fileName||"PDF"} · {r.dimensionCount||0}</option>)}</select></div>
             <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Not</span><textarea rows={2} style={{...inputSt,minHeight:62,resize:"vertical"}} value={faiForm.note} onChange={e=>setFaiForm(f=>({...f,note:e.target.value}))}/></div>
           </div>
           <div style={{display:"flex",justifyContent:"space-between",marginTop:10,flexWrap:"wrap",gap:8}}>
