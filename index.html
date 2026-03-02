@@ -5353,6 +5353,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const [stationTag,setStationTag]=useState("");
   const [showToolModal,setShowToolModal]=useState(false);
   const [showShiftModal,setShowShiftModal]=useState(false);
+  const [shiftModalMode,setShiftModalMode]=useState("shiftEnd");
   const [previewFile,setPreviewFile]=useState(null);
   const [toolDraft,setToolDraft]=useState({machineToolId:"",machineToolQty:"1"});
   const [shiftDraft,setShiftDraft]=useState({correct:"",wrong:""});
@@ -5639,6 +5640,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   }
 
   function openShiftEndModal(){
+    setShiftModalMode("shiftEnd");
     setShiftDraft({
       correct:String(shiftDraft.correct||form.correct||""),
       wrong:String(shiftDraft.wrong||form.wrong||0),
@@ -5646,9 +5648,28 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     setShowShiftModal(true);
   }
 
+  function openRejectPartsModal(){
+    if(!form.selectedOrder){alert("İş emri seçin!");return;}
+    setShiftModalMode("rejectOnly");
+    setShiftDraft({
+      correct:"0",
+      wrong:String(shiftDraft.wrong||form.wrong||""),
+    });
+    setShowShiftModal(true);
+  }
+
+  function closeShiftModal(){
+    setShowShiftModal(false);
+    setShiftModalMode("shiftEnd");
+  }
+
   async function approveShiftEnd(){
-    const ok=await submitShiftEnd(shiftDraft.correct,shiftDraft.wrong);
-    if(ok) setShowShiftModal(false);
+    const correctValue=shiftModalMode==="rejectOnly"?"0":shiftDraft.correct;
+    const ok=await submitShiftEnd(correctValue,shiftDraft.wrong);
+    if(ok){
+      setShowShiftModal(false);
+      setShiftModalMode("shiftEnd");
+    }
   }
 
   const machineToolPicked=tools.find(t=>t.id===form.machineToolId);
@@ -6038,7 +6059,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",background:"#fff"}}>
               <button onClick={()=>setShowPicker(v=>!v)} style={{...actionBtnStyle,fontSize:26,color:"#9aa8bb"}}>☰</button>
               <button onClick={openShiftEndModal} style={actionBtnStyle}>⏹ İşi Durdur</button>
-              <button onClick={openShiftEndModal} style={actionBtnStyle}>⊘ Hata Girişi</button>
+              <button onClick={openRejectPartsModal} style={actionBtnStyle}>⊘ Hata Girişi</button>
               <button onClick={openToolChangeModal} style={{...actionBtnStyle,borderRight:"none"}}>💬 Kategori</button>
             </div>
           </div>
@@ -6067,16 +6088,16 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
           </div>
         )}
         {showShiftModal&&(
-          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={()=>setShowShiftModal(false)}>
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={closeShiftModal}>
             <div style={{width:"100%",maxWidth:560,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16}} onClick={e=>e.stopPropagation()}>
-              <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>Vardiya Sonu</div>
+              <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>{shiftModalMode==="rejectOnly"?"Hata Girişi":"Vardiya Sonu"}</div>
               <div style={{display:"flex",gap:10}}>
-                <div style={{flex:1}}><span style={labelSt}>✅ Doğru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>
-                <div style={{flex:1}}><span style={labelSt}>❌ Hatalı Adet</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>
+                {shiftModalMode!=="rejectOnly"&&<div style={{flex:1}}><span style={labelSt}>✅ Doğru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>}
+                <div style={{flex:1}}><span style={labelSt}>{shiftModalMode==="rejectOnly"?"❌ Kaç Adet Hatalı?":"❌ Hatalı Adet"}</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>
               </div>
               <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
-                <button onClick={()=>setShowShiftModal(false)} style={{...btnSt("ghost"),padding:"10px 14px"}}>İptal</button>
-                <button onClick={approveShiftEnd} style={{...btnSt(saved?"green":"primary"),padding:"10px 14px"}}>{editId?"Güncellemeyi Onayla":"Vardiyayı Onayla"}</button>
+                <button onClick={closeShiftModal} style={{...btnSt("ghost"),padding:"10px 14px"}}>İptal</button>
+                <button onClick={approveShiftEnd} style={{...btnSt(saved?"green":"primary"),padding:"10px 14px"}}>{shiftModalMode==="rejectOnly"?"Hata Kaydet":(editId?"Güncellemeyi Onayla":"Vardiyayı Onayla")}</button>
               </div>
             </div>
           </div>
