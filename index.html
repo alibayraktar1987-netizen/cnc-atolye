@@ -7084,6 +7084,64 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     });
     setShowPlanModal(true);
   }
+  function resolveOrderMachines(order){
+    const orderMachines=Array.isArray(order?.machines)?order.machines.filter(m=>machines.includes(m)):[];
+    if(orderMachines.length>0) return orderMachines;
+    if(Array.isArray(machines)&&machines.length>0) return machines;
+    return ["CNC-1"];
+  }
+  function openWeekPlanModalForOrder(order){
+    if(!order) return;
+    const today=todayStr();
+    const weekEnd=addDays(startOfWeekYmd(today),6);
+    const endDate=weekEnd<today?today:weekEnd;
+    const pickedMachine=resolveOrderMachines(order)[0]||(machines[0]||"CNC-1");
+    setEditId(null);
+    setSelectedPlan(null);
+    setForm({
+      startDate:today,
+      endDate,
+      machine:pickedMachine,
+      orderId:order.id||"",
+      note:order.notes||"",
+    });
+    setShowPlanModal(true);
+  }
+  async function quickPlanToday(order){
+    if(!order||!order.id) return;
+    const today=todayStr();
+    const candidates=resolveOrderMachines(order);
+    if(plans.some(p=>p.orderId===order.id&&p.date===today)){
+      alert("Bu iş emri bugün için zaten planlandı.");
+      return;
+    }
+    const pickedMachine=candidates.find(machine=>!plans.some(p=>p.machine===machine&&p.date===today));
+    if(!pickedMachine){
+      alert("Bugün için uygun boş tezgah bulunamadı.");
+      return;
+    }
+    const data={
+      machine:pickedMachine,
+      orderId:order.id,
+      orderCode:order.code||"",
+      orderName:order.name||"",
+      orderPartSec:Number(order.partSec)||0,
+      orderCustomerName:order.customerName||"",
+      note:order.notes||"",
+      status:"planned",
+      createdBy:currentUser.id,
+      date:today,
+      week:weekStart(parseYmdLocal(today)),
+      month:monthStr(parseYmdLocal(today)),
+      updatedAt:new Date().toISOString(),
+    };
+    const id=await window.DB.addDoc("plans",data);
+    if(!id){
+      alert("Hızlı planlama kaydedilemedi.");
+      return;
+    }
+    setPlans(prev=>[{id,...data},...prev]);
+  }
   const allPlanSegments=buildPlanSegments(plans);
   const sortedPlanSegments=allPlanSegments;
   const mpsBaseWeek=startOfWeekYmd(todayStr());
@@ -7581,9 +7639,17 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                         Termin: {order.dueDate||"-"} · Tezgah: {Array.isArray(order.machines)&&order.machines.length>0?order.machines.join(", "):"-"}
                       </div>
                     </div>
-                    <button onClick={()=>openPlanModalForOrder(order)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}>
-                      Planla
-                    </button>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                      <button onClick={()=>quickPlanToday(order)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>
+                        Bugun
+                      </button>
+                      <button onClick={()=>openWeekPlanModalForOrder(order)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>
+                        Bu Hafta
+                      </button>
+                      <button onClick={()=>openPlanModalForOrder(order)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}>
+                        Planla
+                      </button>
+                    </div>
                   </div>
                 );
               })}
