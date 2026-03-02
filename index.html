@@ -4016,6 +4016,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     code:"",
     customerId:"",
     validUntil:todayStr(),
+    paymentTermDays:"30",
     priority:"normal",
     note:"",
     lines:[makeDraftLine()],
@@ -4024,6 +4025,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     code:"",
     customerId:"",
     dueDate:todayStr(),
+    paymentTermDays:"30",
     priority:"normal",
     note:"",
     lines:[makeDraftLine()],
@@ -4108,6 +4110,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
             code:nextCode("TKL",quotes,/^TKL-(\d+)$/),
             customerId:"",
             validUntil:todayStr(),
+            paymentTermDays:"30",
             priority:"normal",
             note:"",
             lines:[makeDraftLine()],
@@ -4120,6 +4123,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
             code:nextCode("SIP",salesOrders,/^SIP-(\d+)$/),
             customerId:"",
             dueDate:todayStr(),
+            paymentTermDays:"30",
             priority:"normal",
             note:"",
             lines:[makeDraftLine()],
@@ -4356,6 +4360,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       code:nextCode("TKL",quotes,/^TKL-(\d+)$/),
       customerId:"",
       validUntil:todayStr(),
+      paymentTermDays:"30",
       priority:"normal",
       note:"",
       lines:[makeDraftLine()],
@@ -4370,6 +4375,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       code:String(quote.code||"").toUpperCase(),
       customerId:quote.customerId||"",
       validUntil:quote.validUntil||todayStr(),
+      paymentTermDays:String(Math.max(0,safeNum(quote.paymentTermDays)||30)),
       priority:quote.priority||"normal",
       note:quote.note||"",
       lines:(quote.lines&&quote.lines.length
@@ -4566,6 +4572,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       customerId:customer?.id||"",
       customerName:customer?.name||"",
       validUntil:quoteForm.validUntil||todayStr(),
+      paymentTermDays:Math.max(0,safeNum(quoteForm.paymentTermDays)||0),
       priority:quoteForm.priority||"normal",
       note:quoteForm.note.trim(),
       lines:normalizedLines,
@@ -4595,6 +4602,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       code:nextCode("TKL",nextQuoteSeed,/^TKL-(\d+)$/),
       customerId:"",
       validUntil:todayStr(),
+      paymentTermDays:"30",
       priority:"normal",
       note:"",
       lines:[makeDraftLine()],
@@ -4621,6 +4629,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       lines,
       qty:qtyTotal,
       dueDate:earliestDue,
+      paymentTermDays:Math.max(0,safeNum(orderForm.paymentTermDays)||0),
       priority:orderForm.priority||"normal",
       totalAmount:orderTotals.net,
       deliveredQty:0,
@@ -4640,6 +4649,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       code:nextCode("SIP",[...salesOrders,{id,...payload}],/^SIP-(\d+)$/),
       customerId:"",
       dueDate:todayStr(),
+      paymentTermDays:"30",
       priority:"normal",
       note:"",
       lines:[makeDraftLine()],
@@ -4658,6 +4668,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       customerId:q.customerId||"",
       customerName:q.customerName||"",
       validUntil:q.validUntil||todayStr(),
+      paymentTermDays:Math.max(0,safeNum(q.paymentTermDays)||0),
       priority:q.priority||"normal",
       note:(q.note||"").trim(),
       lines,
@@ -4691,6 +4702,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       lines,
       qty:qty>0?qty:Math.max(0,safeNum(o.qty)),
       dueDate:o.dueDate||todayStr(),
+      paymentTermDays:Math.max(0,safeNum(o.paymentTermDays)||0),
       priority:o.priority||"normal",
       totalAmount:net,
       deliveredQty:0,
@@ -4795,6 +4807,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       lines:normalizedQuoteLines,
       qty:qtyTotal,
       dueDate,
+      paymentTermDays:Math.max(0,safeNum(q.paymentTermDays)||0),
       priority:q.priority||"normal",
       totalAmount:safeNum(q.totalAmount),
       deliveredQty:0,
@@ -5018,6 +5031,25 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   function printOrder(o){
     exportSalesPdf("order",o);
   }
+  function resolveOrderNetAmount(order){
+    const direct=Math.max(0,safeNum(order?.totalAmount));
+    if(direct>0) return direct;
+    return (order?.lines||[]).reduce((sum,line)=>{
+      const qty=Math.max(0,safeNum(line?.qty));
+      const unit=Math.max(0,safeNum(line?.unitPrice));
+      const disc=Math.max(0,Math.min(100,safeNum(line?.discountPct)));
+      return sum+(qty*unit*(1-(disc/100)));
+    },0);
+  }
+  function estimateDeliveryAmount(order,deliveryQty){
+    const qty=Math.max(0,safeNum(deliveryQty));
+    if(qty<=0) return 0;
+    const orderTotal=Math.max(0,resolveOrderNetAmount(order));
+    if(orderTotal<=0) return 0;
+    const totalQty=Math.max(0,safeNum(order?.qty));
+    if(totalQty>0) return orderTotal*(qty/totalQty);
+    return orderTotal;
+  }
 
   async function addDelivery(order){
     const qtyInput=prompt("Teslim edilecek miktar:");
@@ -5025,7 +5057,10 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     const qty=Math.max(0,safeNum(qtyInput));
     if(!qty){alert("Gecerli miktar girin.");return;}
     const note=prompt("Teslim notu (opsiyonel):")||"";
-    const deliveries=[...(order.deliveries||[]),{date:todayStr(),qty,note,createdBy:currentUser.id}];
+    const deliveryDate=todayStr();
+    const deliveryId=`DLV-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2,6).toUpperCase()}`;
+    const deliveryRow={id:deliveryId,date:deliveryDate,qty,note,createdBy:currentUser.id};
+    const deliveries=[...(order.deliveries||[]),deliveryRow];
     const deliveredQty=safeNum(order.deliveredQty)+qty;
     const totalQty=safeNum(order.qty);
     const status=deliveredQty>=totalQty&&totalQty>0?"delivered":"in_production";
@@ -5033,6 +5068,36 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     const ok=await window.DB.updateDoc("salesOrders",order.id,patch);
     if(!ok){alert("Teslim kaydi eklenemedi.");return;}
     await addAuditLog(currentUser.id,"salesOrder",order.id,"delivery_add",order,{...order,...patch},{module:"sales"});
+    const paymentTermDays=Math.max(0,safeNum(order.paymentTermDays)||0);
+    const amount=Math.max(0,estimateDeliveryAmount(order,qty));
+    if(amount>0){
+      const dueDate=addDays(deliveryDate,paymentTermDays);
+      const financePayload={
+        flow:"tahsilat",
+        status:"planned",
+        dueDate,
+        amount,
+        currency:String(order.currency||defaultQuoteCurrency||"TRY").toUpperCase(),
+        paymentTermDays,
+        eventDate:deliveryDate,
+        qty,
+        sourceType:"sales_delivery",
+        sourceId:deliveryId,
+        sourceRefId:order.id||"",
+        sourceCode:order.code||"",
+        orderId:order.id||"",
+        orderCode:order.code||"",
+        customerId:order.customerId||"",
+        customerName:order.customerName||"",
+        note:note.trim(),
+        createdBy:currentUser.id,
+        updatedAt:new Date().toISOString(),
+      };
+      const fid=await window.DB.addDoc("financeLedger",financePayload);
+      if(!fid){
+        alert("Teslim kaydi alindi ancak finans tahsilat satiri olusturulamadi.");
+      }
+    }
     setSalesOrders(prev=>prev.map(x=>x.id===order.id?{...x,...patch}:x));
   }
 
@@ -5331,6 +5396,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                   code:nextCode("SIP",salesOrders,/^SIP-(\d+)$/),
                   customerId:"",
                   dueDate:todayStr(),
+                  paymentTermDays:"30",
                   priority:"normal",
                   note:"",
                   lines:[makeDraftLine()],
@@ -5366,6 +5432,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                           <td style={{padding:"10px 12px"}}>
                             <div style={{fontWeight:600,color:C.text}}>{o.customerName||"-"}</div>
                             <div style={{fontSize:11,color:C.muted2}}>Adet: {safeNum(o.qty)} · Teslim: {safeNum(o.deliveredQty)}</div>
+                            <div style={{fontSize:11,color:C.muted2}}>Vade: {Math.max(0,safeNum(o.paymentTermDays)||0)} gun</div>
                             {(o.deliveries||[]).length>0&&<div style={{fontSize:11,color:C.muted2}}>Son: {(o.deliveries||[]).slice(-1)[0]?.date||"-"}</div>}
                           </td>
                           <td style={{padding:"10px 12px",color:C.muted2}}>{o.dueDate||"-"}</td>
@@ -5420,6 +5487,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                 <div><span style={labelSt}>Teklif No</span><input style={inputSt} value={quoteForm.code} onChange={e=>setQ("code",e.target.value.toUpperCase())}/></div>
                 <div><span style={labelSt}>Musteri *</span><select style={inputSt} value={quoteForm.customerId} onChange={e=>setQ("customerId",e.target.value)}><option value="">Secin</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
                 <div><span style={labelSt}>Gecerlilik</span><input style={inputSt} type="date" value={quoteForm.validUntil} onChange={e=>setQ("validUntil",e.target.value)}/></div>
+                <div><span style={labelSt}>Odeme Vadesi (Gun)</span><input style={inputSt} type="number" min="0" value={quoteForm.paymentTermDays} onChange={e=>setQ("paymentTermDays",e.target.value)}/></div>
                 <div><span style={labelSt}>Oncelik</span><select style={inputSt} value={quoteForm.priority} onChange={e=>setQ("priority",e.target.value)}><option value="urgent">Acil</option><option value="normal">Normal</option><option value="low">Dusuk</option></select></div>
               </div>
               <div><span style={labelSt}>Not</span><input style={inputSt} value={quoteForm.note} onChange={e=>setQ("note",e.target.value)} placeholder="Opsiyonel not"/></div>
@@ -5513,6 +5581,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                 <div><span style={labelSt}>Siparis No</span><input style={inputSt} value={orderForm.code} onChange={e=>setO("code",e.target.value.toUpperCase())}/></div>
                 <div><span style={labelSt}>Musteri *</span><select style={inputSt} value={orderForm.customerId} onChange={e=>setO("customerId",e.target.value)}><option value="">Secin</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
                 <div><span style={labelSt}>Termin</span><input style={inputSt} type="date" value={orderForm.dueDate} onChange={e=>setO("dueDate",e.target.value)}/></div>
+                <div><span style={labelSt}>Odeme Vadesi (Gun)</span><input style={inputSt} type="number" min="0" value={orderForm.paymentTermDays} onChange={e=>setO("paymentTermDays",e.target.value)}/></div>
                 <div><span style={labelSt}>Oncelik</span><select style={inputSt} value={orderForm.priority} onChange={e=>setO("priority",e.target.value)}><option value="urgent">Acil</option><option value="normal">Normal</option><option value="low">Dusuk</option></select></div>
               </div>
               <div><span style={labelSt}>Not</span><input style={inputSt} value={orderForm.note} onChange={e=>setO("note",e.target.value)} placeholder="Opsiyonel not"/></div>
@@ -12279,7 +12348,7 @@ function PurchasingModule({currentUser}){
   const [supplierGroupFilter,setSupplierGroupFilter]=useState("all");
   const [supplierForm,setSupplierForm]=useState({name:"",code:"",groupId:"",leadTimeDays:"7",email:"",phone:"",currency:"TRY"});
   const [reqForm,setReqForm]=useState({materialId:"",qty:"",needDate:todayStr(),priority:"normal",note:""});
-  const [quoteForm,setQuoteForm]=useState({requestId:"",supplierId:"",unitPrice:"0",leadTimeDays:"7",currency:"TRY",note:""});
+  const [quoteForm,setQuoteForm]=useState({requestId:"",supplierId:"",unitPrice:"0",leadTimeDays:"7",paymentTermDays:"30",currency:"TRY",note:""});
   const [recvForm,setRecvForm]=useState({poId:"",acceptedQty:"",rejectedQty:"0",receiptDate:todayStr(),note:""});
 
   const load=useCallback(async()=>{
@@ -12356,16 +12425,16 @@ function PurchasingModule({currentUser}){
     const supplier=suppliers.find(s=>s.id===quoteForm.supplierId);
     if(!req||!supplier){alert("Talep veya tedarikci bulunamadi.");return;}
     const supplierGroup=resolveSupplierGroup(supplier);
-    const payload={requestId:req.id,requestCode:req.code||"",supplierId:supplier.id,supplierName:supplier.name||"",supplierGroupId:supplierGroup.id||"",supplierGroupName:supplierGroup.name||"Grupsuz",supplierGroupColor:supplierGroup.color||"#64748b",unitPrice:Math.max(0,safeNum(quoteForm.unitPrice)),leadTimeDays:Math.max(0,safeNum(quoteForm.leadTimeDays)),currency:quoteForm.currency||supplier.currency||"TRY",total:Math.max(0,safeNum(quoteForm.unitPrice))*safeNum(req.qty),note:quoteForm.note.trim(),status:"new",updatedAt:new Date().toISOString()};
+    const payload={requestId:req.id,requestCode:req.code||"",supplierId:supplier.id,supplierName:supplier.name||"",supplierGroupId:supplierGroup.id||"",supplierGroupName:supplierGroup.name||"Grupsuz",supplierGroupColor:supplierGroup.color||"#64748b",unitPrice:Math.max(0,safeNum(quoteForm.unitPrice)),leadTimeDays:Math.max(0,safeNum(quoteForm.leadTimeDays)),paymentTermDays:Math.max(0,safeNum(quoteForm.paymentTermDays)||0),currency:quoteForm.currency||supplier.currency||"TRY",total:Math.max(0,safeNum(quoteForm.unitPrice))*safeNum(req.qty),note:quoteForm.note.trim(),status:"new",updatedAt:new Date().toISOString()};
     const id=await window.DB.addDoc("supplierQuotes",payload);
     if(!id){alert("Teklif kaydedilemedi.");return;}
     setQuotes(prev=>[{id,...payload},...prev]);
-    setQuoteForm({requestId:"",supplierId:"",unitPrice:"0",leadTimeDays:"7",currency:"TRY",note:""});
+    setQuoteForm({requestId:"",supplierId:"",unitPrice:"0",leadTimeDays:"7",paymentTermDays:"30",currency:"TRY",note:""});
   }
   async function quoteToPo(q){
     const req=reqById[q.requestId];
     if(!req){alert("Talep bulunamadi.");return;}
-    const payload={code:`PO-${String(Date.now()).slice(-6)}`,requestId:req.id,requestCode:req.code||"",supplierId:q.supplierId,supplierName:q.supplierName||"",supplierGroupId:q.supplierGroupId||"",supplierGroupName:q.supplierGroupName||"",supplierGroupColor:q.supplierGroupColor||"",materialId:req.materialId||"",materialCode:req.materialCode||"",materialName:req.materialName||"",qty:safeNum(req.qty),unitPrice:safeNum(q.unitPrice),currency:q.currency||"TRY",total:safeNum(req.qty)*safeNum(q.unitPrice),orderDate:todayStr(),expectedDate:addDays(todayStr(),safeNum(q.leadTimeDays)),receivedQty:0,rejectedQty:0,status:"ordered",createdBy:currentUser.id,updatedAt:new Date().toISOString()};
+    const payload={code:`PO-${String(Date.now()).slice(-6)}`,requestId:req.id,requestCode:req.code||"",supplierId:q.supplierId,supplierName:q.supplierName||"",supplierGroupId:q.supplierGroupId||"",supplierGroupName:q.supplierGroupName||"",supplierGroupColor:q.supplierGroupColor||"",materialId:req.materialId||"",materialCode:req.materialCode||"",materialName:req.materialName||"",qty:safeNum(req.qty),unitPrice:safeNum(q.unitPrice),currency:q.currency||"TRY",total:safeNum(req.qty)*safeNum(q.unitPrice),orderDate:todayStr(),expectedDate:addDays(todayStr(),safeNum(q.leadTimeDays)),paymentTermDays:Math.max(0,safeNum(q.paymentTermDays)||0),receivedQty:0,rejectedQty:0,status:"ordered",createdBy:currentUser.id,updatedAt:new Date().toISOString()};
     const id=await window.DB.addDoc("purchaseOrders",payload);
     if(!id){alert("PO olusturulamadi.");return;}
     await setRequestStatus(req,"ordered");
@@ -12388,6 +12457,38 @@ function PurchasingModule({currentUser}){
     if(po.materialId){
       const mat=matById[po.materialId];
       if(mat) await window.DB.updateDoc("materials",mat.id,{stock:safeNum(mat.stock)+accepted,updatedAt:new Date().toISOString()});
+    }
+    if(accepted>0){
+      const paymentTermDays=Math.max(0,safeNum(po.paymentTermDays)||0);
+      const dueDate=addDays(recvForm.receiptDate||todayStr(),paymentTermDays);
+      const amount=Math.max(0,accepted*safeNum(po.unitPrice));
+      if(amount>0){
+        const financePayload={
+          flow:"odeme",
+          status:"planned",
+          dueDate,
+          amount,
+          currency:String(po.currency||"TRY").toUpperCase(),
+          paymentTermDays,
+          eventDate:recvForm.receiptDate||todayStr(),
+          qty:accepted,
+          sourceType:"purchase_receipt",
+          sourceId:rid,
+          sourceRefId:po.id||"",
+          sourceCode:po.code||"",
+          poId:po.id||"",
+          poCode:po.code||"",
+          supplierId:po.supplierId||"",
+          supplierName:po.supplierName||"",
+          note:recvForm.note.trim(),
+          createdBy:currentUser.id,
+          updatedAt:new Date().toISOString(),
+        };
+        const fid=await window.DB.addDoc("financeLedger",financePayload);
+        if(!fid){
+          alert("Malzeme girisi alindi ancak finans odeme satiri olusturulamadi.");
+        }
+      }
     }
     setRecvForm({poId:"",acceptedQty:"",rejectedQty:"0",receiptDate:todayStr(),note:""});
     load();
@@ -12483,11 +12584,12 @@ function PurchasingModule({currentUser}){
         <>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
             <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Tedarikci Teklifi</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:8}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8}}>
               <div><span style={labelSt}>Talep</span><select style={inputSt} value={quoteForm.requestId} onChange={e=>setQuoteForm(f=>({...f,requestId:e.target.value}))}><option value="">Secin</option>{openReq.map(r=><option key={r.id} value={r.id}>{r.code} · {r.materialCode} · {r.qty}</option>)}</select></div>
               <div><span style={labelSt}>Tedarikci</span><select style={inputSt} value={quoteForm.supplierId} onChange={e=>setQuoteForm(f=>({...f,supplierId:e.target.value}))}><option value="">Secin</option>{suppliers.map(s=>{const group=resolveSupplierGroup(s);return <option key={s.id} value={s.id}>{s.name} · {group.name}</option>;})}</select></div>
               <div><span style={labelSt}>Birim Fiyat</span><input style={inputSt} type="number" min="0" value={quoteForm.unitPrice} onChange={e=>setQuoteForm(f=>({...f,unitPrice:e.target.value}))}/></div>
               <div><span style={labelSt}>Lead-Time</span><input style={inputSt} type="number" min="0" value={quoteForm.leadTimeDays} onChange={e=>setQuoteForm(f=>({...f,leadTimeDays:e.target.value}))}/></div>
+              <div><span style={labelSt}>Odeme Vadesi (Gun)</span><input style={inputSt} type="number" min="0" value={quoteForm.paymentTermDays} onChange={e=>setQuoteForm(f=>({...f,paymentTermDays:e.target.value}))}/></div>
               <div><span style={labelSt}>Para</span><select style={inputSt} value={quoteForm.currency} onChange={e=>setQuoteForm(f=>({...f,currency:e.target.value}))}><option value="TRY">TRY</option><option value="EUR">EUR</option><option value="USD">USD</option></select></div>
             </div>
             <div style={{marginTop:8}}><span style={labelSt}>Not</span><input style={inputSt} value={quoteForm.note} onChange={e=>setQuoteForm(f=>({...f,note:e.target.value}))}/></div>
@@ -12500,7 +12602,7 @@ function PurchasingModule({currentUser}){
                 <div style={{color:C.text,fontWeight:700}}>{q.requestCode} · {q.supplierName} {q.supplierGroupName?`· ${q.supplierGroupName}`:""}</div>
                 <div style={{color:C.muted2}}>{moneyFmt(q.unitPrice)} / {q.currency}</div>
                 <div style={{color:C.muted2}}>Toplam {moneyFmt(q.total)}</div>
-                <div style={{color:C.muted2}}>LT {q.leadTimeDays}g</div>
+                <div style={{color:C.muted2}}>LT {q.leadTimeDays}g · Vade {Math.max(0,safeNum(q.paymentTermDays)||0)}g</div>
                 <button onClick={()=>quoteToPo(q)} style={{...btnSt("green"),padding:"6px 8px",fontSize:11}}>PO Olustur</button>
               </div>
             ))}
