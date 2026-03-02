@@ -595,6 +595,20 @@ function normalizeSupplierGroups(raw){
   });
   return {list:rows.length>0?rows:DEFAULT_SUPPLIER_GROUPS.list.map((x,idx)=>({...x,sortOrder:(idx+1)*10}))};
 }
+const MENU_ALWAYS_VISIBLE_TAB_IDS = ["users"];
+function normalizeMenuVisibilityConfig(raw){
+  const src=(raw&&typeof raw==="object")?raw:{};
+  const input=Array.isArray(src.hiddenTabs)?src.hiddenTabs:(Array.isArray(src.hidden)?src.hidden:[]);
+  const seen=new Set();
+  const hiddenTabs=[];
+  input.forEach(item=>{
+    const id=String(item||"").trim();
+    if(!id||MENU_ALWAYS_VISIBLE_TAB_IDS.includes(id)||seen.has(id)) return;
+    seen.add(id);
+    hiddenTabs.push(id);
+  });
+  return {hiddenTabs};
+}
 const DEFAULT_ROUTING_OPERATION_TYPES = [
   { id:"op10", code:"OP-10", name:"Kesim ve Hazirlik", icon:"🧰", color:"#6f86ff", defaultSetupSec:300, defaultCycleSec:60, sortOrder:10 },
   { id:"op20", code:"OP-20", name:"Kaba Isleme", icon:"⚙️", color:"#0f6cbd", defaultSetupSec:240, defaultCycleSec:90, sortOrder:20 },
@@ -2015,7 +2029,7 @@ function SupplierGroupSettings({currentUser}) {
 // ════════════════════════════════════════════════════════════
 //  ADMIN USERS
 // ════════════════════════════════════════════════════════════
-function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate}) {
+function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,menuCatalog=[],menuVisibility,onMenuVisibilityChange}) {
   const [users,setUsers]=useState([]);
   const [loading,setLoading]=useState(true);
   const [expanded,setExpanded]=useState(null);
@@ -2023,6 +2037,8 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate}) {
   const [logoLoading,setLogoLoading]=useState(false);
   const [quoteTemplate,setQuoteTemplate]=useState(DEFAULT_QUOTE_TEMPLATE);
   const [templateSaving,setTemplateSaving]=useState(false);
+  const [menuConfig,setMenuConfig]=useState(()=>normalizeMenuVisibilityConfig(menuVisibility||{}));
+  const [menuSaving,setMenuSaving]=useState(false);
   const logoInputRef=useRef(null);
 
   const load=useCallback(async()=>{
@@ -2035,6 +2051,9 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate}) {
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    setMenuConfig(normalizeMenuVisibilityConfig(menuVisibility||{}));
+  },[menuVisibility]);
 
   async function update(id,patch) {
     await window.DB.updateDoc("users",id,patch);
@@ -2094,9 +2113,67 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate}) {
   function resetQuoteTemplate(){
     setQuoteTemplate({...DEFAULT_QUOTE_TEMPLATE});
   }
+  function toggleMenuVisibility(tabId){
+    const id=String(tabId||"").trim();
+    if(!id||MENU_ALWAYS_VISIBLE_TAB_IDS.includes(id)) return;
+    setMenuConfig(prev=>{
+      const hiddenSet=new Set((prev&&Array.isArray(prev.hiddenTabs))?prev.hiddenTabs:[]);
+      if(hiddenSet.has(id)) hiddenSet.delete(id);
+      else hiddenSet.add(id);
+      return normalizeMenuVisibilityConfig({hiddenTabs:Array.from(hiddenSet)});
+    });
+  }
+  function resetMenuVisibility(){
+    setMenuConfig(normalizeMenuVisibilityConfig({}));
+  }
+  async function saveMenuVisibility(){
+    const normalized=normalizeMenuVisibilityConfig(menuConfig||{});
+    const payload={
+      ...normalized,
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser?.id||"",
+    };
+    setMenuSaving(true);
+    const ok=await window.DB.setDoc("config","menuVisibility",payload);
+    setMenuSaving(false);
+    if(!ok){alert("Menu gorunurlugu kaydedilemedi.");return;}
+    setMenuConfig(normalized);
+    if(typeof onMenuVisibilityChange==="function") onMenuVisibilityChange(normalized);
+    if(typeof window!=="undefined"){
+      window.dispatchEvent(new CustomEvent("menu_visibility_updated",{detail:normalized}));
+    }
+    alert("Menu gorunurlugu kaydedildi.");
+  }
+  const menuRows=useMemo(()=>{
+    const map={};
+    (Array.isArray(menuCatalog)?menuCatalog:[]).forEach(tab=>{
+      if(!tab||!tab.id) return;
+      if(map[tab.id]) return;
+      map[tab.id]={
+        id:String(tab.id),
+        label:String(tab.label||tab.id),
+        group:String(tab.group||"Diger"),
+      };
+    });
+    const rows=Object.values(map);
+    const groupOrder=["Planlama","Operasyon","Tedarik ve Stok","Analiz ve Yonetim","Sistem"];
+    rows.sort((a,b)=>{
+      const ai=groupOrder.indexOf(a.group);
+      const bi=groupOrder.indexOf(b.group);
+      if(ai!==bi){
+        if(ai<0) return 1;
+        if(bi<0) return -1;
+        return ai-bi;
+      }
+      return (a.label||"").localeCompare(b.label||"","tr");
+    });
+    return rows;
+  },[menuCatalog]);
+  const hiddenMenuSet=useMemo(()=>new Set((menuConfig&&Array.isArray(menuConfig.hiddenTabs))?menuConfig.hiddenTabs:[]),[menuConfig]);
+  const menuVisibleCount=menuRows.filter(row=>MENU_ALWAYS_VISIBLE_TAB_IDS.includes(row.id)||!hiddenMenuSet.has(row.id)).length;
 
   const settingsTabs=[
-    {id:"genel",label:"Genel",desc:"Logo ve uygulama gorunumu"},
+    {id:"genel",label:"Genel",desc:"Logo, uygulama gorunumu ve menu ayarlari"},
     {id:"ticari",label:"Ticari",desc:"Teklif sablonu ve para birimi"},
     {id:"uretim",label:"Uretim",desc:"Operator, kiosk ve rota ayarlari"},
     {id:"tedarik",label:"Tedarik",desc:"Tedarikci grup ayarlari"},
@@ -2155,6 +2232,44 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate}) {
               <button onClick={()=>logoInputRef.current?.click()} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={logoLoading}>{logoLoading?"Yukleniyor...":"Logo Yukle"}</button>
               <button onClick={()=>onLogoUpdate("")} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}} disabled={logoLoading}>Varsayilana Don</button>
               <input ref={logoInputRef} type="file" accept="image/*" style={{display:"none"}} onChange={pickLogo}/>
+            </div>
+          </div>
+          <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,margin:"14px 0 8px"}}>Genel Ayarlar · Menu Gorunurlugu</div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+            <div style={{fontSize:12,color:C.muted2,marginBottom:10}}>Yan menude hangi modullerin gorunecegini buradan yonetin.</div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+              <div style={{fontSize:11,color:C.muted2}}>Gorunen modul: {menuVisibleCount}/{menuRows.length}</div>
+              <div style={{fontSize:11,color:C.muted2}}>Ayarlar ve Guvenlik menusu her zaman acik kalir.</div>
+            </div>
+            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700}}>
+                <div>Modul</div><div>Durum</div>
+              </div>
+              {menuRows.length===0&&<div style={{padding:"10px 12px",fontSize:12,color:C.muted2}}>Modul listesi bulunamadi.</div>}
+              {menuRows.map(row=>{
+                const forced=MENU_ALWAYS_VISIBLE_TAB_IDS.includes(row.id);
+                const hidden=hiddenMenuSet.has(row.id);
+                const visible=forced||!hidden;
+                return (
+                  <div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr auto",gap:8,padding:"9px 10px",borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
+                    <div>
+                      <div style={{fontSize:12,fontWeight:700,color:C.text}}>{row.label}</div>
+                      <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{row.group} · {row.id}</div>
+                    </div>
+                    <button
+                      onClick={()=>toggleMenuVisibility(row.id)}
+                      disabled={menuSaving||forced}
+                      style={{...(visible?btnSt("green"):btnSt("ghost")),padding:"5px 10px",fontSize:11,opacity:forced?0.6:1}}
+                    >
+                      {forced?"Zorunlu":(visible?"Goster":"Gizli")}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10,flexWrap:"wrap"}}>
+              <button onClick={resetMenuVisibility} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}} disabled={menuSaving}>Tumunu Goster</button>
+              <button onClick={saveMenuVisibility} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={menuSaving}>{menuSaving?"Kaydediliyor...":"Menu Ayarlarini Kaydet"}</button>
             </div>
           </div>
         </div>
@@ -13426,6 +13541,7 @@ function App() {
   const [loading,setLoading]=useState(true);
   const [tab,setTab]=useState("dashboard");
   const [themeMode,setThemeMode]=useState("light");
+  const [menuVisibility,setMenuVisibility]=useState(()=>normalizeMenuVisibilityConfig({}));
   const [machines,setMachines]=useState(DEFAULT_MACHINES);
   const [logoSrc,setLogoSrc]=useState(LOGO_SRC);
   const [isTablet,setIsTablet]=useState(()=>typeof window!=="undefined"?window.matchMedia("(min-width: 768px)").matches:false);
@@ -13441,10 +13557,11 @@ function App() {
 
   useEffect(()=>{
     async function init() {
-      const [mc,connectorRows,branding]=await Promise.all([
+      const [mc,connectorRows,branding,menuVisibilityDoc]=await Promise.all([
         window.DB.getDoc("config","machines"),
         window.DB.getAll("machineConnectors"),
         window.DB.getDoc("config","branding"),
+        window.DB.getDoc("config","menuVisibility"),
       ]);
       const connectorMachines=machineNamesFromConnectors(connectorRows);
       const configMachines=normalizeMachineList(mc?.list||[],[]);
@@ -13452,6 +13569,7 @@ function App() {
         ? connectorMachines
         : (configMachines.length>0?configMachines:DEFAULT_MACHINES);
       setMachines(initialMachines);
+      setMenuVisibility(normalizeMenuVisibilityConfig(menuVisibilityDoc||{}));
       if(connectorMachines.length>0&&!sameMachineList(configMachines,connectorMachines)){
         await window.DB.setDoc("config","machines",{
           list:connectorMachines,
@@ -13497,6 +13615,12 @@ function App() {
       if(mq.removeEventListener) mq.removeEventListener("change",onChange);
       else mq.removeListener(onChange);
     };
+  },[]);
+  useEffect(()=>{
+    if(typeof window==="undefined") return;
+    const onUpdated=e=>setMenuVisibility(normalizeMenuVisibilityConfig(e?.detail||{}));
+    window.addEventListener("menu_visibility_updated",onUpdated);
+    return ()=>window.removeEventListener("menu_visibility_updated",onUpdated);
   },[]);
   useEffect(()=>{setLogoError(false);},[logoSrc]);
   useEffect(()=>{
@@ -13609,7 +13733,12 @@ function App() {
       {id:"users",icon:"users",label:"Ayarlar ve Guvenlik",group:"Sistem",enabled:canUsers},
     ];
   },[canEntry,canOrders,canSales,canPurchasing,canQuality,canDowntime,canNotifications,canReport,canPlanning,canTools,canCustomers,canMachinePrep,canUsers,isAdmin,canSmartFactory,isOperatorRole,canMonitor]);
-  const enabledTabs=useMemo(()=>allTabs.filter(t=>t.enabled),[allTabs]);
+  const hiddenTabs=menuVisibility?.hiddenTabs||[];
+  const enabledTabs=useMemo(()=>{
+    const permissionTabs=allTabs.filter(t=>t.enabled);
+    const filteredTabs=permissionTabs.filter(t=>MENU_ALWAYS_VISIBLE_TAB_IDS.includes(t.id)||!hiddenTabs.includes(t.id));
+    return filteredTabs.length>0?filteredTabs:permissionTabs;
+  },[allTabs,hiddenTabs]);
   const tabs=enabledTabs;
   const visibleTabs=useMemo(()=>{
     const q=(menuQuery||"").trim().toLowerCase();
@@ -13692,7 +13821,7 @@ function App() {
     if(tab==="rapor") return <Report currentUser={currentUser} machines={machines}/>;
     if(tab==="tools") return <ToolStock currentUser={currentUser} machines={machines}/>;
     if(tab==="orders") return <WorkOrders currentUser={currentUser} machines={machines}/>;
-    if(tab==="users") return <AdminUsers currentUser={currentUser} machines={machines} currentLogo={logoSrc} onLogoUpdate={updateLogo}/>;
+    if(tab==="users") return <AdminUsers currentUser={currentUser} machines={machines} currentLogo={logoSrc} onLogoUpdate={updateLogo} menuCatalog={allTabs} menuVisibility={menuVisibility} onMenuVisibilityChange={setMenuVisibility}/>;
     if(tab==="dashboard") return <MRPDashboard currentUser={currentUser} machines={machines}/>;
     if(tab==="cncmonitor") return <CncMonitorWall currentUser={currentUser} machines={machines}/>;
     if(tab==="mrp") return <MRPRunModule currentUser={currentUser}/>;
