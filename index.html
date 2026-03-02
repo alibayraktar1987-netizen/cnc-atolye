@@ -6581,12 +6581,56 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   }
   const latestTelemetryByMachine={};
   telemetryRows.forEach(r=>{
-    const key=(r.machineName||r.machine||r.machineCode||"").trim();
-    if(!key||latestTelemetryByMachine[key]) return;
-    latestTelemetryByMachine[key]=r;
+    const keyRaw=(r.machineName||r.machine||r.machineCode||"").trim();
+    const key=keyRaw.toLowerCase();
+    if(!keyRaw) return;
+    if(!latestTelemetryByMachine[keyRaw]) latestTelemetryByMachine[keyRaw]=r;
+    if(!latestTelemetryByMachine[key]) latestTelemetryByMachine[key]=r;
   });
-  const machineTelemetry=latestTelemetryByMachine[form.machine]||null;
+  const machineTelemetry=latestTelemetryByMachine[form.machine]||latestTelemetryByMachine[String(form.machine||"").toLowerCase()]||null;
   const machineStatus=String(machineTelemetry?.status||"offline").toLowerCase();
+  function statusBucketOf(value){
+    const key=String(value||"offline").toLowerCase();
+    if(key==="running"||key==="live") return "running";
+    if(key==="setup"||key==="idle"||key==="waiting") return "waiting";
+    if(key==="alarm") return "alarm";
+    if(key==="stopped"||key==="down"||key==="offline") return "stopped";
+    return "stopped";
+  }
+  function telemetryTimeMs(row){
+    const raw=row?.collectedAtUtc||row?.createdAt||row?.machineLocalTime||"";
+    const ms=new Date(raw).getTime();
+    return Number.isFinite(ms)?ms:null;
+  }
+  const machineTelemetryRows=telemetryRows.filter(row=>{
+    const key=(row.machineName||row.machine||row.machineCode||"").trim().toLowerCase();
+    return key===String(form.machine||"").trim().toLowerCase();
+  });
+  const machineTelemetrySortedAsc=machineTelemetryRows
+    .map(row=>({...row,__ts:telemetryTimeMs(row)}))
+    .filter(row=>row.__ts!==null)
+    .sort((a,b)=>safeNum(a.__ts)-safeNum(b.__ts));
+  const machineTelemetryTs=telemetryTimeMs(machineTelemetry);
+  const currentDateKey=todayStr();
+  const selectedDateKey=form.entryDate||currentDateKey;
+  const dayStart=parseYmdLocal(selectedDateKey);
+  dayStart.setHours(0,0,0,0);
+  const dayStartMs=dayStart.getTime();
+  const dayEndMs=dayStartMs+(24*3600*1000);
+  const nowMs=Date.now();
+  const dayFillEndMs=selectedDateKey===currentDateKey?Math.min(dayEndMs,nowMs):dayEndMs;
+  let currentStatusElapsedSec=Math.max(0,Math.floor(safeNum(machineTelemetry?.statusDurationSec||machineTelemetry?.stateDurationSec||0)));
+  if(!(currentStatusElapsedSec>0)&&machineTelemetryTs!==null){
+    const latestBucket=statusBucketOf(machineTelemetry?.status);
+    let oldestSameTs=machineTelemetryTs;
+    for(let i=machineTelemetrySortedAsc.length-1;i>=0;i-=1){
+      const row=machineTelemetrySortedAsc[i];
+      if(row.__ts===null||row.__ts>machineTelemetryTs) continue;
+      if(statusBucketOf(row.status)!==latestBucket) break;
+      oldestSameTs=row.__ts;
+    }
+    currentStatusElapsedSec=Math.max(0,Math.floor((nowMs-oldestSameTs)/1000));
+  }
   const machineLocalMinute=minuteFromIsoLike(machineTelemetry?.machineLocalTime||"");
   const nowMinute=(()=>{
     const now=new Date();
@@ -6826,6 +6870,67 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const allDowntimeSec=Math.max(0,safeNum(machineTelemetry?.allDowntimeSec)||safeNum(machineTelemetry?.downtimeSec));
   const activeAlarmCount=Math.max(0,Math.round(safeNum(machineTelemetry?.activeAlarms)||safeNum(machineTelemetry?.alarmCount)));
   const activeSec=Math.max(0,safeNum(machineTelemetry?.activeSec)||safeNum(machineTelemetry?.runtimeSec)||safeNum(machineTelemetry?.runSec));
+  const timelineRows=(()=>{
+    const inDay=machineTelemetrySortedAsc.filter(row=>safeNum(row.__ts)>=dayStartMs&&safeNum(row.__ts)<=dayFillEndMs);
+    const prev=[...machineTelemetrySortedAsc].reverse().find(row=>safeNum(row.__ts)<dayStartMs)||null;
+    return prev?[prev,...inDay]:inDay;
+  })();
+  const dailyStatusTotalsMs={running:0,waiting:0,stopped:0,alarm:0};
+  const hourlyStatusMs=Array.from({length:24},()=>({running:0,waiting:0,stopped:0,alarm:0,total:0}));
+  if(timelineRows.length>0){
+    for(let i=0;i<timelineRows.length;i+=1){
+      const row=timelineRows[i];
+      const rowStart=safeNum(row.__ts);
+      const nextStart=i<timelineRows.length-1?safeNum(timelineRows[i+1].__ts):dayFillEndMs;
+      const start=Math.max(dayStartMs,rowStart);
+      const end=Math.min(dayFillEndMs,nextStart);
+      if(end<=start) continue;
+      const bucket=statusBucketOf(row.status);
+      dailyStatusTotalsMs[bucket]+=end-start;
+      let cursor=start;
+      while(cursor<end){
+        const cursorDate=new Date(cursor);
+        const hourIndex=cursorDate.getHours();
+        const nextHourMs=new Date(cursorDate.getFullYear(),cursorDate.getMonth(),cursorDate.getDate(),hourIndex+1,0,0,0).getTime();
+        const segEnd=Math.min(end,nextHourMs);
+        const segMs=Math.max(0,segEnd-cursor);
+        if(segMs>0&&hourIndex>=0&&hourIndex<24){
+          hourlyStatusMs[hourIndex][bucket]+=segMs;
+          hourlyStatusMs[hourIndex].total+=segMs;
+        }
+        cursor=segEnd;
+      }
+    }
+  }
+  const runningTodaySec=Math.max(0,Math.round(dailyStatusTotalsMs.running/1000));
+  const waitingTodaySec=Math.max(0,Math.round(dailyStatusTotalsMs.waiting/1000));
+  const stoppedTodaySec=Math.max(0,Math.round(dailyStatusTotalsMs.stopped/1000));
+  const alarmTodaySec=Math.max(0,Math.round(dailyStatusTotalsMs.alarm/1000));
+  const downtimeDisplaySec=allDowntimeSec>0?allDowntimeSec:(stoppedTodaySec+alarmTodaySec);
+  const statusChartHasData=(runningTodaySec+waitingTodaySec+stoppedTodaySec+alarmTodaySec)>0;
+  const waitingExpectedSec=Math.max(60,Math.round(safeNum(machineTelemetry?.expectedSetupSec)||safeNum(machineTelemetry?.setupExpectedSec)||safeNum(form.selectedOrder?.partSnapshot?.setupSec)||safeNum(form.selectedOrder?.setupSec)||300));
+  const waitingElapsedSec=statusMeta.mode==="idle"?Math.max(0,currentStatusElapsedSec):0;
+  const waitingRemainingSec=Math.max(0,waitingExpectedSec-waitingElapsedSec);
+  const waitingProgressPct=Math.max(0,Math.min(100,Math.round((waitingElapsedSec/Math.max(1,waitingExpectedSec))*100)));
+  const waitingOverrunSec=Math.max(0,waitingElapsedSec-waitingExpectedSec);
+  const headerTimerLabel=statusMeta.mode==="idle"?"Bekleme":"Aktif";
+  const headerTimerValue=statusMeta.mode==="idle"?fmtActiveShort(waitingElapsedSec):fmtActiveShort(activeSec);
+  const hourlyStatusChart=hourlyStatusMs.map((row,idx)=>{
+    const base=3600000;
+    const runningPct=Math.max(0,Math.min(100,(safeNum(row.running)/base)*100));
+    const waitingPct=Math.max(0,Math.min(100,(safeNum(row.waiting)/base)*100));
+    const stoppedPct=Math.max(0,Math.min(100,(safeNum(row.stopped)/base)*100));
+    const alarmPct=Math.max(0,Math.min(100,(safeNum(row.alarm)/base)*100));
+    const totalPct=Math.max(0,Math.min(100,runningPct+waitingPct+stoppedPct+alarmPct));
+    return {
+      hour:idx,
+      runningPct,
+      waitingPct,
+      stoppedPct,
+      alarmPct,
+      totalPct,
+    };
+  });
   const ringPct=expectedQty>0?Math.max(0,Math.min(100,Math.round((producedQty/expectedQty)*100))):0;
   const ringSize=318;
   const ringStroke=24;
@@ -6845,8 +6950,11 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const cycleMax=Math.max(1,...cycleRows.map(r=>Math.max(1,safeNum(r.value))));
   const kioskSummaryStats=[
     {label:"Parca Sayisi",value:`${producedQty} Adet`},
-    {label:"Toplam Durus",value:fmtDurationLong(allDowntimeSec)},
+    {label:"Toplam Durus",value:fmtDurationLong(downtimeDisplaySec)},
     {label:"Aktif Alarm",value:String(activeAlarmCount)},
+    {label:"Gunluk Calisma",value:fmtActiveShort(runningTodaySec)},
+    {label:"Gunluk Bekleme",value:fmtActiveShort(waitingTodaySec)},
+    {label:"Gunluk Uyari",value:fmtActiveShort(alarmTodaySec)},
     {label:"Planlanan Cevrim",value:`${Math.round(cycleExpectedSec)}s`},
     {label:"Anlik Cevrim",value:`${Math.round(cycleCurrentSec)}s`},
     {label:"Sapma",value:`${cycleDeviationSec>=0?"+":""}${Math.round(cycleDeviationSec)}s`,tone:cycleDeviationExceeded?"#c95757":"#49566e"},
@@ -6944,7 +7052,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",justifyContent:"center",gap:4}}>
                 <div style={{display:"flex",alignItems:"center",gap:9,fontSize:34,fontWeight:800,color:"#f4fff8"}}>
                   <span style={{width:12,height:12,borderRadius:"50%",background:statusMeta.color,display:"inline-block"}}/>
-                  Aktif : {fmtActiveShort(activeSec)}
+                  {headerTimerLabel} : {headerTimerValue}
                 </div>
                 <div style={{fontSize:15,fontWeight:700,color:topHeaderTheme.statusText}}>{statusMeta.label} · {selectedShiftMeta.label}</div>
               </div>
@@ -6958,6 +7066,35 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                 </div>
               ))}
             </div>
+            {statusMeta.mode==="idle"&&(
+              <div style={{padding:"14px 16px",background:"#edf2f8",borderBottom:"1px solid #d5dde8"}}>
+                <div style={{background:"#fff",border:"1px solid #d8dfe9",borderRadius:12,padding:"12px 14px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8}}>
+                    <div style={{fontSize:24,fontWeight:800,color:"#4b5b73"}}>Bekleme / Kurulum Takibi</div>
+                    <div style={{fontSize:16,fontWeight:700,color:"#7d8ca3"}}>Beklenen Sure: {fmtDurationLong(waitingExpectedSec)}</div>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                    <div style={{background:"#f7f9fd",border:"1px solid #dce3ed",borderRadius:10,padding:"10px 12px"}}>
+                      <div style={{fontSize:14,color:"#8393a9",fontWeight:700}}>Gecen Sure</div>
+                      <div style={{fontSize:52,color:"#4a5a72",fontWeight:800,lineHeight:1.05,marginTop:6}}>{fmtDurationLong(waitingElapsedSec)}</div>
+                    </div>
+                    <div style={{background:"#f7f9fd",border:"1px solid #dce3ed",borderRadius:10,padding:"10px 12px",textAlign:"right"}}>
+                      <div style={{fontSize:14,color:"#8393a9",fontWeight:700}}>Kalan Sure</div>
+                      <div style={{fontSize:52,color:waitingOverrunSec>0?"#c95757":"#4a5a72",fontWeight:800,lineHeight:1.05,marginTop:6}}>
+                        {waitingOverrunSec>0?`+${fmtDurationLong(waitingOverrunSec)}`:fmtDurationLong(waitingRemainingSec)}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{height:20,background:"#d8dfe8",borderRadius:99,overflow:"hidden",position:"relative"}}>
+                    <div style={{width:`${Math.max(0,Math.min(100,waitingProgressPct))}%`,height:"100%",background:"repeating-linear-gradient(45deg,#8d68d4 0,#8d68d4 18px,#946fe0 18px,#946fe0 36px)"}}/>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:7,fontSize:13,color:"#74849a",fontWeight:700}}>
+                    <span>Kurulum hedefi: {fmtDurationLong(waitingExpectedSec)}</span>
+                    <span>Durum: {waitingOverrunSec>0?"Hedef asildi":"Hedef dahilinde"} ({waitingProgressPct}%)</span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",alignItems:"stretch",minHeight:296,borderBottom:"1px solid #d5dde8",background:"#eef2f7"}}>
               <div style={{padding:"24px 20px",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",gap:8}}>
@@ -7023,6 +7160,44 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                   <div style={{marginTop:6,fontSize:11,color:"#8090a6"}}>
                     Sapma bildirimi acik · Esik: {Math.round(cycleDeviationThresholdSec)}s {cycleDeviationExceeded?"(esik asildi)":"(normal)"}
                   </div>
+                )}
+              </div>
+              <div style={{background:"#fff",border:"1px solid #d8dfe9",borderRadius:10,padding:"10px 12px"}}>
+                <div style={{fontSize:17,fontWeight:800,color:"#4b5a72",marginBottom:8}}>Gunluk Durum Grafigi</div>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
+                  <div style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 8px",borderRadius:999,background:"#e9f8ef",fontSize:11,color:"#2b9f58",fontWeight:700}}>
+                    <span style={{width:8,height:8,borderRadius:"50%",background:"#22a958",display:"inline-block"}}/>Calisma {fmtActiveShort(runningTodaySec)}
+                  </div>
+                  <div style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 8px",borderRadius:999,background:"#fff1df",fontSize:11,color:"#b17020",fontWeight:700}}>
+                    <span style={{width:8,height:8,borderRadius:"50%",background:"#e29a3d",display:"inline-block"}}/>Bekleme {fmtActiveShort(waitingTodaySec)}
+                  </div>
+                  <div style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 8px",borderRadius:999,background:"#eef2f8",fontSize:11,color:"#69778e",fontWeight:700}}>
+                    <span style={{width:8,height:8,borderRadius:"50%",background:"#8d98aa",display:"inline-block"}}/>Durus {fmtActiveShort(stoppedTodaySec)}
+                  </div>
+                  <div style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 8px",borderRadius:999,background:"#ffe9ea",fontSize:11,color:"#be4b57",fontWeight:700}}>
+                    <span style={{width:8,height:8,borderRadius:"50%",background:"#d45858",display:"inline-block"}}/>Uyari {fmtActiveShort(alarmTodaySec)}
+                  </div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(24,minmax(0,1fr))",gap:4,alignItems:"end",height:108}}>
+                  {hourlyStatusChart.map(col=>(
+                    <div key={`h_${col.hour}`} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                      <div style={{width:"100%",maxWidth:14,height:84,background:"#eaf0f6",borderRadius:4,overflow:"hidden",display:"flex",flexDirection:"column-reverse"}}>
+                        {col.alarmPct>0&&<div style={{height:`${col.alarmPct}%`,background:"#d45858"}}/>}
+                        {col.stoppedPct>0&&<div style={{height:`${col.stoppedPct}%`,background:"#8d98aa"}}/>}
+                        {col.waitingPct>0&&<div style={{height:`${col.waitingPct}%`,background:"#e29a3d"}}/>}
+                        {col.runningPct>0&&<div style={{height:`${col.runningPct}%`,background:"#22a958"}}/>}
+                      </div>
+                      <div style={{fontSize:9,color:"#8e9db1",fontWeight:700}}>{col.hour%3===0?pad2(col.hour):""}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{marginTop:3,display:"flex",justifyContent:"space-between",fontSize:10,color:"#8a99ad",fontWeight:700}}>
+                  <span>00</span>
+                  <span>Saatlik Dagilim</span>
+                  <span>23</span>
+                </div>
+                {!statusChartHasData&&(
+                  <div style={{marginTop:6,fontSize:11,color:"#8a99ad",fontWeight:700}}>Secili gun icin telemetry kaydi yok.</div>
                 )}
               </div>
             </div>
@@ -8415,17 +8590,39 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
   }
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
+  const qualityTone=qual>=90?C.green:(qual>=75?C.warn:C.red);
+  const panelStyle={background:C.card,border:`1px solid ${C.border}`,borderRadius:12};
+  const sectionCaptionStyle={color:C.muted2,fontSize:11,letterSpacing:.8,textTransform:"uppercase",fontWeight:700};
+  const summaryCards=[
+    {label:"Toplam Dogru",value:totalC,tone:C.green},
+    {label:"Toplam Hatali",value:totalW,tone:C.red},
+    {label:"Kalite Orani",value:`${qual}%`,tone:qualityTone},
+  ];
 
   return (
-    <div style={{padding:16}}>
-      <div style={{display:"flex",gap:7,marginBottom:16}}>
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{...panelStyle,padding:"14px 16px",background:`linear-gradient(180deg, ${C.surface} 0%, ${C.surface2} 100%)`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+          <div>
+            <div style={{fontSize:18,fontWeight:800,color:C.text}}>Rapor Merkezi</div>
+            <div style={{fontSize:12,color:C.muted2,marginTop:3}}>Uretim, kalite ve performans verilerini tek ekranda izleyin.</div>
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <Badge label={periodLabel} color={C.accent}/>
+            <Badge label={`${filtered.length} Kayit`} color={C.muted2}/>
+            <Badge label={`${customReports.length} Ozel Rapor`} color={C.green}/>
+          </div>
+        </div>
+      </div>
+
+      <div style={{display:"flex",gap:7}}>
         {[["gunluk","Günlük"],["haftalik","Haftalık"],["aylik","Aylık"]].map(([id,lbl])=>(
-          <button key={id} onClick={()=>{setPeriod(id);setRangeEnabled(false);}} style={{flex:1,...chip(!rangeEnabled&&period===id)}}>{lbl}</button>
+          <button key={id} onClick={()=>{setPeriod(id);setRangeEnabled(false);}} style={{flex:1,...chip(!rangeEnabled&&period===id),padding:"10px 12px"}}>{lbl}</button>
         ))}
       </div>
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",marginBottom:12}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:rangeEnabled?10:0}}>
-          <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>Filtre</div>
+      <div style={{...panelStyle,padding:"10px 12px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:rangeEnabled?10:0,gap:8,flexWrap:"wrap"}}>
+          <div style={sectionCaptionStyle}>Filtre</div>
           <button onClick={()=>setRangeEnabled(v=>!v)} style={chip(rangeEnabled,C.accent)}>{rangeEnabled?"Tarih Aralığı: Açık":"Tarih Aralığı"}</button>
         </div>
         {rangeEnabled&&(
@@ -8435,7 +8632,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
               <button onClick={()=>applyRangePreset("last30")} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Son 30 gün</button>
               <button onClick={()=>applyRangePreset("thisMonth")} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Bu ay</button>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr auto",gap:8,alignItems:"end"}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:8,alignItems:"end"}}>
             <div><span style={labelSt}>Başlangıç</span><input type="date" value={fromDate} max={today} onChange={e=>setFromDate(e.target.value||today)} style={{...inputSt,padding:"9px 10px",fontSize:13}}/></div>
             <div><span style={labelSt}>Bitiş</span><input type="date" value={toDate} max={today} onChange={e=>setToDate(e.target.value||today)} style={{...inputSt,padding:"9px 10px",fontSize:13}}/></div>
             <button onClick={()=>{const t=todayStr();setFromDate(t);setToDate(t);}} style={{...btnSt("ghost"),padding:"9px 11px",fontSize:12,marginBottom:1}}>Bugün</button>
@@ -8443,11 +8640,11 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
           </div>
         )}
       </div>
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",marginBottom:12}}>
+      <div style={{...panelStyle,padding:"12px 14px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
           <div>
-            <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>Yeni Rapor Olustur</div>
-            <div style={{fontSize:13,color:C.text,fontWeight:700,marginTop:2}}>Zoho benzeri secilebilir alanlarla rapor tasarimi</div>
+            <div style={sectionCaptionStyle}>Ozel Rapor Tasarimi</div>
+            <div style={{fontSize:13,color:C.text,fontWeight:700,marginTop:2}}>Secilebilir alanlarla rapor olusturup kaydedin</div>
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             <button
@@ -8473,7 +8670,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
           </div>
         </div>
 
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))",gap:8,marginBottom:10}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8,marginBottom:10}}>
           <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:9,padding:"8px 10px",fontSize:12,color:C.muted2}}>
             Kayitli Rapor: <span style={{color:C.text,fontWeight:700}}>{customReports.length}</span>
           </div>
@@ -8484,9 +8681,14 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
             Aktif Grafik: <span style={{color:C.text,fontWeight:700}}>{CHART_TYPE_LABELS[(previewCustomReport?.cfg?.chartType)||""]||"-"}</span>
           </div>
         </div>
+        {customReports.length===0&&(
+          <div style={{marginBottom:10,padding:"12px 10px",border:`1px dashed ${C.border}`,borderRadius:10,fontSize:12,color:C.muted2,background:C.surface2}}>
+            Henuz kayitli ozel rapor yok. "Yeni Rapor" butonu ile ilk raporu olusturun.
+          </div>
+        )}
 
         {customReports.length>0&&(
-          <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:10}}>
+          <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:10,maxHeight:280,overflowY:"auto",paddingRight:2}}>
             {customReports.map(rep=>{
               const isActive=rep.id===selectedCustomReportId;
               return (
@@ -8544,11 +8746,14 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
         )}
       </div>
       {filtered.length===0?(
-        <div style={{textAlign:"center",color:C.muted2,padding:"40px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}><div style={{fontSize:36,marginBottom:10}}>📰</div>Bu dönemde kayıt yok</div>
+        <div style={{...panelStyle,textAlign:"center",color:C.muted2,padding:"34px 20px"}}>
+          <div style={{fontSize:16,fontWeight:700,color:C.text,marginBottom:4}}>Secili donemde kayit bulunamadi</div>
+          <div style={{fontSize:12}}>Tarih araligini degistirerek tekrar deneyin.</div>
+        </div>
       ):(
         <>
-          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",marginBottom:12}}>
-            <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>Tezgah Grafiği · {periodLabel}</div>
+          <div style={{...panelStyle,padding:"12px 14px",marginBottom:12}}>
+            <div style={{...sectionCaptionStyle,marginBottom:10}}>Tezgah Grafigi · {periodLabel}</div>
             {period==="gunluk"?(
               <>
                 <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:8,fontSize:11,color:C.muted2}}>
@@ -8641,47 +8846,67 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
               </>
             )}
           </div>
-          <div style={{display:"flex",gap:8,marginBottom:16}}>
-            {[{l:"Doğru",v:totalC,col:C.green},{l:"Hatalı",v:totalW,col:C.red},{l:"Kalite",v:`${qual}%`,col:qual>=90?C.green:qual>=75?C.warn:C.red}].map(({l,v,col})=>(
-              <div key={l} style={{flex:1,background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px"}}>
-                <div style={{color:C.muted2,fontSize:10,letterSpacing:1,textTransform:"uppercase",marginBottom:3}}>{l}</div>
-                <div style={{color:col,fontSize:24,fontWeight:800,fontFamily:"monospace"}}>{v}</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8,marginBottom:12}}>
+            {summaryCards.map(card=>(
+              <div key={card.label} style={{...panelStyle,padding:"12px 14px"}}>
+                <div style={{color:C.muted2,fontSize:10,letterSpacing:1,textTransform:"uppercase",marginBottom:3}}>{card.label}</div>
+                <div style={{color:card.tone,fontSize:24,fontWeight:800,fontFamily:"monospace"}}>{card.value}</div>
+                <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{periodLabel}</div>
               </div>
             ))}
           </div>
-          <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>İş Emri Bazlı</div>
-          {jobs.map(j=>{
-            const p=calcPerf(j.correct,j.wrong,j.partSec);
-            const q=j.correct+j.wrong>0?Math.round((j.correct/(j.correct+j.wrong))*100):0;
-            return (
-              <div key={j.jobCode} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"14px 16px",marginBottom:10}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-                  <div><div style={{fontWeight:800,fontSize:14,fontFamily:"monospace",color:C.text}}>{j.jobCode}</div><div style={{fontSize:12,color:C.muted2,marginTop:1}}>{j.jobName}</div><div style={{fontSize:11,color:C.muted,marginTop:1}}>{j.machines.join(", ")} · {j.ops.join(", ")}</div></div>
-                  <div style={{textAlign:"right"}}><div style={{fontSize:10,color:C.muted2}}>Kalite</div><div style={{fontWeight:800,color:q>=90?C.green:q>=75?C.warn:C.red,fontSize:16}}>{q}%</div></div>
-                </div>
-                <div style={{display:"flex",gap:8,fontSize:13,marginBottom:p?6:0}}>
-                  <div style={{background:C.greenDim,border:`1px solid ${C.green}30`,borderRadius:8,padding:"5px 12px",color:C.green,fontWeight:700}}>✅ {j.correct}</div>
-                  <div style={{background:C.redDim,border:`1px solid ${C.red}30`,borderRadius:8,padding:"5px 12px",color:C.red,fontWeight:700}}>❌ {j.wrong}</div>
-                  {p&&<div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 12px",color:C.muted2,fontSize:12}}>Maks/gün: {p.max}</div>}
-                </div>
-                {p&&<PerfBar perf={p.perf}/>}
-              </div>
-            );
-          })}
-          <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:10,marginTop:18}}>Tezgah Özeti</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-            {machines.map(m=>{
-              const md=filtered.filter(e=>e.machine===m);
-              const mc=md.reduce((s,e)=>s+e.correct,0),mw=md.reduce((s,e)=>s+e.wrong,0);
-              const mq=mc+mw>0?Math.round((mc/(mc+mw))*100):null;
-              return (
-                <div key={m} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",opacity:md.length===0?.4:1}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}><span style={{fontWeight:700,color:C.text}}>{m}</span>{mq!==null&&<span style={{color:mq>=90?C.green:mq>=75?C.warn:C.red,fontWeight:700,fontSize:13}}>{mq}%</span>}</div>
-                  <div style={{fontSize:12,color:C.muted2}}>{md.length===0?"Kayıt yok":`✅ ${mc}  ❌ ${mw}`}</div>
-                  {mq!==null&&<div style={{background:C.border,borderRadius:99,height:4,marginTop:8}}><div style={{width:`${mq}%`,height:"100%",background:mq>=90?C.green:mq>=75?C.warn:C.red,borderRadius:99}}/></div>}
-                </div>
-              );
-            })}
+          <div style={{...panelStyle,padding:"12px 14px",marginBottom:12}}>
+            <div style={{...sectionCaptionStyle,marginBottom:10}}>Is Emri Bazli Ozet</div>
+            <div style={{overflowX:"auto",border:`1px solid ${C.border}`,borderRadius:10}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:820}}>
+                <thead>
+                  <tr style={{background:C.surface2,color:C.muted2,textAlign:"left"}}>
+                    <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Is Emri</th>
+                    <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Parca</th>
+                    <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Tezgah / Operator</th>
+                    <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Dogru</th>
+                    <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Hatali</th>
+                    <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Kalite</th>
+                    <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Maks/Gun</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {jobs.map(j=>{
+                    const p=calcPerf(j.correct,j.wrong,j.partSec);
+                    const q=j.correct+j.wrong>0?Math.round((j.correct/(j.correct+j.wrong))*100):0;
+                    const tone=q>=90?C.green:(q>=75?C.warn:C.red);
+                    return (
+                      <tr key={j.jobCode} style={{borderBottom:`1px solid ${C.border}`}}>
+                        <td style={{padding:"9px 10px",fontWeight:700,color:C.text,fontFamily:"monospace"}}>{j.jobCode}</td>
+                        <td style={{padding:"9px 10px",color:C.text}}>{j.jobName||"-"}</td>
+                        <td style={{padding:"9px 10px",color:C.muted2}}>{(j.machines.join(", ")||"-")} · {(j.ops.join(", ")||"-")}</td>
+                        <td style={{padding:"9px 10px",color:C.green,fontWeight:700}}>{formatMetricNumber(j.correct)}</td>
+                        <td style={{padding:"9px 10px",color:C.red,fontWeight:700}}>{formatMetricNumber(j.wrong)}</td>
+                        <td style={{padding:"9px 10px",color:tone,fontWeight:800}}>{q}%</td>
+                        <td style={{padding:"9px 10px",color:C.muted2}}>{p?formatMetricNumber(p.max):"-"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div style={{...panelStyle,padding:"12px 14px"}}>
+            <div style={{...sectionCaptionStyle,marginBottom:10}}>Tezgah Ozeti</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8}}>
+              {machines.map(m=>{
+                const md=filtered.filter(e=>e.machine===m);
+                const mc=md.reduce((s,e)=>s+e.correct,0),mw=md.reduce((s,e)=>s+e.wrong,0);
+                const mq=mc+mw>0?Math.round((mc/(mc+mw))*100):null;
+                return (
+                  <div key={m} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",opacity:md.length===0?0.5:1}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}><span style={{fontWeight:700,color:C.text}}>{m}</span>{mq!==null&&<span style={{color:mq>=90?C.green:mq>=75?C.warn:C.red,fontWeight:700,fontSize:13}}>{mq}%</span>}</div>
+                    <div style={{fontSize:12,color:C.muted2}}>{md.length===0?"Kayıt yok":`✅ ${mc}  ❌ ${mw}`}</div>
+                    {mq!==null&&<div style={{background:C.border,borderRadius:99,height:4,marginTop:8}}><div style={{width:`${mq}%`,height:"100%",background:mq>=90?C.green:mq>=75?C.warn:C.red,borderRadius:99}}/></div>}
+                  </div>
+                );
+              })}
+            </div>
           </div>
           {currentUser.role==="admin"&&(()=>{
             const byOp={};
@@ -8689,14 +8914,37 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
             const ops=Object.values(byOp).sort((a,b)=>b.correct-a.correct);
             if(!ops.length) return null;
             return (<>
-              <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:10,marginTop:18}}>Operatör Performansı</div>
-              {ops.map((op,i)=>{const q=op.correct+op.wrong>0?Math.round((op.correct/(op.correct+op.wrong))*100):0;return(
-                <div key={op.name} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 16px",marginBottom:8,display:"flex",alignItems:"center",gap:12}}>
-                  <div style={{width:28,height:28,borderRadius:8,background:i===0?C.warn+"25":C.surface,display:"flex",alignItems:"center",justifyContent:"center",color:i===0?C.warn:C.muted2,fontWeight:800,fontSize:13}}>{i+1}</div>
-                  <div style={{flex:1}}><div style={{fontWeight:600,fontSize:13,color:C.text}}>{op.name}</div><div style={{fontSize:12,color:C.muted2,marginTop:1}}>✅ {op.correct} &nbsp; ❌ {op.wrong}</div></div>
-                  <div style={{color:q>=90?C.green:q>=75?C.warn:C.red,fontWeight:800,fontSize:15}}>{q}%</div>
+              <div style={{...panelStyle,padding:"12px 14px",marginTop:12}}>
+                <div style={{...sectionCaptionStyle,marginBottom:10}}>Operator Performansi</div>
+                <div style={{overflowX:"auto",border:`1px solid ${C.border}`,borderRadius:10}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:520}}>
+                    <thead>
+                      <tr style={{background:C.surface2,color:C.muted2,textAlign:"left"}}>
+                        <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Sira</th>
+                        <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Operator</th>
+                        <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Dogru</th>
+                        <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Hatali</th>
+                        <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Kalite</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ops.map((op,i)=>{
+                        const q=op.correct+op.wrong>0?Math.round((op.correct/(op.correct+op.wrong))*100):0;
+                        const tone=q>=90?C.green:(q>=75?C.warn:C.red);
+                        return (
+                          <tr key={op.name} style={{borderBottom:`1px solid ${C.border}`}}>
+                            <td style={{padding:"9px 10px",color:C.muted2,fontWeight:700}}>{i+1}</td>
+                            <td style={{padding:"9px 10px",color:C.text,fontWeight:600}}>{op.name}</td>
+                            <td style={{padding:"9px 10px",color:C.green,fontWeight:700}}>{formatMetricNumber(op.correct)}</td>
+                            <td style={{padding:"9px 10px",color:C.red,fontWeight:700}}>{formatMetricNumber(op.wrong)}</td>
+                            <td style={{padding:"9px 10px",color:tone,fontWeight:800}}>{q}%</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-              );})}
+              </div>
             </>);
           })()}
         </>
@@ -9526,6 +9774,20 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     return true;
   }
 
+  function getMachineTailSegment(machine,excludeSegmentId=""){
+    if(!machine) return null;
+    const rows=allPlanSegments
+      .filter(seg=>seg.machine===machine&&(!excludeSegmentId||seg.id!==excludeSegmentId))
+      .sort((a,b)=>{
+        const sa=String(a.startDate||"");
+        const sb=String(b.startDate||"");
+        const ds=sa.localeCompare(sb);
+        if(ds!==0) return ds;
+        return String(a.orderCode||"").localeCompare(String(b.orderCode||""),"tr");
+      });
+    return rows.length>0?rows[rows.length-1]:null;
+  }
+
   async function swapSegmentSlots(sourceSegmentId,targetSegmentId){
     const sourceSeg=allSegmentById[sourceSegmentId];
     const targetSeg=allSegmentById[targetSegmentId];
@@ -9674,6 +9936,11 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       return;
     }
     if(targetMachine){
+      const tailSeg=getMachineTailSegment(targetMachine,sourceSegmentId);
+      if(tailSeg){
+        const placed=await placeSegmentAfterSegment(sourceSegmentId,tailSeg.id);
+        if(placed) return;
+      }
       await moveSegmentToMachine(sourceSegmentId,targetMachine);
     }
   }
