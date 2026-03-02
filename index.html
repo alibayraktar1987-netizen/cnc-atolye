@@ -6241,10 +6241,10 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             </div>
 
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",borderBottom:"1px solid #d5dde8",background:"#f7f9fc"}}>
-              {[["Parça Sayısı",`${producedQty} Adet`],["Toplam Duruş",fmtDurationLong(allDowntimeSec)],["Aktif Alarm",String(activeAlarmCount)],["Anlık Çevrim",`${Math.round(cycleCurrentSec)}s`],["Hedef Oranı",selectedOrderQty>0?`%${goalPct}`:"-"],["Kullanım",`%${utilizationPct}`],["OEE",`%${oeePct}`]].map(([label,val],idx)=>(
-                <div key={label} style={{padding:"12px 10px",borderRight:idx===6?"none":"1px solid #d5dde8",textAlign:"center"}}>
-                  <div style={{fontSize:14,color:"#8594aa",fontWeight:700}}>{label}</div>
-                  <div style={{fontSize:37,color:"#49566e",fontWeight:800,marginTop:2}}>{val}</div>
+              {kioskSummaryStats.map((item,idx)=>(
+                <div key={item.label} style={{padding:"12px 10px",borderRight:idx===kioskSummaryStats.length-1?"none":"1px solid #d5dde8",textAlign:"center"}}>
+                  <div style={{fontSize:14,color:"#8594aa",fontWeight:700}}>{item.label}</div>
+                  <div style={{fontSize:37,color:item.tone||"#49566e",fontWeight:800,marginTop:2}}>{item.value}</div>
                 </div>
               ))}
             </div>
@@ -6324,6 +6324,15 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                     </div>
                   ))}
                 </div>
+                <div style={{marginTop:8,display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8,fontSize:12,color:cycleDeviationExceeded?"#ba4d4d":"#6f7f96",fontWeight:700}}>
+                  <span>Planlanan: {Math.round(cycleExpectedSec)}s</span>
+                  <span>Sapma: {cycleDeviationSec>=0?"+":""}{Math.round(cycleDeviationSec)}s (%{Math.abs(cycleDeviationPct).toFixed(1)})</span>
+                </div>
+                {kioskSettings.cycleDeviationNotificationEnabled&&(
+                  <div style={{marginTop:6,fontSize:11,color:"#8090a6"}}>
+                    Sapma bildirimi acik · Esik: {Math.round(cycleDeviationThresholdSec)}s {cycleDeviationExceeded?"(esik asildi)":"(normal)"}
+                  </div>
+                )}
               </div>
             </div>
 
