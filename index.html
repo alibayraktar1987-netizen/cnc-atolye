@@ -1390,6 +1390,7 @@ function Customers() {
   const [customers,setCustomers]=useState([]);
   const [form,setForm]=useState(emptyForm);
   const [editId,setEditId]=useState(null);
+  const [showCustomerModal,setShowCustomerModal]=useState(false);
   const [search,setSearch]=useState("");
   const [loading,setLoading]=useState(true);
 
@@ -1417,6 +1418,7 @@ function Customers() {
         setEditId(null);
         setForm({...emptyForm,code:nextCustomerCode()});
         setSearch("");
+        setShowCustomerModal(true);
         window.scrollTo({top:0,behavior:"smooth"});
       }
     }
@@ -1452,6 +1454,7 @@ function Customers() {
       setCustomers(prev=>prev.map(x=>x.id===editId?{...x,...data}:x).sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
       setEditId(null);
       setForm({...emptyForm,code:nextCustomerCode()});
+      setShowCustomerModal(false);
       return;
     }
     const id=await window.DB.addDoc("customers",data);
@@ -1459,6 +1462,7 @@ function Customers() {
     const nextCustomers=[{id,...data},...customers];
     setCustomers(nextCustomers.sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
     setForm({...emptyForm,code:nextCustomerCode(nextCustomers)});
+    setShowCustomerModal(false);
   }
 
   function startEdit(c){
@@ -1471,6 +1475,7 @@ function Customers() {
       email:c.email||"",
       notes:c.notes||"",
     });
+    setShowCustomerModal(true);
   }
 
   async function removeCustomer(c){
@@ -1488,26 +1493,33 @@ function Customers() {
 
   return (
     <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-          <div style={{fontWeight:700,color:C.text}}>Müşteriler</div>
-          {editId&&<Badge label="Düzenleme" color={C.warn}/>}
+      {showCustomerModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.68)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:54,padding:14}} onClick={()=>setShowCustomerModal(false)}>
+          <div style={{width:"100%",maxWidth:900,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16,maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8,flexWrap:"wrap"}}>
+              <div style={{fontWeight:700,color:C.text,fontSize:16}}>{editId?"Müşteri Düzenle":"Yeni Müşteri"}</div>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                {editId&&<Badge label="Düzenleme" color={C.warn}/>}
+                <button onClick={()=>setShowCustomerModal(false)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div><span style={labelSt}>Firma Adı *</span><input style={inputSt} value={form.name} onChange={e=>fv("name",e.target.value)} placeholder="Firma adı"/></div>
+              <div><span style={labelSt}>Firma Kodu (Otomatik)</span><input style={{...inputSt,background:C.surface,color:C.muted2}} value={editId?(form.code||"-"):nextCustomerCode()} readOnly/></div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginTop:8}}>
+              <div><span style={labelSt}>Yetkili</span><input style={inputSt} value={form.contact} onChange={e=>fv("contact",e.target.value)} placeholder="Ad Soyad"/></div>
+              <div><span style={labelSt}>Telefon</span><input style={inputSt} value={form.phone} onChange={e=>fv("phone",e.target.value)} placeholder="05xx xxx xx xx"/></div>
+              <div><span style={labelSt}>E-posta</span><input style={inputSt} value={form.email} onChange={e=>fv("email",e.target.value)} placeholder="mail@firma.com"/></div>
+            </div>
+            <div style={{marginTop:8}}><span style={labelSt}>Not</span><textarea rows={2} style={{...inputSt,minHeight:64,resize:"vertical"}} value={form.notes} onChange={e=>fv("notes",e.target.value)} placeholder="Opsiyonel not..."/></div>
+            <div style={{display:"flex",gap:8,marginTop:12,justifyContent:"flex-end"}}>
+              <button onClick={()=>{setEditId(null);setForm({...emptyForm,code:nextCustomerCode()});setShowCustomerModal(false);}} style={{...btnSt("ghost"),padding:"10px 14px"}}>İptal</button>
+              <button onClick={saveCustomer} style={{...btnSt("primary"),padding:"10px 14px"}}>{editId?"Müşteriyi Güncelle":"Müşteri Kaydet"}</button>
+            </div>
+          </div>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-          <div><span style={labelSt}>Firma Adı *</span><input style={inputSt} value={form.name} onChange={e=>fv("name",e.target.value)} placeholder="Firma adı"/></div>
-          <div><span style={labelSt}>Firma Kodu (Otomatik)</span><input style={{...inputSt,background:C.surface,color:C.muted2}} value={editId?(form.code||"-"):nextCustomerCode()} readOnly/></div>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginTop:8}}>
-          <div><span style={labelSt}>Yetkili</span><input style={inputSt} value={form.contact} onChange={e=>fv("contact",e.target.value)} placeholder="Ad Soyad"/></div>
-          <div><span style={labelSt}>Telefon</span><input style={inputSt} value={form.phone} onChange={e=>fv("phone",e.target.value)} placeholder="05xx xxx xx xx"/></div>
-          <div><span style={labelSt}>E-posta</span><input style={inputSt} value={form.email} onChange={e=>fv("email",e.target.value)} placeholder="mail@firma.com"/></div>
-        </div>
-        <div style={{marginTop:8}}><span style={labelSt}>Not</span><textarea rows={2} style={{...inputSt,minHeight:64,resize:"vertical"}} value={form.notes} onChange={e=>fv("notes",e.target.value)} placeholder="Opsiyonel not..."/></div>
-        <div style={{display:"flex",gap:8,marginTop:10}}>
-          <button onClick={saveCustomer} style={{...btnSt("primary"),flex:1,padding:12}}>{editId?"Müşteriyi Güncelle":"Müşteri Kaydet"}</button>
-          {editId&&<button onClick={()=>{setEditId(null);setForm({...emptyForm,code:nextCustomerCode()});}} style={{...btnSt("ghost"),padding:"12px 14px"}}>İptal</button>}
-        </div>
-      </div>
+      )}
 
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
         <div style={{fontSize:12,color:C.muted2}}>Kayıtlı Firma: {customers.length}</div>
