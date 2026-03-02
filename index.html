@@ -4426,28 +4426,25 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     const params=new URLSearchParams(window.location.search||"");
     const qpMachine=(params.get("machine")||"").trim();
     const qpStation=(params.get("station")||params.get("screen")||"").trim();
+    if(!kioskMode){
+      setLockedMachine("");
+      setStationTag("");
+      return;
+    }
     if(qpMachine.toLowerCase()==="all"){
-      try{window.localStorage.removeItem("operator_locked_machine");}catch{}
       setLockedMachine("");
       setStationTag(qpStation||"");
       return;
     }
-    let resolved=qpMachine;
-    if(!resolved){
-      try{
-        resolved=(window.localStorage.getItem("operator_locked_machine")||"").trim();
-      }catch{}
-    }
-    if(resolved){
-      setLockedMachine(resolved);
-      setStationTag(qpStation||resolved);
-      setForm(prev=>({...prev,machine:resolved,selectedOrder:null}));
-      try{window.localStorage.setItem("operator_locked_machine",resolved);}catch{}
+    if(qpMachine){
+      setLockedMachine(qpMachine);
+      setStationTag(qpStation||qpMachine);
+      setForm(prev=>({...prev,machine:qpMachine,selectedOrder:null}));
       return;
     }
     setLockedMachine("");
     setStationTag(qpStation||"");
-  },[machines.join("|")]);
+  },[kioskMode,machines.join("|")]);
 
   useEffect(()=>{
     window.DB.getAll("entries").then(e=>setTodayEntries(e.filter(x=>x.date===form.entryDate&&x.operatorId===currentUser.id)));
@@ -7556,12 +7553,15 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
       quality:Math.round(quality*100),
     };
   });
-  const statusColor=s=>{
-    if(["running","live"].includes(s)) return C.green;
-    if(["alarm"].includes(s)) return C.red;
-    if(["idle","setup","simulation"].includes(s)) return C.warn;
-    return C.muted2;
+  const statusMeta=s=>{
+    const key=String(s||"offline").toLowerCase();
+    if(["running","live"].includes(key)) return {label:"CALISIYOR",color:"#19b45b",banner:"#129246"};
+    if(key==="setup") return {label:"KURULUM",color:"#d8a601",banner:"#b98800"};
+    if(["idle","simulation"].includes(key)) return {label:"DURMADA",color:"#d8a601",banner:"#b98800"};
+    if(key==="alarm") return {label:"ALARM",color:"#d33f3f",banner:"#aa2e2e"};
+    return {label:"OFFLINE",color:"#6b7280",banner:"#4b5563"};
   };
+  const machineRowsSorted=[...machineRows].sort((a,b)=>(a.machineName||"").localeCompare(b.machineName||"","tr"));
 
   return (
     <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
@@ -7576,21 +7576,59 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
 
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
-          <div style={{fontWeight:700,color:C.text}}>Canli Atolye Gorunumu</div>
-          <button onClick={load} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Yenile</button>
+          <div>
+            <div style={{fontWeight:700,color:C.text}}>Canli Atolye Gorunumu</div>
+            <div style={{fontSize:11,color:C.muted2,marginTop:2}}>Durum renkleri: Yesil calisiyor · Sari durmada/kurulum · Kirmizi alarm</div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <button onClick={load} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Yenile</button>
+          </div>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8}}>
-          {machineRows.map(m=>(
-            <div key={m.id} style={{background:C.surface,border:`1px solid ${statusColor(m.status)}55`,borderRadius:10,padding:"10px 12px"}}>
-              <div style={{display:"flex",justifyContent:"space-between",gap:6,alignItems:"center"}}>
-                <div style={{fontWeight:700,color:C.text}}>{m.machineName}</div>
-                <Badge label={m.status||"offline"} color={statusColor(m.status)}/>
+        <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:12,padding:10}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:10}}>
+            {machineRowsSorted.map(m=>{
+              const meta=statusMeta(m.status);
+              return (
+              <div key={m.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",display:"flex",flexDirection:"column",minHeight:248}}>
+                <div style={{background:meta.banner,padding:"9px 10px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                  <div style={{fontWeight:800,color:"#fff",fontSize:18,lineHeight:1.05,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.machineName}</div>
+                  <span style={{fontSize:10,fontWeight:800,color:"#fff",padding:"4px 7px",borderRadius:999,border:"1px solid rgba(255,255,255,.45)",background:"rgba(0,0,0,.12)",letterSpacing:.4}}>{meta.label}</span>
+                </div>
+                <div style={{padding:10,display:"flex",flexDirection:"column",gap:8,flex:1}}>
+                  <div style={{display:"grid",gridTemplateColumns:"44px minmax(0,1fr)",gap:8,alignItems:"center"}}>
+                    <div style={{width:44,height:44,borderRadius:8,background:C.surface2,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",color:meta.color}}>
+                      <NavIcon name="machines" size={18}/>
+                    </div>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Program</div>
+                      <div style={{fontSize:12,color:C.text,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.program||"-"}</div>
+                    </div>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                    <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
+                      <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Part Counter</div>
+                      <div style={{fontSize:16,color:C.text,fontWeight:800,marginTop:1}}>{m.partCounter}</div>
+                    </div>
+                    <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
+                      <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Alarm</div>
+                      <div style={{fontSize:16,color:m.alarms>0?C.red:C.text,fontWeight:800,marginTop:1}}>{m.alarms}</div>
+                    </div>
+                  </div>
+                  <div style={{marginTop:"auto",background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+                      <span style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>OEE</span>
+                      <span style={{fontSize:13,color:C.text,fontWeight:800}}>%{m.oee}</span>
+                    </div>
+                    <div style={{height:6,borderRadius:999,background:C.border,overflow:"hidden"}}>
+                      <div style={{width:`${Math.max(0,Math.min(100,m.oee||0))}%`,height:"100%",background:meta.color,borderRadius:999}}/>
+                    </div>
+                    <div style={{fontSize:10,color:C.muted2,marginTop:5}}>A %{m.availability} · P %{m.performance} · Q %{m.quality}</div>
+                  </div>
+                </div>
               </div>
-              <div style={{fontSize:11,color:C.muted2,marginTop:3}}>Program: {m.program}</div>
-              <div style={{fontSize:11,color:C.muted2}}>Parca: {m.partCounter} · Alarm: {m.alarms}</div>
-              <div style={{fontSize:12,color:C.text,marginTop:6}}>OEE %{m.oee} (A %{m.availability} / P %{m.performance} / Q %{m.quality})</div>
-            </div>
-          ))}
+            );
+            })}
+          </div>
         </div>
       </div>
 
