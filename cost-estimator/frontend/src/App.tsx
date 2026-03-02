@@ -17,6 +17,13 @@ import { UploadPanel } from "./components/UploadPanel";
 import type { AnalysisJob, MachineProfile, Material, PartRead, PartSummary } from "./types/domain";
 import "./styles.css";
 
+function jobStatusLabel(status: string): string {
+  if (status === "processing") return "Isleniyor";
+  if (status === "completed") return "Tamamlandi";
+  if (status === "failed") return "Basarisiz";
+  return status;
+}
+
 function App() {
   const [materials, setMaterials] = useState<Material[]>([]);
   const [machineProfiles, setMachineProfiles] = useState<MachineProfile[]>([]);
@@ -47,7 +54,7 @@ function App() {
       });
     } catch (error) {
       console.error(error);
-      setGlobalError("API connection failed. Check backend service.");
+      setGlobalError("API baglantisi basarisiz. Arka servis kontrol edin.");
       setMockMode(isMockModeActive());
     }
   }
@@ -72,7 +79,7 @@ function App() {
       .catch((error) => {
         if (cancelled) return;
         console.error(error);
-        setGlobalError("Part details could not be loaded.");
+        setGlobalError("Parca detaylari yuklenemedi.");
         setSelectedPart(null);
       });
     return () => {
@@ -109,7 +116,7 @@ function App() {
       await loadInitial();
     } catch (error) {
       console.error(error);
-      setGlobalError("Upload failed. Check file format and API logs.");
+      setGlobalError("Yukleme basarisiz. Dosya bicimini ve API kayitlarini kontrol edin.");
     } finally {
       setUploadBusy(false);
     }
@@ -125,11 +132,11 @@ function App() {
     <main className="layout">
       <header className="topbar">
         <div>
-          <h1>CNC Material Quote & Cost Estimator</h1>
-          <p>STEP upload, stock suggestion, operation planning and cycle-time based cost output.</p>
+          <h1>CNC Malzeme Teklifi ve Maliyet Hesaplayici</h1>
+          <p>STEP yukleme, stok onerisi, operasyon planlama ve cevrim suresi bazli maliyet cikisi.</p>
         </div>
         <button className="ghost" onClick={loadInitial}>
-          Refresh
+          Yenile
         </button>
       </header>
 
@@ -155,7 +162,7 @@ function App() {
       )}
       {activeJob && (
         <div className={`alert ${activeJob.status === "failed" ? "error" : "info"}`}>
-          Job {activeJob.id.slice(0, 8)}... status: <strong>{activeJob.status}</strong>
+          Is {activeJob.id.slice(0, 8)}... durumu: <strong>{jobStatusLabel(activeJob.status)}</strong>
           {activeJob.error_message ? ` - ${activeJob.error_message}` : ""}
         </div>
       )}

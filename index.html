@@ -507,13 +507,13 @@ const MACHINE_PROTOCOL_OPTIONS = {
 const MACHINE_DATA_POINTS = [
   { id:"status", label:"Makina Durumu" },
   { id:"program", label:"Aktif Program" },
-  { id:"spindleLoad", label:"Spindle Load %" },
-  { id:"feedOverride", label:"Feed Override %" },
-  { id:"cycleElapsed", label:"Cycle Time" },
-  { id:"partCounter", label:"Part Counter" },
+  { id:"spindleLoad", label:"Mil Yuku %" },
+  { id:"feedOverride", label:"Ilerleme Orani %" },
+  { id:"cycleElapsed", label:"Cevrim Suresi" },
+  { id:"partCounter", label:"Parca Sayaci" },
   { id:"alarms", label:"Alarmlar" },
-  { id:"toolLife", label:"Tool Life" },
-  { id:"operatorId", label:"Operator ID" },
+  { id:"toolLife", label:"Takim Omru" },
+  { id:"operatorId", label:"Operator Kimligi" },
 ];
 const MACHINE_DEFAULT_POINTS = MACHINE_DATA_POINTS.reduce((acc,p)=>{
   acc[p.id]=true;
@@ -4965,7 +4965,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
               <div><span style={labelSt}>Parca Adi *</span><input style={inputSt} value={quickPartForm.name} onChange={e=>setQuickPartForm(f=>({...f,name:e.target.value}))} placeholder="Parca adi"/></div>
               <div><span style={labelSt}>Revizyon</span><input style={inputSt} value={quickPartForm.revision} onChange={e=>setQuickPartForm(f=>({...f,revision:e.target.value.toUpperCase()}))} placeholder="A"/></div>
               <div><span style={labelSt}>Malzeme</span><input style={inputSt} value={quickPartForm.material} onChange={e=>setQuickPartForm(f=>({...f,material:e.target.value}))} placeholder="Opsiyonel"/></div>
-              <div><span style={labelSt}>Setup sn</span><input style={inputSt} type="number" min="0" value={quickPartForm.setupSec} onChange={e=>setQuickPartForm(f=>({...f,setupSec:e.target.value}))}/></div>
+              <div><span style={labelSt}>Kurulum sn</span><input style={inputSt} type="number" min="0" value={quickPartForm.setupSec} onChange={e=>setQuickPartForm(f=>({...f,setupSec:e.target.value}))}/></div>
               <div><span style={labelSt}>Cevrim sn</span><input style={inputSt} type="number" min="1" value={quickPartForm.cycleSec} onChange={e=>setQuickPartForm(f=>({...f,cycleSec:e.target.value}))}/></div>
             </div>
             <div><span style={labelSt}>Not</span><input style={inputSt} value={quickPartForm.notes} onChange={e=>setQuickPartForm(f=>({...f,notes:e.target.value}))} placeholder="Opsiyonel not"/></div>
@@ -7175,7 +7175,7 @@ function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule})
     if(!selectedOrder){showFlash("err","Kalite icin is emri secin.");return;}
     const result=qualityForm.result||"pass";
     const serialNo=qualityForm.serialNo.trim()||`${selectedOrder.code||"WO"}-${String(Date.now()).slice(-6)}`;
-    if(result==="fail"&&Math.max(0,safeNum(qualityForm.scrapQty))<=0){showFlash("err","Fail icin scrap adedi girin.");return;}
+    if(result==="fail"&&Math.max(0,safeNum(qualityForm.scrapQty))<=0){showFlash("err","Hatali sonuc icin hurda adedi girin.");return;}
     setBusy(b=>({...b,quality:true}));
     const tracePayload={
       orderId:selectedOrder.id,
@@ -7255,7 +7255,7 @@ function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule})
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8}}>
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Bugun Dogru</div><div style={{fontSize:24,fontWeight:800,color:C.green}}>{todayGood}</div></div>
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Bugun Scrap</div><div style={{fontSize:24,fontWeight:800,color:C.red}}>{todayScrap}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Bugun Hurda</div><div style={{fontSize:24,fontWeight:800,color:C.red}}>{todayScrap}</div></div>
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Durus (dk)</div><div style={{fontSize:24,fontWeight:800,color:C.warn}}>{todayDowntimeMin}</div></div>
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Kalite Orani</div><div style={{fontSize:24,fontWeight:800,color:qualityPct<90?C.warn:C.green}}>%{qualityPct}</div></div>
       </div>
@@ -7267,7 +7267,7 @@ function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule})
           {selectedOrder&&<div style={{fontSize:12,color:C.muted2,marginTop:6}}>Parca sure: {fmtSec(selectedOrder.partSec)} · Termin: {selectedOrder.dueDate||"-"} · Oncelik: {selectedOrder.priority||"normal"}</div>}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
             <div><span style={labelSt}>Dogru Adet</span><input style={{...inputSt,padding:"13px 12px",fontSize:18,fontWeight:700,textAlign:"center"}} type="number" min="0" value={entryForm.correct} onChange={e=>setEntryForm(f=>({...f,correct:e.target.value}))}/></div>
-            <div><span style={labelSt}>Scrap Adet</span><input style={{...inputSt,padding:"13px 12px",fontSize:18,fontWeight:700,textAlign:"center"}} type="number" min="0" value={entryForm.wrong} onChange={e=>setEntryForm(f=>({...f,wrong:e.target.value}))}/></div>
+            <div><span style={labelSt}>Hurda Adet</span><input style={{...inputSt,padding:"13px 12px",fontSize:18,fontWeight:700,textAlign:"center"}} type="number" min="0" value={entryForm.wrong} onChange={e=>setEntryForm(f=>({...f,wrong:e.target.value}))}/></div>
           </div>
           <button onClick={saveEntryQuick} disabled={busy.entry} style={{...btnSt("primary"),width:"100%",padding:"13px 12px",marginTop:12,fontSize:15,opacity:busy.entry?0.7:1}}>{busy.entry?"Kaydediliyor...":"Uretim Kaydet"}</button>
           <div style={{marginTop:10,fontSize:12,color:C.muted2}}>
@@ -7279,7 +7279,7 @@ function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule})
           <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Makina Durumu ve Alarm</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
             <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Program</div><div style={{fontWeight:700,color:C.text}}>{selectedTelemetry?.programName||"-"}</div></div>
-            <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Part Counter</div><div style={{fontWeight:700,color:C.text}}>{safeNum(selectedTelemetry?.partCounter)}</div></div>
+            <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Parca Sayaci</div><div style={{fontWeight:700,color:C.text}}>{safeNum(selectedTelemetry?.partCounter)}</div></div>
             <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Spindle %</div><div style={{fontWeight:700,color:C.text}}>{safeNum(selectedTelemetry?.spindleLoad)}</div></div>
             <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Feed %</div><div style={{fontWeight:700,color:C.text}}>{safeNum(selectedTelemetry?.feedOverride)}</div></div>
           </div>
@@ -7307,10 +7307,10 @@ function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule})
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
           <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Kalite Kontrol</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-            <div><span style={labelSt}>Sonuc</span><select style={inputSt} value={qualityForm.result} onChange={e=>setQualityForm(f=>({...f,result:e.target.value}))}><option value="pass">Pass</option><option value="fail">Fail</option></select></div>
+            <div><span style={labelSt}>Sonuc</span><select style={inputSt} value={qualityForm.result} onChange={e=>setQualityForm(f=>({...f,result:e.target.value}))}><option value="pass">Gecti</option><option value="fail">Kaldi</option></select></div>
             <div><span style={labelSt}>Seri/Lot</span><input style={inputSt} value={qualityForm.serialNo} onChange={e=>setQualityForm(f=>({...f,serialNo:e.target.value}))} placeholder="Otomatik olusturulur"/></div>
-            <div><span style={labelSt}>Scrap Adet</span><input style={inputSt} type="number" min="0" value={qualityForm.scrapQty} onChange={e=>setQualityForm(f=>({...f,scrapQty:e.target.value}))}/></div>
-            <div><span style={labelSt}>Scrap Nedeni</span><input style={inputSt} value={qualityForm.scrapReason} onChange={e=>setQualityForm(f=>({...f,scrapReason:e.target.value}))}/></div>
+            <div><span style={labelSt}>Hurda Adet</span><input style={inputSt} type="number" min="0" value={qualityForm.scrapQty} onChange={e=>setQualityForm(f=>({...f,scrapQty:e.target.value}))}/></div>
+            <div><span style={labelSt}>Hurda Nedeni</span><input style={inputSt} value={qualityForm.scrapReason} onChange={e=>setQualityForm(f=>({...f,scrapReason:e.target.value}))}/></div>
             <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Olcum</span><input style={inputSt} value={qualityForm.measurements} onChange={e=>setQualityForm(f=>({...f,measurements:e.target.value}))} placeholder="Opsiyonel olcum degeri"/></div>
           </div>
           <button onClick={saveQualityQuick} disabled={busy.quality} style={{...btnSt("green"),width:"100%",padding:"12px 12px",marginTop:10,fontSize:14,opacity:busy.quality?0.7:1}}>{busy.quality?"Kaydediliyor...":"Kalite Kaydet"}</button>
@@ -7428,12 +7428,12 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
         {id:"result",label:"Sonuc"},
         {id:"partNo",label:"Parca"},
         {id:"orderCode",label:"Is Emri"},
-        {id:"scrapReason",label:"Scrap Nedeni"},
+        {id:"scrapReason",label:"Hurda Nedeni"},
       ],
       metrics:[
         {id:"__count",label:"Muayene Sayisi",aggs:["sum"]},
-        {id:"scrapQty",label:"Scrap Adedi",aggs:["sum","avg","max","min"]},
-        {id:"scrapCost",label:"Scrap Maliyeti",aggs:["sum","avg","max","min"]},
+        {id:"scrapQty",label:"Hurda Adedi",aggs:["sum","avg","max","min"]},
+        {id:"scrapCost",label:"Hurda Maliyeti",aggs:["sum","avg","max","min"]},
       ],
     },
   };
@@ -8281,6 +8281,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const [mpsForm,setMpsForm]=useState({partNo:"",weekStart:startOfWeekYmd(todayStr()),plannedQty:"0",note:""});
   const [dragPlanId,setDragPlanId]=useState(null);
   const [dragBoardSegmentId,setDragBoardSegmentId]=useState("");
+  const [dragBoardOrderId,setDragBoardOrderId]=useState("");
   const [exporting,setExporting]=useState(false);
   const [planQuery,setPlanQuery]=useState("");
   const [planMachineFilter,setPlanMachineFilter]=useState("all");
@@ -8980,9 +8981,9 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     return days===1?"1 gun":`${days} gun`;
   }
   function machineRowStateLabel(row){
-    if(row.activeSegment) return `Active | ${segmentDurationLabel(row.activeSegment)}`;
-    if(row.segments.length>0) return `Queue | ${row.segments.length} is`;
-    return "Idle";
+    if(row.activeSegment) return `Aktif | ${segmentDurationLabel(row.activeSegment)}`;
+    if(row.segments.length>0) return `Kuyruk | ${row.segments.length} is`;
+    return "Bos";
   }
   function segmentRiskType(seg){
     const due=String(orderById[seg.orderId]?.dueDate||"");
@@ -9074,13 +9075,13 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const onTimePct=dueKnownSegments.length>0?Math.max(0,Math.min(100,Math.round(((dueKnownSegments.length-behindCount)/dueKnownSegments.length)*100))):100;
   const setupCount=machines.reduce((sum,m)=>sum+Math.max(0,((monthSegmentsByMachine[m]||[]).length-1)),0);
   const summaryCards=[
-    {label:"Active",value:String(activeCount),sub:"No Change"},
-    {label:"Scheduled",value:String(scheduledCount),sub:"No Change"},
-    {label:"Due Today",value:String(dueTodayCount),sub:"No Change"},
-    {label:"Overdue",value:String(overdueCount),sub:"No Change",tone:overdueCount>0?C.red:C.text},
-    {label:"Behind",value:String(behindCount),sub:"No Change",tone:behindCount>0?C.warn:C.text},
-    {label:"On Time",value:`%${onTimePct}`,sub:"Tracking"},
-    {label:"Setups",value:String(setupCount),sub:"This month"},
+    {label:"Aktif",value:String(activeCount),sub:"Degisim Yok"},
+    {label:"Planli",value:String(scheduledCount),sub:"Degisim Yok"},
+    {label:"Bugun Terminli",value:String(dueTodayCount),sub:"Degisim Yok"},
+    {label:"Geciken",value:String(overdueCount),sub:"Degisim Yok",tone:overdueCount>0?C.red:C.text},
+    {label:"Geride",value:String(behindCount),sub:"Degisim Yok",tone:behindCount>0?C.warn:C.text},
+    {label:"Zamaninda",value:`%${onTimePct}`,sub:"Izleniyor"},
+    {label:"Kurulumlar",value:String(setupCount),sub:"Bu ay"},
   ];
   const machineBoardVisible=planMachineFilter==="all"
     ? machineBoardRows
@@ -9170,7 +9171,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
           <div>
-            <div style={{fontSize:11,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Edit Schedule</div>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Planlamayi Duzenle</div>
             <div style={{fontWeight:800,color:C.text,fontSize:19}}>Planlama Merkezi</div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
@@ -9188,7 +9189,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
             >
               Yeni Planlama
             </button>
-            <button onClick={()=>setShowMpsModal(true)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>MPS Run</button>
+            <button onClick={()=>setShowMpsModal(true)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>MPS Calistir</button>
           </div>
         </div>
 
@@ -9231,9 +9232,9 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
             <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflowX:"auto"}}>
               <div style={{minWidth:900}}>
               <div style={{display:"grid",gridTemplateColumns:"minmax(220px,1fr) minmax(260px,1.1fr) minmax(420px,1.8fr)",gap:10,padding:"9px 12px",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.muted2,fontWeight:700}}>
-                <div>Machines</div>
-                <div>Active</div>
-                <div>Up Next</div>
+                <div>Tezgahlar</div>
+                <div>Aktif</div>
+                <div>Siradaki</div>
               </div>
               <div style={{maxHeight:560,overflowY:"auto"}}>
                 {machineBoardVisible.map(row=>{
@@ -9573,7 +9574,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.68)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:53,padding:14}} onClick={()=>setShowMpsModal(false)}>
           <div style={{width:"100%",maxWidth:920,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16,maxHeight:"88vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8,flexWrap:"wrap"}}>
-              <div style={{fontWeight:700,color:C.text,fontSize:16}}>MPS Run</div>
+              <div style={{fontWeight:700,color:C.text,fontSize:16}}>MPS Calistir</div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                 <button onClick={()=>downloadCsv(`mps-${todayStr()}.csv`,[{label:"Hafta",key:"hafta"},{label:"Talep",key:"talep"},{label:"Is Emri Arz",key:"isEmriArz"},{label:"MPS Plan",key:"mpsPlan"},{label:"Bakiye",key:"bakiye"}],mpsExportRows)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>CSV İndir</button>
                 <button onClick={()=>setShowMpsModal(false)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
@@ -10248,12 +10249,12 @@ function CncMonitorWall({currentUser,machines=DEFAULT_MACHINES}){
     return "offline";
   }
   function statusLabelOf(key){
-    if(key==="running") return "Active";
-    if(key==="idle") return "Idle";
-    if(key==="setup") return "Setup";
+    if(key==="running") return "Aktif";
+    if(key==="idle") return "Beklemede";
+    if(key==="setup") return "Ayar";
     if(key==="alarm") return "Alarm";
-    if(key==="stopped") return "Stopped";
-    return "Not Reported";
+    if(key==="stopped") return "Duruyor";
+    return "Raporlanmadi";
   }
   function shiftBoundsForNow(now,row){
     const startMin=hmToMinute(row?.start);
@@ -11350,7 +11351,7 @@ function PurchasingModule({currentUser}){
             ))}
           </div>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Purchase Orders ({orders.length})</div>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Satin Alma Siparisleri ({orders.length})</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr .7fr .7fr .7fr",gap:8,marginBottom:8}}>
               <div><span style={labelSt}>PO Sec</span><select style={inputSt} value={recvForm.poId} onChange={e=>setRecvForm(f=>({...f,poId:e.target.value}))}><option value="">Secin</option>{orders.filter(o=>o.status!=="received").map(o=><option key={o.id} value={o.id}>{o.code} · {o.materialCode} · Kalan {Math.max(0,safeNum(o.qty)-safeNum(o.receivedQty)-safeNum(o.rejectedQty))}</option>)}</select></div>
               <div><span style={labelSt}>Kabul</span><input style={inputSt} type="number" min="0" value={recvForm.acceptedQty} onChange={e=>setRecvForm(f=>({...f,acceptedQty:e.target.value}))}/></div>
@@ -11996,14 +11997,14 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
     <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <button onClick={()=>setView("trace")} style={chip(view==="trace",C.accent)}>Iz Kaydi</button>
-        <button onClick={()=>setView("inspect")} style={chip(view==="inspect",C.warn)}>Muayene/Scrap</button>
+        <button onClick={()=>setView("inspect")} style={chip(view==="inspect",C.warn)}>Muayene/Hurda</button>
         <button onClick={()=>setView("fai")} style={chip(view==="fai",C.green)}>FAI</button>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Toplam Iz Kaydi</div><div style={{fontSize:23,color:C.text,fontWeight:800}}>{traces.length}</div></div>
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Kalite Orani</div><div style={{fontSize:23,color:qualityPct<90?C.warn:C.green,fontWeight:800}}>%{qualityPct}</div></div>
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Fail Muayene</div><div style={{fontSize:23,color:failCount?C.red:C.green,fontWeight:800}}>{failCount}</div></div>
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Scrap Maliyeti</div><div style={{fontSize:23,color:C.red,fontWeight:800}}>{moneyFmt(scrapCost)}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Hatali Muayene</div><div style={{fontSize:23,color:failCount?C.red:C.green,fontWeight:800}}>{failCount}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Hurda Maliyeti</div><div style={{fontSize:23,color:C.red,fontWeight:800}}>{moneyFmt(scrapCost)}</div></div>
       </div>
 
       {view==="trace"&&(
@@ -12027,14 +12028,14 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
 
       {view==="inspect"&&(
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Muayene ve Scrap Girisi</div>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Muayene ve Hurda Girisi</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
             <div><span style={labelSt}>Iz Kaydi</span><select style={inputSt} value={inspForm.traceId} onChange={e=>setInspForm(f=>({...f,traceId:e.target.value}))}><option value="">Secin</option>{traces.slice(0,120).map(t=><option key={t.id} value={t.id}>{t.orderCode} · {t.serialNo}</option>)}</select></div>
-            <div><span style={labelSt}>Sonuc</span><select style={inputSt} value={inspForm.result} onChange={e=>setInspForm(f=>({...f,result:e.target.value}))}><option value="pass">Pass</option><option value="fail">Fail</option></select></div>
-            <div><span style={labelSt}>Scrap Adedi</span><input style={inputSt} type="number" min="0" value={inspForm.scrapQty} onChange={e=>setInspForm(f=>({...f,scrapQty:e.target.value}))}/></div>
+            <div><span style={labelSt}>Sonuc</span><select style={inputSt} value={inspForm.result} onChange={e=>setInspForm(f=>({...f,result:e.target.value}))}><option value="pass">Gecti</option><option value="fail">Kaldi</option></select></div>
+            <div><span style={labelSt}>Hurda Adedi</span><input style={inputSt} type="number" min="0" value={inspForm.scrapQty} onChange={e=>setInspForm(f=>({...f,scrapQty:e.target.value}))}/></div>
             <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Olcumler</span><input style={inputSt} value={inspForm.measurements} onChange={e=>setInspForm(f=>({...f,measurements:e.target.value}))}/></div>
-            <div><span style={labelSt}>Scrap Nedeni</span><input style={inputSt} value={inspForm.scrapReason} onChange={e=>setInspForm(f=>({...f,scrapReason:e.target.value}))}/></div>
-            <div><span style={labelSt}>Scrap Maliyeti</span><input style={inputSt} type="number" min="0" value={inspForm.scrapCost} onChange={e=>setInspForm(f=>({...f,scrapCost:e.target.value}))}/></div>
+            <div><span style={labelSt}>Hurda Nedeni</span><input style={inputSt} value={inspForm.scrapReason} onChange={e=>setInspForm(f=>({...f,scrapReason:e.target.value}))}/></div>
+            <div><span style={labelSt}>Hurda Maliyeti</span><input style={inputSt} type="number" min="0" value={inspForm.scrapCost} onChange={e=>setInspForm(f=>({...f,scrapCost:e.target.value}))}/></div>
           </div>
           <div style={{display:"flex",justifyContent:"space-between",marginTop:10,flexWrap:"wrap",gap:8}}>
             <button onClick={saveInspection} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Muayene Kaydet</button>
@@ -12068,7 +12069,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
                 <input style={inputSt} type="number" min="1" value={balloonForm.page} onChange={e=>setBalloonForm(f=>({...f,page:e.target.value||"1"}))}/>
               </div>
               <div>
-                <span style={labelSt}>Kayitli Balon Run</span>
+                <span style={labelSt}>Kayitli Balon Calismasi</span>
                 <select style={inputSt} value={faiForm.balloonRunId||""} onChange={e=>{const id=e.target.value;setFaiForm(f=>({...f,balloonRunId:id}));bindSelectedBalloonRunToFai(id);}}>
                   <option value="">Secin</option>
                   {orderBalloonRuns.map(r=><option key={r.id} value={r.id}>{r.fileName||"PDF"} · S{r.page||1} · {r.dimensionCount||0} olcu</option>)}
@@ -12087,11 +12088,11 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
                   {balloonSaveBusy?"Kaydediliyor...":"Olculeri Kaydet"}
                 </button>
                 <button onClick={()=>removeBalloonRun(faiForm.balloonRunId)} disabled={!faiForm.balloonRunId||Boolean(balloonDeleteBusyId)} style={{...btnSt("danger"),padding:"8px 12px",fontSize:12,opacity:(!faiForm.balloonRunId||Boolean(balloonDeleteBusyId))?0.65:1}}>
-                  {balloonDeleteBusyId? "Run Siliniyor..." : "Run Sil"}
+                  {balloonDeleteBusyId? "Calisma Siliniyor..." : "Calismayi Sil"}
                 </button>
               </div>
               <div style={{fontSize:12,color:C.muted2}}>
-                {selectedBalloonRun?`Bagli run: ${selectedBalloonRun.fileName||"-"} · ${selectedBalloonRun.dimensionCount||0} olcu`:`Run secilmedi (manuel kayitta yeni run acilir)`}
+                {selectedBalloonRun?`Bagli calisma: ${selectedBalloonRun.fileName||"-"} · ${selectedBalloonRun.dimensionCount||0} olcu`:`Calisma secilmedi (manuel kayitta yeni calisma acilir)`}
               </div>
             </div>
             {balloonError&&<div style={{fontSize:12,color:C.red,marginTop:7}}>{balloonError}</div>}
@@ -12172,7 +12173,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
             <div><span style={labelSt}>Is Emri</span><select style={inputSt} value={faiForm.orderId} onChange={e=>setFaiForm(f=>({...f,orderId:e.target.value}))}><option value="">Secin</option>{orders.map(o=><option key={o.id} value={o.id}>{o.code}</option>)}</select></div>
             <div><span style={labelSt}>Parca No</span><input style={inputSt} value={faiForm.partNo} onChange={e=>setFaiForm(f=>({...f,partNo:e.target.value}))}/></div>
             <div><span style={labelSt}>Durum</span><select style={inputSt} value={faiForm.status} onChange={e=>setFaiForm(f=>({...f,status:e.target.value}))}><option value="draft">Taslak</option><option value="pending">Beklemede</option><option value="approved">Onayli</option><option value="rejected">Reddedildi</option></select></div>
-            <div><span style={labelSt}>Balon Run</span><select style={inputSt} value={faiForm.balloonRunId||""} onChange={e=>{const id=e.target.value;setFaiForm(f=>({...f,balloonRunId:id}));if(id){bindSelectedBalloonRunToFai(id);}else{setEditableBalloons([]);setBalloonPreview(null);}}}><option value="">Yok</option>{balloonRuns.filter(r=>!faiForm.orderId||r.orderId===faiForm.orderId).map(r=><option key={r.id} value={r.id}>{r.orderCode||"-"} · {r.fileName||"PDF"} · {r.dimensionCount||0}</option>)}</select></div>
+            <div><span style={labelSt}>Balon Calismasi</span><select style={inputSt} value={faiForm.balloonRunId||""} onChange={e=>{const id=e.target.value;setFaiForm(f=>({...f,balloonRunId:id}));if(id){bindSelectedBalloonRunToFai(id);}else{setEditableBalloons([]);setBalloonPreview(null);}}}><option value="">Yok</option>{balloonRuns.filter(r=>!faiForm.orderId||r.orderId===faiForm.orderId).map(r=><option key={r.id} value={r.id}>{r.orderCode||"-"} · {r.fileName||"PDF"} · {r.dimensionCount||0}</option>)}</select></div>
             <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Not</span><textarea rows={2} style={{...inputSt,minHeight:62,resize:"vertical"}} value={faiForm.note} onChange={e=>setFaiForm(f=>({...f,note:e.target.value}))}/></div>
           </div>
           <div style={{display:"flex",justifyContent:"space-between",marginTop:10,flexWrap:"wrap",gap:8}}>
@@ -12346,7 +12347,7 @@ function CostingModule(){
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
           <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Is Emri Bazli Maliyetler</div>
-          <button onClick={()=>downloadCsv(`costing-${todayStr()}.csv`,[{label:"Kod",key:"code"},{label:"Parca",key:"partNo"},{label:"Musteri",key:"customerName"},{label:"Uretim",key:"produced"},{label:"Plan",value:r=>r.plannedCost.toFixed(2)},{label:"Gercek",value:r=>r.actualCost.toFixed(2)},{label:"Scrap",value:r=>r.scrapCost.toFixed(2)}],orderCostRows)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>CSV Indir</button>
+          <button onClick={()=>downloadCsv(`costing-${todayStr()}.csv`,[{label:"Kod",key:"code"},{label:"Parca",key:"partNo"},{label:"Musteri",key:"customerName"},{label:"Uretim",key:"produced"},{label:"Plan",value:r=>r.plannedCost.toFixed(2)},{label:"Gercek",value:r=>r.actualCost.toFixed(2)},{label:"Hurda",value:r=>r.scrapCost.toFixed(2)}],orderCostRows)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>CSV Indir</button>
         </div>
         {orderCostRows.slice(0,80).map(r=>(
           <div key={r.id} style={{display:"grid",gridTemplateColumns:"1.2fr 1fr .8fr .8fr .8fr .8fr",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
@@ -12355,7 +12356,7 @@ function CostingModule(){
             <div style={{color:C.muted2}}>Adet {r.produced}</div>
             <div style={{color:C.muted2}}>Plan {moneyFmt(r.plannedCost)}</div>
             <div style={{color:C.text}}>Gercek {moneyFmt(r.actualCost)}</div>
-            <div style={{color:C.red}}>Scrap {moneyFmt(r.scrapCost)}</div>
+            <div style={{color:C.red}}>Hurda {moneyFmt(r.scrapCost)}</div>
           </div>
         ))}
       </div>
@@ -12411,19 +12412,19 @@ function MaterialQuoteBridgeModule(){
       </div>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:10}}>
         <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
-          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Frontend</div>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>On Yuz</div>
           <div style={{marginTop:6,fontSize:14,color:C.text,fontWeight:700}}>http://localhost:5173</div>
-          <div style={{marginTop:8,fontSize:12,color:C.muted2}}>3D viewer + teklif paneli</div>
+          <div style={{marginTop:8,fontSize:12,color:C.muted2}}>3D goruntuleyici + teklif paneli</div>
         </div>
         <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
           <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>API</div>
           <div style={{marginTop:6,fontSize:14,color:C.text,fontWeight:700}}>http://localhost:8000/api/v1</div>
-          <div style={{marginTop:8,fontSize:12,color:C.muted2}}>Upload, job, part, material endpointleri</div>
+          <div style={{marginTop:8,fontSize:12,color:C.muted2}}>Yukleme, is, parca, malzeme endpointleri</div>
         </div>
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <button onClick={()=>window.open("http://localhost:5173","_blank")} style={{...btnSt("primary"),padding:"9px 12px",fontSize:12}}>Modulu Ac</button>
-        <button onClick={()=>window.open("http://localhost:8000/docs","_blank")} style={{...btnSt("ghost"),padding:"9px 12px",fontSize:12}}>API Docs</button>
+        <button onClick={()=>window.open("http://localhost:8000/docs","_blank")} style={{...btnSt("ghost"),padding:"9px 12px",fontSize:12}}>API Dokumani</button>
       </div>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Kurulum</div>
@@ -12980,7 +12981,7 @@ function App() {
       {id:"sales",icon:"sales",label:"Satis Siparisleri",group:"Planlama",enabled:canSales},
       {id:"orders",icon:"orders",label:"Is Emirleri",group:"Operasyon",enabled:canOrders},
       {id:"giris",icon:"giris",label:"Uretim Girisi",group:"Operasyon",enabled:canEntry},
-      {id:"cncmonitor",icon:"monitor",label:"CNC Monitor",group:"Operasyon",enabled:canMonitor},
+      {id:"cncmonitor",icon:"monitor",label:"CNC Izleme",group:"Operasyon",enabled:canMonitor},
       {id:"downtime",icon:"downtime",label:"Durus Yonetimi",group:"Operasyon",enabled:canDowntime},
       {id:"quality",icon:"quality",label:"Kalite ve Izlenebilirlik",group:"Operasyon",enabled:canQuality},
       {id:"materials",icon:"materials",label:"Malzeme Kutuphanesi",group:"Tedarik ve Stok",enabled:(canOrders||canPurchasing)},

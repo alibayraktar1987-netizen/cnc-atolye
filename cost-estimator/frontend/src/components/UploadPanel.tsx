@@ -24,15 +24,15 @@ export function UploadPanel({ materials, machineProfiles, onUpload, busy }: Prop
   async function handleUpload() {
     setError("");
     if (!file) {
-      setError("Please select a STEP file.");
+      setError("Lutfen bir STEP dosyasi secin.");
       return;
     }
     if (!selectedMaterial) {
-      setError("Please select a material.");
+      setError("Lutfen bir malzeme secin.");
       return;
     }
     if (!selectedMachineProfile) {
-      setError("Please select a machine.");
+      setError("Lutfen bir tezgah secin.");
       return;
     }
     await onUpload(file, selectedMaterial, selectedMachineProfile);
@@ -41,11 +41,11 @@ export function UploadPanel({ materials, machineProfiles, onUpload, busy }: Prop
 
   return (
     <section className="panel">
-      <h2>STEP Upload</h2>
-      <p className="muted">AP203 / AP214 .step or .stp files are accepted.</p>
+      <h2>STEP Yukleme</h2>
+      <p className="muted">AP203 / AP214 .step veya .stp dosyalari kabul edilir.</p>
       <div className="form-grid">
         <label className="field">
-          <span>Machine</span>
+          <span>Tezgah</span>
           <select
             value={selectedMachineProfile ?? ""}
             onChange={(e) => setMachineProfileId(e.target.value || null)}
@@ -58,7 +58,7 @@ export function UploadPanel({ materials, machineProfiles, onUpload, busy }: Prop
           </select>
         </label>
         <label className="field">
-          <span>Material</span>
+          <span>Malzeme</span>
           <select value={selectedMaterial ?? ""} onChange={(e) => setMaterialId(Number(e.target.value) || null)}>
             {materials.map((m) => (
               <option value={m.id} key={m.id}>
@@ -68,7 +68,7 @@ export function UploadPanel({ materials, machineProfiles, onUpload, busy }: Prop
           </select>
         </label>
         <label className="field">
-          <span>STEP File</span>
+          <span>STEP Dosyasi</span>
           <input
             type="file"
             accept={acceptedHint}
@@ -78,12 +78,12 @@ export function UploadPanel({ materials, machineProfiles, onUpload, busy }: Prop
       </div>
       {file && (
         <div className="tag">
-          Selected: <strong>{file.name}</strong> ({Math.round(file.size / 1024)} KB)
+          Secilen: <strong>{file.name}</strong> ({Math.round(file.size / 1024)} KB)
         </div>
       )}
       {error && <div className="alert error">{error}</div>}
       <button className="primary" disabled={busy} onClick={handleUpload}>
-        {busy ? "Uploading..." : "Upload & Analyze"}
+        {busy ? "Yukleniyor..." : "Yukle ve Analiz Et"}
       </button>
     </section>
   );

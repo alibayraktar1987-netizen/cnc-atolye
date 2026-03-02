@@ -124,9 +124,9 @@ export function ModelViewer({ modelUrl, modelFormat, geometry, stock }: Props) {
 
   return (
     <section className="panel viewer">
-      <h2>3D Preview</h2>
+      <h2>3D Onizleme</h2>
       {emptyState ? (
-        <div className="muted">Model not ready yet.</div>
+        <div className="muted">Model henuz hazir degil.</div>
       ) : (
         <Canvas key={canvasKey} camera={{ position: [210, 150, 200], fov: 40 }}>
           <color attach="background" args={["#0e1118"]} />
@@ -149,12 +149,12 @@ export function ModelViewer({ modelUrl, modelFormat, geometry, stock }: Props) {
       )}
       {modelError && (
         <div className="muted" style={{ marginTop: 8 }}>
-          Preview model could not be loaded, fallback geometry is shown.
+          Onizleme modeli yuklenemedi, yedek geometri gosteriliyor.
         </div>
       )}
       {!showModel && showFallback && !modelError && (
         <div className="muted" style={{ marginTop: 8 }}>
-          Model file is not available yet, showing geometry-based preview.
+          Model dosyasi henuz hazir degil, geometri tabanli onizleme gosteriliyor.
         </div>
       )}
     </section>
