@@ -1447,6 +1447,92 @@ function OperatorUrlSettings({machines}) {
   );
 }
 
+function KioskProductionSettings({currentUser}) {
+  const [config,setConfig]=useState(DEFAULT_KIOSK_SETTINGS);
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+
+  const load=useCallback(async()=>{
+    const doc=await window.DB.getDoc("config","kioskSettings");
+    setConfig(normalizeKioskSettings(doc||{}));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  function setShiftValue(shiftId,key,value){
+    setConfig(prev=>({
+      ...prev,
+      shiftWindows:(prev.shiftWindows||[]).map(row=>row.id===shiftId?{...row,[key]:value}:row),
+    }));
+  }
+  function setThreshold(value){
+    setConfig(prev=>({...prev,cycleDeviationThresholdSec:value}));
+  }
+  function setNotifyEnabled(value){
+    setConfig(prev=>({...prev,cycleDeviationNotificationEnabled:Boolean(value)}));
+  }
+  async function saveConfig(){
+    const normalized=normalizeKioskSettings(config||{});
+    const payload={
+      ...normalized,
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser?.id||"",
+    };
+    setSaving(true);
+    const ok=await window.DB.setDoc("config","kioskSettings",payload);
+    setSaving(false);
+    if(!ok){alert("Kiosk ayarlari kaydedilemedi.");return;}
+    setConfig(normalized);
+    try{
+      window.dispatchEvent(new CustomEvent("kiosk_settings_updated",{detail:normalized}));
+    }catch{}
+    alert("Kiosk ayarlari kaydedildi.");
+  }
+
+  return (
+    <div style={{marginBottom:18}}>
+      <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Kiosk Vardiya ve Cevrim Ayarlari</div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+        <div style={{fontSize:12,color:C.muted2,marginBottom:10}}>Vardiya otomasyonu kiosk ekraninda bu saat araliklarina gore calisir.</div>
+        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 120px 120px",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700}}>
+            <div>Vardiya</div><div>Baslangic</div><div>Bitis</div>
+          </div>
+          {(config.shiftWindows||[]).map(row=>(
+            <div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 120px 120px",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
+              <div style={{fontSize:12,color:C.text,fontWeight:700}}>{row.label}</div>
+              <input type="time" value={normalizeHm(row.start,"00:00")} onChange={e=>setShiftValue(row.id,"start",e.target.value)} style={{...inputSt,padding:"6px 8px",fontSize:12}}/>
+              <input type="time" value={normalizeHm(row.end,"00:00")} onChange={e=>setShiftValue(row.id,"end",e.target.value)} style={{...inputSt,padding:"6px 8px",fontSize:12}}/>
+            </div>
+          ))}
+        </div>
+
+        <div style={{marginTop:12,padding:10,border:`1px solid ${C.border}`,borderRadius:10,background:C.surface}}>
+          <label style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:12,color:C.text,cursor:"pointer"}}>
+            <input type="checkbox" checked={Boolean(config.cycleDeviationNotificationEnabled)} onChange={e=>setNotifyEnabled(e.target.checked)}/>
+            Planlanan cevrim ile anlik cevrim arasinda sapma olursa bildirim olustur
+          </label>
+          <div style={{display:"grid",gridTemplateColumns:"160px 1fr",gap:8,marginTop:8,alignItems:"center"}}>
+            <span style={{fontSize:12,color:C.muted2}}>Sapma esigi (sn)</span>
+            <input
+              type="number"
+              min="1"
+              value={config.cycleDeviationThresholdSec}
+              onChange={e=>setThreshold(e.target.value)}
+              disabled={!config.cycleDeviationNotificationEnabled}
+              style={{...inputSt,padding:"7px 8px",fontSize:12,maxWidth:220,opacity:config.cycleDeviationNotificationEnabled?1:0.55}}
+            />
+          </div>
+        </div>
+
+        <div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}>
+          <button onClick={saveConfig} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={loading||saving}>{saving?"Kaydediliyor...":"Kiosk Ayarini Kaydet"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RoutingOperationTypeSettings({currentUser}) {
   const [rows,setRows]=useState([]);
   const [loading,setLoading]=useState(true);
@@ -1886,6 +1972,7 @@ function AdminUsers({currentUser,machines,onMachinesUpdate,currentLogo,onLogoUpd
           <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Uretim Ayarlari</div>
           <MachineSettings machines={machines} onUpdate={onMachinesUpdate}/>
           <OperatorUrlSettings machines={machines}/>
+          <KioskProductionSettings currentUser={currentUser}/>
           <RoutingOperationTypeSettings currentUser={currentUser}/>
         </>
       )}
@@ -5440,6 +5527,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const [previewFile,setPreviewFile]=useState(null);
   const [toolDraft,setToolDraft]=useState({machineToolId:"",machineToolQty:"1"});
   const [shiftDraft,setShiftDraft]=useState({correct:"",wrong:""});
+  const [kioskSettings,setKioskSettings]=useState(DEFAULT_KIOSK_SETTINGS);
+  const cycleDeviationStateRef=useRef({});
   const [form,setForm]=useState({
     entryDate:todayStr(),
     machine:machines[0]||"CNC-1",
@@ -5473,6 +5562,28 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     return ()=>{
       cancelled=true;
       clearInterval(timer);
+    };
+  },[]);
+  useEffect(()=>{
+    let disposed=false;
+    async function loadKioskSettings(){
+      const doc=await window.DB.getDoc("config","kioskSettings");
+      if(disposed) return;
+      setKioskSettings(normalizeKioskSettings(doc||{}));
+    }
+    function onKioskSettingsUpdated(e){
+      if(disposed) return;
+      setKioskSettings(normalizeKioskSettings(e?.detail||{}));
+    }
+    loadKioskSettings();
+    if(typeof window!=="undefined"){
+      window.addEventListener("kiosk_settings_updated",onKioskSettingsUpdated);
+    }
+    return ()=>{
+      disposed=true;
+      if(typeof window!=="undefined"){
+        window.removeEventListener("kiosk_settings_updated",onKioskSettingsUpdated);
+      }
     };
   },[]);
 
@@ -5757,7 +5868,16 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
 
   const machineToolPicked=tools.find(t=>t.id===form.machineToolId);
   const selectedOrderFiles=Array.isArray(form.selectedOrder?.files)?form.selectedOrder.files.filter(f=>f&&f.data):[];
-  const selectedShiftMeta=SHIFTS.find(s=>s.id===form.shift)||{label:form.shift,time:""};
+  const shiftWindowMap=useMemo(()=>{
+    const map={};
+    (kioskSettings.shiftWindows||[]).forEach(row=>{
+      const label=row.label||row.id||"";
+      const start=normalizeHm(row.start,"00:00");
+      const end=normalizeHm(row.end,start);
+      map[row.id]={label,time:`${start}-${end}`};
+    });
+    return map;
+  },[kioskSettings.shiftWindows]);
   function downloadOrderFile(file){
     if(!(file&&file.data)) return;
     const a=document.createElement("a");
@@ -5780,6 +5900,18 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   });
   const machineTelemetry=latestTelemetryByMachine[form.machine]||null;
   const machineStatus=String(machineTelemetry?.status||"offline").toLowerCase();
+  const machineLocalMinute=minuteFromIsoLike(machineTelemetry?.machineLocalTime||"");
+  const nowMinute=(()=>{
+    const now=new Date();
+    return (now.getHours()*60)+now.getMinutes();
+  })();
+  const activeMinute=machineLocalMinute===null?nowMinute:machineLocalMinute;
+  const autoShiftId=resolveShiftIdByMinute(kioskSettings.shiftWindows,activeMinute);
+  useEffect(()=>{
+    if(!kioskMode) return;
+    setForm(prev=>prev.shift===autoShiftId?prev:{...prev,shift:autoShiftId});
+  },[kioskMode,autoShiftId]);
+  const selectedShiftMeta=shiftWindowMap[form.shift]||SHIFTS.find(s=>s.id===form.shift)||{label:form.shift,time:""};
   const statusMeta=(()=>{
     if(machineStatus==="running") return {label:"ÇALIŞIYOR",color:"#27d67a",mode:"running"};
     if(machineStatus==="setup") return {label:"AYARDA",color:"#ffb247",mode:"idle"};
@@ -5979,6 +6111,13 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const cycleWorstSec=orderDayEntries.length
     ? Math.max(1,Math.max(...orderDayEntries.map(e=>Math.max(1,safeNum(e.partSec)||cycleExpectedSec))))
     : Math.max(cycleCurrentSec,cycleExpectedSec);
+  const selectedOrderCode=form.selectedOrder?.code||form.selectedOrder?.id||"";
+  const hasPlannedCycle=Boolean(form.selectedOrder?.partSec)||safeNum(machineTelemetry?.expectedCycleSec)>0;
+  const cycleDeviationSec=cycleCurrentSec-cycleExpectedSec;
+  const cycleDeviationAbsSec=Math.abs(cycleDeviationSec);
+  const cycleDeviationPct=cycleExpectedSec>0?((cycleDeviationSec/cycleExpectedSec)*100):0;
+  const cycleDeviationThresholdSec=Math.max(1,safeNum(kioskSettings.cycleDeviationThresholdSec)||DEFAULT_KIOSK_SETTINGS.cycleDeviationThresholdSec);
+  const cycleDeviationExceeded=cycleDeviationAbsSec>=cycleDeviationThresholdSec;
   const expectedQty=selectedOrderQty>0?selectedOrderQty:(producedQty+remainingQty);
   const behindQty=Math.max(0,expectedQty-producedQty);
   const goalPct=selectedOrderQty>0?Math.max(0,Math.min(999,Math.round((producedQty/selectedOrderQty)*100))):0;
@@ -6004,6 +6143,53 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     {label:"Min",value:cycleBestSec,color:"#d4dce9"},
   ];
   const cycleMax=Math.max(1,...cycleRows.map(r=>Math.max(1,safeNum(r.value))));
+  const kioskSummaryStats=[
+    {label:"Parca Sayisi",value:`${producedQty} Adet`},
+    {label:"Toplam Durus",value:fmtDurationLong(allDowntimeSec)},
+    {label:"Aktif Alarm",value:String(activeAlarmCount)},
+    {label:"Planlanan Cevrim",value:`${Math.round(cycleExpectedSec)}s`},
+    {label:"Anlik Cevrim",value:`${Math.round(cycleCurrentSec)}s`},
+    {label:"Sapma",value:`${cycleDeviationSec>=0?"+":""}${Math.round(cycleDeviationSec)}s`,tone:cycleDeviationExceeded?"#c95757":"#49566e"},
+    {label:"Hedef Orani",value:selectedOrderQty>0?`%${goalPct}`:"-"},
+    {label:"Kullanim",value:`%${utilizationPct}`},
+    {label:"OEE",value:`%${oeePct}`},
+  ];
+  useEffect(()=>{
+    if(!kioskMode) return;
+    if(!kioskSettings.cycleDeviationNotificationEnabled) return;
+    if(!hasPlannedCycle) return;
+    const machineKey=form.machine||"";
+    if(!machineKey) return;
+    const orderKey=selectedOrderCode||"GENEL";
+    const ruleKey=`${machineKey}::${orderKey}`;
+    if(machineStatus!=="running"||!cycleDeviationExceeded){
+      cycleDeviationStateRef.current[ruleKey]=false;
+      return;
+    }
+    if(cycleDeviationStateRef.current[ruleKey]) return;
+    cycleDeviationStateRef.current[ruleKey]=true;
+    const planSec=Math.round(cycleExpectedSec);
+    const actualSec=Math.round(cycleCurrentSec);
+    const diffSec=Math.round(cycleDeviationSec);
+    const diffLabel=diffSec>=0?`+${diffSec}`:String(diffSec);
+    window.DB.addDoc("notifications",{
+      type:"cycle_deviation",
+      severity:"medium",
+      title:"Kiosk Cevrim Sapmasi",
+      message:`${machineKey} ${orderKey} plan ${planSec}s / anlik ${actualSec}s (${diffLabel}s)`,
+      sourceKey:`kiosk_cycle:${machineKey}:${orderKey}:${todayStr()}`,
+      channels:["inapp"],
+      status:"new",
+      createdAt:new Date().toISOString(),
+      trigger:"kiosk_auto",
+      machine:machineKey,
+      orderCode:orderKey,
+      plannedSec:planSec,
+      actualSec:actualSec,
+      deviationSec:diffSec,
+      deviationPct:Number(cycleDeviationPct.toFixed(1)),
+    }).catch(()=>{});
+  },[kioskMode,kioskSettings.cycleDeviationNotificationEnabled,hasPlannedCycle,form.machine,selectedOrderCode,machineStatus,cycleDeviationExceeded,cycleExpectedSec,cycleCurrentSec,cycleDeviationSec,cycleDeviationPct]);
   const actionBtnStyle={
     border:"none",
     background:"transparent",
@@ -6035,7 +6221,9 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                 </button>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                   <input type="date" max={todayStr()} value={form.entryDate} onChange={e=>fv("entryDate",e.target.value||todayStr())} style={{...inputSt,padding:"6px 8px",fontSize:12,minWidth:136,background:"rgba(255,255,255,.2)",borderColor:"rgba(255,255,255,.45)",color:"#f3fff8"}}/>
-                  {SHIFTS.map(s=><button key={s.id} onClick={()=>fv("shift",s.id)} style={{border:"1px solid rgba(255,255,255,.45)",background:form.shift===s.id?"rgba(255,255,255,.24)":topHeaderTheme.controlSoftBg,color:"#f6fffa",borderRadius:9,padding:"6px 9px",fontSize:11,fontWeight:700,cursor:"pointer"}}>{s.label}</button>)}
+                  <div style={{border:"1px solid rgba(255,255,255,.45)",background:topHeaderTheme.controlSoftBg,color:"#f6fffa",borderRadius:9,padding:"6px 9px",fontSize:11,fontWeight:700}}>
+                    Vardiya Otomatik: {selectedShiftMeta.label} ({selectedShiftMeta.time})
+                  </div>
                   {!isMachineLocked&&(
                     <select value={form.machine} onChange={e=>selectMachine(e.target.value)} style={{...inputSt,padding:"6px 8px",fontSize:12,minWidth:140,background:"rgba(255,255,255,.2)",borderColor:"rgba(255,255,255,.45)",color:"#f3fff8"}}>
                       {machines.map(m=><option key={m} value={m}>{m}</option>)}
