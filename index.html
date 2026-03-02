@@ -5678,9 +5678,38 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const machineStatus=String(machineTelemetry?.status||"offline").toLowerCase();
   const statusMeta=(()=>{
     if(machineStatus==="running") return {label:"ÇALIŞIYOR",color:"#27d67a",mode:"running"};
-    if(machineStatus==="idle"||machineStatus==="setup") return {label:"BEKLEMEDE",color:"#ffb247",mode:"idle"};
+    if(machineStatus==="setup") return {label:"AYARDA",color:"#ffb247",mode:"idle"};
+    if(machineStatus==="idle"||machineStatus==="waiting") return {label:"BEKLEMEDE",color:"#ffb247",mode:"idle"};
+    if(machineStatus==="stopped"||machineStatus==="down") return {label:"DURUYOR",color:"#ff6161",mode:"stopped"};
     if(machineStatus==="alarm") return {label:"ALARM",color:"#ff6161",mode:"alarm"};
     return {label:"ÇEVRİMDIŞI",color:"#ff6161",mode:"offline"};
+  })();
+  const topHeaderTheme=(()=>{
+    if(statusMeta.mode==="running"){
+      return {
+        gradient:"linear-gradient(120deg,#3ca36b 0%,#68b993 100%)",
+        controlBg:"rgba(8,29,19,.22)",
+        controlSoftBg:"rgba(9,33,22,.18)",
+        controlText:"#f2fff7",
+        statusText:"rgba(236,255,247,.9)",
+      };
+    }
+    if(statusMeta.mode==="idle"){
+      return {
+        gradient:"linear-gradient(120deg,#c57b29 0%,#e2a24f 100%)",
+        controlBg:"rgba(55,31,7,.24)",
+        controlSoftBg:"rgba(64,36,10,.2)",
+        controlText:"#fff8ef",
+        statusText:"rgba(255,245,226,.92)",
+      };
+    }
+    return {
+      gradient:"linear-gradient(120deg,#ba4d4d 0%,#de6d6d 100%)",
+      controlBg:"rgba(55,10,10,.24)",
+      controlSoftBg:"rgba(62,12,12,.18)",
+      controlText:"#fff2f2",
+      statusText:"rgba(255,231,231,.92)",
+    };
   })();
   const opTheme=(()=>{
     if(statusMeta.mode==="running"){
@@ -5891,18 +5920,18 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
       <div style={{minHeight:"100vh",width:"100%",padding:12,background:"radial-gradient(140% 130% at 18% 12%, #131a25 0%, #0b0f14 56%, #080b10 100%)",display:"flex",alignItems:"center",justifyContent:"center"}}>
         <div style={{width:"100%",maxWidth:1400,borderRadius:28,padding:12,background:"linear-gradient(145deg,#111721 0%,#0d1118 48%,#161d28 100%)",boxShadow:"0 30px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.15)"}}>
           <div style={{background:"#edf1f6",borderRadius:14,overflow:"hidden",border:"1px solid #cdd5e0"}}>
-            <div style={{background:"linear-gradient(120deg,#3ca36b 0%,#68b993 100%)",padding:"18px 22px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:12,alignItems:"center",color:"#e7fff2"}}>
+            <div style={{background:topHeaderTheme.gradient,padding:"18px 22px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:12,alignItems:"center",color:"#e7fff2"}}>
               <div>
                 <div style={{fontSize:40,fontWeight:800,lineHeight:1,letterSpacing:.4}}>{form.selectedOrder?.code||"IE-0000"}</div>
                 <div style={{fontSize:20,fontWeight:700,marginTop:6}}>Tezgah: {form.machine}</div>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:7,alignItems:"flex-start"}}>
-                <button onClick={()=>setShowPicker(v=>!v)} style={{border:"1px solid rgba(255,255,255,.45)",background:"rgba(8,29,19,.22)",color:"#f2fff7",borderRadius:10,padding:"8px 12px",fontWeight:700,fontSize:14,cursor:"pointer"}}>
+                <button onClick={()=>setShowPicker(v=>!v)} style={{border:"1px solid rgba(255,255,255,.45)",background:topHeaderTheme.controlBg,color:topHeaderTheme.controlText,borderRadius:10,padding:"8px 12px",fontWeight:700,fontSize:14,cursor:"pointer"}}>
                   {form.selectedOrder?`İş Emri: ${form.selectedOrder.code}`:"İş Emri Seç"}
                 </button>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                   <input type="date" max={todayStr()} value={form.entryDate} onChange={e=>fv("entryDate",e.target.value||todayStr())} style={{...inputSt,padding:"6px 8px",fontSize:12,minWidth:136,background:"rgba(255,255,255,.2)",borderColor:"rgba(255,255,255,.45)",color:"#f3fff8"}}/>
-                  {SHIFTS.map(s=><button key={s.id} onClick={()=>fv("shift",s.id)} style={{border:"1px solid rgba(255,255,255,.45)",background:form.shift===s.id?"rgba(255,255,255,.24)":"rgba(9,33,22,.18)",color:"#f6fffa",borderRadius:9,padding:"6px 9px",fontSize:11,fontWeight:700,cursor:"pointer"}}>{s.label}</button>)}
+                  {SHIFTS.map(s=><button key={s.id} onClick={()=>fv("shift",s.id)} style={{border:"1px solid rgba(255,255,255,.45)",background:form.shift===s.id?"rgba(255,255,255,.24)":topHeaderTheme.controlSoftBg,color:"#f6fffa",borderRadius:9,padding:"6px 9px",fontSize:11,fontWeight:700,cursor:"pointer"}}>{s.label}</button>)}
                   {!isMachineLocked&&(
                     <select value={form.machine} onChange={e=>selectMachine(e.target.value)} style={{...inputSt,padding:"6px 8px",fontSize:12,minWidth:140,background:"rgba(255,255,255,.2)",borderColor:"rgba(255,255,255,.45)",color:"#f3fff8"}}>
                       {machines.map(m=><option key={m} value={m}>{m}</option>)}
@@ -5915,7 +5944,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                   <span style={{width:12,height:12,borderRadius:"50%",background:statusMeta.color,display:"inline-block"}}/>
                   Aktif : {fmtActiveShort(activeSec)}
                 </div>
-                <div style={{fontSize:15,fontWeight:700,color:"rgba(236,255,247,.9)"}}>{statusMeta.label} · {selectedShiftMeta.label}</div>
+                <div style={{fontSize:15,fontWeight:700,color:topHeaderTheme.statusText}}>{statusMeta.label} · {selectedShiftMeta.label}</div>
               </div>
             </div>
 
