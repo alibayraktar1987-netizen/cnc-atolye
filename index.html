@@ -2080,7 +2080,6 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,menuCatalog=[
   const pendingCount=list.filter(u=>u.status==="pending").length;
   const activeCount=list.filter(u=>u.status==="active").length;
   const blockedCount=list.filter(u=>u.status==="rejected").length;
-  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
 
   async function pickLogo(e){
     const file=e.target.files&&e.target.files[0];
@@ -2171,6 +2170,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,menuCatalog=[
   },[menuCatalog]);
   const hiddenMenuSet=useMemo(()=>new Set((menuConfig&&Array.isArray(menuConfig.hiddenTabs))?menuConfig.hiddenTabs:[]),[menuConfig]);
   const menuVisibleCount=menuRows.filter(row=>MENU_ALWAYS_VISIBLE_TAB_IDS.includes(row.id)||!hiddenMenuSet.has(row.id)).length;
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
 
   const settingsTabs=[
     {id:"genel",label:"Genel",desc:"Logo, uygulama gorunumu ve menu ayarlari"},
@@ -9304,14 +9304,30 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const fv=(k,v)=>setForm(f=>({...f,[k]:v}));
   const selectedOrder=orders.find(o=>o.id===form.orderId)||null;
   const setMpsF=(k,v)=>setMpsForm(p=>({...p,[k]:v}));
-  const planCountByOrderId={};
+  const plannedOrderIdSet=new Set();
+  const plannedOrderCodeSet=new Set();
   plans.forEach(p=>{
-    if(!p.orderId) return;
-    planCountByOrderId[p.orderId]=(planCountByOrderId[p.orderId]||0)+1;
+    const orderId=String(p.orderId||"").trim();
+    if(orderId){
+      plannedOrderIdSet.add(orderId);
+    }
+    const orderCode=String(p.orderCode||"").trim().toUpperCase();
+    if(orderCode) plannedOrderCodeSet.add(orderCode);
   });
+  function isOrderAlreadyInPlanning(order){
+    const id=String(order?.id||"").trim();
+    if(id&&plannedOrderIdSet.has(id)) return true;
+    const code=String(order?.code||"").trim().toUpperCase();
+    if(code&&plannedOrderCodeSet.has(code)) return true;
+    return false;
+  }
   const priorityWeight={urgent:0,acil:0,normal:1,low:2,dusuk:2};
   const ordersToPlan=[...orders]
-    .filter(o=>safeNum(planCountByOrderId[o.id])===0)
+    .filter(o=>{
+      const st=String(o.status||"").toLowerCase();
+      if(st==="planned"||st==="completed") return false;
+      return !isOrderAlreadyInPlanning(o);
+    })
     .sort((a,b)=>{
       const pa=priorityWeight[String(a.priority||"normal").toLowerCase()]??1;
       const pb=priorityWeight[String(b.priority||"normal").toLowerCase()]??1;
@@ -9365,8 +9381,8 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     if(!order||!order.id) return;
     const today=todayStr();
     const candidates=resolveOrderMachines(order);
-    if(plans.some(p=>p.orderId===order.id&&p.date===today)){
-      alert("Bu iş emri bugün için zaten planlandı.");
+    if(isOrderAlreadyInPlanning(order)){
+      alert("Bu is emri planlama ekraninda zaten mevcut.");
       return;
     }
     const pickedMachine=candidates.find(machine=>!plans.some(p=>p.machine===machine&&p.date===today));
@@ -9943,7 +9959,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
 
   async function createPlanFromQueueOrderDrop(order,targetMachine,targetSegmentId=""){
     if(!order||!order.id||!targetMachine) return false;
-    if(plans.some(p=>p.orderId===order.id)){
+    if(isOrderAlreadyInPlanning(order)){
       alert("Bu is emri zaten planlandi.");
       return false;
     }
