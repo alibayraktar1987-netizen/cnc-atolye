@@ -969,7 +969,7 @@ function buildOperatorScreenUrl(baseUrl,machine,station){
   }
 }
 
-function detectLockedMachineFromUrlOrStorage(){
+function detectLockedMachineFromUrl(){
   if(typeof window==="undefined") return "";
   const params=new URLSearchParams(window.location.search||"");
   const qpMachine=(params.get("machine")||"").trim();
@@ -977,12 +977,7 @@ function detectLockedMachineFromUrlOrStorage(){
     try{window.localStorage.removeItem("operator_locked_machine");}catch{}
     return "";
   }
-  if(qpMachine) return qpMachine;
-  try{
-    return (window.localStorage.getItem("operator_locked_machine")||"").trim();
-  }catch{
-    return "";
-  }
+  return qpMachine||"";
 }
 
 function OperatorUrlSettings({machines}) {
@@ -8903,7 +8898,7 @@ function App() {
   const [mobileMenuOpen,setMobileMenuOpen]=useState(false);
   const [menuQuery,setMenuQuery]=useState("");
   const [desktopMenuCollapsed,setDesktopMenuCollapsed]=useState(false);
-  const [kioskMachine,setKioskMachine]=useState(()=>detectLockedMachineFromUrlOrStorage());
+  const [kioskMachine,setKioskMachine]=useState(()=>detectLockedMachineFromUrl());
   const tabFromUrlAppliedRef=useRef(false);
 
   useEffect(()=>{
@@ -8953,7 +8948,7 @@ function App() {
   useEffect(()=>{setLogoError(false);},[logoSrc]);
   useEffect(()=>{
     if(typeof window==="undefined") return;
-    const syncKiosk=()=>setKioskMachine(detectLockedMachineFromUrlOrStorage());
+    const syncKiosk=()=>setKioskMachine(detectLockedMachineFromUrl());
     syncKiosk();
     window.addEventListener("popstate",syncKiosk);
     window.addEventListener("hashchange",syncKiosk);
