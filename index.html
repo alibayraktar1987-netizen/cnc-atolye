@@ -261,23 +261,61 @@ const DEFAULT_QUOTE_TEMPLATE = {
   accentColor:"#0f6cbd",
   showLogo:false,
 };
+const DEFAULT_SALES_CURRENCIES = {
+  defaultCurrency:"TRY",
+  list:[
+    {code:"TRY",label:"TL",symbol:"₺",enabled:true,sortOrder:10},
+    {code:"EUR",label:"Euro",symbol:"€",enabled:true,sortOrder:20},
+    {code:"USD",label:"Dolar",symbol:"$",enabled:true,sortOrder:30},
+  ],
+};
+function normalizeSalesCurrencies(raw){
+  const allowed={TRY:true,EUR:true,USD:true};
+  const inputList=Array.isArray(raw?.list)?raw.list:[];
+  const merged=DEFAULT_SALES_CURRENCIES.list.map((base,idx)=>{
+    const row=inputList.find(x=>String(x?.code||"").toUpperCase()===base.code)||{};
+    return {
+      code:base.code,
+      label:String(row?.label||base.label).trim()||base.label,
+      symbol:String(row?.symbol||base.symbol).trim()||base.symbol,
+      enabled:typeof row?.enabled==="boolean"?row.enabled:base.enabled,
+      sortOrder:Math.max(1,safeNum(row?.sortOrder)||base.sortOrder||((idx+1)*10)),
+    };
+  }).filter(x=>allowed[x.code]);
+  const sorted=merged.sort((a,b)=>safeNum(a.sortOrder)-safeNum(b.sortOrder));
+  const anyEnabled=sorted.some(x=>x.enabled);
+  if(!anyEnabled&&sorted[0]) sorted[0]={...sorted[0],enabled:true};
+  const requested=String(raw?.defaultCurrency||DEFAULT_SALES_CURRENCIES.defaultCurrency).toUpperCase();
+  const activeCodes=sorted.filter(x=>x.enabled).map(x=>x.code);
+  const defaultCurrency=activeCodes.includes(requested)?requested:(activeCodes[0]||"TRY");
+  return {list:sorted,defaultCurrency};
+}
 const DEFAULT_ROUTING_OPERATION_TYPES = [
-  { id:"op10", code:"OP-10", name:"Kesim ve Hazirlik", defaultSetupSec:300, defaultCycleSec:60, sortOrder:10 },
-  { id:"op20", code:"OP-20", name:"Kaba Isleme", defaultSetupSec:240, defaultCycleSec:90, sortOrder:20 },
-  { id:"op30", code:"OP-30", name:"Finis Isleme", defaultSetupSec:180, defaultCycleSec:80, sortOrder:30 },
-  { id:"op40", code:"OP-40", name:"Delik Delme ve Klavuz", defaultSetupSec:120, defaultCycleSec:45, sortOrder:40 },
-  { id:"op50", code:"OP-50", name:"Olcum ve Kontrol", defaultSetupSec:90, defaultCycleSec:30, sortOrder:50 },
+  { id:"op10", code:"OP-10", name:"Kesim ve Hazirlik", icon:"🪚", color:"#6f86ff", defaultSetupSec:300, defaultCycleSec:60, sortOrder:10 },
+  { id:"op20", code:"OP-20", name:"Kaba Isleme", icon:"⚙️", color:"#0f6cbd", defaultSetupSec:240, defaultCycleSec:90, sortOrder:20 },
+  { id:"op30", code:"OP-30", name:"Finis Isleme", icon:"✨", color:"#00a78f", defaultSetupSec:180, defaultCycleSec:80, sortOrder:30 },
+  { id:"op40", code:"OP-40", name:"Delik Delme ve Klavuz", icon:"🧵", color:"#b15e00", defaultSetupSec:120, defaultCycleSec:45, sortOrder:40 },
+  { id:"op50", code:"OP-50", name:"Olcum ve Kontrol", icon:"📏", color:"#8c6cff", defaultSetupSec:90, defaultCycleSec:30, sortOrder:50 },
 ];
+const OPERATION_ICON_OPTIONS = ["⚙️","🔧","🛠️","🪚","🧵","📏","✨","🧪","🔩","🧰"];
+function normalizeHexColor(value,fallback="#0f6cbd"){
+  const raw=String(value||"").trim();
+  if(/^#?[0-9a-fA-F]{6}$/.test(raw)) return raw.startsWith("#")?raw:`#${raw}`;
+  return fallback;
+}
 function normalizeRoutingOperationTypes(raw){
   const list=Array.isArray(raw?.list)?raw.list:[];
   const src=list.length>0?list:DEFAULT_ROUTING_OPERATION_TYPES;
   return src.map((row,idx)=>{
     const code=String(row?.code||`OP-${pad2((idx+1)*10)}`).trim().toUpperCase();
     const name=String(row?.name||`Operasyon ${idx+1}`).trim()||`Operasyon ${idx+1}`;
+    const fallback=DEFAULT_ROUTING_OPERATION_TYPES[idx%DEFAULT_ROUTING_OPERATION_TYPES.length]||DEFAULT_ROUTING_OPERATION_TYPES[0];
     return {
       id:String(row?.id||`op_${Date.now().toString(36)}_${idx}`),
       code,
       name,
+      icon:String(row?.icon||fallback?.icon||"⚙️").trim()||"⚙️",
+      color:normalizeHexColor(row?.color,fallback?.color||"#0f6cbd"),
       defaultSetupSec:Math.max(0,safeNum(row?.defaultSetupSec)),
       defaultCycleSec:Math.max(0,safeNum(row?.defaultCycleSec)),
       sortOrder:Math.max(1,safeNum(row?.sortOrder)||((idx+1)*10)),
@@ -1130,7 +1168,14 @@ function RoutingOperationTypeSettings({currentUser}) {
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
   const [editId,setEditId]=useState("");
-  const [form,setForm]=useState({code:"",name:"",defaultSetupSec:"0",defaultCycleSec:"0"});
+  const [form,setForm]=useState({
+    code:"",
+    name:"",
+    icon:DEFAULT_ROUTING_OPERATION_TYPES[0]?.icon||"⚙️",
+    color:DEFAULT_ROUTING_OPERATION_TYPES[0]?.color||"#0f6cbd",
+    defaultSetupSec:"0",
+    defaultCycleSec:"0",
+  });
 
   const load=useCallback(async()=>{
     const doc=await window.DB.getDoc("config","routingOperationTypes");
@@ -1141,13 +1186,22 @@ function RoutingOperationTypeSettings({currentUser}) {
 
   function resetForm(){
     setEditId("");
-    setForm({code:"",name:"",defaultSetupSec:"0",defaultCycleSec:"0"});
+    setForm({
+      code:"",
+      name:"",
+      icon:DEFAULT_ROUTING_OPERATION_TYPES[0]?.icon||"⚙️",
+      color:DEFAULT_ROUTING_OPERATION_TYPES[0]?.color||"#0f6cbd",
+      defaultSetupSec:"0",
+      defaultCycleSec:"0",
+    });
   }
   function startEdit(row){
     setEditId(row.id);
     setForm({
       code:row.code||"",
       name:row.name||"",
+      icon:row.icon||"⚙️",
+      color:normalizeHexColor(row.color),
       defaultSetupSec:String(Math.max(0,safeNum(row.defaultSetupSec))),
       defaultCycleSec:String(Math.max(0,safeNum(row.defaultCycleSec))),
     });
@@ -1171,18 +1225,22 @@ function RoutingOperationTypeSettings({currentUser}) {
     const code=String(form.code||"").trim().toUpperCase();
     const name=String(form.name||"").trim();
     if(!code||!name){alert("Kod ve ad zorunlu.");return;}
+    const icon=String(form.icon||"⚙️").trim()||"⚙️";
+    const color=normalizeHexColor(form.color);
     const setup=Math.max(0,safeNum(form.defaultSetupSec));
     const cycle=Math.max(0,safeNum(form.defaultCycleSec));
     const duplicate=rows.find(r=>r.code===code&&r.id!==editId);
     if(duplicate){alert("Ayni kodda operasyon tipi var.");return;}
     let next=[...rows];
     if(editId){
-      next=next.map(r=>r.id===editId?{...r,code,name,defaultSetupSec:setup,defaultCycleSec:cycle}:r);
+      next=next.map(r=>r.id===editId?{...r,code,name,icon,color,defaultSetupSec:setup,defaultCycleSec:cycle}:r);
     }else{
       next.push({
         id:`op_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`,
         code,
         name,
+        icon,
+        color,
         defaultSetupSec:setup,
         defaultCycleSec:cycle,
         sortOrder:(next.length+1)*10,
@@ -1216,24 +1274,42 @@ function RoutingOperationTypeSettings({currentUser}) {
     <div style={{marginBottom:18}}>
       <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Rota ve Operasyon Tipleri</div>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1.4fr .7fr .7fr auto auto",gap:8,alignItems:"end",marginBottom:10}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1.3fr .8fr .8fr .7fr .7fr auto auto",gap:8,alignItems:"end",marginBottom:10}}>
           <div><span style={labelSt}>Kod *</span><input style={inputSt} value={form.code} onChange={e=>setForm(f=>({...f,code:e.target.value}))} placeholder="OP-10"/></div>
           <div><span style={labelSt}>Operasyon Adi *</span><input style={inputSt} value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Kaba Isleme"/></div>
+          <div>
+            <span style={labelSt}>Ikon</span>
+            <select style={inputSt} value={form.icon} onChange={e=>setForm(f=>({...f,icon:e.target.value}))}>
+              {OPERATION_ICON_OPTIONS.map(ic=><option key={ic} value={ic}>{ic}</option>)}
+            </select>
+          </div>
+          <div>
+            <span style={labelSt}>Renk</span>
+            <div style={{display:"flex",gap:6,alignItems:"center"}}>
+              <input style={{...inputSt,padding:0,width:40,height:36,flex:"0 0 auto"}} type="color" value={normalizeHexColor(form.color)} onChange={e=>setForm(f=>({...f,color:e.target.value}))}/>
+              <input style={{...inputSt,padding:"9px 8px",fontSize:12}} value={form.color} onChange={e=>setForm(f=>({...f,color:e.target.value}))} placeholder="#0f6cbd"/>
+            </div>
+          </div>
           <div><span style={labelSt}>Vars. Setup(sn)</span><input style={inputSt} type="number" min="0" value={form.defaultSetupSec} onChange={e=>setForm(f=>({...f,defaultSetupSec:e.target.value}))}/></div>
           <div><span style={labelSt}>Vars. Cycle(sn)</span><input style={inputSt} type="number" min="0" value={form.defaultCycleSec} onChange={e=>setForm(f=>({...f,defaultCycleSec:e.target.value}))}/></div>
           <button onClick={saveForm} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,whiteSpace:"nowrap"}} disabled={saving||loading}>{editId?"Guncelle":"Ekle"}</button>
           <button onClick={resetForm} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,whiteSpace:"nowrap"}} disabled={saving||loading}>Temizle</button>
         </div>
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
-          <div style={{display:"grid",gridTemplateColumns:".5fr .9fr 1.5fr .7fr .7fr 1fr",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700}}>
-            <div>Sira</div><div>Kod</div><div>Ad</div><div>Setup</div><div>Cycle</div><div style={{textAlign:"right"}}>Aksiyon</div>
+          <div style={{display:"grid",gridTemplateColumns:".5fr .9fr 1.4fr .6fr .8fr .7fr .7fr 1fr",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700}}>
+            <div>Sira</div><div>Kod</div><div>Ad</div><div>Ikon</div><div>Renk</div><div>Setup</div><div>Cycle</div><div style={{textAlign:"right"}}>Aksiyon</div>
           </div>
           {loading&&<div style={{padding:"10px 12px",fontSize:12,color:C.muted2}}>Yukleniyor...</div>}
           {!loading&&rows.map((row,idx)=>(
-            <div key={row.id} style={{display:"grid",gridTemplateColumns:".5fr .9fr 1.5fr .7fr .7fr 1fr",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,alignItems:"center",fontSize:12,color:C.text}}>
+            <div key={row.id} style={{display:"grid",gridTemplateColumns:".5fr .9fr 1.4fr .6fr .8fr .7fr .7fr 1fr",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,alignItems:"center",fontSize:12,color:C.text}}>
               <div>{idx+1}</div>
               <div style={{fontFamily:"monospace",fontWeight:700}}>{row.code}</div>
               <div style={{minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{row.name}</div>
+              <div style={{fontSize:15}}>{row.icon||"⚙️"}</div>
+              <div style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,color:C.muted2}}>
+                <span style={{width:11,height:11,borderRadius:3,background:normalizeHexColor(row.color),display:"inline-block",border:`1px solid ${C.border}`}}/>
+                {normalizeHexColor(row.color)}
+              </div>
               <div>{safeNum(row.defaultSetupSec)}</div>
               <div>{safeNum(row.defaultCycleSec)}</div>
               <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
@@ -1244,6 +1320,92 @@ function RoutingOperationTypeSettings({currentUser}) {
               </div>
             </div>
           ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SalesCurrencySettings({currentUser}) {
+  const [config,setConfig]=useState(()=>normalizeSalesCurrencies({}));
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+
+  const load=useCallback(async()=>{
+    const doc=await window.DB.getDoc("config","salesCurrencies");
+    setConfig(normalizeSalesCurrencies(doc||{}));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  function toggleEnabled(code){
+    setConfig(prev=>{
+      const enabledCount=prev.list.filter(x=>x.enabled).length;
+      return {
+        ...prev,
+        list:prev.list.map(row=>{
+          if(row.code!==code) return row;
+          if(row.enabled&&enabledCount<=1) return row;
+          return {...row,enabled:!row.enabled};
+        }),
+      };
+    });
+  }
+
+  function setDefaultCurrency(code){
+    setConfig(prev=>({...prev,defaultCurrency:code}));
+  }
+
+  async function saveConfig(){
+    const normalized=normalizeSalesCurrencies(config||{});
+    const payload={
+      ...normalized,
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser?.id||"",
+    };
+    setSaving(true);
+    const ok=await window.DB.setDoc("config","salesCurrencies",payload);
+    setSaving(false);
+    if(!ok){alert("Para birimi ayarlari kaydedilemedi.");return;}
+    setConfig(normalized);
+    alert("Para birimi ayarlari kaydedildi.");
+  }
+
+  const activeCodes=config.list.filter(x=>x.enabled).map(x=>x.code);
+  return (
+    <div style={{marginBottom:18}}>
+      <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Teklif Para Birimleri</div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+        <div style={{fontSize:12,color:C.muted2,marginBottom:10}}>Teklif ekraninda gorunecek para birimlerini yonetin (TL, Euro, Dolar).</div>
+        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr .8fr .8fr .8fr",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700}}>
+            <div>Para Birimi</div><div>Sembol</div><div>Aktif</div><div>Varsayilan</div>
+          </div>
+          {loading&&<div style={{padding:"10px 12px",fontSize:12,color:C.muted2}}>Yukleniyor...</div>}
+          {!loading&&config.list.map(row=>(
+            <div key={row.code} style={{display:"grid",gridTemplateColumns:"1fr .8fr .8fr .8fr",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,alignItems:"center",fontSize:12,color:C.text}}>
+              <div style={{fontWeight:700}}>{row.code} · {row.label}</div>
+              <div>{row.symbol||"-"}</div>
+              <div>
+                <button onClick={()=>toggleEnabled(row.code)} style={{...(row.enabled?btnSt("green"):btnSt("ghost")),padding:"4px 8px",fontSize:11}}>
+                  {row.enabled?"Aktif":"Pasif"}
+                </button>
+              </div>
+              <div>
+                <button
+                  onClick={()=>setDefaultCurrency(row.code)}
+                  disabled={!row.enabled}
+                  style={{...(config.defaultCurrency===row.code?btnSt("primary"):btnSt("ghost")),padding:"4px 8px",fontSize:11,opacity:row.enabled?1:0.45}}
+                >
+                  {config.defaultCurrency===row.code?"Varsayilan":"Yap"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10,gap:8,flexWrap:"wrap"}}>
+          <div style={{fontSize:11,color:C.muted2}}>Aktif: {activeCodes.join(", ")||"-"} · Varsayilan: {config.defaultCurrency||"-"}</div>
+          <button onClick={saveConfig} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={saving||loading}>{saving?"Kaydediliyor...":"Kaydet"}</button>
         </div>
       </div>
     </div>
@@ -1382,6 +1544,7 @@ function AdminUsers({currentUser,machines,onMachinesUpdate,currentLogo,onLogoUpd
       <MachineSettings machines={machines} onUpdate={onMachinesUpdate}/>
       <OperatorUrlSettings machines={machines}/>
       <RoutingOperationTypeSettings currentUser={currentUser}/>
+      <SalesCurrencySettings currentUser={currentUser}/>
       <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>Ayarlar · Kullanıcı Yönetimi · {list.length} kullanıcı</div>
       {list.map(u=>(
         <div key={u.id} style={{background:C.card,border:`1px solid ${u.status==="pending"?C.warn+"60":C.border}`,borderRadius:14,padding:"14px 16px",marginBottom:10}}>
@@ -2181,6 +2344,13 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
   },[operationTypes]);
 
   const selectedPart=parts.find(p=>p.id===selectedPartId)||null;
+  const selectedPartPriceHistory=selectedPart
+    ? [...(selectedPart.priceHistory||[])].sort((a,b)=>{
+        const da=String(a?.updatedAt||a?.date||a?.createdAt||"");
+        const db=String(b?.updatedAt||b?.date||b?.createdAt||"");
+        return db.localeCompare(da);
+      })
+    : [];
   const nextPartNo=useCallback((list=parts)=>{
     const nums=list.map(p=>{
       const m=String(p.partNo||"").toUpperCase().match(/^PRT-(\d+)$/);
@@ -2299,6 +2469,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
   async function savePart(){
     if(!partForm.name.trim()){alert("Parca adi zorunlu.");return;}
     const computedPartNo=(String(partForm.partNo||"").trim().toUpperCase()||nextPartNo());
+    const existing=parts.find(p=>(p.partNo||"").toUpperCase()===computedPartNo);
     const payload={
       partNo:computedPartNo,
       customerPartCode:String(partForm.customerPartCode||"").trim().toUpperCase(),
@@ -2316,12 +2487,12 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
       costBreakdown:{materialCost:partCostCalc.materialCost,laborCost:partCostCalc.laborCost,machineCost:partCostCalc.machineCost},
       documents:Array.isArray(partForm.documents)?partForm.documents:[],
       notes:partForm.notes.trim(),
-      bomLines:[],
-      routingOps:[],
+      bomLines:Array.isArray(existing?.bomLines)?existing.bomLines:[],
+      routingOps:Array.isArray(existing?.routingOps)?existing.routingOps:[],
+      priceHistory:Array.isArray(existing?.priceHistory)?existing.priceHistory:[],
       updatedAt:new Date().toISOString(),
       updatedBy:currentUser.id,
     };
-    const existing=parts.find(p=>(p.partNo||"").toUpperCase()===payload.partNo);
     if(existing){
       const ok=await window.DB.updateDoc("parts",existing.id,{...existing,...payload});
       if(!ok){alert("Parca guncellenemedi.");return;}
@@ -2412,6 +2583,8 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
       operationTypeId:pickedType.id,
       operationCode:pickedType.code||"",
       operationName:pickedType.name||"",
+      operationIcon:pickedType.icon||"⚙️",
+      operationColor:normalizeHexColor(pickedType.color),
       operation:`${pickedType.code||""}${pickedType.name?` - ${pickedType.name}`:""}`.trim(),
       machine:routingForm.machine||machines[0]||"CNC-1",
       setupSec:Math.max(0,safeNum(routingForm.setupSec)),
@@ -2607,7 +2780,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
               <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr .8fr .8fr auto",gap:6}}>
                 <select style={{...inputSt,padding:"7px 9px",fontSize:12}} value={routingForm.operationTypeId} onChange={e=>setRoutingOperationType(e.target.value)}>
                   {operationTypes.length===0&&<option value="">Ayarlar > Rota ve Operasyon Tipleri</option>}
-                  {operationTypes.map(op=><option key={op.id} value={op.id}>{op.code} - {op.name}</option>)}
+                  {operationTypes.map(op=><option key={op.id} value={op.id}>{op.icon||"⚙️"} {op.code} - {op.name}</option>)}
                 </select>
                 <select style={{...inputSt,padding:"7px 9px",fontSize:12}} value={routingForm.machine} onChange={e=>setRoutingForm(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
                 <input style={{...inputSt,padding:"7px 9px",fontSize:12}} type="number" min="0" placeholder="Setup sn" value={routingForm.setupSec} onChange={e=>setRoutingForm(f=>({...f,setupSec:e.target.value}))}/>
@@ -2616,7 +2789,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
               </div>
               {selectedOperationType&&(
                 <div style={{fontSize:11,color:C.muted2,marginTop:6}}>
-                  Secili tip: <strong style={{color:C.text}}>{selectedOperationType.code} - {selectedOperationType.name}</strong> · Varsayilan Setup {safeNum(selectedOperationType.defaultSetupSec)}sn · Cycle {safeNum(selectedOperationType.defaultCycleSec)}sn
+                  Secili tip: <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"2px 8px",borderRadius:999,border:`1px solid ${normalizeHexColor(selectedOperationType.color)}66`,background:normalizeHexColor(selectedOperationType.color)+"22",color:normalizeHexColor(selectedOperationType.color),fontWeight:700}}>{selectedOperationType.icon||"⚙️"} {selectedOperationType.code} - {selectedOperationType.name}</span> · Varsayilan Setup {safeNum(selectedOperationType.defaultSetupSec)}sn · Cycle {safeNum(selectedOperationType.defaultCycleSec)}sn
                 </div>
               )}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginTop:6}}>
@@ -2626,7 +2799,9 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
               {(selectedPart.routingOps||[]).map((op,idx,arr)=>(
                 <div key={op.id} style={{marginTop:8,padding:"8px 10px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
                   <div style={{fontSize:12,color:C.muted2}}>
-                    <span style={{color:C.text,fontWeight:700}}>{op.operationCode?`${op.operationCode} - `:""}{op.operationName||op.operation||"-"}</span> · {op.machine} · Setup {safeNum(op.setupSec)}sn · Cycle {safeNum(op.cycleSec)}sn {op.ncProgram?`· NC ${op.ncProgram}`:""}
+                    <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"2px 8px",borderRadius:999,border:`1px solid ${normalizeHexColor(op.operationColor)}66`,background:normalizeHexColor(op.operationColor)+"22",color:normalizeHexColor(op.operationColor),fontWeight:700}}>
+                      {op.operationIcon||"⚙️"} {op.operationCode?`${op.operationCode} - `:""}{op.operationName||op.operation||"-"}
+                    </span> · {op.machine} · Setup {safeNum(op.setupSec)}sn · Cycle {safeNum(op.cycleSec)}sn {op.ncProgram?`· NC ${op.ncProgram}`:""}
                   </div>
                   <div style={{display:"flex",gap:6}}>
                     <button onClick={()=>moveRoutingOp(op.id,-1)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}} disabled={idx===0}>↑</button>
@@ -2636,6 +2811,39 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
                 </div>
               ))}
               {(selectedPart.routingOps||[]).length===0&&<div style={{fontSize:12,color:C.muted2,marginTop:8}}>Rota adimi yok.</div>}
+            </div>
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+                <div style={{fontWeight:700,color:C.text}}>Fiyat Gecmisi</div>
+                <div style={{fontSize:11,color:C.muted2}}>Toplam Kayit: {selectedPartPriceHistory.length}</div>
+              </div>
+              {selectedPartPriceHistory.length===0&&<div style={{fontSize:12,color:C.muted2}}>Bu parca icin fiyat gecmisi yok.</div>}
+              {selectedPartPriceHistory.length>0&&(
+                <div style={{overflowX:"auto"}}>
+                  <div style={{minWidth:860,display:"flex",flexDirection:"column",gap:6}}>
+                    <div style={{display:"grid",gridTemplateColumns:"1.1fr 1fr 1fr .8fr .8fr .8fr .7fr",gap:6,fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.5,fontWeight:700,padding:"0 2px"}}>
+                      <div>Tarih</div>
+                      <div>Kaynak</div>
+                      <div>Musteri</div>
+                      <div style={{textAlign:"right"}}>Birim</div>
+                      <div style={{textAlign:"right"}}>Iskonto</div>
+                      <div style={{textAlign:"right"}}>Net Birim</div>
+                      <div style={{textAlign:"right"}}>Adet</div>
+                    </div>
+                    {selectedPartPriceHistory.slice(0,40).map((row,idx)=>(
+                      <div key={row.id||idx} style={{display:"grid",gridTemplateColumns:"1.1fr 1fr 1fr .8fr .8fr .8fr .7fr",gap:6,alignItems:"center",padding:"8px 10px",background:idx%2===0?C.surface:C.card,border:`1px solid ${C.border}`,borderRadius:10,fontSize:12,color:C.text}}>
+                        <div style={{color:C.muted2}}>{row.date||row.updatedAt||"-"}</div>
+                        <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{row.sourceCode||row.sourceType||"-"}</div>
+                        <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{row.customerName||"-"}</div>
+                        <div style={{textAlign:"right"}}>{safeNum(row.unitPrice).toFixed(2)} {row.currency||"TRY"}</div>
+                        <div style={{textAlign:"right"}}>%{safeNum(row.discountPct).toFixed(2)}</div>
+                        <div style={{textAlign:"right",fontWeight:700}}>{safeNum(row.netUnitPrice).toFixed(2)} {row.currency||"TRY"}</div>
+                        <div style={{textAlign:"right"}}>{safeNum(row.qty)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
         </div>
       )}
@@ -2667,12 +2875,16 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   const [loading,setLoading]=useState(true);
   const [view,setView]=useState(defaultView==="quotes"?"quotes":"orders");
   const [search,setSearch]=useState("");
+  const [quoteStatusFilter,setQuoteStatusFilter]=useState("all");
+  const [quoteCurrencyFilter,setQuoteCurrencyFilter]=useState("all");
   const [customerEditId,setCustomerEditId]=useState("");
   const [priceEditId,setPriceEditId]=useState("");
+  const [quoteEditId,setQuoteEditId]=useState("");
   const [showQuoteModal,setShowQuoteModal]=useState(false);
   const [showOrderModal,setShowOrderModal]=useState(false);
   const [showCreatePartModal,setShowCreatePartModal]=useState(false);
   const [createPartLineIdx,setCreatePartLineIdx]=useState(-1);
+  const [salesCurrencies,setSalesCurrencies]=useState(()=>normalizeSalesCurrencies({}));
   const [customerForm,setCustomerForm]=useState({name:"",code:"",contact:"",phone:"",email:"",discountPct:"0"});
   const [priceForm,setPriceForm]=useState({customerId:"",partNo:"",price:"",discountPct:"0",currency:"TRY"});
   const [quickPartForm,setQuickPartForm]=useState(()=>makeQuickPartForm());
@@ -2682,6 +2894,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     customerId:"",
     validUntil:todayStr(),
     priority:"normal",
+    currency:"TRY",
     note:"",
     lines:[makeDraftLine()],
   });
@@ -2693,6 +2906,15 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     note:"",
     lines:[makeDraftLine()],
   });
+  const quoteCurrencies=(salesCurrencies.list||[]).filter(x=>x.enabled);
+  const defaultQuoteCurrency=(quoteCurrencies.find(x=>x.code===salesCurrencies.defaultCurrency)?.code)||quoteCurrencies[0]?.code||"TRY";
+  const currencyMetaMap={};
+  quoteCurrencies.forEach(row=>{currencyMetaMap[row.code]=row;});
+  function formatByCurrency(value,currencyCode){
+    const c=String(currencyCode||defaultQuoteCurrency||"TRY").toUpperCase();
+    const symbol=currencyMetaMap[c]?.symbol||"";
+    return `${safeNum(value).toFixed(2)} ${symbol?`${symbol} `:""}${c}`;
+  }
 
   const nextCode=useCallback((prefix,list,regex)=>{
     const nums=list.map(x=>{
@@ -2704,7 +2926,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   },[]);
 
   const load=useCallback(async()=>{
-    const [c,prices,pList,q,s,wo,templateDoc,brandingDoc]=await Promise.all([
+    const [c,prices,pList,q,s,wo,templateDoc,brandingDoc,currencyDoc]=await Promise.all([
       window.DB.getAll("customers"),
       window.DB.getAll("customerPrices"),
       window.DB.getAll("parts"),
@@ -2713,7 +2935,13 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       window.DB.getAll("orders"),
       window.DB.getDoc("config","quoteTemplate"),
       window.DB.getDoc("config","branding"),
+      window.DB.getDoc("config","salesCurrencies"),
     ]);
+    const normalizedCurrencies=normalizeSalesCurrencies(currencyDoc||{});
+    const enabledCurrencyCodes=normalizedCurrencies.list.filter(x=>x.enabled).map(x=>x.code);
+    const fallbackCurrency=enabledCurrencyCodes.includes(normalizedCurrencies.defaultCurrency)
+      ? normalizedCurrencies.defaultCurrency
+      : (enabledCurrencyCodes[0]||"TRY");
     setCustomers(c.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
     setCustomerPrices(prices.sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||"")));
     setParts(pList.sort((a,b)=>(a.partNo||"").localeCompare(b.partNo||"","tr")));
@@ -2722,12 +2950,36 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     setWorkOrders(wo.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
     setQuoteTemplate(normalizeQuoteTemplate(templateDoc||{}));
     setBrandingLogo(typeof brandingDoc?.logo==="string"?brandingDoc.logo:"");
-    setQuoteForm(f=>({...f,code:nextCode("TKL",q,/^TKL-(\d+)$/)}));
+    setSalesCurrencies(normalizedCurrencies);
+    setQuoteForm(f=>({
+      ...f,
+      code:nextCode("TKL",q,/^TKL-(\d+)$/),
+      currency:enabledCurrencyCodes.includes(String(f.currency||"").toUpperCase())?String(f.currency||"").toUpperCase():fallbackCurrency,
+    }));
     setOrderForm(f=>({...f,code:nextCode("SIP",s,/^SIP-(\d+)$/)}));
+    setPriceForm(f=>({
+      ...f,
+      currency:enabledCurrencyCodes.includes(String(f.currency||"").toUpperCase())?String(f.currency||"").toUpperCase():fallbackCurrency,
+    }));
     setLoading(false);
   },[nextCode]);
   useEffect(()=>{load();},[load]);
   useEffect(()=>{setView(defaultView==="quotes"?"quotes":"orders");},[defaultView]);
+  useEffect(()=>{
+    const activeCodes=quoteCurrencies.map(x=>x.code);
+    if(activeCodes.length===0) return;
+    setQuoteForm(f=>{
+      const current=String(f.currency||"").toUpperCase();
+      if(activeCodes.includes(current)) return f;
+      return {...f,currency:defaultQuoteCurrency};
+    });
+    setPriceForm(f=>{
+      const current=String(f.currency||"").toUpperCase();
+      if(activeCodes.includes(current)) return f;
+      return {...f,currency:defaultQuoteCurrency};
+    });
+    setQuoteCurrencyFilter(f=>activeCodes.includes(f)||f==="all"?f:"all");
+  },[defaultQuoteCurrency,quoteCurrencies.map(x=>x.code).join(",")]);
   useEffect(()=>{
     function onTabAction(ev){
       const d=ev&&ev.detail?ev.detail:{};
@@ -2736,11 +2988,13 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       if(d.type==="new"){
         if(d.tab==="quotes"){
           setView("quotes");
+          setQuoteEditId("");
           setQuoteForm({
             code:nextCode("TKL",quotes,/^TKL-(\d+)$/),
             customerId:"",
             validUntil:todayStr(),
             priority:"normal",
+            currency:defaultQuoteCurrency,
             note:"",
             lines:[makeDraftLine()],
           });
@@ -2756,6 +3010,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
             note:"",
             lines:[makeDraftLine()],
           });
+          setQuoteEditId("");
           setShowQuoteModal(false);
           setShowOrderModal(true);
         }
@@ -2763,10 +3018,10 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     }
     window.addEventListener("mrp:tab-action",onTabAction);
     return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
-  },[load,machines,nextCode,quotes,salesOrders]);
+  },[defaultQuoteCurrency,load,machines,nextCode,quotes,salesOrders]);
 
   const resetCustomerForm=()=>{ setCustomerEditId(""); setCustomerForm({name:"",code:"",contact:"",phone:"",email:"",discountPct:"0"}); };
-  const resetPriceForm=()=>{ setPriceEditId(""); setPriceForm({customerId:"",partNo:"",price:"",discountPct:"0",currency:"TRY"}); };
+  const resetPriceForm=()=>{ setPriceEditId(""); setPriceForm({customerId:"",partNo:"",price:"",discountPct:"0",currency:defaultQuoteCurrency}); };
   const activeCustomerEdit=customers.find(c=>c.id===customerEditId)||null;
   const activePriceEdit=customerPrices.find(p=>p.id===priceEditId)||null;
   const selectedCustomer=customers.find(c=>c.id===quoteForm.customerId)||null;
@@ -2890,6 +3145,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       notes:String(quickPartForm.notes||"").trim(),
       bomLines:[],
       routingOps:[],
+      priceHistory:[],
       updatedAt:new Date().toISOString(),
       updatedBy:currentUser.id,
     };
@@ -2909,12 +3165,149 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     setCreatePartLineIdx(-1);
     setQuickPartForm(makeQuickPartForm());
   }
+  function closeQuoteModal(){
+    setShowQuoteModal(false);
+    setQuoteEditId("");
+  }
+  function openNewQuoteModal(){
+    setQuoteEditId("");
+    setQuoteForm({
+      code:nextCode("TKL",quotes,/^TKL-(\d+)$/),
+      customerId:"",
+      validUntil:todayStr(),
+      priority:"normal",
+      currency:defaultQuoteCurrency,
+      note:"",
+      lines:[makeDraftLine()],
+    });
+    setShowOrderModal(false);
+    setShowQuoteModal(true);
+  }
+  function openEditQuoteModal(quote){
+    if(!quote) return;
+    setQuoteEditId(quote.id||"");
+    setQuoteForm({
+      code:String(quote.code||"").toUpperCase(),
+      customerId:quote.customerId||"",
+      validUntil:quote.validUntil||todayStr(),
+      priority:quote.priority||"normal",
+      currency:quoteCurrencies.some(c=>c.code===String(quote.currency||"").toUpperCase())
+        ? String(quote.currency||"").toUpperCase()
+        : defaultQuoteCurrency,
+      note:quote.note||"",
+      lines:(quote.lines&&quote.lines.length
+        ? quote.lines
+        : [makeDraftLine()]).map(l=>({
+          partId:String(l.partId||findPartByNo(l.partNo)?.id||""),
+          partNo:String(l.partNo||"").trim().toUpperCase(),
+          partName:String(l.partName||"").trim(),
+          revision:String(l.revision||"A").trim().toUpperCase(),
+          qty:String(Math.max(0,safeNum(l.qty))),
+          unitPrice:String(Math.max(0,safeNum(l.unitPrice))),
+          discountPct:String(Math.max(0,Math.min(100,safeNum(l.discountPct)))),
+          dueDate:l.dueDate||todayStr(),
+          partSec:String(Math.max(1,safeNum(l.partSec)||safeNum(findPartByNo(l.partNo)?.cycleSec)||60)),
+          machine:l.machine||machines[0]||"CNC-1",
+        })),
+    });
+    setShowOrderModal(false);
+    setShowQuoteModal(true);
+  }
+  async function syncPartPriceHistoryFromQuote(quoteId,quoteCode,customer,currency,lines){
+    if(!quoteId||!Array.isArray(lines)||lines.length===0) return;
+    const nowIso=new Date().toISOString();
+    const byPart={};
+    lines.forEach((line,idx)=>{
+      const part=findPartByNo(line.partNo);
+      if(!part||!part.id) return;
+      const key=part.id;
+      if(!byPart[key]) byPart[key]={part,entries:[]};
+      const unitPrice=Math.max(0,safeNum(line.unitPrice));
+      const discountPct=Math.max(0,Math.min(100,safeNum(line.discountPct)));
+      const netUnitPrice=Math.max(0,unitPrice*(1-(discountPct/100)));
+      byPart[key].entries.push({
+        id:`qh_${quoteId}_${idx}`,
+        sourceType:"quote",
+        sourceId:quoteId,
+        sourceCode:quoteCode||"",
+        customerId:customer?.id||"",
+        customerName:customer?.name||"",
+        currency:String(currency||defaultQuoteCurrency||"TRY").toUpperCase(),
+        unitPrice,
+        discountPct,
+        netUnitPrice,
+        qty:Math.max(0,safeNum(line.qty)),
+        date:line.dueDate||todayStr(),
+        updatedAt:nowIso,
+        updatedBy:currentUser.id,
+      });
+    });
+    const partIds=Object.keys(byPart);
+    for(const partId of partIds){
+      const bucket=byPart[partId];
+      const currentPart=bucket.part;
+      const existing=Array.isArray(currentPart.priceHistory)?[...currentPart.priceHistory]:[];
+      bucket.entries.forEach(entry=>{
+        const idx=existing.findIndex(h=>h.id===entry.id);
+        if(idx>=0) existing[idx]={...existing[idx],...entry};
+        else existing.unshift(entry);
+      });
+      const nextHistory=existing.slice(0,250);
+      const ok=await window.DB.updateDoc("parts",partId,{
+        priceHistory:nextHistory,
+        updatedAt:new Date().toISOString(),
+        updatedBy:currentUser.id,
+      });
+      if(ok){
+        setParts(prev=>prev.map(p=>p.id===partId?{...p,priceHistory:nextHistory}:p));
+      }
+    }
+  }
+  async function syncPartPriceHistoryFromPriceList(priceRow,historyId){
+    const part=findPartByNo(priceRow?.partNo||"");
+    if(!part||!part.id) return;
+    const customer=customers.find(c=>c.id===priceRow.customerId)||null;
+    const existing=Array.isArray(part.priceHistory)?[...part.priceHistory]:[];
+    const unitPrice=Math.max(0,safeNum(priceRow.price));
+    const discountPct=Math.max(0,Math.min(100,safeNum(priceRow.discountPct)));
+    const netUnitPrice=Math.max(0,unitPrice*(1-(discountPct/100)));
+    const entry={
+      id:`pl_${historyId||Date.now().toString(36)}_${priceRow.customerId||"cust"}`,
+      sourceType:"price_list",
+      sourceId:historyId||"",
+      sourceCode:"MUSTERI-FIYAT-LISTESI",
+      customerId:priceRow.customerId||"",
+      customerName:customer?.name||"",
+      currency:String(priceRow.currency||defaultQuoteCurrency||"TRY").toUpperCase(),
+      unitPrice,
+      discountPct,
+      netUnitPrice,
+      qty:0,
+      date:todayStr(),
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser.id,
+    };
+    const idx=existing.findIndex(h=>h.id===entry.id);
+    if(idx>=0) existing[idx]={...existing[idx],...entry};
+    else existing.unshift(entry);
+    const nextHistory=existing.slice(0,250);
+    const ok=await window.DB.updateDoc("parts",part.id,{
+      priceHistory:nextHistory,
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser.id,
+    });
+    if(ok){
+      setParts(prev=>prev.map(p=>p.id===part.id?{...p,priceHistory:nextHistory}:p));
+    }
+  }
 
   function applyCustomerPrice(idx,partNo){
     const priceRow=customerPrices.find(p=>p.customerId===quoteForm.customerId&&String(p.partNo||"").trim().toLowerCase()===String(partNo||"").trim().toLowerCase());
     if(!priceRow) return;
     setLine(idx,"unitPrice",String(priceRow.price||0));
     setLine(idx,"discountPct",String(priceRow.discountPct||0));
+    const cur=String(priceRow.currency||"").toUpperCase();
+    if(cur&&quoteCurrencies.some(c=>c.code===cur)) setQ("currency",cur);
   }
   function applyOrderCustomerPrice(idx,partNo){
     const priceRow=customerPrices.find(p=>p.customerId===orderForm.customerId&&String(p.partNo||"").trim().toLowerCase()===String(partNo||"").trim().toLowerCase());
@@ -2953,12 +3346,15 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   async function savePrice(){
     if(!priceForm.customerId||!priceForm.partNo.trim()){alert("Musteri ve parca no zorunlu.");return;}
     const normalizedPart=priceForm.partNo.trim().toUpperCase();
+    const pickedCurrency=quoteCurrencies.some(c=>c.code===String(priceForm.currency||"").toUpperCase())
+      ? String(priceForm.currency||"").toUpperCase()
+      : defaultQuoteCurrency;
     const payload={
       customerId:priceForm.customerId,
       partNo:normalizedPart,
       price:Math.max(0,safeNum(priceForm.price)),
       discountPct:Math.max(0,Math.min(100,safeNum(priceForm.discountPct))),
-      currency:priceForm.currency||"TRY",
+      currency:pickedCurrency,
       updatedAt:new Date().toISOString(),
       updatedBy:currentUser.id,
     };
@@ -2968,12 +3364,14 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       const ok=await window.DB.updateDoc("customerPrices",targetId,payload);
       if(!ok){alert("Fiyat kaydi guncellenemedi.");return;}
       setCustomerPrices(prev=>prev.map(p=>p.id===targetId?{...p,...payload}:p).sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||"")));
+      await syncPartPriceHistoryFromPriceList(payload,targetId);
       resetPriceForm();
       return;
     }
     const id=await window.DB.addDoc("customerPrices",payload);
     if(!id){alert("Fiyat kaydi olusturulamadi.");return;}
     setCustomerPrices(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev].sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||"")));
+    await syncPartPriceHistoryFromPriceList(payload,id);
     resetPriceForm();
   }
 
@@ -2991,12 +3389,13 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
 
   function startEditPrice(p){
     setPriceEditId(p.id);
+    const picked=String(p.currency||"").toUpperCase();
     setPriceForm({
       customerId:p.customerId||"",
       partNo:p.partNo||"",
       price:String(safeNum(p.price)),
       discountPct:String(safeNum(p.discountPct)),
-      currency:p.currency||"TRY",
+      currency:quoteCurrencies.some(c=>c.code===picked)?picked:defaultQuoteCurrency,
     });
   }
 
@@ -3005,40 +3404,66 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     if(!quoteForm.lines.length){alert("En az bir satir ekleyin.");return;}
     if(quoteForm.lines.some(l=>!l.partNo||safeNum(l.qty)<=0)){alert("Satirlarda parca no ve miktar zorunlu.");return;}
     const customer=customers.find(c=>c.id===quoteForm.customerId);
+    const pickedCurrency=quoteCurrencies.some(c=>c.code===String(quoteForm.currency||"").toUpperCase())
+      ? String(quoteForm.currency||"").toUpperCase()
+      : defaultQuoteCurrency;
+    const normalizedLines=quoteForm.lines.map(l=>({
+      partId:String(l.partId||findPartByNo(l.partNo)?.id||""),
+      partNo:String(l.partNo||"").trim().toUpperCase(),
+      partName:String(l.partName||findPartByNo(l.partNo)?.name||"").trim(),
+      revision:String(l.revision||findPartByNo(l.partNo)?.revision||"A").trim().toUpperCase(),
+      qty:Math.max(0,safeNum(l.qty)),
+      unitPrice:Math.max(0,safeNum(l.unitPrice)),
+      discountPct:Math.max(0,Math.min(100,safeNum(l.discountPct))),
+      dueDate:l.dueDate||todayStr(),
+      partSec:Math.max(1,safeNum(l.partSec)||safeNum(findPartByNo(l.partNo)?.cycleSec)||60),
+      machine:l.machine||machines[0]||"CNC-1",
+    }));
+    const grossAmount=normalizedLines.reduce((sum,l)=>sum+(safeNum(l.qty)*safeNum(l.unitPrice)),0);
+    const discountAmount=normalizedLines.reduce((sum,l)=>sum+((safeNum(l.qty)*safeNum(l.unitPrice))*safeNum(l.discountPct)/100),0);
+    const totalAmount=Math.max(0,grossAmount-discountAmount);
     const payload={
       code:(quoteForm.code||nextCode("TKL",quotes,/^TKL-(\d+)$/)).toUpperCase(),
       customerId:customer?.id||"",
       customerName:customer?.name||"",
       validUntil:quoteForm.validUntil||todayStr(),
       priority:quoteForm.priority||"normal",
+      currency:pickedCurrency,
       note:quoteForm.note.trim(),
-      lines:quoteForm.lines.map(l=>({
-        partId:String(l.partId||findPartByNo(l.partNo)?.id||""),
-        partNo:String(l.partNo||"").trim().toUpperCase(),
-        partName:String(l.partName||findPartByNo(l.partNo)?.name||"").trim(),
-        revision:String(l.revision||findPartByNo(l.partNo)?.revision||"A").trim().toUpperCase(),
-        qty:Math.max(0,safeNum(l.qty)),
-        unitPrice:Math.max(0,safeNum(l.unitPrice)),
-        discountPct:Math.max(0,Math.min(100,safeNum(l.discountPct))),
-        dueDate:l.dueDate||todayStr(),
-        partSec:Math.max(1,safeNum(l.partSec)||safeNum(findPartByNo(l.partNo)?.cycleSec)||60),
-      })),
-      grossAmount:quoteTotals.gross,
-      discountAmount:quoteTotals.discount,
-      totalAmount:quoteTotals.net,
-      status:"offer",
+      lines:normalizedLines,
+      grossAmount,
+      discountAmount,
+      totalAmount,
       updatedAt:new Date().toISOString(),
-      createdBy:currentUser.id,
     };
-    const id=await window.DB.addDoc("salesQuotes",payload);
-    if(!id){alert("Teklif kaydedilemedi.");return;}
-    await addAuditLog(currentUser.id,"salesQuote",id,"create",null,payload,{module:"sales"});
-    setQuotes(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
+    if(quoteEditId){
+      const before=quotes.find(x=>x.id===quoteEditId)||null;
+      const patch={
+        ...payload,
+        status:before?.status||"offer",
+        createdBy:before?.createdBy||currentUser.id,
+      };
+      const ok=await window.DB.updateDoc("salesQuotes",quoteEditId,patch);
+      if(!ok){alert("Teklif guncellenemedi.");return;}
+      await addAuditLog(currentUser.id,"salesQuote",quoteEditId,"update",before,patch,{module:"sales"});
+      setQuotes(prev=>prev.map(x=>x.id===quoteEditId?{...x,...patch}:x));
+      await syncPartPriceHistoryFromQuote(quoteEditId,patch.code,customer,pickedCurrency,normalizedLines);
+    }else{
+      const createPayload={...payload,status:"offer",createdBy:currentUser.id};
+      const id=await window.DB.addDoc("salesQuotes",createPayload);
+      if(!id){alert("Teklif kaydedilemedi.");return;}
+      await addAuditLog(currentUser.id,"salesQuote",id,"create",null,createPayload,{module:"sales"});
+      setQuotes(prev=>[{id,...createPayload,createdAt:new Date().toISOString()},...prev]);
+      await syncPartPriceHistoryFromQuote(id,createPayload.code,customer,pickedCurrency,normalizedLines);
+    }
+    const nextQuoteSeed=quoteEditId?quotes:[...quotes,{code:payload.code||quoteForm.code||""}];
+    setQuoteEditId("");
     setQuoteForm({
-      code:nextCode("TKL",[...quotes,{id,...payload}],/^TKL-(\d+)$/),
+      code:nextCode("TKL",nextQuoteSeed,/^TKL-(\d+)$/),
       customerId:"",
       validUntil:todayStr(),
       priority:"normal",
+      currency:defaultQuoteCurrency,
       note:"",
       lines:[makeDraftLine()],
     });
@@ -3071,6 +3496,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       customerName:customer?.name||"",
       sourceQuoteId:"",
       sourceQuoteCode:"",
+      currency:defaultQuoteCurrency,
       lines,
       qty:qtyTotal,
       dueDate:earliestDue,
@@ -3124,6 +3550,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       customerName:q.customerName||"",
       validUntil:q.validUntil||todayStr(),
       priority:q.priority||"normal",
+      currency:(q.currency&&quoteCurrencies.some(c=>c.code===String(q.currency).toUpperCase()))?String(q.currency).toUpperCase():defaultQuoteCurrency,
       note:(q.note||"").trim(),
       lines,
       grossAmount:gross,
@@ -3139,6 +3566,8 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     if(!id){alert("Teklif kopyalanamadi.");return;}
     await addAuditLog(currentUser.id,"salesQuote",id,"copy",q,payload,{module:"sales"});
     setQuotes(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
+    const customer=customers.find(c=>c.id===payload.customerId)||null;
+    await syncPartPriceHistoryFromQuote(id,payload.code,customer,payload.currency,lines);
     setView("quotes");
   }
 
@@ -3166,6 +3595,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       customerName:o.customerName||"",
       sourceQuoteId:o.sourceQuoteId||"",
       sourceQuoteCode:o.sourceQuoteCode||"",
+      currency:(o.currency&&quoteCurrencies.some(c=>c.code===String(o.currency).toUpperCase()))?String(o.currency).toUpperCase():defaultQuoteCurrency,
       lines,
       qty:qty>0?qty:Math.max(0,safeNum(o.qty)),
       dueDate:o.dueDate||todayStr(),
@@ -3261,6 +3691,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       customerName:q.customerName||"",
       sourceQuoteId:q.id,
       sourceQuoteCode:q.code||"",
+      currency:(q.currency&&quoteCurrencies.some(c=>c.code===String(q.currency).toUpperCase()))?String(q.currency).toUpperCase():defaultQuoteCurrency,
       lines:q.lines||[],
       qty:qtyTotal,
       dueDate,
@@ -3304,6 +3735,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       const isQuote=docType==="quote";
       const titleBase=isQuote?template.documentTitleQuote:template.documentTitleOrder;
       const title=`${titleBase} - ${doc.code||""}`;
+      const docCurrency=String(doc.currency||defaultQuoteCurrency||"TRY").toUpperCase();
       const rows=(doc.lines||[]).map(r=>{
         const qty=safeNum(r.qty);
         const unit=safeNum(r.unitPrice);
@@ -3441,7 +3873,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
         pdf.rect(boxX,rowY,boxW,16);
         pdf.setFont("helvetica",idx===2?"bold":"normal");
         pdf.text(line[0],boxX+6,rowY+11);
-        pdf.text(`${line[1]} TRY`,boxX+boxW-6,rowY+11,{align:"right"});
+        pdf.text(`${line[1]} ${docCurrency}`,boxX+boxW-6,rowY+11,{align:"right"});
       });
 
       y+=totals.length*16+12;
@@ -3526,7 +3958,12 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   }
 
   const q=search.trim().toLowerCase();
-  const filteredQuotes=quotes.filter(x=>!q||(x.code||"").toLowerCase().includes(q)||(x.customerName||"").toLowerCase().includes(q)||(x.status||"").toLowerCase().includes(q));
+  const filteredQuotes=quotes.filter(x=>{
+    const textOk=!q||(x.code||"").toLowerCase().includes(q)||(x.customerName||"").toLowerCase().includes(q)||(x.status||"").toLowerCase().includes(q);
+    const statusOk=quoteStatusFilter==="all"||(x.status||"")===quoteStatusFilter;
+    const currencyOk=quoteCurrencyFilter==="all"||String(x.currency||defaultQuoteCurrency).toUpperCase()===quoteCurrencyFilter;
+    return textOk&&statusOk&&currencyOk;
+  });
   const filteredOrders=salesOrders.filter(x=>!q||(x.code||"").toLowerCase().includes(q)||(x.customerName||"").toLowerCase().includes(q)||(x.status||"").toLowerCase().includes(q));
   const statusLabel=s=>getSalesStatusMeta(s).label;
   const statusColor=s=>getSalesStatusMeta(s).color;
@@ -3576,7 +4013,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
               <div><span style={labelSt}>Parca No</span><input style={inputSt} value={priceForm.partNo} onChange={e=>setPriceForm(f=>({...f,partNo:e.target.value}))}/></div>
               <div><span style={labelSt}>Birim Fiyat</span><input style={inputSt} type="number" min="0" value={priceForm.price} onChange={e=>setPriceForm(f=>({...f,price:e.target.value}))}/></div>
               <div><span style={labelSt}>Iskonto %</span><input style={inputSt} type="number" min="0" max="100" value={priceForm.discountPct} onChange={e=>setPriceForm(f=>({...f,discountPct:e.target.value}))}/></div>
-              <div><span style={labelSt}>Para</span><select style={inputSt} value={priceForm.currency} onChange={e=>setPriceForm(f=>({...f,currency:e.target.value}))}><option value="TRY">TRY</option><option value="EUR">EUR</option><option value="USD">USD</option></select></div>
+              <div><span style={labelSt}>Para</span><select style={inputSt} value={priceForm.currency} onChange={e=>setPriceForm(f=>({...f,currency:e.target.value}))}>{quoteCurrencies.map(cur=><option key={cur.code} value={cur.code}>{cur.code} · {cur.label}</option>)}</select></div>
             </div>
             <div style={{marginTop:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
               <div style={{fontSize:12,color:C.muted2}}>Kayitli fiyat satiri: {customerPrices.length}</div>
@@ -3589,7 +4026,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
               const cust=customers.find(c=>c.id===p.customerId);
               return (
                 <div key={p.id} style={{marginTop:8,padding:"8px 10px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                  <div style={{fontSize:12,color:C.muted2}}>{cust?.name||"-"} · {p.partNo} · {safeNum(p.price).toFixed(2)} {p.currency||"TRY"} · Iskonto %{safeNum(p.discountPct)}</div>
+                  <div style={{fontSize:12,color:C.muted2}}>{cust?.name||"-"} · {p.partNo} · {formatByCurrency(p.price,p.currency)} · Iskonto %{safeNum(p.discountPct)}</div>
                   <button onClick={()=>startEditPrice(p)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11}}>Duzenle</button>
                 </div>
               );
@@ -3616,18 +4053,18 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
         <>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <div style={{fontSize:12,color:C.muted2}}>Teklifler ({quotes.length})</div>
-            <button onClick={()=>{
-              setQuoteForm({
-                code:nextCode("TKL",quotes,/^TKL-(\d+)$/),
-                customerId:"",
-                validUntil:todayStr(),
-                priority:"normal",
-                note:"",
-                lines:[makeDraftLine()],
-              });
-              setShowOrderModal(false);
-              setShowQuoteModal(true);
-            }} style={{...btnSt("primary"),padding:"7px 10px",fontSize:12}}>+ Yeni Teklif</button>
+            <button onClick={openNewQuoteModal} style={{...btnSt("primary"),padding:"7px 10px",fontSize:12}}>+ Yeni Teklif</button>
+            <select style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:150}} value={quoteStatusFilter} onChange={e=>setQuoteStatusFilter(e.target.value)}>
+              <option value="all">Tum Durumlar</option>
+              <option value="offer">Teklif</option>
+              <option value="approved">Onaylandi</option>
+              <option value="converted">Donustu</option>
+              <option value="cancelled">Iptal</option>
+            </select>
+            <select style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:130}} value={quoteCurrencyFilter} onChange={e=>setQuoteCurrencyFilter(e.target.value)}>
+              <option value="all">Tum Para</option>
+              {quoteCurrencies.map(cur=><option key={cur.code} value={cur.code}>{cur.code} · {cur.label}</option>)}
+            </select>
             <input style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:220}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod / musteri / durum ara..."/>
           </div>
           {filteredQuotes.map(qr=>(
@@ -3637,11 +4074,13 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                   <div style={{display:"flex",gap:7,alignItems:"center",flexWrap:"wrap"}}>
                     <span style={{fontWeight:800,fontFamily:"monospace",fontSize:14,color:C.text}}>{qr.code}</span>
                     <Badge label={statusLabel(qr.status)} color={statusColor(qr.status)}/>
+                    <Badge label={String(qr.currency||defaultQuoteCurrency).toUpperCase()} color={C.accent}/>
                   </div>
                   <div style={{fontSize:13,color:C.text,marginTop:3}}>{qr.customerName||"-"}</div>
-                  <div style={{fontSize:11,color:C.muted2,marginTop:2}}>Satir: {(qr.lines||[]).length} · Gecerlilik: {qr.validUntil||"-"} · Net: {safeNum(qr.totalAmount).toFixed(2)} TRY</div>
+                  <div style={{fontSize:11,color:C.muted2,marginTop:2}}>Satir: {(qr.lines||[]).length} · Gecerlilik: {qr.validUntil||"-"} · Net: {formatByCurrency(qr.totalAmount,qr.currency)}</div>
                 </div>
                 <div style={{display:"flex",gap:7,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                  <button onClick={()=>openEditQuoteModal(qr)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
                   <button onClick={()=>printQuote(qr)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>PDF Indir</button>
                   <button onClick={()=>duplicateQuote(qr)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kopyala</button>
                   <button onClick={()=>setQuoteStatus(qr,"approved")} style={{...btnSt("green"),padding:"6px 10px",fontSize:12,opacity:(qr.status||"")==="approved"?0.7:1}} disabled={(qr.status||"")==="approved"}>{(qr.status||"")==="approved"?"Onayli":"Musteri Onayi"}</button>
@@ -3668,6 +4107,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                 note:"",
                 lines:[makeDraftLine()],
               });
+              setQuoteEditId("");
               setShowQuoteModal(false);
               setShowOrderModal(true);
             }} style={{...btnSt("primary"),padding:"7px 10px",fontSize:12}}>+ Yeni Siparis</button>
@@ -3722,14 +4162,14 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       )}
 
       {showQuoteModal&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.62)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:55,padding:14}} onClick={()=>setShowQuoteModal(false)}>
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.62)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:55,padding:14}} onClick={closeQuoteModal}>
           <div style={{width:"100%",maxWidth:1240,maxHeight:"92vh",overflow:"hidden",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
             <div style={{padding:"12px 14px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
               <div>
-                <div style={{fontWeight:800,color:C.text,fontSize:16}}>Yeni Teklif</div>
-                <div style={{fontSize:12,color:C.muted2}}>Teklif bilgilerini ve satirlarini girin.</div>
+                <div style={{fontWeight:800,color:C.text,fontSize:16}}>{quoteEditId?"Teklif Duzenle":"Yeni Teklif"}</div>
+                <div style={{fontSize:12,color:C.muted2}}>{quoteEditId?"Teklif kaydini guncelleyebilirsiniz.":"Teklif bilgilerini ve satirlarini girin."}</div>
               </div>
-              <button onClick={()=>setShowQuoteModal(false)} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Kapat</button>
+              <button onClick={closeQuoteModal} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Kapat</button>
             </div>
             <div style={{padding:14,display:"flex",flexDirection:"column",gap:12,overflowY:"auto"}}>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
@@ -3737,6 +4177,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                 <div><span style={labelSt}>Musteri *</span><select style={inputSt} value={quoteForm.customerId} onChange={e=>setQ("customerId",e.target.value)}><option value="">Secin</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
                 <div><span style={labelSt}>Gecerlilik</span><input style={inputSt} type="date" value={quoteForm.validUntil} onChange={e=>setQ("validUntil",e.target.value)}/></div>
                 <div><span style={labelSt}>Oncelik</span><select style={inputSt} value={quoteForm.priority} onChange={e=>setQ("priority",e.target.value)}><option value="urgent">Acil</option><option value="normal">Normal</option><option value="low">Dusuk</option></select></div>
+                <div><span style={labelSt}>Doviz Cinsi</span><select style={inputSt} value={quoteForm.currency||defaultQuoteCurrency} onChange={e=>setQ("currency",e.target.value)}>{quoteCurrencies.map(cur=><option key={cur.code} value={cur.code}>{cur.code} · {cur.label}</option>)}</select></div>
               </div>
               <div><span style={labelSt}>Not</span><input style={inputSt} value={quoteForm.note} onChange={e=>setQ("note",e.target.value)} placeholder="Opsiyonel not"/></div>
 
@@ -3784,14 +4225,14 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
               </datalist>
 
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
-                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Brut</div><div style={{fontWeight:800,color:C.text}}>{moneyFmt(quoteTotals.gross)}</div></div>
-                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Iskonto</div><div style={{fontWeight:800,color:C.warn}}>{moneyFmt(quoteTotals.discount)}</div></div>
-                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Net</div><div style={{fontWeight:800,color:C.accent}}>{moneyFmt(quoteTotals.net)}</div></div>
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Brut</div><div style={{fontWeight:800,color:C.text}}>{formatByCurrency(quoteTotals.gross,quoteForm.currency)}</div></div>
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Iskonto</div><div style={{fontWeight:800,color:C.warn}}>{formatByCurrency(quoteTotals.discount,quoteForm.currency)}</div></div>
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Net</div><div style={{fontWeight:800,color:C.accent}}>{formatByCurrency(quoteTotals.net,quoteForm.currency)}</div></div>
               </div>
             </div>
             <div style={{padding:"12px 14px",borderTop:`1px solid ${C.border}`,display:"flex",justifyContent:"flex-end",gap:8}}>
-              <button onClick={()=>setShowQuoteModal(false)} style={{...btnSt("ghost"),padding:"9px 13px",fontSize:12}}>Iptal</button>
-              <button onClick={saveQuote} style={{...btnSt("primary"),padding:"9px 13px",fontSize:12}}>Teklifi Kaydet</button>
+              <button onClick={closeQuoteModal} style={{...btnSt("ghost"),padding:"9px 13px",fontSize:12}}>Iptal</button>
+              <button onClick={saveQuote} style={{...btnSt("primary"),padding:"9px 13px",fontSize:12}}>{quoteEditId?"Teklifi Guncelle":"Teklifi Kaydet"}</button>
             </div>
           </div>
         </div>
@@ -6533,12 +6974,13 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const emptyForm={startDate:todayStr(),endDate:todayStr(),machine:machines[0]||"CNC-1",orderId:"",note:""};
   const [form,setForm]=useState(emptyForm);
   const [orders,setOrders]=useState([]);
+  const [parts,setParts]=useState([]);
   const [plans,setPlans]=useState([]);
   const [sales,setSales]=useState([]);
   const [mpsPlans,setMpsPlans]=useState([]);
+  const [operationTypes,setOperationTypes]=useState(DEFAULT_ROUTING_OPERATION_TYPES);
   const [editId,setEditId]=useState(null);
   const [loading,setLoading]=useState(true);
-  const [dateFilter,setDateFilter]=useState(todayStr());
   const [ganttMonth,setGanttMonth]=useState(monthStr());
   const [selectedPlan,setSelectedPlan]=useState(null);
   const [showPlanModal,setShowPlanModal]=useState(false);
@@ -6547,21 +6989,24 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const [dragPlanId,setDragPlanId]=useState(null);
   const [exporting,setExporting]=useState(false);
   const [planQuery,setPlanQuery]=useState("");
-  const [machineFilter,setMachineFilter]=useState("all");
   const ganttRef=useRef(null);
 
   const load=useCallback(async()=>{
     setLoading(true);
-    const [o,p,s,m]=await Promise.all([
+    const [o,p,s,m,partRows,opDoc]=await Promise.all([
       window.DB.getAll("orders"),
       window.DB.getAll("plans"),
       window.DB.getAll("salesOrders"),
       window.DB.getAll("mpsPlans"),
+      window.DB.getAll("parts"),
+      window.DB.getDoc("config","routingOperationTypes"),
     ]);
     setOrders(o.filter(x=>isOpenOrderStatus(x.status)));
+    setParts(partRows.sort((a,b)=>(a.partNo||"").localeCompare(b.partNo||"","tr")));
     setPlans(p.sort((a,b)=>(b.date||"").localeCompare(a.date||"")));
     setSales(s);
     setMpsPlans(m);
+    setOperationTypes(normalizeRoutingOperationTypes(opDoc||{}));
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
@@ -6577,7 +7022,6 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
         setSelectedPlan(null);
         setShowMpsModal(false);
         setForm({startDate:today,endDate:today,machine:machineDefault,orderId:"",note:""});
-        setDateFilter(today);
         setGanttMonth(monthStr());
         setShowPlanModal(true);
       }
@@ -6591,15 +7035,12 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       setForm(f=>({...f,machine:machines[0]||"CNC-1"}));
     }
   },[machines.join(","),form.machine]);
-  useEffect(()=>{
-    if(machineFilter!=="all"&&!machines.includes(machineFilter)) setMachineFilter("all");
-  },[machines.join(","),machineFilter]);
 
   const fv=(k,v)=>setForm(f=>({...f,[k]:v}));
   const selectedOrder=orders.find(o=>o.id===form.orderId)||null;
   const setMpsF=(k,v)=>setMpsForm(p=>({...p,[k]:v}));
   const allPlanSegments=buildPlanSegments(plans);
-  const sortedPlanSegments=allPlanSegments.filter(seg=>!dateFilter||((seg.startDate||"")<=dateFilter&&(seg.endDate||"")>=dateFilter));
+  const sortedPlanSegments=allPlanSegments;
   const mpsBaseWeek=startOfWeekYmd(todayStr());
   const mpsBuckets=Array.from({length:8},(_,i)=>{
     const start=addDays(mpsBaseWeek,i*7);
@@ -6624,6 +7065,31 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const rangeEnd=startObj<=endObj?endObj:startObj;
   const rangeDays=Math.max(1,Math.floor((rangeEnd-rangeStart)/86400000)+1);
   const rangeLabel=`${ymdLocal(rangeStart)} - ${ymdLocal(rangeEnd)} (${rangeDays} gün)`;
+  const operationTypeById={};
+  operationTypes.forEach(op=>{operationTypeById[op.id]=op;});
+  const partByNo={};
+  parts.forEach(part=>{
+    const key=String(part.partNo||"").trim().toUpperCase();
+    if(key&&!partByNo[key]) partByNo[key]=part;
+  });
+  function getOrderOperationMeta(order){
+    if(!order) return null;
+    const key=String(order.partNo||"").trim().toUpperCase();
+    if(!key) return null;
+    const part=partByNo[key];
+    if(!part) return null;
+    const firstOp=(part.routingOps||[])[0]||null;
+    if(!firstOp) return null;
+    const type=firstOp.operationTypeId?operationTypeById[firstOp.operationTypeId]:null;
+    const icon=String(firstOp.operationIcon||type?.icon||"⚙️").trim()||"⚙️";
+    const color=normalizeHexColor(firstOp.operationColor||type?.color||"#0f6cbd");
+    const code=String(firstOp.operationCode||type?.code||"").trim();
+    const name=String(firstOp.operationName||type?.name||firstOp.operation||"Operasyon").trim()||"Operasyon";
+    return {icon,color,code,name,machine:firstOp.machine||""};
+  }
+  const orderOperationMetaById={};
+  orders.forEach(order=>{orderOperationMetaById[order.id]=getOrderOperationMeta(order);});
+  const selectedOrderOperationMeta=getOrderOperationMeta(selectedOrder);
   const ganttDate=new Date(...ganttMonth.split("-").map((x,i)=>i===1?Number(x)-1:Number(x)),1);
   const ganttDaysCount=new Date(ganttDate.getFullYear(),ganttDate.getMonth()+1,0).getDate();
   const ganttDays=Array.from({length:ganttDaysCount},(_,i)=>`${ganttMonth}-${pad2(i+1)}`);
@@ -6682,7 +7148,6 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const ganttGridTemplate=`${machineColWidth}px repeat(${ganttDays.length}, minmax(${dayColWidth}px, 1fr))`;
   const planQueryText=String(planQuery||"").trim().toLowerCase();
   const filteredPlanSegments=sortedPlanSegments.filter(seg=>{
-    if(machineFilter!=="all"&&seg.machine!==machineFilter) return false;
     if(!planQueryText) return true;
     const hay=[
       seg.orderCode||"",
@@ -6693,7 +7158,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     ].join(" ").toLowerCase();
     return hay.includes(planQueryText);
   });
-  const filteredGanttRows=ganttRows.filter(row=>machineFilter==="all"||row.machine===machineFilter);
+  const filteredGanttRows=ganttRows;
   const ganttRowHeight=23;
   const ganttHeaderHeight=24;
   const ganttVisibleRowCount=Math.max(1,filteredGanttRows.length);
@@ -7006,6 +7471,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
 
   const selectedPlanSegment=selectedPlan?findSegmentForPlan(selectedPlan):null;
   const selectedSegmentId=selectedPlan?(selectedPlan._segmentId||selectedPlanSegment?.id||""):"";
+  const selectedPlanOperationMeta=(selectedPlan&&selectedPlan.orderId)?(orderOperationMetaById[selectedPlan.orderId]||null):null;
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
 
@@ -7026,7 +7492,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
               onClick={()=>{
                 const today=todayStr();
                 setEditId(null);
-                setForm({startDate:today,endDate:today,machine:machineFilter!=="all"?machineFilter:(machines[0]||"CNC-1"),orderId:"",note:""});
+                setForm({startDate:today,endDate:today,machine:(machines[0]||"CNC-1"),orderId:"",note:""});
                 setShowPlanModal(true);
               }}
               style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}
@@ -7051,24 +7517,8 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                 <div style={{fontSize:18,color:C.text,fontWeight:800}}>{monthPlans.length}</div>
               </div>
               <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 9px"}}>
-                <div style={{fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Filtreli</div>
+                <div style={{fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Gorunen</div>
                 <div style={{fontSize:18,color:C.text,fontWeight:800}}>{filteredPlanSegments.length}</div>
-              </div>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-              <div>
-                <span style={labelSt}>Tezgah Filtresi</span>
-                <select value={machineFilter} onChange={e=>setMachineFilter(e.target.value)} style={{...inputSt,padding:"8px 9px",fontSize:12}}>
-                  <option value="all">Tum Tezgahlar</option>
-                  {machines.map(m=><option key={m} value={m}>{m}</option>)}
-                </select>
-              </div>
-              <div>
-                <span style={labelSt}>Tarih Filtresi</span>
-                <div style={{display:"flex",gap:5}}>
-                  <input type="date" value={dateFilter} onChange={e=>setDateFilter(e.target.value)} style={{...inputSt,padding:"8px 9px",fontSize:12,minWidth:0}}/>
-                  {dateFilter&&<button onClick={()=>setDateFilter("")} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:11}}>Tümü</button>}
-                </div>
               </div>
             </div>
             <div>
@@ -7079,12 +7529,13 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
             <div style={{display:"flex",flexDirection:"column",gap:7,overflowY:"auto",paddingRight:2,flex:1}}>
               {filteredPlanSegments.length===0&&(
                 <div style={{textAlign:"center",color:C.muted2,padding:"24px 10px",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,fontSize:12}}>
-                  Filtreye uygun plan bulunamadı.
+                  Plan bulunamadi.
                 </div>
               )}
               {filteredPlanSegments.map(seg=>{
                 const segColor=colorFromOrder(seg.orderId||seg.orderCode||seg.orderName);
                 const isActive=selectedSegmentId===seg.id;
+                const segOp=orderOperationMetaById[seg.orderId]||null;
                 return (
                   <div key={seg.id} onClick={()=>setSelectedPlan((seg.plans&&seg.plans[0])||seg)} style={{background:C.card,border:`1px solid ${isActive?segColor:C.border}`,borderRadius:10,padding:"8px 9px",cursor:"pointer",boxShadow:isActive?`0 0 0 1px ${segColor}55`:"none"}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
@@ -7095,6 +7546,13 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                       <span style={{width:10,height:10,borderRadius:3,background:segColor,marginTop:2,flexShrink:0}}/>
                     </div>
                     <div style={{fontSize:11,color:C.muted2,marginTop:4}}>{seg.startDate||"-"}{seg.endDate&&seg.endDate!==seg.startDate?` - ${seg.endDate}`:""}</div>
+                    {segOp&&(
+                      <div style={{marginTop:5}}>
+                        <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"2px 8px",borderRadius:999,border:`1px solid ${segOp.color}66`,background:segOp.color+"22",color:segOp.color,fontSize:10,fontWeight:700}}>
+                          {segOp.icon} {segOp.code?`${segOp.code} - `:""}{segOp.name}
+                        </span>
+                      </div>
+                    )}
                     {seg.note&&<div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{seg.note}</div>}
                     <div style={{display:"flex",gap:6,marginTop:6}}>
                       <button onClick={e=>{e.stopPropagation();startEdit(seg);}} style={{...btnSt("ghost"),padding:"4px 8px",fontSize:11}}>Düzenle</button>
@@ -7129,6 +7587,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                       const weekend=wd===0||wd===6;
                       if(!p) return <div key={d} onDragOver={e=>e.preventDefault()} onDrop={async e=>{e.preventDefault();const raw=e.dataTransfer.getData("text/plain")||dragPlanId;if(!raw) return;let payload=null;try{payload=JSON.parse(raw);}catch{}if(payload&&payload.type&&payload.segmentId){await resizeSegment(payload.segmentId,d,payload.type);}setDragPlanId(null);}} style={{height:20,borderRadius:3,background:weekend?C.surface2:C.surface,border:`1px solid ${C.border}`}}/>;
                       const col=colorFromOrder(p.orderId||p.orderCode||p.orderName);
+                      const opMeta=orderOperationMetaById[p.orderId]||null;
                       const isSelected=p._segmentId===selectedSegmentId;
                       return <div
                         key={d}
@@ -7150,6 +7609,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                           title="Bitişi sürükle"
                           style={{position:"absolute",right:0,top:0,bottom:0,width:5,background:"rgba(0,0,0,.35)",cursor:"ew-resize"}}
                         />}
+                        {p._isStart&&opMeta&&<span title={`${opMeta.code?opMeta.code+" - ":""}${opMeta.name}`} style={{position:"absolute",right:6,top:2,fontSize:10,lineHeight:1,color:"#fff",textShadow:"0 1px 2px rgba(0,0,0,.55)"}}>{opMeta.icon||"⚙️"}</span>}
                       </div>;
                     })}
                   </div>
@@ -7175,6 +7635,14 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
               <div><strong>Ad:</strong> {selectedPlan.orderName||"-"}</div>
               <div><strong>Firma:</strong> {selectedPlan.orderCustomerName||"-"}</div>
               <div><strong>Gün:</strong> {(selectedPlanSegment?.plans||[]).length||1}</div>
+              {selectedPlanOperationMeta&&(
+                <div style={{gridColumn:"1 / -1"}}>
+                  <strong>Operasyon:</strong>{" "}
+                  <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"2px 8px",borderRadius:999,border:`1px solid ${selectedPlanOperationMeta.color}66`,background:selectedPlanOperationMeta.color+"22",color:selectedPlanOperationMeta.color,fontWeight:700}}>
+                    {selectedPlanOperationMeta.icon||"⚙️"} {selectedPlanOperationMeta.code?`${selectedPlanOperationMeta.code} - `:""}{selectedPlanOperationMeta.name}
+                  </span>
+                </div>
+              )}
             </div>
             {selectedPlan.note&&<div style={{marginTop:10,fontSize:13,color:C.muted2}}>{selectedPlan.note}</div>}
             <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
@@ -7210,6 +7678,13 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                 {orders.map(o=><option key={o.id} value={o.id}>{o.code} - {o.name}{o.customerName?` - ${o.customerName}`:""} ({(o.machines||[]).join(", ")})</option>)}
               </select>
               {selectedOrder&&<div style={{fontSize:12,color:C.muted2,marginTop:6}}>Parça süresi: {fmtSec(selectedOrder.partSec)} · Maks/gün: {selectedOrder.partSec?Math.floor(EFFECTIVE_SECONDS/selectedOrder.partSec):"-"}</div>}
+              {selectedOrderOperationMeta&&(
+                <div style={{marginTop:6}}>
+                  <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"2px 8px",borderRadius:999,border:`1px solid ${selectedOrderOperationMeta.color}66`,background:selectedOrderOperationMeta.color+"22",color:selectedOrderOperationMeta.color,fontSize:11,fontWeight:700}}>
+                    {selectedOrderOperationMeta.icon||"⚙️"} {selectedOrderOperationMeta.code?`${selectedOrderOperationMeta.code} - `:""}{selectedOrderOperationMeta.name}
+                  </span>
+                </div>
+              )}
             </div>
             <div style={{marginTop:9}}>
               <span style={labelSt}>Not</span>
