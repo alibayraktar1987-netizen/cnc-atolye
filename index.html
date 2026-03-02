@@ -76,21 +76,44 @@ window.DB = {
 
 // ── SESSION ─────────────────────────────────────────────────
 window.Session = (() => {
+  const STORAGE_KEY = "cnc_atolye_session_v1";
   let mem = null;
+  function readStorage(){
+    if(mem) return mem;
+    try{
+      const raw=window.localStorage.getItem(STORAGE_KEY);
+      if(!raw) return null;
+      const parsed=JSON.parse(raw);
+      if(parsed&&typeof parsed==="object"){
+        mem=parsed;
+        return mem;
+      }
+    }catch{}
+    return null;
+  }
+  function writeStorage(next){
+    mem=next;
+    try{
+      if(next) window.localStorage.setItem(STORAGE_KEY,JSON.stringify(next));
+      else window.localStorage.removeItem(STORAGE_KEY);
+    }catch{}
+  }
   return {
-    get() { return mem; },
+    get() { return readStorage(); },
     set(u) {
-      mem = {
+      const now=Date.now();
+      writeStorage({
         ...u,
-        createdAt:Date.now(),
-        touchedAt:Date.now(),
-      };
+        createdAt:now,
+        touchedAt:now,
+      });
     },
     touch() {
-      if(!mem) return;
-      mem = { ...mem, touchedAt:Date.now() };
+      const cur=readStorage();
+      if(!cur) return;
+      writeStorage({ ...cur, touchedAt:Date.now() });
     },
-    clear() { mem = null; }
+    clear() { writeStorage(null); }
   };
 })();
 
@@ -4370,14 +4393,201 @@ function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule})
 //  REPORT
 // ════════════════════════════════════════════════════════════
 function Report({currentUser,machines=DEFAULT_MACHINES}) {
+  const REPORT_SOURCE_DEFS={
+    entries:{
+      label:"Uretim Kayitlari",
+      dateField:"date",
+      dimensions:[
+        {id:"__all",label:"Toplam"},
+        {id:"machine",label:"Tezgah"},
+        {id:"jobCode",label:"Is Emri"},
+        {id:"operatorName",label:"Operator"},
+        {id:"shift",label:"Vardiya"},
+        {id:"date",label:"Tarih"},
+      ],
+      metrics:[
+        {id:"__count",label:"Kayit Sayisi",aggs:["sum"]},
+        {id:"totalParts",label:"Toplam Uretim",aggs:["sum","avg","max","min"]},
+        {id:"correct",label:"Dogru Adet",aggs:["sum","avg","max","min"]},
+        {id:"wrong",label:"Hatali Adet",aggs:["sum","avg","max","min"]},
+        {id:"partSec",label:"Parca Suresi (sn)",aggs:["avg","max","min"]},
+      ],
+    },
+    orders:{
+      label:"Is Emirleri",
+      dateField:"recordDate",
+      dimensions:[
+        {id:"__all",label:"Toplam"},
+        {id:"status",label:"Durum"},
+        {id:"priority",label:"Oncelik"},
+        {id:"customerName",label:"Musteri"},
+        {id:"material",label:"Malzeme"},
+        {id:"machineMain",label:"Tezgah"},
+      ],
+      metrics:[
+        {id:"__count",label:"Is Emri Sayisi",aggs:["sum"]},
+        {id:"qty",label:"Emir Miktari",aggs:["sum","avg","max","min"]},
+        {id:"partSec",label:"Parca Suresi (sn)",aggs:["avg","max","min"]},
+      ],
+    },
+    salesOrders:{
+      label:"Satis Siparisleri",
+      dateField:"recordDate",
+      dimensions:[
+        {id:"__all",label:"Toplam"},
+        {id:"status",label:"Durum"},
+        {id:"customerName",label:"Musteri"},
+        {id:"priority",label:"Oncelik"},
+      ],
+      metrics:[
+        {id:"__count",label:"Siparis Sayisi",aggs:["sum"]},
+        {id:"qty",label:"Siparis Miktari",aggs:["sum","avg","max","min"]},
+        {id:"deliveredQty",label:"Teslim Miktari",aggs:["sum","avg","max","min"]},
+        {id:"openQty",label:"Acik Miktar",aggs:["sum","avg","max","min"]},
+        {id:"totalAmount",label:"Tutar",aggs:["sum","avg","max","min"]},
+      ],
+    },
+    materials:{
+      label:"Malzeme Kartlari",
+      dateField:"recordDate",
+      dimensions:[
+        {id:"__all",label:"Toplam"},
+        {id:"type",label:"Tip"},
+        {id:"trackingMode",label:"Takip"},
+        {id:"valuationMethod",label:"Maliyetleme"},
+      ],
+      metrics:[
+        {id:"__count",label:"Kart Sayisi",aggs:["sum"]},
+        {id:"stock",label:"Stok",aggs:["sum","avg","max","min"]},
+        {id:"reorderPoint",label:"Yeniden Siparis Noktasi",aggs:["sum","avg","max","min"]},
+        {id:"safetyStock",label:"Guvenlik Stogu",aggs:["sum","avg","max","min"]},
+        {id:"leadTimeDays",label:"Lead-Time (gun)",aggs:["avg","max","min"]},
+      ],
+    },
+    downtime:{
+      label:"Durus Kayitlari",
+      dateField:"date",
+      dimensions:[
+        {id:"__all",label:"Toplam"},
+        {id:"machine",label:"Tezgah"},
+        {id:"typeName",label:"Durus Nedeni"},
+        {id:"category",label:"Kategori"},
+        {id:"shift",label:"Vardiya"},
+      ],
+      metrics:[
+        {id:"__count",label:"Durus Adedi",aggs:["sum"]},
+        {id:"durationMin",label:"Durus Dakikasi",aggs:["sum","avg","max","min"]},
+      ],
+    },
+    quality:{
+      label:"Kalite Muayeneleri",
+      dateField:"date",
+      dimensions:[
+        {id:"__all",label:"Toplam"},
+        {id:"result",label:"Sonuc"},
+        {id:"partNo",label:"Parca"},
+        {id:"orderCode",label:"Is Emri"},
+        {id:"scrapReason",label:"Scrap Nedeni"},
+      ],
+      metrics:[
+        {id:"__count",label:"Muayene Sayisi",aggs:["sum"]},
+        {id:"scrapQty",label:"Scrap Adedi",aggs:["sum","avg","max","min"]},
+        {id:"scrapCost",label:"Scrap Maliyeti",aggs:["sum","avg","max","min"]},
+      ],
+    },
+  };
+  const CHART_TYPE_OPTIONS=[
+    {id:"column",label:"Sutun"},
+    {id:"line",label:"Cizgi"},
+    {id:"pie",label:"Pasta"},
+    {id:"donut",label:"Donut"},
+    {id:"table",label:"Tablo"},
+  ];
+  const CHART_TYPE_LABELS=Object.fromEntries(CHART_TYPE_OPTIONS.map(x=>[x.id,x.label]));
+
   const [period,setPeriod]=useState("gunluk");
   const [rangeEnabled,setRangeEnabled]=useState(false);
   const [fromDate,setFromDate]=useState(()=>todayStr());
   const [toDate,setToDate]=useState(()=>todayStr());
   const [entries,setEntries]=useState([]);
+  const [orders,setOrders]=useState([]);
+  const [salesOrders,setSalesOrders]=useState([]);
+  const [materials,setMaterials]=useState([]);
+  const [downtimeEvents,setDowntimeEvents]=useState([]);
+  const [qualityInspections,setQualityInspections]=useState([]);
+  const [customReports,setCustomReports]=useState([]);
+  const [selectedCustomReportId,setSelectedCustomReportId]=useState("");
+  const [showBuilder,setShowBuilder]=useState(false);
+  const [savingReport,setSavingReport]=useState(false);
+  const [editingReportId,setEditingReportId]=useState("");
+  const [reportForm,setReportForm]=useState({
+    name:"",
+    source:"entries",
+    dimension:"machine",
+    metric:"totalParts",
+    aggregation:"sum",
+    chartType:"column",
+    maxItems:"10",
+  });
   const [loading,setLoading]=useState(true);
 
-  useEffect(()=>{window.DB.getAll("entries").then(e=>{setEntries(e);setLoading(false);});},[]);
+  const sortReports=useCallback((rows=[])=>[...rows].sort((a,b)=>{
+    const ad=b.updatedAt||b.createdAt||"";
+    const bd=a.updatedAt||a.createdAt||"";
+    return ad.localeCompare(bd);
+  }),[]);
+
+  const load=useCallback(async()=>{
+    setLoading(true);
+    const [entryRows,orderRows,salesRows,materialRows,downtimeRows,qualityRows,reportRows]=await Promise.all([
+      window.DB.getAll("entries"),
+      window.DB.getAll("orders"),
+      window.DB.getAll("salesOrders"),
+      window.DB.getAll("materials"),
+      window.DB.getAll("downtimeEvents"),
+      window.DB.getAll("qualityInspections"),
+      window.DB.getAll("customReports"),
+    ]);
+    setEntries(entryRows||[]);
+    setOrders(orderRows||[]);
+    setSalesOrders(salesRows||[]);
+    setMaterials(materialRows||[]);
+    setDowntimeEvents(downtimeRows||[]);
+    setQualityInspections(qualityRows||[]);
+    setCustomReports(sortReports(reportRows||[]));
+    setLoading(false);
+  },[sortReports]);
+
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="rapor") return;
+      if(d.type==="refresh"){load();return;}
+      if(d.type==="new"){
+        setShowBuilder(true);
+        setEditingReportId("");
+        setSelectedCustomReportId("");
+        setReportForm({
+          name:"",
+          source:"entries",
+          dimension:"machine",
+          metric:"totalParts",
+          aggregation:"sum",
+          chartType:"column",
+          maxItems:"10",
+        });
+        window.scrollTo({top:0,behavior:"smooth"});
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load]);
+  useEffect(()=>{
+    if(selectedCustomReportId&& !customReports.some(r=>r.id===selectedCustomReportId)){
+      setSelectedCustomReportId("");
+    }
+  },[customReports,selectedCustomReportId]);
 
   function applyRangePreset(type){
     const end=todayStr();
@@ -4464,6 +4674,359 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
     return {name:m,color:chartPalette[i%chartPalette.length],totals};
   });
   const maxLineValue=Math.max(1,...lineSeries.flatMap(s=>s.totals));
+  const sourceRows=useMemo(()=>({
+    entries:(entries||[]).map(row=>({
+      ...row,
+      operatorName:row.operatorName||row.operatorId||"-",
+      totalParts:safeNum(row.correct)+safeNum(row.wrong),
+    })),
+    orders:(orders||[]).map(row=>({
+      ...row,
+      machineMain:(row.machines&&row.machines.length>0)?row.machines[0]:"Atanmamis",
+      recordDate:row.dueDate||String(row.createdAt||"").slice(0,10),
+      qty:safeNum(row.qty),
+      partSec:safeNum(row.partSec),
+    })),
+    salesOrders:(salesOrders||[]).map(row=>({
+      ...row,
+      recordDate:row.dueDate||String(row.createdAt||"").slice(0,10),
+      qty:safeNum(row.qty),
+      deliveredQty:safeNum(row.deliveredQty),
+      openQty:Math.max(0,safeNum(row.qty)-safeNum(row.deliveredQty)),
+      totalAmount:safeNum(row.totalAmount),
+    })),
+    materials:(materials||[]).map(row=>({
+      ...row,
+      recordDate:String(row.updatedAt||row.createdAt||"").slice(0,10),
+      stock:safeNum(row.stock),
+      reorderPoint:safeNum(row.reorderPoint),
+      safetyStock:safeNum(row.safetyStock),
+      leadTimeDays:safeNum(row.leadTimeDays),
+    })),
+    downtime:(downtimeEvents||[]).map(row=>({
+      ...row,
+      date:row.date||String(row.startAt||"").slice(0,10),
+      durationMin:safeNum(row.durationMin),
+    })),
+    quality:(qualityInspections||[]).map(row=>({
+      ...row,
+      date:String(row.createdAt||"").slice(0,10),
+      scrapQty:safeNum(row.scrapQty),
+      scrapCost:safeNum(row.scrapCost),
+    })),
+  }),[entries,orders,salesOrders,materials,downtimeEvents,qualityInspections]);
+  const selectedCustomReport=customReports.find(r=>r.id===selectedCustomReportId)||null;
+  const activeBuilderSource=REPORT_SOURCE_DEFS[reportForm.source]||REPORT_SOURCE_DEFS.entries;
+  const activeBuilderMetric=activeBuilderSource.metrics.find(m=>m.id===reportForm.metric)||activeBuilderSource.metrics[0];
+
+  function normalizeDateYmd(value){
+    const raw=String(value||"").trim();
+    if(!raw) return "";
+    if(/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    if(/^\d{4}-\d{2}-\d{2}T/.test(raw)) return raw.slice(0,10);
+    const d=new Date(raw);
+    if(Number.isNaN(d.getTime())) return "";
+    return ymdLocal(d);
+  }
+  function inCurrentWindow(ymd){
+    if(!ymd) return true;
+    if(rangeEnabled) return ymd>=rangeStart&&ymd<=rangeEnd;
+    if(period==="gunluk") return ymd===today;
+    if(period==="haftalik") return weekStart(parseYmdLocal(ymd))===thisWeek;
+    return ymd.startsWith(thisMonth+"-");
+  }
+  function formatMetricNumber(value){
+    const n=safeNum(value);
+    return n.toLocaleString("tr-TR",{maximumFractionDigits:2});
+  }
+  function normalizeCustomConfig(raw){
+    const source=REPORT_SOURCE_DEFS[raw?.source]?raw.source:"entries";
+    const src=REPORT_SOURCE_DEFS[source];
+    const dimIds=src.dimensions.map(d=>d.id);
+    const metricIds=src.metrics.map(m=>m.id);
+    const dimension=dimIds.includes(raw?.dimension)?raw.dimension:src.dimensions[0]?.id||"__all";
+    const metric=metricIds.includes(raw?.metric)?raw.metric:src.metrics[0]?.id||"__count";
+    const metricDef=src.metrics.find(m=>m.id===metric)||src.metrics[0];
+    const aggs=metricDef?.aggs||["sum"];
+    const aggregation=aggs.includes(raw?.aggregation)?raw.aggregation:aggs[0];
+    const chartType=CHART_TYPE_LABELS[raw?.chartType]?raw.chartType:"column";
+    const maxItems=Math.max(3,Math.min(40,Math.floor(safeNum(raw?.maxItems)||10)));
+    return {
+      name:String(raw?.name||"").trim(),
+      source,
+      dimension,
+      metric,
+      aggregation,
+      chartType,
+      maxItems,
+    };
+  }
+  function updateReportFormField(key,value){
+    setReportForm(prev=>{
+      const next={...prev,[key]:value};
+      if(key==="source"){
+        const src=REPORT_SOURCE_DEFS[value]||REPORT_SOURCE_DEFS.entries;
+        const metric=src.metrics[0]?.id||"__count";
+        next.dimension=src.dimensions[0]?.id||"__all";
+        next.metric=metric;
+        next.aggregation=(src.metrics.find(m=>m.id===metric)?.aggs||["sum"])[0];
+        return next;
+      }
+      if(key==="metric"){
+        const src=REPORT_SOURCE_DEFS[next.source]||REPORT_SOURCE_DEFS.entries;
+        const metricDef=src.metrics.find(m=>m.id===value)||src.metrics[0];
+        const aggs=metricDef?.aggs||["sum"];
+        if(!aggs.includes(next.aggregation)) next.aggregation=aggs[0];
+      }
+      return next;
+    });
+  }
+  function resetReportBuilder(source="entries"){
+    const src=REPORT_SOURCE_DEFS[source]||REPORT_SOURCE_DEFS.entries;
+    const metric=src.metrics[0]?.id||"__count";
+    setReportForm({
+      name:"",
+      source,
+      dimension:src.dimensions[0]?.id||"__all",
+      metric,
+      aggregation:(src.metrics.find(m=>m.id===metric)?.aggs||["sum"])[0],
+      chartType:"column",
+      maxItems:"10",
+    });
+    setEditingReportId("");
+  }
+  async function saveCustomReport(){
+    const cfg=normalizeCustomConfig(reportForm);
+    if(!cfg.name){alert("Rapor adi zorunlu.");return;}
+    const payload={
+      name:cfg.name,
+      source:cfg.source,
+      dimension:cfg.dimension,
+      metric:cfg.metric,
+      aggregation:cfg.aggregation,
+      chartType:cfg.chartType,
+      maxItems:cfg.maxItems,
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser.id||"",
+    };
+    setSavingReport(true);
+    if(editingReportId){
+      const ok=await window.DB.updateDoc("customReports",editingReportId,payload);
+      setSavingReport(false);
+      if(!ok){alert("Rapor guncellenemedi.");return;}
+      setCustomReports(prev=>sortReports(prev.map(r=>r.id===editingReportId?{...r,...payload}:r)));
+      setSelectedCustomReportId(editingReportId);
+      setEditingReportId("");
+      setShowBuilder(false);
+      return;
+    }
+    const id=await window.DB.addDoc("customReports",{...payload,createdBy:currentUser.id||""});
+    setSavingReport(false);
+    if(!id){alert("Rapor kaydedilemedi.");return;}
+    const row={id,...payload,createdAt:new Date().toISOString()};
+    setCustomReports(prev=>sortReports([row,...prev]));
+    setSelectedCustomReportId(id);
+    setEditingReportId("");
+    setShowBuilder(false);
+  }
+  async function removeCustomReport(report){
+    if(!report) return;
+    if(!confirm(`"${report.name||"Rapor"}" silinsin mi?`)) return;
+    const ok=await window.DB.deleteDoc("customReports",report.id);
+    if(!ok){alert("Rapor silinemedi.");return;}
+    setCustomReports(prev=>prev.filter(r=>r.id!==report.id));
+    if(selectedCustomReportId===report.id) setSelectedCustomReportId("");
+    if(editingReportId===report.id) setEditingReportId("");
+  }
+  function startEditCustomReport(report){
+    if(!report) return;
+    const cfg=normalizeCustomConfig(report);
+    setReportForm({
+      name:report.name||"",
+      source:cfg.source,
+      dimension:cfg.dimension,
+      metric:cfg.metric,
+      aggregation:cfg.aggregation,
+      chartType:cfg.chartType,
+      maxItems:String(cfg.maxItems),
+    });
+    setEditingReportId(report.id);
+    setSelectedCustomReportId(report.id);
+    setShowBuilder(true);
+  }
+  function aggregateCustomReport(configRaw){
+    const cfg=normalizeCustomConfig(configRaw);
+    const src=REPORT_SOURCE_DEFS[cfg.source];
+    let rows=[...(sourceRows[cfg.source]||[])];
+    if(src.dateField){
+      rows=rows.filter(row=>{
+        const ymd=normalizeDateYmd(row[src.dateField]);
+        if(!ymd) return true;
+        return inCurrentWindow(ymd);
+      });
+    }
+    const grouped={};
+    rows.forEach(row=>{
+      const rawLabel=cfg.dimension==="__all"?"Toplam":row[cfg.dimension];
+      const label=(rawLabel===undefined||rawLabel===null||String(rawLabel).trim()==="")?"(Bos)":String(rawLabel);
+      if(!grouped[label]) grouped[label]=[];
+      grouped[label].push(cfg.metric==="__count"?1:safeNum(row[cfg.metric]));
+    });
+    let data=Object.entries(grouped).map(([label,values])=>{
+      let value=0;
+      if(cfg.metric==="__count"){
+        value=values.length;
+      }else if(cfg.aggregation==="avg"){
+        value=values.length?values.reduce((s,v)=>s+v,0)/values.length:0;
+      }else if(cfg.aggregation==="max"){
+        value=values.length?Math.max(...values):0;
+      }else if(cfg.aggregation==="min"){
+        value=values.length?Math.min(...values):0;
+      }else{
+        value=values.reduce((s,v)=>s+v,0);
+      }
+      return {label,value,count:values.length};
+    }).sort((a,b)=>b.value-a.value);
+    if(cfg.chartType!=="table") data=data.slice(0,cfg.maxItems);
+    const metricLabel=(src.metrics.find(m=>m.id===cfg.metric)||{}).label||cfg.metric;
+    const dimensionLabel=(src.dimensions.find(d=>d.id===cfg.dimension)||{}).label||"Toplam";
+    return {cfg,src,data,rowCount:rows.length,metricLabel,dimensionLabel};
+  }
+  const previewCustomReport=useMemo(()=>{
+    if(showBuilder) return aggregateCustomReport(reportForm);
+    if(selectedCustomReport) return aggregateCustomReport(selectedCustomReport);
+    return null;
+  },[selectedCustomReport,showBuilder,reportForm,sourceRows,period,rangeEnabled,fromDate,toDate]);
+  function renderCustomReportView(preview){
+    if(!preview) return null;
+    if(preview.rowCount===0){
+      return (
+        <div style={{padding:"20px 14px",border:`1px dashed ${C.border}`,borderRadius:10,color:C.muted2,fontSize:13,background:C.surface2}}>
+          Secili filtrede rapor verisi yok.
+        </div>
+      );
+    }
+    const rows=preview.data||[];
+    if(rows.length===0){
+      return (
+        <div style={{padding:"20px 14px",border:`1px dashed ${C.border}`,borderRadius:10,color:C.muted2,fontSize:13,background:C.surface2}}>
+          Bu rapor icin gosterilecek satir yok.
+        </div>
+      );
+    }
+    const maxVal=Math.max(1,...rows.map(r=>safeNum(r.value)));
+    if(preview.cfg.chartType==="table"){
+      return (
+        <div style={{overflowX:"auto",border:`1px solid ${C.border}`,borderRadius:10}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead>
+              <tr style={{background:C.surface2,color:C.muted2,textAlign:"left"}}>
+                <th style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`}}>{preview.dimensionLabel}</th>
+                <th style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`}}>{preview.metricLabel}</th>
+                <th style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`}}>Kayit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r,i)=>(
+                <tr key={`${r.label}-${i}`} style={{borderBottom:`1px solid ${C.border}`}}>
+                  <td style={{padding:"8px 10px",color:C.text}}>{r.label}</td>
+                  <td style={{padding:"8px 10px",color:C.text,fontWeight:700}}>{formatMetricNumber(r.value)}</td>
+                  <td style={{padding:"8px 10px",color:C.muted2}}>{r.count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+    if(preview.cfg.chartType==="pie"||preview.cfg.chartType==="donut"){
+      const total=rows.reduce((s,r)=>s+safeNum(r.value),0);
+      let cursor=0;
+      const segments=rows.map((r,i)=>{
+        const share=total>0?(safeNum(r.value)/total)*360:0;
+        const start=cursor;
+        cursor+=share;
+        return `${chartPalette[i%chartPalette.length]} ${start.toFixed(2)}deg ${cursor.toFixed(2)}deg`;
+      });
+      const pieStyle=segments.length?`conic-gradient(${segments.join(",")})`:C.border;
+      return (
+        <div style={{display:"flex",gap:14,flexWrap:"wrap",alignItems:"center"}}>
+          <div style={{position:"relative",width:220,height:220,borderRadius:"50%",background:pieStyle,border:`1px solid ${C.border}`,flexShrink:0}}>
+            {preview.cfg.chartType==="donut"&&<div style={{position:"absolute",inset:48,borderRadius:"50%",background:C.card,border:`1px solid ${C.border}`}}/>}
+          </div>
+          <div style={{flex:1,minWidth:220,display:"flex",flexDirection:"column",gap:7}}>
+            {rows.map((r,i)=>{
+              const share=total>0?(safeNum(r.value)/total)*100:0;
+              return (
+                <div key={`${r.label}-${i}`} style={{display:"grid",gridTemplateColumns:"18px 1fr auto auto",gap:8,alignItems:"center",fontSize:12}}>
+                  <span style={{width:12,height:12,borderRadius:3,background:chartPalette[i%chartPalette.length],display:"inline-block"}}/>
+                  <span style={{color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.label}</span>
+                  <span style={{color:C.muted2}}>{share.toFixed(1)}%</span>
+                  <span style={{color:C.text,fontWeight:700}}>{formatMetricNumber(r.value)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+    if(preview.cfg.chartType==="line"){
+      const lineRows=rows.slice(0,18);
+      const lineMax=Math.max(1,...lineRows.map(r=>safeNum(r.value)));
+      const n=Math.max(lineRows.length-1,1);
+      const points=lineRows.map((r,i)=>{
+        const x=56+(684*(i/n));
+        const y=180-((safeNum(r.value)/lineMax)*150);
+        return `${x},${y}`;
+      }).join(" ");
+      return (
+        <div style={{height:220,overflowX:"auto"}}>
+          <svg width="100%" height="220" viewBox="0 0 760 220" preserveAspectRatio="none">
+            <rect x="0" y="0" width="760" height="220" fill="transparent"/>
+            {[0,1,2,3,4].map(i=>{
+              const y=20+i*40;
+              const v=Math.round(lineMax*((4-i)/4));
+              return (
+                <g key={i}>
+                  <line x1="56" y1={y} x2="740" y2={y} stroke={C.border} strokeWidth="1"/>
+                  <text x="50" y={y+4} fill={C.muted2} fontSize="10" textAnchor="end">{v}</text>
+                </g>
+              );
+            })}
+            <polyline points={points} fill="none" stroke={C.accent} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"/>
+            {lineRows.map((r,i)=>{
+              const x=56+(684*(i/n));
+              const y=180-((safeNum(r.value)/lineMax)*150);
+              const lbl=String(r.label||"");
+              const shortLbl=lbl.length>9?lbl.slice(0,8)+"…":lbl;
+              return (
+                <g key={`${r.label}-${i}`}>
+                  <circle cx={x} cy={y} r="3.5" fill={C.accent}/>
+                  <text x={x} y="206" fill={C.muted2} fontSize="10" textAnchor="middle">{shortLbl}</text>
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+      );
+    }
+    return (
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {rows.map((r,i)=>{
+          const pct=(safeNum(r.value)/maxVal)*100;
+          return (
+            <div key={`${r.label}-${i}`} style={{display:"grid",gridTemplateColumns:"1.2fr 2fr auto",gap:8,alignItems:"center"}}>
+              <div style={{fontSize:12,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.label}</div>
+              <div style={{height:10,background:C.surface2,border:`1px solid ${C.border}`,borderRadius:999,overflow:"hidden"}}>
+                <div style={{width:`${Math.max(4,pct)}%`,height:"100%",background:chartPalette[i%chartPalette.length]}}/>
+              </div>
+              <div style={{fontSize:12,color:C.text,fontWeight:700}}>{formatMetricNumber(r.value)}</div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
 
@@ -4491,6 +5054,106 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
             <div><span style={labelSt}>Bitiş</span><input type="date" value={toDate} max={today} onChange={e=>setToDate(e.target.value||today)} style={{...inputSt,padding:"9px 10px",fontSize:13}}/></div>
             <button onClick={()=>{const t=todayStr();setFromDate(t);setToDate(t);}} style={{...btnSt("ghost"),padding:"9px 11px",fontSize:12,marginBottom:1}}>Bugün</button>
             </div>
+          </div>
+        )}
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+          <div>
+            <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>Yeni Rapor Olustur</div>
+            <div style={{fontSize:13,color:C.text,fontWeight:700,marginTop:2}}>Zoho benzeri secilebilir alanlarla rapor tasarimi</div>
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button
+              onClick={()=>{
+                if(showBuilder){
+                  setShowBuilder(false);
+                  setEditingReportId("");
+                }else{
+                  resetReportBuilder();
+                  setSelectedCustomReportId("");
+                  setShowBuilder(true);
+                }
+              }}
+              style={{...btnSt("primary"),padding:"7px 11px",fontSize:12}}
+            >
+              {showBuilder?"Formu Kapat":"+ Yeni Rapor"}
+            </button>
+            {!!selectedCustomReport&&(
+              <button onClick={()=>startEditCustomReport(selectedCustomReport)} style={{...btnSt("ghost"),padding:"7px 11px",fontSize:12}}>
+                Duzenle
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))",gap:8,marginBottom:10}}>
+          <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:9,padding:"8px 10px",fontSize:12,color:C.muted2}}>
+            Kayitli Rapor: <span style={{color:C.text,fontWeight:700}}>{customReports.length}</span>
+          </div>
+          <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:9,padding:"8px 10px",fontSize:12,color:C.muted2}}>
+            Aktif Kaynak: <span style={{color:C.text,fontWeight:700}}>{(previewCustomReport?.src?.label)||"-"}</span>
+          </div>
+          <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:9,padding:"8px 10px",fontSize:12,color:C.muted2}}>
+            Aktif Grafik: <span style={{color:C.text,fontWeight:700}}>{CHART_TYPE_LABELS[(previewCustomReport?.cfg?.chartType)||""]||"-"}</span>
+          </div>
+        </div>
+
+        {customReports.length>0&&(
+          <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:10}}>
+            {customReports.map(rep=>{
+              const isActive=rep.id===selectedCustomReportId;
+              return (
+                <div key={rep.id} style={{display:"grid",gridTemplateColumns:"1fr auto",gap:8,alignItems:"center",padding:"8px 10px",border:`1px solid ${isActive?C.accent+"66":C.border}`,borderRadius:10,background:isActive?C.brandTint:C.surface}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontWeight:700,fontSize:13,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{rep.name||"Adsiz Rapor"}</div>
+                    <div style={{fontSize:11,color:C.muted2,marginTop:2}}>
+                      {(REPORT_SOURCE_DEFS[rep.source]?.label)||rep.source||"-"} · {CHART_TYPE_LABELS[rep.chartType]||rep.chartType||"-"} · {rep.aggregation||"-"}
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:6}}>
+                    <button onClick={()=>{setSelectedCustomReportId(rep.id);setShowBuilder(false);}} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11}}>Ac</button>
+                    <button onClick={()=>startEditCustomReport(rep)} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11}}>Duzenle</button>
+                    <button onClick={()=>removeCustomReport(rep)} style={{...btnSt("danger"),padding:"6px 9px",fontSize:11}}>Sil</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {showBuilder&&(
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10,marginBottom:10}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
+              <div><span style={labelSt}>Rapor Adi *</span><input style={inputSt} value={reportForm.name} onChange={e=>updateReportFormField("name",e.target.value)} placeholder="Orn. Tezgah Performans Ozeti"/></div>
+              <div><span style={labelSt}>Veri Kaynagi</span><select style={inputSt} value={reportForm.source} onChange={e=>updateReportFormField("source",e.target.value)}>{Object.entries(REPORT_SOURCE_DEFS).map(([id,def])=><option key={id} value={id}>{def.label}</option>)}</select></div>
+              <div><span style={labelSt}>Boyut (X Alan)</span><select style={inputSt} value={reportForm.dimension} onChange={e=>updateReportFormField("dimension",e.target.value)}>{activeBuilderSource.dimensions.map(dim=><option key={dim.id} value={dim.id}>{dim.label}</option>)}</select></div>
+              <div><span style={labelSt}>Olcum (Y Alan)</span><select style={inputSt} value={reportForm.metric} onChange={e=>updateReportFormField("metric",e.target.value)}>{activeBuilderSource.metrics.map(met=><option key={met.id} value={met.id}>{met.label}</option>)}</select></div>
+              <div><span style={labelSt}>Toplama</span><select style={inputSt} value={reportForm.aggregation} onChange={e=>updateReportFormField("aggregation",e.target.value)}>{(activeBuilderMetric?.aggs||["sum"]).map(agg=><option key={agg} value={agg}>{agg.toUpperCase()}</option>)}</select></div>
+              <div><span style={labelSt}>Grafik Tipi</span><select style={inputSt} value={reportForm.chartType} onChange={e=>updateReportFormField("chartType",e.target.value)}>{CHART_TYPE_OPTIONS.map(opt=><option key={opt.id} value={opt.id}>{opt.label}</option>)}</select></div>
+              <div><span style={labelSt}>Maks Satir</span><input style={inputSt} type="number" min="3" max="40" value={reportForm.maxItems} onChange={e=>updateReportFormField("maxItems",e.target.value)}/></div>
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10,flexWrap:"wrap"}}>
+              <button onClick={()=>resetReportBuilder(reportForm.source)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Temizle</button>
+              <button onClick={saveCustomReport} disabled={savingReport} style={{...btnSt("green"),padding:"8px 12px",fontSize:12,opacity:savingReport?0.7:1}}>
+                {savingReport?"Kaydediliyor...":(editingReportId?"Raporu Guncelle":"Raporu Kaydet")}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {previewCustomReport&&(
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"center",marginBottom:9,flexWrap:"wrap"}}>
+              <div>
+                <div style={{fontWeight:700,color:C.text,fontSize:14}}>{showBuilder?(reportForm.name||"Yeni Rapor Onizleme"):(selectedCustomReport?.name||"Rapor Onizleme")}</div>
+                <div style={{fontSize:11,color:C.muted2,marginTop:1}}>
+                  {previewCustomReport.src.label} · {previewCustomReport.dimensionLabel} / {previewCustomReport.metricLabel} · {previewCustomReport.cfg.aggregation.toUpperCase()}
+                </div>
+              </div>
+              <Badge label={CHART_TYPE_LABELS[previewCustomReport.cfg.chartType]||previewCustomReport.cfg.chartType} color={C.accent}/>
+            </div>
+            {renderCustomReportView(previewCustomReport)}
           </div>
         )}
       </div>
@@ -4672,16 +5335,41 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const [dragPlanId,setDragPlanId]=useState(null);
   const [exporting,setExporting]=useState(false);
   const ganttRef=useRef(null);
+  const planningFormRef=useRef(null);
 
-  useEffect(()=>{
-    async function load(){
-      const [o,p]=await Promise.all([window.DB.getAll("orders"),window.DB.getAll("plans")]);
-      setOrders(o.filter(x=>isOpenOrderStatus(x.status)));
-      setPlans(p.sort((a,b)=>(b.date||"").localeCompare(a.date||"")));
-      setLoading(false);
-    }
-    load();
+  const load=useCallback(async()=>{
+    setLoading(true);
+    const [o,p]=await Promise.all([window.DB.getAll("orders"),window.DB.getAll("plans")]);
+    setOrders(o.filter(x=>isOpenOrderStatus(x.status)));
+    setPlans(p.sort((a,b)=>(b.date||"").localeCompare(a.date||"")));
+    setLoading(false);
   },[]);
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="planning") return;
+      if(d.type==="refresh"){load();return;}
+      if(d.type==="new"){
+        const machineDefault=(machines[0]||"CNC-1");
+        const today=todayStr();
+        setEditId(null);
+        setSelectedPlan(null);
+        setForm({startDate:today,endDate:today,machine:machineDefault,orderId:"",note:""});
+        setDateFilter(today);
+        setGanttMonth(monthStr());
+        setTimeout(()=>{
+          if(planningFormRef.current&&planningFormRef.current.scrollIntoView){
+            planningFormRef.current.scrollIntoView({behavior:"smooth",block:"start"});
+          }else{
+            window.scrollTo({top:0,behavior:"smooth"});
+          }
+        },40);
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load,machines]);
 
   useEffect(()=>{
     if(!machines.includes(form.machine)){
@@ -5121,9 +5809,9 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
           </div>
         </div>
       )}
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+      <div ref={planningFormRef} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-          <div style={{fontWeight:700,color:C.text}}>Planlama</div>
+          <div style={{fontWeight:700,color:C.text}}>Yeni Planlama</div>
           {editId&&<Badge label="Düzenleme" color={C.warn}/>}
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
@@ -5735,7 +6423,9 @@ function MPSModule(){
   const [sales,setSales]=useState([]);
   const [orders,setOrders]=useState([]);
   const [mpsPlans,setMpsPlans]=useState([]);
+  const [showPlanForm,setShowPlanForm]=useState(false);
   const [form,setForm]=useState({partNo:"",weekStart:startOfWeekYmd(todayStr()),plannedQty:"0",note:""});
+  const planFormRef=useRef(null);
   const setF=(k,v)=>setForm(p=>({...p,[k]:v}));
   const load=useCallback(async()=>{
     const [s,o,m]=await Promise.all([window.DB.getAll("salesOrders"),window.DB.getAll("orders"),window.DB.getAll("mpsPlans")]);
@@ -5743,6 +6433,26 @@ function MPSModule(){
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="mps") return;
+      if(d.type==="refresh"){load();return;}
+      if(d.type==="new"){
+        setShowPlanForm(true);
+        setForm({partNo:"",weekStart:startOfWeekYmd(todayStr()),plannedQty:"0",note:""});
+        setTimeout(()=>{
+          if(planFormRef.current&&planFormRef.current.scrollIntoView){
+            planFormRef.current.scrollIntoView({behavior:"smooth",block:"start"});
+          }else{
+            window.scrollTo({top:0,behavior:"smooth"});
+          }
+        },40);
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load]);
   async function savePlan(){
     if(!form.partNo.trim()){alert("Parca no zorunlu.");return;}
     const payload={
@@ -5756,6 +6466,7 @@ function MPSModule(){
     if(!id){alert("MPS kaydi olusturulamadi.");return;}
     setMpsPlans(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
     setForm({partNo:"",weekStart:startOfWeekYmd(todayStr()),plannedQty:"0",note:""});
+    setShowPlanForm(false);
   }
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
@@ -5781,17 +6492,28 @@ function MPSModule(){
   return (
     <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-        <div style={{fontWeight:700,color:C.text,marginBottom:10}}>MPS Plan Girdisi</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-          <div><span style={labelSt}>Parca No</span><input style={inputSt} value={form.partNo} onChange={e=>setF("partNo",e.target.value)} placeholder="PRT-001"/></div>
-          <div><span style={labelSt}>Hafta Baslangic</span><input style={inputSt} type="date" value={form.weekStart} onChange={e=>setF("weekStart",e.target.value||todayStr())}/></div>
-          <div><span style={labelSt}>Planlanan Adet</span><input style={inputSt} type="number" min="0" value={form.plannedQty} onChange={e=>setF("plannedQty",e.target.value)}/></div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+          <div style={{fontWeight:700,color:C.text}}>MPS Planlama</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={()=>{if(showPlanForm){setShowPlanForm(false);}else{setForm({partNo:"",weekStart:startOfWeekYmd(todayStr()),plannedQty:"0",note:""});setShowPlanForm(true);setTimeout(()=>{if(planFormRef.current&&planFormRef.current.scrollIntoView){planFormRef.current.scrollIntoView({behavior:"smooth",block:"start"});}},40);}}} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>
+              {showPlanForm?"Formu Kapat":"+ Yeni Planlama"}
+            </button>
+            <button onClick={()=>downloadCsv(`mps-${todayStr()}.csv`,[{label:"Hafta",key:"hafta"},{label:"Talep",key:"talep"},{label:"Is Emri Arz",key:"isEmriArz"},{label:"MPS Plan",key:"mpsPlan"},{label:"Bakiye",key:"bakiye"}],exportRows)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>CSV Indir</button>
+          </div>
         </div>
-        <div style={{marginTop:8}}><span style={labelSt}>Not</span><textarea rows={2} style={{...inputSt,minHeight:62,resize:"vertical"}} value={form.note} onChange={e=>setF("note",e.target.value)}/></div>
-        <div style={{display:"flex",gap:8,justifyContent:"space-between",marginTop:10,flexWrap:"wrap"}}>
-          <button onClick={savePlan} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>MPS Kaydet</button>
-          <button onClick={()=>downloadCsv(`mps-${todayStr()}.csv`,[{label:"Hafta",key:"hafta"},{label:"Talep",key:"talep"},{label:"Is Emri Arz",key:"isEmriArz"},{label:"MPS Plan",key:"mpsPlan"},{label:"Bakiye",key:"bakiye"}],exportRows)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>CSV Indir</button>
-        </div>
+        {showPlanForm&&(
+          <div ref={planFormRef} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+              <div><span style={labelSt}>Parca No</span><input style={inputSt} value={form.partNo} onChange={e=>setF("partNo",e.target.value)} placeholder="PRT-001"/></div>
+              <div><span style={labelSt}>Hafta Baslangic</span><input style={inputSt} type="date" value={form.weekStart} onChange={e=>setF("weekStart",e.target.value||todayStr())}/></div>
+              <div><span style={labelSt}>Planlanan Adet</span><input style={inputSt} type="number" min="0" value={form.plannedQty} onChange={e=>setF("plannedQty",e.target.value)}/></div>
+            </div>
+            <div style={{marginTop:8}}><span style={labelSt}>Not</span><textarea rows={2} style={{...inputSt,minHeight:62,resize:"vertical"}} value={form.note} onChange={e=>setF("note",e.target.value)}/></div>
+            <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}>
+              <button onClick={savePlan} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>MPS Kaydet</button>
+            </div>
+          </div>
+        )}
       </div>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>8 Haftalik Ana Uretim Plani</div>
@@ -6697,7 +7419,10 @@ function App() {
       const session=window.Session.get();
       if(session){
         const u=await window.DB.getDoc("users",session.username);
-        if(u&&u.status==="active") setCurrentUser(u);
+        if(u&&u.status==="active"){
+          setCurrentUser(u);
+          window.Session.touch();
+        }
         else window.Session.clear();
       }
       setLoading(false);
@@ -6786,7 +7511,7 @@ function App() {
   const canMachinePrep=canOrders;
   const allTabs=useMemo(()=>[
     {id:"dashboard",icon:"dashboard",label:"Gösterge Paneli",group:"Planlama",enabled:(canEntry||canOrders||canReport||canSales||canPurchasing)},
-    {id:"planning",icon:"planning",label:"Planlama",group:"Planlama",enabled:canPlanning},
+    {id:"planning",icon:"planning",label:"Yeni Planlama",group:"Planlama",enabled:canPlanning},
     {id:"mps",icon:"mps",label:"MPS",group:"Planlama",enabled:canPlanning},
     {id:"mrp",icon:"mrp",label:"MRP Run",group:"Planlama",enabled:canPlanning},
     {id:"parts",icon:"parts",label:"Parca ve BOM",group:"Planlama",enabled:canPlanning},
@@ -6846,12 +7571,15 @@ function App() {
   const activeContextLabel=activeTabMeta?.label||"Modul";
   const menuResultText=`${visibleTabs.length}/${tabs.length} modul`;
   const createActions={
+    mps:"Yeni Planlama",
+    planning:"Yeni Planlama",
     customers:"Yeni Musteri",
     materials:"Yeni Malzeme",
     tools:"Yeni Takim",
     sales:"Yeni Siparis",
     orders:"Yeni Is Emri",
     quotes:"Yeni Teklif",
+    rapor:"Yeni Rapor",
     machineprep:"Yeni Makina Profili",
   };
   const canCreateInTab=Boolean(createActions[tab]);
