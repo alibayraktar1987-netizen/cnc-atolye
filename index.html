@@ -3177,6 +3177,10 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   const [view,setView]=useState(defaultView==="quotes"?"quotes":"orders");
   const [search,setSearch]=useState("");
   const [quoteStatusFilter,setQuoteStatusFilter]=useState("all");
+  const [quoteDateFrom,setQuoteDateFrom]=useState("");
+  const [quoteDateTo,setQuoteDateTo]=useState("");
+  const [orderDateFrom,setOrderDateFrom]=useState("");
+  const [orderDateTo,setOrderDateTo]=useState("");
   const [customerEditId,setCustomerEditId]=useState("");
   const [priceEditId,setPriceEditId]=useState("");
   const [quoteEditId,setQuoteEditId]=useState("");
@@ -4244,13 +4248,35 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     if(!result.createdIds.length){alert("Is emri olusturulamadi.");}
   }
 
+  const toYmd=value=>{
+    const raw=String(value||"").trim();
+    if(!raw) return "";
+    if(/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    if(/^\d{4}-\d{2}-\d{2}T/.test(raw)) return raw.slice(0,10);
+    const d=new Date(raw);
+    if(Number.isNaN(d.getTime())) return "";
+    return ymdLocal(d);
+  };
+  const inRange=(ymd,from,to)=>{
+    if(from&&(!ymd||ymd<from)) return false;
+    if(to&&(!ymd||ymd>to)) return false;
+    return true;
+  };
+
   const q=search.trim().toLowerCase();
   const filteredQuotes=quotes.filter(x=>{
     const textOk=!q||(x.code||"").toLowerCase().includes(q)||(x.customerName||"").toLowerCase().includes(q)||(x.status||"").toLowerCase().includes(q);
     const statusOk=quoteStatusFilter==="all"||(x.status||"")===quoteStatusFilter;
-    return textOk&&statusOk;
+    const dateYmd=toYmd(x.validUntil)||toYmd(x.createdAt)||toYmd(x.updatedAt);
+    const dateOk=inRange(dateYmd,quoteDateFrom,quoteDateTo);
+    return textOk&&statusOk&&dateOk;
   });
-  const filteredOrders=salesOrders.filter(x=>!q||(x.code||"").toLowerCase().includes(q)||(x.customerName||"").toLowerCase().includes(q)||(x.status||"").toLowerCase().includes(q));
+  const filteredOrders=salesOrders.filter(x=>{
+    const textOk=!q||(x.code||"").toLowerCase().includes(q)||(x.customerName||"").toLowerCase().includes(q)||(x.status||"").toLowerCase().includes(q);
+    const dateYmd=toYmd(x.dueDate)||toYmd(x.createdAt)||toYmd(x.updatedAt);
+    const dateOk=inRange(dateYmd,orderDateFrom,orderDateTo);
+    return textOk&&dateOk;
+  });
   const statusLabel=s=>getSalesStatusMeta(s).label;
   const statusColor=s=>getSalesStatusMeta(s).color;
 
@@ -4347,6 +4373,13 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
               <option value="converted">Donustu</option>
               <option value="cancelled">Iptal</option>
             </select>
+            <input type="date" style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:150}} value={quoteDateFrom} onChange={e=>setQuoteDateFrom(e.target.value||"")} title="Baslangic tarihi"/>
+            <input type="date" style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:150}} value={quoteDateTo} onChange={e=>setQuoteDateTo(e.target.value||"")} title="Bitis tarihi"/>
+            {(quoteDateFrom||quoteDateTo)&&(
+              <button onClick={()=>{setQuoteDateFrom("");setQuoteDateTo("");}} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>
+                Tarihi Temizle
+              </button>
+            )}
             <input style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:220}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod / musteri / durum ara..."/>
           </div>
           {filteredQuotes.map(qr=>(
@@ -4392,6 +4425,13 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
               setShowQuoteModal(false);
               setShowOrderModal(true);
             }} style={{...btnSt("primary"),padding:"7px 10px",fontSize:12}}>+ Yeni Siparis</button>
+            <input type="date" style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:150}} value={orderDateFrom} onChange={e=>setOrderDateFrom(e.target.value||"")} title="Baslangic termin"/>
+            <input type="date" style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:150}} value={orderDateTo} onChange={e=>setOrderDateTo(e.target.value||"")} title="Bitis termin"/>
+            {(orderDateFrom||orderDateTo)&&(
+              <button onClick={()=>{setOrderDateFrom("");setOrderDateTo("");}} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>
+                Tarihi Temizle
+              </button>
+            )}
             <input style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:220}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod / musteri / durum ara..."/>
           </div>
           {filteredOrders.map(o=>{
@@ -4847,6 +4887,8 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   const [editId,setEditId]=useState(null);
   const [statusFilters,setStatusFilters]=useState([]);
   const [search,setSearch]=useState("");
+  const [dueDateFrom,setDueDateFrom]=useState("");
+  const [dueDateTo,setDueDateTo]=useState("");
   const [viewOrder,setViewOrder]=useState(null);
   const [viewOrderMoves,setViewOrderMoves]=useState([]);
   const [previewFile,setPreviewFile]=useState(null);
@@ -5013,6 +5055,20 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   }
 
   const q=search.trim().toLowerCase();
+  const toYmd=value=>{
+    const raw=String(value||"").trim();
+    if(!raw) return "";
+    if(/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    if(/^\d{4}-\d{2}-\d{2}T/.test(raw)) return raw.slice(0,10);
+    const d=new Date(raw);
+    if(Number.isNaN(d.getTime())) return "";
+    return ymdLocal(d);
+  };
+  const inRange=(ymd,from,to)=>{
+    if(from&&(!ymd||ymd<from)) return false;
+    if(to&&(!ymd||ymd>to)) return false;
+    return true;
+  };
   const usageCountByOrder={};
   const productionByOrder={};
   toolMovements.forEach(m=>{
@@ -5039,7 +5095,9 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   const filteredOrders=orders.filter(o=>{
     const statusOk=statusFilters.length===0 ? true : statusFilters.includes(o.status||"passive");
     const textOk=!q || (o.code||"").toLowerCase().includes(q) || (o.name||"").toLowerCase().includes(q) || (o.material||"").toLowerCase().includes(q) || (o.customerName||"").toLowerCase().includes(q);
-    return statusOk&&textOk;
+    const dateYmd=toYmd(o.dueDate)||toYmd(o.createdAt)||toYmd(o.updatedAt);
+    const dateOk=inRange(dateYmd,dueDateFrom,dueDateTo);
+    return statusOk&&textOk&&dateOk;
   });
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
@@ -5207,6 +5265,13 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
       </div>
       <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
         <input style={{...inputSt,flex:"1 1 230px",padding:"9px 12px",fontSize:13}} placeholder="Kod, parça veya malzeme ara..." value={search} onChange={e=>setSearch(e.target.value)}/>
+        <input type="date" style={{...inputSt,padding:"9px 12px",fontSize:13,minWidth:155}} value={dueDateFrom} onChange={e=>setDueDateFrom(e.target.value||"")} title="Baslangic termin"/>
+        <input type="date" style={{...inputSt,padding:"9px 12px",fontSize:13,minWidth:155}} value={dueDateTo} onChange={e=>setDueDateTo(e.target.value||"")} title="Bitis termin"/>
+        {(dueDateFrom||dueDateTo)&&(
+          <button onClick={()=>{setDueDateFrom("");setDueDateTo("");}} style={{...btnSt("ghost"),padding:"9px 12px",fontSize:12}}>
+            Tarihi Temizle
+          </button>
+        )}
       </div>
       <div style={{display:"flex",gap:7,marginBottom:12,flexWrap:"wrap"}}>
         <button onClick={()=>setStatusFilters([])} style={chip(statusFilters.length===0,C.muted2)}>Tüm Durumlar</button>
@@ -9564,6 +9629,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
   const [editableBalloons,setEditableBalloons]=useState([]);
   const [drawSelection,setDrawSelection]=useState(null);
   const [lastSelection,setLastSelection]=useState(null);
+  const [dragBalloon,setDragBalloon]=useState(null);
   const previewDrawRef=useRef(null);
   const load=useCallback(async()=>{
     const [o,s,t,i,f,b]=await Promise.all([
@@ -9731,7 +9797,23 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
     }
     setEditableBalloons(prev=>[...prev,...toAdd].map((row,idx)=>({...row,no:idx+1})));
   }
+  function startBalloonDrag(ev,idx){
+    const row=editableBalloons[idx];
+    if(!row) return;
+    const pt=previewPointFromEvent(ev);
+    if(!pt) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    setDrawSelection(null);
+    setLastSelection(null);
+    setDragBalloon({
+      idx,
+      offsetXPct:clampPct(row.xPct)-pt.xPct,
+      offsetYPct:clampPct(row.yPct)-pt.yPct,
+    });
+  }
   function onPreviewMouseDown(ev){
+    if(dragBalloon) return;
     if(!(balloonPreview&&Array.isArray(balloonPreview.tokens)&&balloonPreview.tokens.length>0)) return;
     const pt=previewPointFromEvent(ev);
     if(!pt) return;
@@ -9739,12 +9821,29 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
     setLastSelection(null);
   }
   function onPreviewMouseMove(ev){
+    if(dragBalloon){
+      const pt=previewPointFromEvent(ev);
+      if(!pt) return;
+      setEditableBalloons(prev=>prev.map((row,i)=>{
+        if(i!==dragBalloon.idx) return row;
+        return {
+          ...row,
+          xPct:clampPct(pt.xPct+safeNum(dragBalloon.offsetXPct)),
+          yPct:clampPct(pt.yPct+safeNum(dragBalloon.offsetYPct)),
+        };
+      }));
+      return;
+    }
     if(!(drawSelection&&drawSelection.active)) return;
     const pt=previewPointFromEvent(ev);
     if(!pt) return;
     setDrawSelection(sel=>sel?{...sel,x2:pt.xPct,y2:pt.yPct}:sel);
   }
   function finalizePreviewSelection(ev){
+    if(dragBalloon){
+      setDragBalloon(null);
+      return;
+    }
     if(!(drawSelection&&drawSelection.active)) return;
     const pt=ev?previewPointFromEvent(ev):null;
     const finalSel={...drawSelection,x2:pt?pt.xPct:drawSelection.x2,y2:pt?pt.yPct:drawSelection.y2,active:false};
@@ -9765,6 +9864,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
     const picked=pdfRows.find(f=>f._pickId===run.filePickId)||pdfRows[0]||null;
     if(!picked){setBalloonPreview(null);return;}
     setBalloonForm(f=>({...f,orderId:wo.id||f.orderId,fileId:picked._pickId,page:String(run.page||1)}));
+    setDragBalloon(null);
     setBalloonBusy(true);
     setBalloonError("");
     try{
@@ -9910,6 +10010,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
     const wo=pdfOrderById[balloonForm.orderId];
     if(!wo){alert("PDF icin is emri secin.");return;}
     if(!selectedPdfFile){alert("PDF secin.");return;}
+    setDragBalloon(null);
     setBalloonBusy(true);
     setBalloonError("");
     try{
@@ -10129,8 +10230,36 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
                       style={{position:"relative",minWidth:420,cursor:(balloonPreview.tokens||[]).length>0?"crosshair":"default",userSelect:"none"}}
                     >
                       <img src={balloonPreview.previewDataUrl} alt={balloonPreview.fileName||"PDF"} style={{width:"100%",display:"block"}}/>
-                      {editableBalloons.slice(0,300).map(b=>(
-                        <span key={`bal_${b.no}_${b.page}`} title={`${b.no} · ${b.text}`} style={{position:"absolute",left:`${b.xPct}%`,top:`${b.yPct}%`,transform:"translate(-50%,-50%)",minWidth:18,height:18,padding:"0 4px",borderRadius:999,background:"#ef4444",color:"#fff",fontSize:10,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center",lineHeight:1,border:"1px solid #fff",boxShadow:"0 1px 2px rgba(0,0,0,.35)",pointerEvents:"none"}}>{b.no}</span>
+                      {editableBalloons.slice(0,300).map((b,idx)=>(
+                        <span
+                          key={`bal_${b.no}_${b.page}`}
+                          title={`${b.no} · ${b.text}`}
+                          onMouseDown={ev=>startBalloonDrag(ev,idx)}
+                          style={{
+                            position:"absolute",
+                            left:`${b.xPct}%`,
+                            top:`${b.yPct}%`,
+                            transform:"translate(-50%,-50%)",
+                            minWidth:18,
+                            height:18,
+                            padding:"0 4px",
+                            borderRadius:999,
+                            background:"#ef4444",
+                            color:"#fff",
+                            fontSize:10,
+                            fontWeight:700,
+                            display:"inline-flex",
+                            alignItems:"center",
+                            justifyContent:"center",
+                            lineHeight:1,
+                            border:"1px solid #fff",
+                            boxShadow:"0 1px 2px rgba(0,0,0,.35)",
+                            pointerEvents:"auto",
+                            cursor:(dragBalloon&&dragBalloon.idx===idx)?"grabbing":"grab",
+                          }}
+                        >
+                          {b.no}
+                        </span>
                       ))}
                       {(() => {
                         const rect=drawSelection?normalizeSelectionRect(drawSelection):lastSelection;
@@ -10148,7 +10277,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
                 </div>
                 <div style={{border:`1px solid ${C.border}`,borderRadius:8,padding:8,maxHeight:520,overflowY:"auto",background:C.card}}>
                   <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase",marginBottom:6}}>Olcu Listesi ({editableBalloons.length})</div>
-                  {balloonPreview&&<div style={{fontSize:11,color:C.muted2,marginBottom:6}}>PDF ustunde kutu cizerek olcu otomatik ekleyebilirsiniz.</div>}
+                  {balloonPreview&&<div style={{fontSize:11,color:C.muted2,marginBottom:6}}>PDF ustunde kutu cizerek olcu otomatik ekleyebilirsiniz. Balon numaralarini surukleyip konumunu duzeltebilirsiniz.</div>}
                   {editableBalloons.length===0&&<div style={{fontSize:12,color:C.muted2}}>Olcu satiri yok. "Manuel Olcu" ile ekleyin.</div>}
                   {editableBalloons.slice(0,260).map((row,idx)=>(
                     <div key={`dim_${row.no}_${idx}`} style={{display:"grid",gridTemplateColumns:"34px 1fr auto",gap:6,padding:"5px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,alignItems:"center"}}>
