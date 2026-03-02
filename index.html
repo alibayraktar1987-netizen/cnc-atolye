@@ -5816,6 +5816,265 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const rowCardStyle={background:opTheme.cardBgSoft,border:`1px solid ${opTheme.borderStrong}`,borderRadius:8,padding:"6px 7px"};
   const themedInputStyle={background:opTheme.inputBg,borderColor:opTheme.borderStrong,color:opTheme.text};
   const statStripStyle={display:"grid",gridTemplateColumns:kioskMode?"repeat(4,minmax(0,1fr))":"repeat(auto-fit,minmax(140px,1fr))",gap:8};
+  function fmtDurationLong(totalSec){
+    const sec=Math.max(0,Math.floor(safeNum(totalSec)));
+    const h=Math.floor(sec/3600);
+    const m=Math.floor((sec%3600)/60);
+    const s=sec%60;
+    if(h>0) return `${h}h ${m}m ${s}s`;
+    if(m>0) return `${m}m ${s}s`;
+    return `${s}s`;
+  }
+  function fmtActiveShort(totalSec){
+    const sec=Math.max(0,Math.floor(safeNum(totalSec)));
+    const h=Math.floor(sec/3600);
+    const m=Math.floor((sec%3600)/60);
+    const s=sec%60;
+    if(h>0) return `${h}h ${m}m`;
+    if(m>0) return `${m}m ${s}s`;
+    return `${s}s`;
+  }
+  const cycleExpectedSec=Math.max(1,safeNum(form.selectedOrder?.partSec)||safeNum(machineTelemetry?.expectedCycleSec)||60);
+  const cycleCurrentSec=Math.max(0,safeNum(machineTelemetry?.currentCycleSec)||safeNum(machineTelemetry?.cycleSec)||cycleExpectedSec);
+  const cycleLastSec=Math.max(0,safeNum(recentMachineEntries[0]?.partSec)||cycleCurrentSec||cycleExpectedSec);
+  const cycleAvgSec=orderDayEntries.length
+    ? Math.max(1,Math.round(orderDayEntries.reduce((sum,e)=>sum+Math.max(1,safeNum(e.partSec)||cycleExpectedSec),0)/orderDayEntries.length))
+    : Math.max(1,Math.round((cycleCurrentSec+cycleExpectedSec)/2));
+  const cycleBestSec=orderDayEntries.length
+    ? Math.max(1,Math.min(...orderDayEntries.map(e=>Math.max(1,safeNum(e.partSec)||cycleExpectedSec))))
+    : cycleExpectedSec;
+  const cycleWorstSec=orderDayEntries.length
+    ? Math.max(1,Math.max(...orderDayEntries.map(e=>Math.max(1,safeNum(e.partSec)||cycleExpectedSec))))
+    : Math.max(cycleCurrentSec,cycleExpectedSec);
+  const expectedQty=selectedOrderQty>0?selectedOrderQty:(producedQty+remainingQty);
+  const behindQty=Math.max(0,expectedQty-producedQty);
+  const goalPct=selectedOrderQty>0?Math.max(0,Math.min(999,Math.round((producedQty/selectedOrderQty)*100))):0;
+  const utilizationPct=Math.max(0,Math.min(100,Math.round(safeNum(machineTelemetry?.utilizationPct)||safeNum(machineTelemetry?.utilization)||progressPct)));
+  const oeePct=Math.max(0,Math.min(100,Math.round(safeNum(machineTelemetry?.oeePct)||safeNum(machineTelemetry?.oee)||qualityPct)));
+  const allDowntimeSec=Math.max(0,safeNum(machineTelemetry?.allDowntimeSec)||safeNum(machineTelemetry?.downtimeSec));
+  const activeAlarmCount=Math.max(0,Math.round(safeNum(machineTelemetry?.activeAlarms)||safeNum(machineTelemetry?.alarmCount)));
+  const activeSec=Math.max(0,safeNum(machineTelemetry?.activeSec)||safeNum(machineTelemetry?.runtimeSec)||safeNum(machineTelemetry?.runSec));
+  const ringPct=expectedQty>0?Math.max(0,Math.min(100,Math.round((producedQty/expectedQty)*100))):0;
+  const ringSize=318;
+  const ringStroke=24;
+  const ringRadius=(ringSize-ringStroke)/2;
+  const ringCircumference=2*Math.PI*ringRadius;
+  const ringDash=(ringPct/100)*ringCircumference;
+  const partBars=recentMachineEntries.slice(0,6).reverse();
+  const maxPartBar=Math.max(1,...partBars.map(r=>safeNum(r.correct)));
+  const cycleRows=[
+    {label:"Curr",value:cycleCurrentSec,color:"#b58ef4"},
+    {label:"Ave",value:cycleAvgSec,color:"#c7cfe0"},
+    {label:"Exp",value:cycleExpectedSec,color:"#d4dce9"},
+    {label:"Last",value:cycleLastSec,color:"#d4dce9"},
+    {label:"Wst",value:cycleWorstSec,color:"#d4dce9"},
+    {label:"Bst",value:cycleBestSec,color:"#d4dce9"},
+  ];
+  const cycleMax=Math.max(1,...cycleRows.map(r=>Math.max(1,safeNum(r.value))));
+  const actionBtnStyle={
+    border:"none",
+    background:"transparent",
+    color:"#4b5c74",
+    fontSize:20,
+    fontWeight:700,
+    height:76,
+    cursor:"pointer",
+    borderRight:"1px solid #d7dde6",
+    display:"flex",
+    alignItems:"center",
+    justifyContent:"center",
+    gap:10,
+  };
+
+  if(kioskMode){
+    return (
+      <div style={{minHeight:"100vh",width:"100%",padding:12,background:"radial-gradient(140% 130% at 18% 12%, #131a25 0%, #0b0f14 56%, #080b10 100%)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <div style={{width:"100%",maxWidth:1400,borderRadius:28,padding:12,background:"linear-gradient(145deg,#111721 0%,#0d1118 48%,#161d28 100%)",boxShadow:"0 30px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.15)"}}>
+          <div style={{background:"#edf1f6",borderRadius:14,overflow:"hidden",border:"1px solid #cdd5e0"}}>
+            <div style={{background:"linear-gradient(120deg,#3ca36b 0%,#68b993 100%)",padding:"18px 22px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:12,alignItems:"center",color:"#e7fff2"}}>
+              <div>
+                <div style={{fontSize:40,fontWeight:800,lineHeight:1,letterSpacing:.4}}>{form.selectedOrder?.code||"JOB-0000"}</div>
+                <div style={{fontSize:20,fontWeight:700,marginTop:6}}>Machine: {form.machine}</div>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:7,alignItems:"flex-start"}}>
+                <button onClick={()=>setShowPicker(v=>!v)} style={{border:"1px solid rgba(255,255,255,.45)",background:"rgba(8,29,19,.22)",color:"#f2fff7",borderRadius:10,padding:"8px 12px",fontWeight:700,fontSize:14,cursor:"pointer"}}>
+                  {form.selectedOrder?`İş Emri: ${form.selectedOrder.code}`:"İş Emri Seç"}
+                </button>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  <input type="date" max={todayStr()} value={form.entryDate} onChange={e=>fv("entryDate",e.target.value||todayStr())} style={{...inputSt,padding:"6px 8px",fontSize:12,minWidth:136,background:"rgba(255,255,255,.2)",borderColor:"rgba(255,255,255,.45)",color:"#f3fff8"}}/>
+                  {SHIFTS.map(s=><button key={s.id} onClick={()=>fv("shift",s.id)} style={{border:"1px solid rgba(255,255,255,.45)",background:form.shift===s.id?"rgba(255,255,255,.24)":"rgba(9,33,22,.18)",color:"#f6fffa",borderRadius:9,padding:"6px 9px",fontSize:11,fontWeight:700,cursor:"pointer"}}>{s.label}</button>)}
+                  {!isMachineLocked&&(
+                    <select value={form.machine} onChange={e=>selectMachine(e.target.value)} style={{...inputSt,padding:"6px 8px",fontSize:12,minWidth:140,background:"rgba(255,255,255,.2)",borderColor:"rgba(255,255,255,.45)",color:"#f3fff8"}}>
+                      {machines.map(m=><option key={m} value={m}>{m}</option>)}
+                    </select>
+                  )}
+                </div>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",justifyContent:"center",gap:4}}>
+                <div style={{display:"flex",alignItems:"center",gap:9,fontSize:34,fontWeight:800,color:"#f4fff8"}}>
+                  <span style={{width:12,height:12,borderRadius:"50%",background:statusMeta.color,display:"inline-block"}}/>
+                  Active : {fmtActiveShort(activeSec)}
+                </div>
+                <div style={{fontSize:15,fontWeight:700,color:"rgba(236,255,247,.9)"}}>{statusMeta.label} · {selectedShiftMeta.label}</div>
+              </div>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",borderBottom:"1px solid #d5dde8",background:"#f7f9fc"}}>
+              {[["Part Count",`${producedQty} Parts`],["All Downtime",fmtDurationLong(allDowntimeSec)],["Active Alarms",String(activeAlarmCount)],["Current Cycle Time",`${Math.round(cycleCurrentSec)}s`],["Parts Goal",selectedOrderQty>0?`%${goalPct}`:"-"],["Utilization",`%${utilizationPct}`],["OEE",`%${oeePct}`]].map(([label,val],idx)=>(
+                <div key={label} style={{padding:"12px 10px",borderRight:idx===6?"none":"1px solid #d5dde8",textAlign:"center"}}>
+                  <div style={{fontSize:14,color:"#8594aa",fontWeight:700}}>{label}</div>
+                  <div style={{fontSize:37,color:"#49566e",fontWeight:800,marginTop:2}}>{val}</div>
+                </div>
+              ))}
+            </div>
+
+            {showPicker&&(
+              <div style={{padding:"10px 14px",background:"#f1f5fb",borderBottom:"1px solid #d5dde8"}}>
+                <div style={{display:"grid",gridTemplateColumns:"minmax(220px,380px) 1fr auto",gap:8,alignItems:"center"}}>
+                  <input style={{...inputSt,padding:"9px 10px",fontSize:13}} placeholder="İş emri ara..." value={search} onChange={e=>setSearch(e.target.value)} autoFocus/>
+                  <div style={{fontSize:12,color:"#7f8da3"}}>{filtered.length} iş emri</div>
+                  <button onClick={()=>setShowPicker(false)} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Kapat</button>
+                </div>
+                <div style={{marginTop:8,maxHeight:170,overflowY:"auto",background:"#fff",border:"1px solid #d8dfe9",borderRadius:10}}>
+                  {filtered.length===0&&<div style={{padding:12,fontSize:12,color:"#8c98aa",textAlign:"center"}}>Sonuç bulunamadı.</div>}
+                  {filtered.map(o=>(
+                    <div key={o.id} onClick={()=>{fv("selectedOrder",o);setShowPicker(false);setSearch("");}} style={{padding:"9px 10px",cursor:"pointer",borderBottom:"1px solid #edf1f6"}}>
+                      <div style={{fontSize:12,fontFamily:"monospace",fontWeight:800,color:"#344154"}}>{o.code}</div>
+                      <div style={{fontSize:11,color:"#75849b",marginTop:2}}>{o.name} · {(o.machines||[]).join(", ")||"-"}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",alignItems:"stretch",minHeight:296,borderBottom:"1px solid #d5dde8",background:"#eef2f7"}}>
+              <div style={{padding:"24px 20px",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",gap:8}}>
+                <div style={{fontSize:56,color:"#667790",fontWeight:600,textAlign:"center"}}>You Have Made</div>
+                <div style={{fontSize:134,color:"#43546c",fontWeight:800,lineHeight:.95}}>{producedQty}</div>
+              </div>
+              <div style={{padding:"10px 0",display:"flex",justifyContent:"center",alignItems:"center"}}>
+                <div style={{width:ringSize,height:ringSize,position:"relative",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  <svg width={ringSize} height={ringSize} viewBox={`0 0 ${ringSize} ${ringSize}`}>
+                    <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} stroke="#dbe2eb" strokeWidth={ringStroke} fill="none"/>
+                    <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} stroke="#ec9342" strokeWidth={ringStroke} fill="none" strokeLinecap="round" strokeDasharray={`${ringDash} ${Math.max(0,ringCircumference-ringDash)}`} transform={`rotate(-90 ${ringSize/2} ${ringSize/2})`}/>
+                  </svg>
+                  <div style={{position:"absolute",textAlign:"center",color:"#5b6b83"}}>
+                    <div style={{fontSize:69,fontWeight:800,color:"#4b5b73",lineHeight:1}}>{behindQty}</div>
+                    <div style={{fontSize:23,fontWeight:600}}>Parts Behind</div>
+                    <div style={{marginTop:10,fontSize:62,fontWeight:800,color:scrapQty>0?"#c95757":"#4b5b73",lineHeight:1}}>{scrapQty}</div>
+                    <div style={{fontSize:20,fontWeight:600}}>Rejects</div>
+                  </div>
+                </div>
+              </div>
+              <div style={{padding:"24px 20px",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",gap:8}}>
+                <div style={{fontSize:52,color:"#667790",fontWeight:600,textAlign:"center"}}>Expected To Have Made</div>
+                <div style={{fontSize:134,color:"#65758d",fontWeight:800,lineHeight:.95}}>{expectedQty||"-"}</div>
+              </div>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:18,padding:"14px 16px",background:"#f2f5fa",borderBottom:"1px solid #d5dde8"}}>
+              <div style={{background:"#fff",border:"1px solid #d8dfe9",borderRadius:10,padding:"10px 12px"}}>
+                <div style={{fontSize:17,fontWeight:800,color:"#4b5a72",marginBottom:8}}>Parts Made</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(6,minmax(0,1fr))",gap:8,alignItems:"end",height:120}}>
+                  {(partBars.length?partBars:[{id:"x1",correct:0,createdAt:""},{id:"x2",correct:0,createdAt:""},{id:"x3",correct:0,createdAt:""},{id:"x4",correct:0,createdAt:""},{id:"x5",correct:0,createdAt:""},{id:"x6",correct:0,createdAt:""}]).map((r,idx)=>{
+                    const val=Math.max(0,safeNum(r.correct));
+                    const h=val>0?Math.max(8,Math.round((val/maxPartBar)*88)):4;
+                    const label=r.createdAt?String(r.createdAt).slice(11,16):`T${idx+1}`;
+                    return (
+                      <div key={r.id||idx} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                        <div style={{fontSize:11,color:"#72829b",fontWeight:700}}>{val}</div>
+                        <div style={{width:24,height:h,background:val===0?"#d5dde8":"#c6cfde",borderRadius:4}}/>
+                        <div style={{fontSize:10,color:"#8c98aa"}}>{label}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div style={{background:"#fff",border:"1px solid #d8dfe9",borderRadius:10,padding:"10px 12px"}}>
+                <div style={{fontSize:17,fontWeight:800,color:"#4b5a72",marginBottom:8}}>Cycle Time</div>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {cycleRows.map(row=>(
+                    <div key={row.label} style={{display:"grid",gridTemplateColumns:"42px 1fr auto",alignItems:"center",gap:8}}>
+                      <div style={{fontSize:11,color:"#8190a7",fontWeight:700}}>{row.label}</div>
+                      <div style={{height:11,background:"#edf2f8",borderRadius:99,overflow:"hidden"}}>
+                        <div style={{height:"100%",width:`${Math.max(3,Math.round((Math.max(1,safeNum(row.value))/cycleMax)*100))}%`,background:row.color,borderRadius:99}}/>
+                      </div>
+                      <div style={{fontSize:11,color:"#62728a",fontWeight:700}}>{Math.round(safeNum(row.value))}s</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",background:"#fff"}}>
+              <button onClick={()=>setShowPicker(v=>!v)} style={{...actionBtnStyle,fontSize:26,color:"#9aa8bb"}}>☰</button>
+              <button onClick={openShiftEndModal} style={actionBtnStyle}>⏹ Stop Job</button>
+              <button onClick={openShiftEndModal} style={actionBtnStyle}>⊘ Reject Parts</button>
+              <button onClick={openToolChangeModal} style={{...actionBtnStyle,borderRight:"none"}}>💬 Categorize</button>
+            </div>
+          </div>
+        </div>
+        {showToolModal&&(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={()=>setShowToolModal(false)}>
+            <div style={{width:"100%",maxWidth:680,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16}} onClick={e=>e.stopPropagation()}>
+              <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>Takım Değişimi</div>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                <div style={{flex:"1 1 260px"}}>
+                  <span style={labelSt}>İş Emri Takım Değişimi</span>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 95px",gap:8}}>
+                    <select style={inputSt} value={toolDraft.machineToolId} onChange={e=>setToolDraft(p=>({...p,machineToolId:e.target.value}))}>
+                      <option value="">Takım seç (opsiyonel)</option>
+                      {toolOptions.map(t=><option key={t.id} value={t.id}>{t.code} - {t.name} (Stok: {Number(t.qty)||0})</option>)}
+                    </select>
+                    <input style={inputSt} type="number" min="1" placeholder="Adet" disabled={!toolDraft.machineToolId} value={toolDraft.machineToolQty} onChange={e=>setToolDraft(p=>({...p,machineToolQty:e.target.value}))}/>
+                  </div>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
+                <button onClick={()=>setShowToolModal(false)} style={{...btnSt("ghost"),padding:"10px 14px"}}>İptal</button>
+                <button onClick={approveToolChange} style={{...btnSt("primary"),padding:"10px 14px"}}>Değişimi Onayla</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {showShiftModal&&(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={()=>setShowShiftModal(false)}>
+            <div style={{width:"100%",maxWidth:560,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16}} onClick={e=>e.stopPropagation()}>
+              <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>Vardiya Sonu</div>
+              <div style={{display:"flex",gap:10}}>
+                <div style={{flex:1}}><span style={labelSt}>✅ Doğru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>
+                <div style={{flex:1}}><span style={labelSt}>❌ Hatalı Adet</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>
+              </div>
+              <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
+                <button onClick={()=>setShowShiftModal(false)} style={{...btnSt("ghost"),padding:"10px 14px"}}>İptal</button>
+                <button onClick={approveShiftEnd} style={{...btnSt(saved?"green":"primary"),padding:"10px 14px"}}>{editId?"Güncellemeyi Onayla":"Vardiyayı Onayla"}</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {previewFile&&(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.72)",zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setPreviewFile(null)}>
+            <div style={{width:"100%",maxWidth:960,maxHeight:"88vh",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>
+                <div style={{fontSize:13,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{previewFile.name}</div>
+                <button onClick={()=>setPreviewFile(null)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kapat</button>
+              </div>
+              <div style={{padding:10,overflow:"auto",background:C.surface}}>
+                {isImageFile(previewFile)&&<img src={previewFile.data} alt={previewFile.name} style={{width:"100%",height:"auto",borderRadius:10,border:`1px solid ${C.border}`}}/>}
+                {isPdfFile(previewFile)&&<iframe title={previewFile.name} src={previewFile.data} style={{width:"100%",height:"70vh",border:`1px solid ${C.border}`,borderRadius:10,background:"#fff"}}/>}
+                {isStepFile(previewFile)&&<StepFileViewer file={previewFile}/>}
+                {!canFilePreview(previewFile)&&(
+                  <div style={{padding:22,textAlign:"center",color:C.muted2,fontSize:13,border:`1px dashed ${C.border}`,borderRadius:10,background:C.card}}>
+                    Bu dosya turu icin onizleme yok. Dosyayi indirip harici uygulamada acabilirsiniz.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div style={entryRootStyle}>
