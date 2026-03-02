@@ -1620,6 +1620,7 @@ function AdminUsers({currentUser,machines,onMachinesUpdate,currentLogo,onLogoUpd
   const [users,setUsers]=useState([]);
   const [loading,setLoading]=useState(true);
   const [expanded,setExpanded]=useState(null);
+  const [settingsView,setSettingsView]=useState("genel");
   const [logoLoading,setLogoLoading]=useState(false);
   const [quoteTemplate,setQuoteTemplate]=useState(DEFAULT_QUOTE_TEMPLATE);
   const [templateSaving,setTemplateSaving]=useState(false);
@@ -1658,6 +1659,9 @@ function AdminUsers({currentUser,machines,onMachinesUpdate,currentLogo,onLogoUpd
   const roleLabel=roleId=>(USER_ROLES.find(r=>r.id===roleId)||{label:roleId||"-"}).label;
 
   const list=[...users].sort((a,b)=>{const o={pending:0,active:1,rejected:2};return(o[a.status]??3)-(o[b.status]??3);});
+  const pendingCount=list.filter(u=>u.status==="pending").length;
+  const activeCount=list.filter(u=>u.status==="active").length;
+  const blockedCount=list.filter(u=>u.status==="rejected").length;
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
 
   async function pickLogo(e){
@@ -1692,103 +1696,171 @@ function AdminUsers({currentUser,machines,onMachinesUpdate,currentLogo,onLogoUpd
     setQuoteTemplate({...DEFAULT_QUOTE_TEMPLATE});
   }
 
+  const settingsTabs=[
+    {id:"genel",label:"Genel",desc:"Logo ve uygulama gorunumu"},
+    {id:"ticari",label:"Ticari",desc:"Teklif sablonu ve para birimi"},
+    {id:"uretim",label:"Uretim",desc:"Tezgah, operator ve rota ayarlari"},
+    {id:"kullanicilar",label:"Kullanicilar",desc:"Yetki, rol ve hesap onaylari"},
+  ];
+
   return (
     <div style={{padding:16}}>
-      <div style={{marginBottom:18}}>
-        <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Logo Ayari</div>
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
-          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
-            <div style={{width:56,height:56,borderRadius:12,background:C.surface,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
-              <img src={currentLogo||LOGO_SRC} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-            </div>
-            <div style={{fontSize:12,color:C.muted2}}>Giris sayfasi ve uygulama basliginda kullanilir.</div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,marginBottom:16}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+          <div>
+            <div style={{fontWeight:700,fontSize:15,color:C.text}}>Ayarlar Merkezi</div>
+            <div style={{fontSize:12,color:C.muted2,marginTop:2}}>Tum sistem ayarlari basliklar altinda toplandi.</div>
           </div>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            <button onClick={()=>logoInputRef.current?.click()} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={logoLoading}>{logoLoading?"Yukleniyor...":"Logo Yukle"}</button>
-            <button onClick={()=>onLogoUpdate("")} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}} disabled={logoLoading}>Varsayilana Don</button>
-            <input ref={logoInputRef} type="file" accept="image/*" style={{display:"none"}} onChange={pickLogo}/>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            <Badge label={`${list.length} Kullanici`} color={C.accent}/>
+            <Badge label={`${pendingCount} Bekleyen`} color={C.warn}/>
+            <Badge label={`${activeCount} Aktif`} color={C.green}/>
+            <Badge label={`${blockedCount} Askida`} color={C.red}/>
           </div>
         </div>
-      </div>
-      <div style={{marginBottom:18}}>
-        <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Teklif PDF Sablon Tasarimi</div>
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-            <div><span style={labelSt}>Sirket Adi</span><input style={inputSt} value={quoteTemplate.companyName} onChange={e=>setTemplateField("companyName",e.target.value)} placeholder="Firma adi"/></div>
-            <div><span style={labelSt}>Renk</span><div style={{display:"flex",gap:8}}><input style={{...inputSt,padding:0,width:48,height:36}} type="color" value={normalizeQuoteTemplate(quoteTemplate).accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)}/><input style={{...inputSt,flex:1}} value={quoteTemplate.accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)} placeholder="#0f6cbd"/></div></div>
-            <div><span style={labelSt}>Adres</span><input style={inputSt} value={quoteTemplate.companyAddress} onChange={e=>setTemplateField("companyAddress",e.target.value)} placeholder="Adres"/></div>
-            <div><span style={labelSt}>Telefon</span><input style={inputSt} value={quoteTemplate.companyPhone} onChange={e=>setTemplateField("companyPhone",e.target.value)} placeholder="+90 ..."/></div>
-            <div><span style={labelSt}>E-Posta</span><input style={inputSt} value={quoteTemplate.companyEmail} onChange={e=>setTemplateField("companyEmail",e.target.value)} placeholder="mail@firma.com"/></div>
-            <div style={{display:"flex",alignItems:"flex-end"}}>
-              <label style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:12,color:C.text,cursor:"pointer"}}>
-                <input type="checkbox" checked={Boolean(quoteTemplate.showLogo)} onChange={e=>setTemplateField("showLogo",e.target.checked)}/>
-                Logo kullan
-              </label>
-            </div>
-            <div><span style={labelSt}>Teklif Basligi</span><input style={inputSt} value={quoteTemplate.documentTitleQuote} onChange={e=>setTemplateField("documentTitleQuote",e.target.value)} placeholder="Proforma Teklif"/></div>
-            <div><span style={labelSt}>Siparis Basligi</span><input style={inputSt} value={quoteTemplate.documentTitleOrder} onChange={e=>setTemplateField("documentTitleOrder",e.target.value)} placeholder="Siparis Onay Formu"/></div>
-            <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Alt Not</span><textarea rows={2} style={{...inputSt,minHeight:64,resize:"vertical"}} value={quoteTemplate.footerNote} onChange={e=>setTemplateField("footerNote",e.target.value)} placeholder="PDF altinda gorunecek not"/></div>
-          </div>
-          <div style={{marginTop:10,padding:10,border:`1px solid ${C.border}`,borderRadius:10,background:C.surface}}>
-            <div style={{height:6,borderRadius:99,background:normalizeQuoteTemplate(quoteTemplate).accentColor,marginBottom:8}}/>
-            <div style={{fontWeight:700,color:C.text}}>{quoteTemplate.documentTitleQuote||DEFAULT_QUOTE_TEMPLATE.documentTitleQuote}</div>
-            <div style={{fontSize:12,color:C.muted2,marginTop:2}}>
-              {(quoteTemplate.companyName||DEFAULT_QUOTE_TEMPLATE.companyName)}{quoteTemplate.companyPhone?` · ${quoteTemplate.companyPhone}`:""}{quoteTemplate.companyEmail?` · ${quoteTemplate.companyEmail}`:""}
-            </div>
-          </div>
-          <div style={{display:"flex",gap:8,marginTop:10}}>
-            <button onClick={saveQuoteTemplate} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={templateSaving}>{templateSaving?"Kaydediliyor...":"Sablonu Kaydet"}</button>
-            <button onClick={resetQuoteTemplate} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}} disabled={templateSaving}>Varsayilan</button>
-          </div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:12}}>
+          {settingsTabs.map(tab=>(
+            <button
+              key={tab.id}
+              onClick={()=>setSettingsView(tab.id)}
+              style={{
+                border:`1px solid ${settingsView===tab.id?C.accent:C.border}`,
+                background:settingsView===tab.id?C.accent+"18":C.surface,
+                color:settingsView===tab.id?C.accent:C.text,
+                borderRadius:10,
+                padding:"10px 12px",
+                minWidth:180,
+                textAlign:"left",
+                cursor:"pointer",
+              }}
+            >
+              <div style={{fontWeight:700,fontSize:13,lineHeight:1.2}}>{tab.label}</div>
+              <div style={{fontSize:11,color:settingsView===tab.id?C.accent:C.muted2,marginTop:3}}>{tab.desc}</div>
+            </button>
+          ))}
         </div>
       </div>
-      <MachineSettings machines={machines} onUpdate={onMachinesUpdate}/>
-      <OperatorUrlSettings machines={machines}/>
-      <RoutingOperationTypeSettings currentUser={currentUser}/>
-      <SalesCurrencySettings currentUser={currentUser}/>
-      <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>Ayarlar · Kullanıcı Yönetimi · {list.length} kullanıcı</div>
-      {list.map(u=>(
-        <div key={u.id} style={{background:C.card,border:`1px solid ${u.status==="pending"?C.warn+"60":C.border}`,borderRadius:14,padding:"14px 16px",marginBottom:10}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-            <div><div style={{fontWeight:700,fontSize:14}}>{u.fullName}</div><div style={{color:C.muted2,fontSize:12,marginTop:1}}>@{u.username||u.id}</div></div>
-            <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
-              <Badge label={u.role==="admin"?"Yönetici":roleLabel(u.role)} color={u.role==="admin"?C.accent:C.muted2}/>
-              <Badge label={u.status==="active"?"Aktif":u.status==="pending"?"Bekliyor":"Askıda"} color={u.status==="active"?C.green:u.status==="pending"?C.warn:C.red}/>
-            </div>
-          </div>
-          {u.id!==currentUser.id&&(
-            <>
-              <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:8}}>
-                {u.status==="pending"&&<><button onClick={()=>update(u.id,{status:"active"})} style={{...btnSt("green"),padding:"7px 13px",fontSize:12}}>✓ Onayla</button><button onClick={()=>update(u.id,{status:"rejected"})} style={{...btnSt("danger"),padding:"7px 13px",fontSize:12}}>✕ Reddet</button></>}
-                {u.status==="active"&&<>
-                  <select value={u.role||"operator"} onChange={e=>changeRole(u,e.target.value)} style={{...inputSt,padding:"7px 10px",fontSize:12,maxWidth:190}}>
-                    {USER_ROLES.map(r=><option key={r.id} value={r.id}>{r.label}</option>)}
-                  </select>
-                  <button onClick={()=>update(u.id,{status:"rejected"})} style={{...btnSt("danger"),padding:"7px 13px",fontSize:12}}>Askıya Al</button>
-                </>}
-                {u.status==="rejected"&&<button onClick={()=>update(u.id,{status:"active"})} style={{...btnSt("green"),padding:"7px 13px",fontSize:12}}>Aktifleştir</button>}
-                {u.role!=="admin"&&<button onClick={()=>setExpanded(expanded===u.id?null:u.id)} style={{...btnSt("ghost"),padding:"7px 13px",fontSize:12}}>{expanded===u.id?"▲ Gizle":"⚙️ Yetkiler"}</button>}
+
+      {settingsView==="genel"&&(
+        <div style={{marginBottom:18}}>
+          <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Genel Ayarlar · Logo</div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+              <div style={{width:56,height:56,borderRadius:12,background:C.surface,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
+                <img src={currentLogo||LOGO_SRC} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
               </div>
-              {expanded===u.id&&u.role!=="admin"&&(
-                <div style={{background:C.surface,borderRadius:10,padding:12,border:`1px solid ${C.border}`}}>
-                  <div style={{color:C.muted2,fontSize:11,letterSpacing:.8,textTransform:"uppercase",marginBottom:10,fontWeight:600}}>Kullanıcı Yetkileri</div>
-                  {PERMISSIONS.map(p=>{
-                    const active=(u.permissions||[]).includes(p.id);
-                    return (
-                      <div key={p.id} onClick={()=>togglePerm(u.id,p.id)} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:9,marginBottom:6,cursor:"pointer",background:active?C.accent+"12":C.card,border:`1px solid ${active?C.accent+"40":C.border}`}}>
-                        <div style={{fontSize:18}}>{p.icon}</div>
-                        <div style={{flex:1}}><div style={{fontWeight:600,fontSize:13,color:active?C.accent:C.text}}>{p.label}</div><div style={{fontSize:11,color:C.muted2,marginTop:1}}>{p.desc}</div></div>
-                        <div style={{width:20,height:20,borderRadius:5,border:`2px solid ${active?C.accent:C.border}`,background:active?C.accent:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{active&&<span style={{color:"#fff",fontSize:12,fontWeight:800}}>✓</span>}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </>
-          )}
-          {u.id===currentUser.id&&<div style={{color:C.muted,fontSize:11}}>Bu sizin hesabınız</div>}
+              <div style={{fontSize:12,color:C.muted2}}>Giris sayfasi ve uygulama basliginda kullanilir.</div>
+            </div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <button onClick={()=>logoInputRef.current?.click()} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={logoLoading}>{logoLoading?"Yukleniyor...":"Logo Yukle"}</button>
+              <button onClick={()=>onLogoUpdate("")} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}} disabled={logoLoading}>Varsayilana Don</button>
+              <input ref={logoInputRef} type="file" accept="image/*" style={{display:"none"}} onChange={pickLogo}/>
+            </div>
+          </div>
         </div>
-      ))}
+      )}
+
+      {settingsView==="ticari"&&(
+        <>
+          <div style={{marginBottom:18}}>
+            <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Ticari Ayarlar · Teklif PDF Sablonu</div>
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:8}}>
+                <div><span style={labelSt}>Sirket Adi</span><input style={inputSt} value={quoteTemplate.companyName} onChange={e=>setTemplateField("companyName",e.target.value)} placeholder="Firma adi"/></div>
+                <div><span style={labelSt}>Renk</span><div style={{display:"flex",gap:8}}><input style={{...inputSt,padding:0,width:48,height:36}} type="color" value={normalizeQuoteTemplate(quoteTemplate).accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)}/><input style={{...inputSt,flex:1}} value={quoteTemplate.accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)} placeholder="#0f6cbd"/></div></div>
+                <div><span style={labelSt}>Adres</span><input style={inputSt} value={quoteTemplate.companyAddress} onChange={e=>setTemplateField("companyAddress",e.target.value)} placeholder="Adres"/></div>
+                <div><span style={labelSt}>Telefon</span><input style={inputSt} value={quoteTemplate.companyPhone} onChange={e=>setTemplateField("companyPhone",e.target.value)} placeholder="+90 ..."/></div>
+                <div><span style={labelSt}>E-Posta</span><input style={inputSt} value={quoteTemplate.companyEmail} onChange={e=>setTemplateField("companyEmail",e.target.value)} placeholder="mail@firma.com"/></div>
+                <div style={{display:"flex",alignItems:"flex-end"}}>
+                  <label style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:12,color:C.text,cursor:"pointer"}}>
+                    <input type="checkbox" checked={Boolean(quoteTemplate.showLogo)} onChange={e=>setTemplateField("showLogo",e.target.checked)}/>
+                    Logo kullan
+                  </label>
+                </div>
+                <div><span style={labelSt}>Teklif Basligi</span><input style={inputSt} value={quoteTemplate.documentTitleQuote} onChange={e=>setTemplateField("documentTitleQuote",e.target.value)} placeholder="Proforma Teklif"/></div>
+                <div><span style={labelSt}>Siparis Basligi</span><input style={inputSt} value={quoteTemplate.documentTitleOrder} onChange={e=>setTemplateField("documentTitleOrder",e.target.value)} placeholder="Siparis Onay Formu"/></div>
+                <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Alt Not</span><textarea rows={2} style={{...inputSt,minHeight:64,resize:"vertical"}} value={quoteTemplate.footerNote} onChange={e=>setTemplateField("footerNote",e.target.value)} placeholder="PDF altinda gorunecek not"/></div>
+              </div>
+              <div style={{marginTop:10,padding:10,border:`1px solid ${C.border}`,borderRadius:10,background:C.surface}}>
+                <div style={{height:6,borderRadius:99,background:normalizeQuoteTemplate(quoteTemplate).accentColor,marginBottom:8}}/>
+                <div style={{fontWeight:700,color:C.text}}>{quoteTemplate.documentTitleQuote||DEFAULT_QUOTE_TEMPLATE.documentTitleQuote}</div>
+                <div style={{fontSize:12,color:C.muted2,marginTop:2}}>
+                  {(quoteTemplate.companyName||DEFAULT_QUOTE_TEMPLATE.companyName)}{quoteTemplate.companyPhone?` · ${quoteTemplate.companyPhone}`:""}{quoteTemplate.companyEmail?` · ${quoteTemplate.companyEmail}`:""}
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8,marginTop:10}}>
+                <button onClick={saveQuoteTemplate} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={templateSaving}>{templateSaving?"Kaydediliyor...":"Sablonu Kaydet"}</button>
+                <button onClick={resetQuoteTemplate} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}} disabled={templateSaving}>Varsayilan</button>
+              </div>
+            </div>
+          </div>
+          <SalesCurrencySettings currentUser={currentUser}/>
+        </>
+      )}
+
+      {settingsView==="uretim"&&(
+        <>
+          <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Uretim Ayarlari</div>
+          <MachineSettings machines={machines} onUpdate={onMachinesUpdate}/>
+          <OperatorUrlSettings machines={machines}/>
+          <RoutingOperationTypeSettings currentUser={currentUser}/>
+        </>
+      )}
+
+      {settingsView==="kullanicilar"&&(
+        <>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:12}}>
+            <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>Kullanici Yonetimi · {list.length} kullanici</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              <Badge label={`Bekleyen ${pendingCount}`} color={C.warn}/>
+              <Badge label={`Aktif ${activeCount}`} color={C.green}/>
+              <Badge label={`Askida ${blockedCount}`} color={C.red}/>
+            </div>
+          </div>
+          {list.map(u=>(
+            <div key={u.id} style={{background:C.card,border:`1px solid ${u.status==="pending"?C.warn+"60":C.border}`,borderRadius:14,padding:"14px 16px",marginBottom:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                <div><div style={{fontWeight:700,fontSize:14}}>{u.fullName}</div><div style={{color:C.muted2,fontSize:12,marginTop:1}}>@{u.username||u.id}</div></div>
+                <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                  <Badge label={u.role==="admin"?"Yönetici":roleLabel(u.role)} color={u.role==="admin"?C.accent:C.muted2}/>
+                  <Badge label={u.status==="active"?"Aktif":u.status==="pending"?"Bekliyor":"Askıda"} color={u.status==="active"?C.green:u.status==="pending"?C.warn:C.red}/>
+                </div>
+              </div>
+              {u.id!==currentUser.id&&(
+                <>
+                  <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:8}}>
+                    {u.status==="pending"&&<><button onClick={()=>update(u.id,{status:"active"})} style={{...btnSt("green"),padding:"7px 13px",fontSize:12}}>✓ Onayla</button><button onClick={()=>update(u.id,{status:"rejected"})} style={{...btnSt("danger"),padding:"7px 13px",fontSize:12}}>✕ Reddet</button></>}
+                    {u.status==="active"&&<>
+                      <select value={u.role||"operator"} onChange={e=>changeRole(u,e.target.value)} style={{...inputSt,padding:"7px 10px",fontSize:12,maxWidth:190}}>
+                        {USER_ROLES.map(r=><option key={r.id} value={r.id}>{r.label}</option>)}
+                      </select>
+                      <button onClick={()=>update(u.id,{status:"rejected"})} style={{...btnSt("danger"),padding:"7px 13px",fontSize:12}}>Askıya Al</button>
+                    </>}
+                    {u.status==="rejected"&&<button onClick={()=>update(u.id,{status:"active"})} style={{...btnSt("green"),padding:"7px 13px",fontSize:12}}>Aktifleştir</button>}
+                    {u.role!=="admin"&&<button onClick={()=>setExpanded(expanded===u.id?null:u.id)} style={{...btnSt("ghost"),padding:"7px 13px",fontSize:12}}>{expanded===u.id?"▲ Gizle":"⚙️ Yetkiler"}</button>}
+                  </div>
+                  {expanded===u.id&&u.role!=="admin"&&(
+                    <div style={{background:C.surface,borderRadius:10,padding:12,border:`1px solid ${C.border}`}}>
+                      <div style={{color:C.muted2,fontSize:11,letterSpacing:.8,textTransform:"uppercase",marginBottom:10,fontWeight:600}}>Kullanıcı Yetkileri</div>
+                      {PERMISSIONS.map(p=>{
+                        const active=(u.permissions||[]).includes(p.id);
+                        return (
+                          <div key={p.id} onClick={()=>togglePerm(u.id,p.id)} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:9,marginBottom:6,cursor:"pointer",background:active?C.accent+"12":C.card,border:`1px solid ${active?C.accent+"40":C.border}`}}>
+                            <div style={{fontSize:18}}>{p.icon}</div>
+                            <div style={{flex:1}}><div style={{fontWeight:600,fontSize:13,color:active?C.accent:C.text}}>{p.label}</div><div style={{fontSize:11,color:C.muted2,marginTop:1}}>{p.desc}</div></div>
+                            <div style={{width:20,height:20,borderRadius:5,border:`2px solid ${active?C.accent:C.border}`,background:active?C.accent:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{active&&<span style={{color:"#fff",fontSize:12,fontWeight:800}}>✓</span>}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+              {u.id===currentUser.id&&<div style={{color:C.muted,fontSize:11}}>Bu sizin hesabınız</div>}
+            </div>
+          ))}
+        </>
+      )}
     </div>
   );
 }
