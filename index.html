@@ -10048,6 +10048,9 @@ function CncMonitorWall({currentUser,machines=DEFAULT_MACHINES}){
 
 function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
   const [loading,setLoading]=useState(true);
+  const [machineQuery,setMachineQuery]=useState("");
+  const [statusFilter,setStatusFilter]=useState("all");
+  const [lastLoadedAt,setLastLoadedAt]=useState("");
   const [data,setData]=useState({orders:[],sales:[],materials:[],prs:[],connectors:[],telemetry:[],downtimes:[],entries:[],notifs:[],tools:[]});
   const load=useCallback(async()=>{
     const [orders,sales,materials,prs,connectors,telemetry,downtimes,entries,notifs,tools]=await Promise.all([
@@ -10063,6 +10066,7 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
       window.DB.getAll("toolStock"),
     ]);
     setData({orders,sales,materials,prs,connectors,telemetry,downtimes,entries,notifs,tools});
+    setLastLoadedAt(new Date().toISOString());
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
@@ -10096,12 +10100,17 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
     const up=Math.max(0,planned-stopMin*60);
     const produced=rows.reduce((s,e)=>s+safeNum(e.correct)+safeNum(e.wrong),0);
     const correct=rows.reduce((s,e)=>s+safeNum(e.correct),0);
-    const cycleSecAvg=rows.length?rows.reduce((s,e)=>s+safeNum(e.partSec||0),0)/rows.length:60;
+    const scrap=Math.max(0,produced-correct);
+    const cycleSecAvg=rows.length?rows.reduce((s,e)=>s+safeNum(e.partSec||0),0)/rows.length:Math.max(1,safeNum(t?.expectedCycleSec||60));
     const runSec=produced*Math.max(1,cycleSecAvg);
     const availability=planned>0?up/planned:0;
     const performance=up>0?Math.min(1,runSec/up):0;
     const quality=produced>0?correct/produced:1;
     const oee=Math.round(availability*performance*quality*100);
+    const expectedQty=Math.floor(up/Math.max(1,cycleSecAvg));
+    const gapParts=produced-expectedQty;
+    const telemetryTime=t?.collectedAtUtc||t?.createdAt||"";
+    const freshSec=telemetryTime?Math.max(0,Math.floor((Date.now()-new Date(telemetryTime).getTime())/1000)):null;
     return {
       id:mc.id,
       machineName,
@@ -10113,84 +10122,210 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
       availability:Math.round(availability*100),
       performance:Math.round(performance*100),
       quality:Math.round(quality*100),
+      produced,
+      correct,
+      scrap,
+      stopMin,
+      expectedQty:Math.max(0,expectedQty),
+      gapParts,
+      cycleSecAvg:Math.max(1,Math.round(cycleSecAvg)),
+      freshSec,
     };
   });
   const statusMeta=s=>{
     const key=String(s||"offline").toLowerCase();
-    if(["running","live"].includes(key)) return {label:"CALISIYOR",color:"#19b45b",banner:"#129246"};
-    if(key==="setup") return {label:"KURULUM",color:"#d8a601",banner:"#b98800"};
-    if(["idle","simulation"].includes(key)) return {label:"DURMADA",color:"#d8a601",banner:"#b98800"};
-    if(key==="alarm") return {label:"ALARM",color:"#d33f3f",banner:"#aa2e2e"};
-    return {label:"OFFLINE",color:"#6b7280",banner:"#4b5563"};
+    if(["running","live"].includes(key)) return {key:"running",label:"Calisiyor",color:"#13a14c",banner:"linear-gradient(145deg,#21b85b 0%,#109245 100%)"};
+    if(key==="setup") return {key:"setup",label:"Kurulum",color:"#c9860f",banner:"linear-gradient(145deg,#f0af3f 0%,#cf8a1a 100%)"};
+    if(["idle","simulation"].includes(key)) return {key:"idle",label:"Beklemede",color:"#2c7be5",banner:"linear-gradient(145deg,#5c96e6 0%,#2b68cf 100%)"};
+    if(key==="alarm") return {key:"alarm",label:"Alarm",color:"#cf2f49",banner:"linear-gradient(145deg,#eb5470 0%,#cd2f4a 100%)"};
+    return {key:"offline",label:"Bagli Degil",color:"#6b7280",banner:"linear-gradient(145deg,#8b929d 0%,#6e7580 100%)"};
   };
-  const machineRowsSorted=[...machineRows].sort((a,b)=>(a.machineName||"").localeCompare(b.machineName||"","tr"));
+  function formatAge(sec){
+    const v=Math.max(0,Math.floor(safeNum(sec)));
+    if(v<60) return `${v}s`;
+    if(v<3600) return `${Math.floor(v/60)}d`;
+    return `${Math.floor(v/3600)}s`;
+  }
+  function toneByRow(row){
+    const meta=statusMeta(row.status);
+    if(meta.key==="alarm") return {ring:"#cf2f49",bg:"#fff6f8",border:"#f2bac4"};
+    if(meta.key==="offline") return {ring:"#6b7280",bg:"#f7f8fa",border:"#d8dde6"};
+    if(meta.key==="setup") return {ring:"#c9860f",bg:"#fff8ee",border:"#f3d4a4"};
+    if(meta.key==="idle") return {ring:"#2c7be5",bg:"#f3f7ff",border:"#bfd1f8"};
+    if((row.oee||0)>=85) return {ring:"#13a14c",bg:"#f0fff5",border:"#b7ebcb"};
+    if((row.oee||0)>=60) return {ring:"#c9860f",bg:"#fff9ee",border:"#f1d7aa"};
+    return {ring:"#cf2f49",bg:"#fff6f8",border:"#f2bac4"};
+  }
+  function fmtMinute(min){
+    const v=Math.max(0,Math.round(safeNum(min)));
+    if(v<60) return `${v} dk`;
+    const h=Math.floor(v/60);
+    const m=v%60;
+    return m?`${h}s ${m}dk`:`${h}s`;
+  }
+  const machineRowsSorted=[...machineRows].sort((a,b)=>{
+    const rank={alarm:0,setup:1,idle:2,running:3,offline:4};
+    const ka=statusMeta(a.status).key;
+    const kb=statusMeta(b.status).key;
+    if((rank[ka]??9)!==(rank[kb]??9)) return (rank[ka]??9)-(rank[kb]??9);
+    return (a.machineName||"").localeCompare(b.machineName||"","tr");
+  });
+  const statusCounts=machineRowsSorted.reduce((acc,row)=>{
+    const key=statusMeta(row.status).key;
+    acc[key]=(acc[key]||0)+1;
+    return acc;
+  },{running:0,idle:0,setup:0,alarm:0,offline:0});
+  const machineQueryText=String(machineQuery||"").trim().toLowerCase();
+  const filteredMachineRows=machineRowsSorted.filter(row=>{
+    const meta=statusMeta(row.status);
+    if(statusFilter!=="all"&&meta.key!==statusFilter) return false;
+    if(!machineQueryText) return true;
+    const hay=[row.machineName,row.program,meta.label].join(" ").toLowerCase();
+    return hay.includes(machineQueryText);
+  });
+  const machineCount=machineRowsSorted.length;
+  const avgOee=machineCount?Math.round(machineRowsSorted.reduce((s,r)=>s+safeNum(r.oee),0)/machineCount):0;
+  const avgAvailability=machineCount?Math.round(machineRowsSorted.reduce((s,r)=>s+safeNum(r.availability),0)/machineCount):0;
+  const avgQuality=machineCount?Math.round(machineRowsSorted.reduce((s,r)=>s+safeNum(r.quality),0)/machineCount):0;
+  const totalParts=machineRowsSorted.reduce((s,r)=>s+Math.max(safeNum(r.partCounter),safeNum(r.produced)),0);
+  const runningPct=machineCount?Math.round((safeNum(statusCounts.running)/machineCount)*100):0;
+  const kpiCards=[
+    {label:"Calisan Tezgah",value:`${statusCounts.running}/${machineCount}`,sub:`%${runningPct} aktif`,tone:"#13a14c"},
+    {label:"Ortalama OEE",value:`%${avgOee}`,sub:`A %${avgAvailability} · Q %${avgQuality}`,tone:avgOee>=75?C.green:(avgOee>=55?C.warn:C.red)},
+    {label:"Toplam Uretim",value:String(totalParts),sub:"Bugun toplam parca",tone:C.accent},
+    {label:"Alarmli Tezgah",value:String(statusCounts.alarm),sub:statusCounts.alarm>0?"Anlik mudahale gerekli":"Alarm yok",tone:statusCounts.alarm>0?C.red:C.green},
+    {label:"Geciken Is",value:String(lateOrders.length),sub:lateOrders.length>0?"Termin riski var":"Takvimde gecikme yok",tone:lateOrders.length>0?C.red:C.green},
+    {label:"Acil Satin Alma",value:String(pendingPr.length),sub:pendingPr.length>0?"Bekleyen talep var":"Acil talep yok",tone:pendingPr.length>0?C.warn:C.green},
+  ];
+  const filterButtons=[
+    {id:"all",label:"Tum Durumlar"},
+    {id:"running",label:"Calisiyor"},
+    {id:"idle",label:"Beklemede"},
+    {id:"setup",label:"Kurulum"},
+    {id:"alarm",label:"Alarm"},
+    {id:"offline",label:"Bagli Degil"},
+  ];
+  const lastLoadText=lastLoadedAt?new Intl.DateTimeFormat("tr-TR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(new Date(lastLoadedAt)):"-";
+  const userLabel=String(currentUser?.fullName||"").trim();
 
   return (
     <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
-        {[["Acik Is Emri",openOrders.length,C.accent],["Geciken Is",lateOrders.length,lateOrders.length?C.red:C.green],["Kritik Stok",lowStocks.length,lowStocks.length?C.warn:C.green],["Acil Satin Alma",pendingPr.length,pendingPr.length?C.warn:C.green],["Bekleyen Bildirim",unresolvedNotifs.length,unresolvedNotifs.length?C.red:C.green],["Kritik Takim Omru",lowLifeTools.length,lowLifeTools.length?C.red:C.green]].map(([l,v,col])=>(
-          <div key={l} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}>
-            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>{l}</div>
-            <div style={{fontSize:26,color:col,fontWeight:800,fontFamily:"monospace",marginTop:4}}>{v}</div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+          <div>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase"}}>Canli Uretim Panosu</div>
+            <div style={{fontWeight:800,color:C.text,fontSize:20}}>Gosterge Paneli</div>
+            <div style={{fontSize:12,color:C.muted2,marginTop:2}}>
+              Tarih: {today} · Son guncelleme: {lastLoadText}{userLabel?` · ${userLabel}`:""}
+            </div>
           </div>
-        ))}
+          <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+            <input value={machineQuery} onChange={e=>setMachineQuery(e.target.value)} placeholder="Tezgah veya program ara..." style={{...inputSt,minWidth:220,padding:"8px 10px",fontSize:12}}/>
+            <button onClick={()=>{setMachineQuery("");setStatusFilter("all");}} style={{...btnSt("ghost"),padding:"8px 11px",fontSize:12}}>Filtreyi Temizle</button>
+            <button onClick={load} style={{...btnSt("primary"),padding:"8px 11px",fontSize:12}}>Yenile</button>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+          {filterButtons.map(f=>(
+            <button key={f.id} onClick={()=>setStatusFilter(f.id)} style={chip(statusFilter===f.id,statusFilter===f.id?C.accent:C.muted2)}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(185px,1fr))",gap:8}}>
+          {kpiCards.map(card=>(
+            <div key={card.label} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}>
+              <div style={{fontSize:11,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>{card.label}</div>
+              <div style={{fontSize:28,color:card.tone,fontWeight:800,fontFamily:"monospace",marginTop:2,lineHeight:1.1}}>{card.value}</div>
+              <div style={{fontSize:11,color:C.muted2,marginTop:3}}>{card.sub}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
           <div>
-            <div style={{fontWeight:700,color:C.text}}>Canli Atolye Gorunumu</div>
-            <div style={{fontSize:11,color:C.muted2,marginTop:2}}>Durum renkleri: Yesil calisiyor · Sari durmada/kurulum · Kirmizi alarm</div>
+            <div style={{fontWeight:800,color:C.text,fontSize:16}}>Tezgah Performans Gorunumu</div>
+            <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{filteredMachineRows.length} tezgah listeleniyor</div>
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <button onClick={load} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Yenile</button>
-          </div>
+          <Badge label={`Alarm: ${statusCounts.alarm}`} color={statusCounts.alarm>0?C.red:C.green}/>
         </div>
         <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:12,padding:10}}>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:10}}>
-            {machineRowsSorted.map(m=>{
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(290px,1fr))",gap:10}}>
+            {filteredMachineRows.map(m=>{
               const meta=statusMeta(m.status);
+              const tone=toneByRow(m);
+              const ringSize=114;
+              const ringStroke=10;
+              const radius=(ringSize-ringStroke)/2;
+              const circ=2*Math.PI*radius;
+              const ringPct=Math.max(0,Math.min(100,m.oee||0));
+              const dash=(ringPct/100)*circ;
+              const perfBars=[m.availability,m.performance,m.quality,Math.max(0,Math.min(100,m.oee||0))];
               return (
-              <div key={m.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",display:"flex",flexDirection:"column",minHeight:248}}>
-                <div style={{background:meta.banner,padding:"9px 10px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-                  <div style={{fontWeight:800,color:"#fff",fontSize:18,lineHeight:1.05,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.machineName}</div>
-                  <span style={{fontSize:10,fontWeight:800,color:"#fff",padding:"4px 7px",borderRadius:999,border:"1px solid rgba(255,255,255,.45)",background:"rgba(0,0,0,.12)",letterSpacing:.4}}>{meta.label}</span>
+              <div key={m.id} style={{border:`1px solid ${tone.border}`,borderRadius:12,overflow:"hidden",display:"flex",flexDirection:"column",minHeight:254,background:tone.bg}}>
+                <div style={{background:meta.banner,padding:"9px 10px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontWeight:800,color:"#fff",fontSize:18,lineHeight:1.05,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.machineName}</div>
+                    <div style={{fontSize:11,color:"#f1f5ff",marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.program||"-"}</div>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
+                    <span style={{fontSize:10,fontWeight:800,color:"#fff",padding:"4px 7px",borderRadius:999,border:"1px solid rgba(255,255,255,.45)",background:"rgba(0,0,0,.12)",letterSpacing:.4}}>{meta.label}</span>
+                    <span style={{fontSize:10,color:"#f3f7ff"}}>Veri yasi: {m.freshSec===null?"-":formatAge(m.freshSec)}</span>
+                  </div>
                 </div>
-                <div style={{padding:10,display:"flex",flexDirection:"column",gap:8,flex:1}}>
-                  <div style={{display:"grid",gridTemplateColumns:"44px minmax(0,1fr)",gap:8,alignItems:"center"}}>
-                    <div style={{width:44,height:44,borderRadius:8,background:C.surface2,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",color:meta.color}}>
-                      <NavIcon name="machines" size={18}/>
-                    </div>
-                    <div style={{minWidth:0}}>
-                      <div style={{fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Program</div>
-                      <div style={{fontSize:12,color:C.text,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.program||"-"}</div>
+                <div style={{padding:10,display:"grid",gridTemplateColumns:"122px minmax(0,1fr)",gap:10,alignItems:"center",flex:1}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    <div style={{position:"relative",width:ringSize,height:ringSize}}>
+                      <svg width={ringSize} height={ringSize} viewBox={`0 0 ${ringSize} ${ringSize}`}>
+                        <circle cx={ringSize/2} cy={ringSize/2} r={radius} stroke="rgba(15,23,42,.14)" strokeWidth={ringStroke} fill="none"/>
+                        <circle cx={ringSize/2} cy={ringSize/2} r={radius} stroke={tone.ring} strokeWidth={ringStroke} fill="none" strokeLinecap="round" strokeDasharray={`${dash} ${Math.max(0,circ-dash)}`} transform={`rotate(-90 ${ringSize/2} ${ringSize/2})`}/>
+                      </svg>
+                      <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+                        <div style={{fontSize:26,fontWeight:800,color:C.text,lineHeight:1}}>%{m.oee}</div>
+                        <div style={{fontSize:10,color:C.muted2,fontWeight:700,letterSpacing:.6}}>OEE</div>
+                      </div>
                     </div>
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                    <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
-                      <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Part Counter</div>
-                      <div style={{fontSize:16,color:C.text,fontWeight:800,marginTop:1}}>{m.partCounter}</div>
+                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
+                      <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Parca</div>
+                      <div style={{fontSize:16,color:C.text,fontWeight:800,marginTop:1}}>{Math.max(m.partCounter,m.produced)}</div>
                     </div>
-                    <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
+                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
                       <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Alarm</div>
                       <div style={{fontSize:16,color:m.alarms>0?C.red:C.text,fontWeight:800,marginTop:1}}>{m.alarms}</div>
                     </div>
-                  </div>
-                  <div style={{marginTop:"auto",background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
-                      <span style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>OEE</span>
-                      <span style={{fontSize:13,color:C.text,fontWeight:800}}>%{m.oee}</span>
+                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
+                      <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Beklenen</div>
+                      <div style={{fontSize:15,color:C.text,fontWeight:800,marginTop:1}}>{m.expectedQty}</div>
                     </div>
-                    <div style={{height:6,borderRadius:999,background:C.border,overflow:"hidden"}}>
-                      <div style={{width:`${Math.max(0,Math.min(100,m.oee||0))}%`,height:"100%",background:meta.color,borderRadius:999}}/>
+                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
+                      <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Fark</div>
+                      <div style={{fontSize:15,color:m.gapParts>=0?C.green:C.red,fontWeight:800,marginTop:1}}>{m.gapParts>=0?`+${m.gapParts}`:m.gapParts}</div>
                     </div>
-                    <div style={{fontSize:10,color:C.muted2,marginTop:5}}>A %{m.availability} · P %{m.performance} · Q %{m.quality}</div>
                   </div>
+                </div>
+                <div style={{padding:"0 10px 10px"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:5,alignItems:"end",height:34}}>
+                    {perfBars.map((v,idx)=>(
+                      <div key={`${m.id}_${idx}`} style={{height:"100%",display:"flex",alignItems:"flex-end"}}>
+                        <div style={{height:`${Math.max(8,Math.min(100,v||0))}%`,width:"100%",borderRadius:5,background:idx===3?tone.ring:"#7ba4e6"}}/>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{fontSize:10,color:C.muted2,marginTop:5}}>A %{m.availability} · P %{m.performance} · Q %{m.quality} · Durus {fmtMinute(m.stopMin)}</div>
                 </div>
               </div>
             );
             })}
           </div>
+          {filteredMachineRows.length===0&&(
+            <div style={{padding:"26px 12px",textAlign:"center",color:C.muted2,fontSize:12}}>
+              Secili filtrede tezgah bulunamadi.
+            </div>
+          )}
         </div>
       </div>
 
