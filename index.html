@@ -3993,10 +3993,13 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   const [view,setView]=useState(defaultView==="quotes"?"quotes":"orders");
   const [search,setSearch]=useState("");
   const [quoteStatusFilter,setQuoteStatusFilter]=useState("all");
+  const [orderStatusFilter,setOrderStatusFilter]=useState("all");
   const [quoteDateFrom,setQuoteDateFrom]=useState("");
   const [quoteDateTo,setQuoteDateTo]=useState("");
   const [orderDateFrom,setOrderDateFrom]=useState("");
   const [orderDateTo,setOrderDateTo]=useState("");
+  const [quoteSortDir,setQuoteSortDir]=useState("desc");
+  const [orderSortDir,setOrderSortDir]=useState("desc");
   const [customerEditId,setCustomerEditId]=useState("");
   const [priceEditId,setPriceEditId]=useState("");
   const [quoteEditId,setQuoteEditId]=useState("");
@@ -5080,19 +5083,57 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   };
 
   const q=search.trim().toLowerCase();
-  const filteredQuotes=quotes.filter(x=>{
+  const quoteFilterRows=quotes.filter(x=>{
     const textOk=!q||(x.code||"").toLowerCase().includes(q)||(x.customerName||"").toLowerCase().includes(q)||(x.status||"").toLowerCase().includes(q);
     const statusOk=quoteStatusFilter==="all"||(x.status||"")===quoteStatusFilter;
     const dateYmd=toYmd(x.validUntil)||toYmd(x.createdAt)||toYmd(x.updatedAt);
     const dateOk=inRange(dateYmd,quoteDateFrom,quoteDateTo);
     return textOk&&statusOk&&dateOk;
   });
-  const filteredOrders=salesOrders.filter(x=>{
+  const orderFilterRows=salesOrders.filter(x=>{
     const textOk=!q||(x.code||"").toLowerCase().includes(q)||(x.customerName||"").toLowerCase().includes(q)||(x.status||"").toLowerCase().includes(q);
+    const statusOk=orderStatusFilter==="all"||(x.status||"")===orderStatusFilter;
     const dateYmd=toYmd(x.dueDate)||toYmd(x.createdAt)||toYmd(x.updatedAt);
     const dateOk=inRange(dateYmd,orderDateFrom,orderDateTo);
-    return textOk&&dateOk;
+    return textOk&&statusOk&&dateOk;
   });
+  const dateSortValue=row=>toYmd(row?.dueDate||row?.validUntil||row?.createdAt||row?.updatedAt)||"";
+  const filteredQuotes=[...quoteFilterRows].sort((a,b)=>{
+    const av=dateSortValue(a);
+    const bv=dateSortValue(b);
+    const cmp=av.localeCompare(bv);
+    return quoteSortDir==="asc"?cmp:-cmp;
+  });
+  const filteredOrders=[...orderFilterRows].sort((a,b)=>{
+    const av=dateSortValue(a);
+    const bv=dateSortValue(b);
+    const cmp=av.localeCompare(bv);
+    return orderSortDir==="asc"?cmp:-cmp;
+  });
+  const quoteStatusCounts={
+    all:quotes.length,
+    offer:quotes.filter(x=>(x.status||"")==="offer").length,
+    approved:quotes.filter(x=>(x.status||"")==="approved").length,
+    converted:quotes.filter(x=>(x.status||"")==="converted").length,
+    cancelled:quotes.filter(x=>(x.status||"")==="cancelled").length,
+  };
+  const orderStatusCounts={
+    all:salesOrders.length,
+    new:salesOrders.filter(x=>(x.status||"")==="new").length,
+    offer:salesOrders.filter(x=>(x.status||"")==="offer").length,
+    approved:salesOrders.filter(x=>(x.status||"")==="approved").length,
+    in_production:salesOrders.filter(x=>(x.status||"")==="in_production").length,
+    delivered:salesOrders.filter(x=>(x.status||"")==="delivered").length,
+    converted:salesOrders.filter(x=>(x.status||"")==="converted").length,
+    cancelled:salesOrders.filter(x=>(x.status||"")==="cancelled").length,
+  };
+  const quoteStatusOptions=[
+    {id:"all",label:"Tum Teklifler"},
+    {id:"offer",label:"Teklif"},
+    {id:"approved",label:"Onaylandi"},
+    {id:"converted",label:"Donustu"},
+    {id:"cancelled",label:"Iptal"},
+  ];
   const statusLabel=s=>getSalesStatusMeta(s).label;
   const statusColor=s=>getSalesStatusMeta(s).color;
 
@@ -5178,124 +5219,190 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       )}
 
       {view==="quotes"&&(
-        <>
-          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <div style={{fontSize:12,color:C.muted2}}>Teklifler ({quotes.length})</div>
-            <button onClick={openNewQuoteModal} style={{...btnSt("primary"),padding:"7px 10px",fontSize:12}}>+ Yeni Teklif</button>
-            <select style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:150}} value={quoteStatusFilter} onChange={e=>setQuoteStatusFilter(e.target.value)}>
-              <option value="all">Tum Durumlar</option>
-              <option value="offer">Teklif</option>
-              <option value="approved">Onaylandi</option>
-              <option value="converted">Donustu</option>
-              <option value="cancelled">Iptal</option>
-            </select>
-            <input type="date" style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:150}} value={quoteDateFrom} onChange={e=>setQuoteDateFrom(e.target.value||"")} title="Baslangic tarihi"/>
-            <input type="date" style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:150}} value={quoteDateTo} onChange={e=>setQuoteDateTo(e.target.value||"")} title="Bitis tarihi"/>
-            {(quoteDateFrom||quoteDateTo)&&(
-              <button onClick={()=>{setQuoteDateFrom("");setQuoteDateTo("");}} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>
-                Tarihi Temizle
-              </button>
-            )}
-            <input style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:220}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod / musteri / durum ara..."/>
+        <div style={{display:"flex",gap:10,alignItems:"flex-start",flexWrap:"wrap"}}>
+          <div style={{flex:"0 0 250px",width:"100%",maxWidth:280,background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12,display:"flex",flexDirection:"column",gap:10}}>
+            <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Teklifler</div>
+            <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod, musteri, durum ara"/>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Teklif Asamasi</div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {quoteStatusOptions.map(opt=>(
+                <button key={opt.id} onClick={()=>setQuoteStatusFilter(opt.id)} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:quoteStatusFilter===opt.id?C.accent:C.border,color:quoteStatusFilter===opt.id?C.accent:C.text}}>
+                  <span>{opt.label}</span>
+                  <span style={{fontSize:11,color:C.muted2}}>{quoteStatusCounts[opt.id]||0}</span>
+                </button>
+              ))}
+            </div>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Gecerlilik Tarihi</div>
+            <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={quoteDateFrom} onChange={e=>setQuoteDateFrom(e.target.value||"")}/>
+            <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={quoteDateTo} onChange={e=>setQuoteDateTo(e.target.value||"")}/>
+            <button onClick={()=>{setQuoteDateFrom("");setQuoteDateTo("");setQuoteStatusFilter("all");setSearch("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
           </div>
-          {filteredQuotes.map(qr=>(
-            <div key={qr.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"12px 14px"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
-                <div>
-                  <div style={{display:"flex",gap:7,alignItems:"center",flexWrap:"wrap"}}>
-                    <span style={{fontWeight:800,fontFamily:"monospace",fontSize:14,color:C.text}}>{qr.code}</span>
-                    <Badge label={statusLabel(qr.status)} color={statusColor(qr.status)}/>
-                  </div>
-                  <div style={{fontSize:13,color:C.text,marginTop:3}}>{qr.customerName||"-"}</div>
-                  <div style={{fontSize:11,color:C.muted2,marginTop:2}}>Satir: {(qr.lines||[]).length} · Gecerlilik: {qr.validUntil||"-"}</div>
-                </div>
-                <div style={{display:"flex",gap:7,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                  <button onClick={()=>openEditQuoteModal(qr)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
-                  <button onClick={()=>printQuote(qr)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>PDF Indir</button>
-                  <button onClick={()=>duplicateQuote(qr)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kopyala</button>
-                  <button onClick={()=>setQuoteStatus(qr,"approved")} style={{...btnSt("green"),padding:"6px 10px",fontSize:12,opacity:(qr.status||"")==="approved"?0.7:1}} disabled={(qr.status||"")==="approved"}>{(qr.status||"")==="approved"?"Onayli":"Musteri Onayi"}</button>
-                  <button onClick={()=>convertQuoteToOrder(qr)} disabled={(qr.status||"")!=="approved"} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12,opacity:(qr.status||"")==="approved"?1:0.6,cursor:(qr.status||"")==="approved"?"pointer":"not-allowed"}}>Siparise Donustur</button>
-                  <button onClick={()=>setQuoteStatus(qr,"cancelled")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Iptal</button>
-                </div>
+          <div style={{flex:"1 1 760px",minWidth:0,display:"flex",flexDirection:"column",gap:8}}>
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                <div style={{fontSize:12,color:C.muted2}}>Toplam Teklif: {filteredQuotes.length}</div>
+                <button onClick={()=>setQuoteSortDir(v=>v==="desc"?"asc":"desc")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Sirala: {quoteSortDir==="desc"?"Yeniden Eskiye":"Eskiden Yeniye"}</button>
+              </div>
+              <button onClick={openNewQuoteModal} style={{...btnSt("primary"),padding:"7px 12px",fontSize:12}}>Teklif Olustur</button>
+            </div>
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",minWidth:1080,borderCollapse:"collapse",fontSize:12}}>
+                  <thead>
+                    <tr style={{background:C.surface,color:C.muted2,textAlign:"left"}}>
+                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Teklif No</th>
+                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Firma Adi</th>
+                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Gecerlilik</th>
+                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Teklif Asamasi</th>
+                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:"right"}}>Genel Toplam</th>
+                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:"right"}}>Islem</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredQuotes.map(qr=>{
+                      const quoteNet=(qr.lines||[]).reduce((sum,line)=>sum+lineTotal(line).net,0);
+                      return (
+                        <tr key={qr.id} style={{borderBottom:`1px solid ${C.border}`}}>
+                          <td style={{padding:"10px 12px"}}>
+                            <div style={{fontFamily:"monospace",fontWeight:700,color:C.text}}>{qr.code||"-"}</div>
+                            <div style={{fontSize:11,color:C.muted2}}>Satir: {(qr.lines||[]).length}</div>
+                          </td>
+                          <td style={{padding:"10px 12px",color:C.text,fontWeight:600}}>{qr.customerName||"-"}</td>
+                          <td style={{padding:"10px 12px",color:C.muted2}}>{qr.validUntil||"-"}</td>
+                          <td style={{padding:"10px 12px"}}><Badge label={statusLabel(qr.status)} color={statusColor(qr.status)}/></td>
+                          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:C.text}}>{formatByCurrency(quoteNet,qr.currency||defaultQuoteCurrency)}</td>
+                          <td style={{padding:"10px 12px"}}>
+                            <div style={{display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
+                              <button onClick={()=>openEditQuoteModal(qr)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Duzenle</button>
+                              <button onClick={()=>printQuote(qr)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>PDF</button>
+                              <button onClick={()=>duplicateQuote(qr)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Kopyala</button>
+                              <button onClick={()=>setQuoteStatus(qr,"approved")} style={{...btnSt("green"),padding:"5px 8px",fontSize:11,opacity:(qr.status||"")==="approved"?0.7:1}} disabled={(qr.status||"")==="approved"}>{(qr.status||"")==="approved"?"Onayli":"Onay"}</button>
+                              <button onClick={()=>convertQuoteToOrder(qr)} disabled={(qr.status||"")!=="approved"} style={{...btnSt("primary"),padding:"5px 8px",fontSize:11,opacity:(qr.status||"")==="approved"?1:0.6,cursor:(qr.status||"")==="approved"?"pointer":"not-allowed"}}>Siparise Donustur</button>
+                              <button onClick={()=>setQuoteStatus(qr,"cancelled")} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Iptal</button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {filteredQuotes.length===0&&(
+                      <tr>
+                        <td colSpan={6} style={{padding:"26px 12px",textAlign:"center",color:C.muted2}}>Filtreye uygun teklif bulunamadi.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
-          ))}
-          {filteredQuotes.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"24px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Teklif bulunamadi</div>}
-        </>
+          </div>
+        </div>
       )}
 
       {view==="orders"&&(
-        <>
-          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <div style={{fontSize:12,color:C.muted2}}>Siparisler ({salesOrders.length})</div>
-            <button onClick={()=>{
-              setOrderForm({
-                code:nextCode("SIP",salesOrders,/^SIP-(\d+)$/),
-                customerId:"",
-                dueDate:todayStr(),
-                priority:"normal",
-                note:"",
-                lines:[makeDraftLine()],
-              });
-              setQuoteEditId("");
-              setShowQuoteModal(false);
-              setShowOrderModal(true);
-            }} style={{...btnSt("primary"),padding:"7px 10px",fontSize:12}}>+ Yeni Siparis</button>
-            <input type="date" style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:150}} value={orderDateFrom} onChange={e=>setOrderDateFrom(e.target.value||"")} title="Baslangic termin"/>
-            <input type="date" style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:150}} value={orderDateTo} onChange={e=>setOrderDateTo(e.target.value||"")} title="Bitis termin"/>
-            {(orderDateFrom||orderDateTo)&&(
-              <button onClick={()=>{setOrderDateFrom("");setOrderDateTo("");}} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>
-                Tarihi Temizle
+        <div style={{display:"flex",gap:10,alignItems:"flex-start",flexWrap:"wrap"}}>
+          <div style={{flex:"0 0 250px",width:"100%",maxWidth:280,background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12,display:"flex",flexDirection:"column",gap:10}}>
+            <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Siparisler</div>
+            <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod, musteri, durum ara"/>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Siparis Durumu</div>
+            <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:260,overflowY:"auto"}}>
+              <button onClick={()=>setOrderStatusFilter("all")} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:orderStatusFilter==="all"?C.accent:C.border,color:orderStatusFilter==="all"?C.accent:C.text}}>
+                <span>Tum Siparisler</span>
+                <span style={{fontSize:11,color:C.muted2}}>{orderStatusCounts.all||0}</span>
               </button>
-            )}
-            <input style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:220}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod / musteri / durum ara..."/>
+              {SALES_STATUS_OPTIONS.map(st=>(
+                <button key={st.id} onClick={()=>setOrderStatusFilter(st.id)} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:orderStatusFilter===st.id?st.color:C.border,color:orderStatusFilter===st.id?st.color:C.text}}>
+                  <span>{st.label}</span>
+                  <span style={{fontSize:11,color:C.muted2}}>{orderStatusCounts[st.id]||0}</span>
+                </button>
+              ))}
+            </div>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Termin Araligi</div>
+            <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={orderDateFrom} onChange={e=>setOrderDateFrom(e.target.value||"")}/>
+            <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={orderDateTo} onChange={e=>setOrderDateTo(e.target.value||"")}/>
+            <button onClick={()=>{setOrderDateFrom("");setOrderDateTo("");setOrderStatusFilter("all");setSearch("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
           </div>
-          {filteredOrders.map(o=>{
-            const remaining=Math.max(0,safeNum(o.qty)-safeNum(o.deliveredQty));
-            const progress=safeNum(o.qty)>0?Math.round((safeNum(o.deliveredQty)/safeNum(o.qty))*100):0;
-            return (
-              <div key={o.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"12px 14px"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
-                  <div>
-                    <div style={{display:"flex",gap:7,alignItems:"center",flexWrap:"wrap"}}>
-                      <span style={{fontWeight:800,fontFamily:"monospace",fontSize:14,color:C.text}}>{o.code||"-"}</span>
-                      <Badge label={statusLabel(o.status)} color={statusColor(o.status)}/>
-                      {o.sourceQuoteCode&&<Badge label={`Teklif ${o.sourceQuoteCode}`} color={C.warn}/>}
-                    </div>
-                    <div style={{fontSize:13,color:C.text,marginTop:3}}>{o.customerName||"-"}</div>
-                    <div style={{fontSize:11,color:C.muted2,marginTop:2}}>Termin: {o.dueDate||"-"} · Toplam Adet: {safeNum(o.qty)} · Teslim: {safeNum(o.deliveredQty)} · Kalan: {remaining}</div>
-                    <div style={{marginTop:6,background:C.border,borderRadius:99,height:6,overflow:"hidden",maxWidth:260}}>
-                      <div style={{width:`${Math.min(100,progress)}%`,height:"100%",background:progress>=100?C.green:C.accent,borderRadius:99}}/>
-                    </div>
-                  </div>
-                  <div style={{display:"flex",gap:7,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                    <button onClick={()=>printOrder(o)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Onay PDF</button>
-                    <button onClick={()=>duplicateSalesOrder(o)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kopyala</button>
-                    <button onClick={()=>setOrderStatus(o,"in_production")} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12,opacity:(o.status||"")==="in_production"?0.7:1}} disabled={(o.status||"")==="in_production"}>Uretimde</button>
-                    <button onClick={()=>addDelivery(o)} style={{...btnSt("green"),padding:"6px 10px",fontSize:12}}>Kismi Teslim</button>
-                    <button onClick={()=>convertOrderToWorkOrders(o)} style={{...(o.workOrderIds&&o.workOrderIds.length>0?btnSt("ghost"):btnSt("primary")),padding:"6px 10px",fontSize:12}}>
-                      {(o.workOrderIds&&o.workOrderIds.length>0)?"Is Emirlerini Ac":"Is Emri Olustur"}
-                    </button>
-                    <button onClick={()=>markExternalDoc(o,"dispatch")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Sevk Irsaliye</button>
-                    <button onClick={()=>markExternalDoc(o,"invoice")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Fatura Hazirla</button>
-                    <button onClick={()=>setOrderStatus(o,"cancelled")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12,opacity:(o.status||"")==="cancelled"?0.7:1}} disabled={(o.status||"")==="cancelled"}>Iptal</button>
-                  </div>
-                </div>
-                {(o.deliveries||[]).length>0&&(
-                  <div style={{marginTop:8,fontSize:11,color:C.muted2}}>
-                    Son teslimler: {(o.deliveries||[]).slice(-3).map(d=>`${d.date}: ${safeNum(d.qty)}`).join(" · ")}
-                  </div>
-                )}
-                {(o.dispatchRef||o.invoiceRef||o.integrationStatus)&&(
-                  <div style={{marginTop:6,fontSize:11,color:C.muted2}}>
-                    {o.dispatchRef?`Irsaliye: ${o.dispatchRef}`:""}{o.dispatchRef&&o.invoiceRef?" · ":""}{o.invoiceRef?`Fatura: ${o.invoiceRef}`:""}{(o.dispatchRef||o.invoiceRef)&&o.integrationStatus?" · ":""}{o.integrationStatus?`Entegrasyon: ${o.integrationStatus}`:""}
-                  </div>
-                )}
+          <div style={{flex:"1 1 760px",minWidth:0,display:"flex",flexDirection:"column",gap:8}}>
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                <div style={{fontSize:12,color:C.muted2}}>Toplam Siparis: {filteredOrders.length}</div>
+                <button onClick={()=>setOrderSortDir(v=>v==="desc"?"asc":"desc")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Sirala: {orderSortDir==="desc"?"Yeniden Eskiye":"Eskiden Yeniye"}</button>
               </div>
-            );
-          })}
-          {filteredOrders.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"24px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Siparis bulunamadi</div>}
-        </>
+              <button onClick={()=>{
+                setOrderForm({
+                  code:nextCode("SIP",salesOrders,/^SIP-(\d+)$/),
+                  customerId:"",
+                  dueDate:todayStr(),
+                  priority:"normal",
+                  note:"",
+                  lines:[makeDraftLine()],
+                });
+                setQuoteEditId("");
+                setShowQuoteModal(false);
+                setShowOrderModal(true);
+              }} style={{...btnSt("primary"),padding:"7px 12px",fontSize:12}}>Siparis Olustur</button>
+            </div>
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",minWidth:1320,borderCollapse:"collapse",fontSize:12}}>
+                  <thead>
+                    <tr style={{background:C.surface,color:C.muted2,textAlign:"left"}}>
+                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Siparis No</th>
+                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Musteri</th>
+                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Termin</th>
+                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Durum</th>
+                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:"right"}}>Kalan / Toplam</th>
+                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Belge</th>
+                      <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:"right"}}>Islem</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredOrders.map(o=>{
+                      const remaining=Math.max(0,safeNum(o.qty)-safeNum(o.deliveredQty));
+                      return (
+                        <tr key={o.id} style={{borderBottom:`1px solid ${C.border}`}}>
+                          <td style={{padding:"10px 12px"}}>
+                            <div style={{fontFamily:"monospace",fontWeight:700,color:C.text}}>{o.code||"-"}</div>
+                            {o.sourceQuoteCode&&<div style={{fontSize:11,color:C.muted2}}>Teklif: {o.sourceQuoteCode}</div>}
+                          </td>
+                          <td style={{padding:"10px 12px"}}>
+                            <div style={{fontWeight:600,color:C.text}}>{o.customerName||"-"}</div>
+                            <div style={{fontSize:11,color:C.muted2}}>Adet: {safeNum(o.qty)} · Teslim: {safeNum(o.deliveredQty)}</div>
+                            {(o.deliveries||[]).length>0&&<div style={{fontSize:11,color:C.muted2}}>Son: {(o.deliveries||[]).slice(-1)[0]?.date||"-"}</div>}
+                          </td>
+                          <td style={{padding:"10px 12px",color:C.muted2}}>{o.dueDate||"-"}</td>
+                          <td style={{padding:"10px 12px"}}><Badge label={statusLabel(o.status)} color={statusColor(o.status)}/></td>
+                          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:C.text}}>{remaining} / {safeNum(o.qty)}</td>
+                          <td style={{padding:"10px 12px",color:C.muted2,fontSize:11}}>
+                            {o.dispatchRef?`Irsaliye: ${o.dispatchRef}`:"-"}
+                            {o.invoiceRef?` · Fatura: ${o.invoiceRef}`:""}
+                          </td>
+                          <td style={{padding:"10px 12px"}}>
+                            <div style={{display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
+                              <button onClick={()=>printOrder(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>PDF</button>
+                              <button onClick={()=>duplicateSalesOrder(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Kopyala</button>
+                              <button onClick={()=>setOrderStatus(o,"in_production")} style={{...btnSt("primary"),padding:"5px 8px",fontSize:11,opacity:(o.status||"")==="in_production"?0.7:1}} disabled={(o.status||"")==="in_production"}>Uretimde</button>
+                              <button onClick={()=>addDelivery(o)} style={{...btnSt("green"),padding:"5px 8px",fontSize:11}}>Kismi Teslim</button>
+                              <button onClick={()=>convertOrderToWorkOrders(o)} style={{...(o.workOrderIds&&o.workOrderIds.length>0?btnSt("ghost"):btnSt("primary")),padding:"5px 8px",fontSize:11}}>
+                                {(o.workOrderIds&&o.workOrderIds.length>0)?"Is Emirleri":"Is Emri"}
+                              </button>
+                              <button onClick={()=>markExternalDoc(o,"dispatch")} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Irsaliye</button>
+                              <button onClick={()=>markExternalDoc(o,"invoice")} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Fatura</button>
+                              <button onClick={()=>setOrderStatus(o,"cancelled")} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11,opacity:(o.status||"")==="cancelled"?0.7:1}} disabled={(o.status||"")==="cancelled"}>Iptal</button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {filteredOrders.length===0&&(
+                      <tr>
+                        <td colSpan={7} style={{padding:"26px 12px",textAlign:"center",color:C.muted2}}>Filtreye uygun siparis bulunamadi.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {showQuoteModal&&(
@@ -5915,6 +6022,10 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
     const dateOk=inRange(dateYmd,dueDateFrom,dueDateTo);
     return statusOk&&textOk&&dateOk;
   });
+  const orderStatusCountMap={};
+  ORDER_STATUS_OPTIONS.forEach(st=>{
+    orderStatusCountMap[st.id]=orders.filter(o=>(o.status||"passive")===st.id).length;
+  });
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
   const materialOptions=(form.material&& !materials.some(x=>x.name===form.material))
@@ -6074,80 +6185,110 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   );
 
   return (
-    <div style={{padding:16}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-        <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>İş Emirleri · {orders.filter(o=>isOpenOrderStatus(o.status)).length} acik</div>
-        <button onClick={()=>{setEditId(null);setForm({...emptyForm,code:nextOrderCode()});setShowForm(true);}} style={{...btnSt("primary"),padding:"8px 14px",fontSize:12}}>+ Yeni</button>
+    <div style={{padding:16,display:"flex",flexDirection:"column",gap:10}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <div style={{fontSize:12,color:C.muted2}}>Is Emirleri · {orders.filter(o=>isOpenOrderStatus(o.status)).length} acik</div>
+        <button onClick={()=>{setEditId(null);setForm({...emptyForm,code:nextOrderCode()});setShowForm(true);}} style={{...btnSt("primary"),padding:"7px 12px",fontSize:12}}>Is Emri Olustur</button>
       </div>
-      <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
-        <input style={{...inputSt,flex:"1 1 230px",padding:"9px 12px",fontSize:13}} placeholder="Kod, parça veya malzeme ara..." value={search} onChange={e=>setSearch(e.target.value)}/>
-        <input type="date" style={{...inputSt,padding:"9px 12px",fontSize:13,minWidth:155}} value={dueDateFrom} onChange={e=>setDueDateFrom(e.target.value||"")} title="Baslangic termin"/>
-        <input type="date" style={{...inputSt,padding:"9px 12px",fontSize:13,minWidth:155}} value={dueDateTo} onChange={e=>setDueDateTo(e.target.value||"")} title="Bitis termin"/>
-        {(dueDateFrom||dueDateTo)&&(
-          <button onClick={()=>{setDueDateFrom("");setDueDateTo("");}} style={{...btnSt("ghost"),padding:"9px 12px",fontSize:12}}>
-            Tarihi Temizle
+      <div style={{display:"flex",gap:10,alignItems:"flex-start",flexWrap:"wrap"}}>
+        <div style={{flex:"0 0 250px",width:"100%",maxWidth:280,background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12,display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Is Emirleri</div>
+          <input style={{...inputSt,padding:"8px 10px",fontSize:12}} placeholder="Kod, parca, musteri ara..." value={search} onChange={e=>setSearch(e.target.value)}/>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Termin Araligi</div>
+          <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={dueDateFrom} onChange={e=>setDueDateFrom(e.target.value||"")}/>
+          <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={dueDateTo} onChange={e=>setDueDateTo(e.target.value||"")}/>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Durum</div>
+          <button onClick={()=>setStatusFilters([])} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:statusFilters.length===0?C.accent:C.border,color:statusFilters.length===0?C.accent:C.text}}>
+            <span>Tum Durumlar</span>
+            <span style={{fontSize:11,color:C.muted2}}>{orders.length}</span>
           </button>
-        )}
-      </div>
-      <div style={{display:"flex",gap:7,marginBottom:12,flexWrap:"wrap"}}>
-        <button onClick={()=>setStatusFilters([])} style={chip(statusFilters.length===0,C.muted2)}>Tüm Durumlar</button>
-        {ORDER_STATUS_OPTIONS.map(s=><button key={s.id} onClick={()=>toggleStatusFilter(s.id)} style={chip(statusFilters.includes(s.id),s.color)}>{s.label}</button>)}
-      </div>
-      {orders.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"40px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}><div style={{fontSize:36,marginBottom:10}}>📋</div>Henüz iş emri yok</div>}
-      {orders.length>0&&filteredOrders.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"24px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Filtreye uygun iş emri bulunamadı</div>}
-      {filteredOrders.length>0&&(
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
-          <div style={{display:"grid",gridTemplateColumns:"1.4fr 1.15fr 1fr 1fr auto",gap:10,padding:"10px 12px",fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700,background:C.surface,borderBottom:`1px solid ${C.border}`}}>
-            <div>Is Emri</div>
-            <div>Musteri / Parca</div>
-            <div>Termin</div>
-            <div>Durum / Uretim</div>
-            <div style={{textAlign:"right"}}>Islem</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:260,overflowY:"auto"}}>
+            {ORDER_STATUS_OPTIONS.map(s=>(
+              <button key={s.id} onClick={()=>toggleStatusFilter(s.id)} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:statusFilters.includes(s.id)?s.color:C.border,color:statusFilters.includes(s.id)?s.color:C.text}}>
+                <span>{s.label}</span>
+                <span style={{fontSize:11,color:C.muted2}}>{orderStatusCountMap[s.id]||0}</span>
+              </button>
+            ))}
           </div>
-          {filteredOrders.map(o=>{
-            const usage=safeNum(usageCountByOrder[o.id]||usageCountByOrder[o.code]);
-            const produced=safeNum(productionByOrder[o.code]?.total);
-            const priorityLabel=(PRIORITY_OPTIONS.find(p=>p.id===o.priority)||{}).label||"Normal";
-            return (
-              <div key={o.id} style={{display:"grid",gridTemplateColumns:"1.4fr 1.15fr 1fr 1fr auto",gap:10,padding:"11px 12px",borderBottom:`1px solid ${C.border}`,alignItems:"center",opacity:(o.status==="passive"||o.status==="liquidation")?.6:1}}>
-                <div style={{minWidth:0}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
-                    <span style={{fontWeight:800,fontSize:13,fontFamily:"monospace",color:C.text,whiteSpace:"nowrap"}}>{o.code}</span>
-                    {(o.files||[]).length>0&&<Badge label={`${o.files.length} dosya`} color={C.purple}/>}
-                  </div>
-                  <div style={{fontSize:12,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.name||"-"}</div>
-                  <div style={{fontSize:11,color:C.muted2,marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                    {o.sourceType==="sales_auto"?"Siparisten Otomatik":"Manuel"}{(o.dependencies||[]).length>0?` · ${o.dependencies.length} bagimlilik`:""}
-                  </div>
-                </div>
-                <div style={{fontSize:12,color:C.muted2,minWidth:0}}>
-                  <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:C.text,fontWeight:600}}>{o.customerName||"-"}</div>
-                  <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.partNo||"-"}{o.revision?` Rev.${o.revision}`:""}</div>
-                  <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.material||"-"}</div>
-                </div>
-                <div style={{fontSize:12,color:C.muted2}}>
-                  <div>{o.dueDate||"-"}</div>
-                  <div>{safeNum(o.qty)} adet</div>
-                  <div>{priorityLabel}</div>
-                </div>
-                <div style={{fontSize:12,color:C.muted2}}>
-                  <div style={{marginBottom:4}}><Badge label={getOrderStatusMeta(o.status).label} color={getOrderStatusMeta(o.status).color}/></div>
-                  <div>Uretim: {produced}</div>
-                  <div>Takim: {usage}</div>
-                </div>
-                <div style={{display:"flex",gap:6,justifyContent:"flex-end",alignItems:"center"}}>
-                  <button onClick={()=>setViewOrder(o)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Goruntule</button>
-                  <button onClick={()=>{setForm({code:o.code,name:o.name,partId:o.partId||"",partNo:o.partNo||"",revision:o.revision||"A",customerPartCode:o.customerPartCode||"",partSnapshot:(o.partSnapshot&&typeof o.partSnapshot==="object")?o.partSnapshot:null,customerId:o.customerId||"",material:o.material||"",qty:String(o.qty??"1"),dueDate:o.dueDate||todayStr(),priority:o.priority||"normal",dependencies:o.dependencies||[],partSec:o.partSec,machines:o.machines||[],notes:o.notes||"",files:o.files||[],status:o.status||"planned",sourceType:o.sourceType||"manual"});setEditId(o.id);setShowForm(true);}} style={{...btnSt(),padding:"6px 10px",fontSize:12}}>Duzenle</button>
-                  <button onClick={()=>duplicateWorkOrder(o)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kopyala</button>
-                  <select style={{...inputSt,width:132,padding:"6px 8px",fontSize:12}} value={o.status||"passive"} onChange={e=>setOrderStatus(o,e.target.value)}>
-                    {ORDER_STATUS_OPTIONS.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
-                  </select>
-                </div>
-              </div>
-            );
-          })}
+          <button onClick={()=>{setStatusFilters([]);setDueDateFrom("");setDueDateTo("");setSearch("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
         </div>
-      )}
+        <div style={{flex:"1 1 760px",minWidth:0,display:"flex",flexDirection:"column",gap:8}}>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <div style={{fontSize:12,color:C.muted2}}>Gosterilen Kayit: {filteredOrders.length}</div>
+          </div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",minWidth:1220,borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{background:C.surface,color:C.muted2,textAlign:"left"}}>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Is Emri</th>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Musteri / Parca</th>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Termin</th>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Durum / Uretim</th>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:"right"}}>Islem</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredOrders.map(o=>{
+                    const usage=safeNum(usageCountByOrder[o.id]||usageCountByOrder[o.code]);
+                    const produced=safeNum(productionByOrder[o.code]?.total);
+                    const priorityLabel=(PRIORITY_OPTIONS.find(p=>p.id===o.priority)||{}).label||"Normal";
+                    return (
+                      <tr key={o.id} style={{borderBottom:`1px solid ${C.border}`,opacity:(o.status==="passive"||o.status==="liquidation")?0.6:1}}>
+                        <td style={{padding:"10px 12px",minWidth:0}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+                            <span style={{fontWeight:800,fontSize:13,fontFamily:"monospace",color:C.text,whiteSpace:"nowrap"}}>{o.code}</span>
+                            {(o.files||[]).length>0&&<Badge label={`${o.files.length} dosya`} color={C.purple}/>}
+                          </div>
+                          <div style={{fontSize:12,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.name||"-"}</div>
+                          <div style={{fontSize:11,color:C.muted2,marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                            {o.sourceType==="sales_auto"?"Siparisten Otomatik":"Manuel"}{(o.dependencies||[]).length>0?` · ${o.dependencies.length} bagimlilik`:""}
+                          </div>
+                        </td>
+                        <td style={{padding:"10px 12px",fontSize:12,color:C.muted2,minWidth:0}}>
+                          <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:C.text,fontWeight:600}}>{o.customerName||"-"}</div>
+                          <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.partNo||"-"}{o.revision?` Rev.${o.revision}`:""}</div>
+                          <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.material||"-"}</div>
+                        </td>
+                        <td style={{padding:"10px 12px",fontSize:12,color:C.muted2}}>
+                          <div>{o.dueDate||"-"}</div>
+                          <div>{safeNum(o.qty)} adet</div>
+                          <div>{priorityLabel}</div>
+                        </td>
+                        <td style={{padding:"10px 12px",fontSize:12,color:C.muted2}}>
+                          <div style={{marginBottom:4}}><Badge label={getOrderStatusMeta(o.status).label} color={getOrderStatusMeta(o.status).color}/></div>
+                          <div>Uretim: {produced}</div>
+                          <div>Takim: {usage}</div>
+                        </td>
+                        <td style={{padding:"10px 12px"}}>
+                          <div style={{display:"flex",gap:6,justifyContent:"flex-end",alignItems:"center",flexWrap:"wrap"}}>
+                            <button onClick={()=>setViewOrder(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Goruntule</button>
+                            <button onClick={()=>{setForm({code:o.code,name:o.name,partId:o.partId||"",partNo:o.partNo||"",revision:o.revision||"A",customerPartCode:o.customerPartCode||"",partSnapshot:(o.partSnapshot&&typeof o.partSnapshot==="object")?o.partSnapshot:null,customerId:o.customerId||"",material:o.material||"",qty:String(o.qty??"1"),dueDate:o.dueDate||todayStr(),priority:o.priority||"normal",dependencies:o.dependencies||[],partSec:o.partSec,machines:o.machines||[],notes:o.notes||"",files:o.files||[],status:o.status||"planned",sourceType:o.sourceType||"manual"});setEditId(o.id);setShowForm(true);}} style={{...btnSt(),padding:"5px 8px",fontSize:11}}>Duzenle</button>
+                            <button onClick={()=>duplicateWorkOrder(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Kopyala</button>
+                            <select style={{...inputSt,width:130,padding:"5px 8px",fontSize:11}} value={o.status||"passive"} onChange={e=>setOrderStatus(o,e.target.value)}>
+                              {ORDER_STATUS_OPTIONS.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
+                            </select>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {orders.length===0&&(
+                    <tr>
+                      <td colSpan={5} style={{padding:"26px 12px",textAlign:"center",color:C.muted2}}>Henuz is emri yok.</td>
+                    </tr>
+                  )}
+                  {orders.length>0&&filteredOrders.length===0&&(
+                    <tr>
+                      <td colSpan={5} style={{padding:"26px 12px",textAlign:"center",color:C.muted2}}>Filtreye uygun is emri bulunamadi.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -6405,6 +6546,10 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
       machineToolQty:"1",
     };
   });
+  function scheduleKioskReload(delayMs=450){
+    if(!kioskMode||typeof window==="undefined") return;
+    window.setTimeout(()=>window.location.reload(),Math.max(0,Number(delayMs)||0));
+  }
 
   async function submitShiftEnd(correctValue,wrongValue) {
     if(!form.selectedOrder){
@@ -6414,8 +6559,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     if(correctValue===""||Number(correctValue)<0){alert("Doğru adet zorunlu!");return false;}
     const correctNum=Number(correctValue);
     const wrongNum=Number(wrongValue)||0;
-    const machineTool=tools.find(t=>t.id===form.machineToolId);
-    const machineToolQty=form.machineToolId?Math.max(1,Number(form.machineToolQty)||1):0;
+    const prevEntry=editId?todayEntries.find(x=>x.id===editId):null;
+    const preservedMachineToolQty=editId?Math.max(0,Number(prevEntry?.machineToolQty??prevEntry?.machineToolChange??0)):0;
     const d=parseYmdLocal(form.entryDate);
     const entry={
       date:ymdLocal(d), week:weekStart(d), month:monthStr(d),
@@ -6424,13 +6569,13 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
       jobCode:form.selectedOrder.code, jobName:form.selectedOrder.name,
       partSec:Number(form.selectedOrder.partSec),
       correct:correctNum, wrong:wrongNum,
-      machineToolId:machineTool?.id||"",
-      machineToolCode:machineTool?.code||"",
-      machineToolName:machineTool?.name||"",
-      machineToolQty,
-      machineToolChange:machineToolQty,
+      machineToolId:editId?(prevEntry?.machineToolId||""):"",
+      machineToolCode:editId?(prevEntry?.machineToolCode||""):"",
+      machineToolName:editId?(prevEntry?.machineToolName||""):"",
+      machineToolQty:editId?preservedMachineToolQty:0,
+      machineToolChange:editId?preservedMachineToolQty:0,
+      entryType:"production",
     };
-    const prevEntry=editId?todayEntries.find(x=>x.id===editId):null;
     const stockDelta=getDeltaMap(prevEntry,entry);
     const stockOk=await applyToolStockDelta(stockDelta);
     if(!stockOk) return false;
@@ -6442,6 +6587,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
         setSaved(true); setTimeout(()=>setSaved(false),2000);
         resetEntryForm();
         setShiftDraft({correct:"",wrong:""});
+        scheduleKioskReload();
         return true;
       }else{
         await applyToolStockDelta(invertDeltaMap(stockDelta));
@@ -6454,6 +6600,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
       setSaved(true); setTimeout(()=>setSaved(false),2000);
       resetEntryForm();
       setShiftDraft({correct:"",wrong:""});
+      scheduleKioskReload();
       return true;
     }else{
       await applyToolStockDelta(invertDeltaMap(stockDelta));
@@ -6507,14 +6654,58 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     setShowToolModal(true);
   }
 
-  function approveToolChange(){
-    const machineToolQty=toolDraft.machineToolId?String(Math.max(1,Number(toolDraft.machineToolQty)||1)):"1";
+  async function approveToolChange(){
+    const machineToolId=String(toolDraft.machineToolId||"");
+    if(!machineToolId){
+      setForm(p=>({...p,machineToolId:"",machineToolQty:"1"}));
+      setShowToolModal(false);
+      return;
+    }
+    if(!form.selectedOrder){
+      alert(kioskMode?"Bu tezgah icin planlama kaydi yok. Planlama ekranindan is emri atayin.":"İş emri seçin!");
+      return;
+    }
+    const machineTool=tools.find(t=>t.id===machineToolId);
+    if(!machineTool){
+      alert("Seçili takım stokta bulunamadı. Lütfen tekrar seçin.");
+      return;
+    }
+    const machineToolQty=Math.max(1,Number(toolDraft.machineToolQty)||1);
+    const d=parseYmdLocal(form.entryDate||todayStr());
+    const entry={
+      date:ymdLocal(d), week:weekStart(d), month:monthStr(d),
+      machine:form.machine, shift:form.shift, shiftLabel:selectedShiftMeta.label||form.shift||"",
+      operatorId:currentUser.id, operatorName:currentUser.fullName,
+      jobCode:form.selectedOrder.code||"",
+      jobName:form.selectedOrder.name||"",
+      partSec:Number(form.selectedOrder.partSec)||0,
+      correct:0, wrong:0,
+      machineToolId:machineTool.id||"",
+      machineToolCode:machineTool.code||"",
+      machineToolName:machineTool.name||"",
+      machineToolQty,
+      machineToolChange:machineToolQty,
+      entryType:"tool_change",
+      note:"Takim degisimi",
+      createdAt:new Date().toISOString(),
+    };
+    const stockDelta=getDeltaMap(null,entry);
+    const stockOk=await applyToolStockDelta(stockDelta);
+    if(!stockOk) return;
+    const id=await window.DB.addDoc("entries",entry);
+    if(!id){
+      await applyToolStockDelta(invertDeltaMap(stockDelta));
+      alert("Takım değişimi kaydedilemedi.");
+      return;
+    }
+    setTodayEntries(e=>[{id,...entry},...e]);
     setForm(p=>({
       ...p,
-      machineToolId:toolDraft.machineToolId||"",
-      machineToolQty,
+      machineToolId,
+      machineToolQty:String(machineToolQty),
     }));
     setShowToolModal(false);
+    if(kioskMode) scheduleKioskReload(250);
   }
 
   function openShiftEndModal(){
@@ -7457,12 +7648,20 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               <div style={{marginTop:9,fontSize:11,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Son 3 Kayıt</div>
               <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:5}}>
                 {recentMachineEntries.length===0&&<div style={{fontSize:11,color:opTheme.textDim}}>Kayıt yok.</div>}
-                {recentMachineEntries.map(e=>(
-                  <div key={e.id} style={{...rowCardStyle,display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:opTheme.textDim}}>
-                    <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:180}}>{e.jobCode} · ✅{safeNum(e.correct)} / ❌{safeNum(e.wrong)}</span>
-                    <span>{shiftWindowMap[e.shift]?.label||e.shift||"-"}</span>
-                  </div>
-                ))}
+                {recentMachineEntries.map(e=>{
+                  const machineToolQty=Math.max(0,safeNum(e.machineToolQty??e.machineToolChange??0));
+                  const isToolChange=String(e.entryType||"")==="tool_change"||(machineToolQty>0&&safeNum(e.correct)===0&&safeNum(e.wrong)===0);
+                  const leftLabel=isToolChange
+                    ? `🔧 ${e.machineToolCode||e.machineToolName||"Takim"} x${machineToolQty}`
+                    : `${e.jobCode||"-"} · ✅${safeNum(e.correct)} / ❌${safeNum(e.wrong)}`;
+                  const timeText=String(e.createdAt||"").slice(11,16)||"--:--";
+                  return (
+                    <div key={e.id} style={{...rowCardStyle,display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:opTheme.textDim}}>
+                      <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:180}}>{leftLabel}</span>
+                      <span>{timeText} · {shiftWindowMap[e.shift]?.label||e.shift||"-"}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
             </div>
@@ -7515,7 +7714,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
           </div>
         </div>
       </div>
-      {!kioskMode&&<div style={{fontSize:12,color:C.muted2}}>Kayıt, yalnızca <strong>Vardiya Sonu</strong> onaylandığında oluşturulur.</div>}
+      {!kioskMode&&<div style={{fontSize:12,color:C.muted2}}>Uretim kaydi <strong>Vardiya Sonu</strong> onayinda, takim degisimi ise modal onayinda anlik olusur.</div>}
       {showToolModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={()=>setShowToolModal(false)}>
           <div style={{width:"100%",maxWidth:680,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16}} onClick={e=>e.stopPropagation()}>
