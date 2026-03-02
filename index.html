@@ -4730,6 +4730,18 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const contentStackStyle=kioskMode
     ? {marginTop:10,display:"flex",flexDirection:"column",gap:10,flex:1,minHeight:0,overflowY:"auto",paddingRight:2}
     : {marginTop:10,display:"flex",flexDirection:"column",gap:10};
+  const opsPanelStyle=kioskMode
+    ? {background:opTheme.panel,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:"12px 10px",display:"flex",flexDirection:"column",flex:1,minHeight:0}
+    : {background:opTheme.panel,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:"12px 10px"};
+  const opsGridStyle=kioskMode
+    ? {display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:10,flex:1,minHeight:0,alignItems:"stretch"}
+    : {display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:10};
+  const stockPanelStyle=kioskMode
+    ? {background:opTheme.panelSoft,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:10,display:"flex",flexDirection:"column",flex:1,minHeight:0}
+    : {background:opTheme.panelSoft,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:10};
+  const stockGridStyle=kioskMode
+    ? {display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:10,flex:1,minHeight:0,alignItems:"stretch"}
+    : {display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:10};
 
   return (
     <div style={entryRootStyle}>
@@ -4777,9 +4789,9 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
         )}
 
         <div style={contentStackStyle}>
-          <div style={{background:opTheme.panel,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:"12px 10px"}}>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:10}}>
-              <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:10}}>
+          <div style={opsPanelStyle}>
+            <div style={opsGridStyle}>
+              <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:10,...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
               <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>SET-UP</div>
               <button onClick={openToolChangeModal} style={{...btnSt("ghost"),width:"100%",padding:"12px 10px",fontSize:13,borderColor:opTheme.border,color:opTheme.text}}>Takım Değişimi</button>
               <div style={{marginTop:8,fontSize:12,color:opTheme.textDim,textAlign:"center"}}>
@@ -4797,7 +4809,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               </div>
             </div>
 
-              <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:10}}>
+              <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:10,...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
               <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>PRODUCTION</div>
               <div>
                 <span style={{...labelSt,color:opTheme.textMuted}}>İş Emri</span>
@@ -4845,7 +4857,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               </div>
             </div>
 
-              <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:10}}>
+              <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:10,...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
               <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>BREAKDOWN / STOP</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 <div style={{background:"rgba(255,255,255,.12)",border:`1px solid ${opTheme.border}`,borderRadius:9,padding:"8px 9px",textAlign:"center"}}>
@@ -4872,10 +4884,10 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             </div>
           </div>
 
-          <div style={{background:opTheme.panelSoft,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:10}}>
+          <div style={stockPanelStyle}>
             <div style={{fontSize:19,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>STOCK INFORMATIONS</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:10}}>
-              <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:"10px 9px"}}>
+            <div style={stockGridStyle}>
+              <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:"10px 9px",...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
               <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.6,textTransform:"uppercase",marginBottom:6}}>İş Emri Teknik Dokümanları ({selectedOrderFiles.length})</div>
               {selectedOrderFiles.length===0&&<div style={{fontSize:12,color:opTheme.textDim}}>Doküman yok.</div>}
               {selectedOrderFiles.length>0&&(
@@ -4893,7 +4905,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                 </div>
               )}
             </div>
-              <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:"10px 9px"}}>
+              <div style={{background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:"10px 9px",...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
               <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.6,textTransform:"uppercase",marginBottom:6}}>Takım Stokları ({stockedTools.length})</div>
               {stockedTools.length===0&&<div style={{fontSize:12,color:opTheme.warn}}>Stokta takım yok.</div>}
               {stockedTools.length>0&&(
