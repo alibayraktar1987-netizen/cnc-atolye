@@ -559,6 +559,41 @@ function normalizeSalesCurrencies(raw){
   const defaultCurrency=activeCodes.includes(requested)?requested:(activeCodes[0]||"TRY");
   return {list:sorted,defaultCurrency};
 }
+const DEFAULT_SUPPLIER_GROUPS = {
+  list:[
+    {id:"malzeme",name:"Malzeme Satanlar",color:"#0f6cbd",sortOrder:10},
+    {id:"takim",name:"Takim Satanlar",color:"#00a78f",sortOrder:20},
+  ],
+};
+function normalizeSupplierGroups(raw){
+  const list=Array.isArray(raw?.list)?raw.list:[];
+  const src=list.length>0?list:DEFAULT_SUPPLIER_GROUPS.list;
+  const used=new Set();
+  const rows=src.map((row,idx)=>{
+    const fallback=DEFAULT_SUPPLIER_GROUPS.list[idx%DEFAULT_SUPPLIER_GROUPS.list.length]||DEFAULT_SUPPLIER_GROUPS.list[0];
+    const name=String(row?.name||fallback?.name||`Grup ${idx+1}`).trim()||`Grup ${idx+1}`;
+    const rawId=String(row?.id||normalizeShiftToken(name)||`grp_${idx+1}`).trim();
+    const baseId=normalizeShiftToken(rawId)||`grp_${idx+1}`;
+    let id=baseId;
+    let seq=2;
+    while(used.has(id)){
+      id=`${baseId}_${seq}`;
+      seq+=1;
+    }
+    used.add(id);
+    return {
+      id,
+      name,
+      color:normalizeHexColor(row?.color,fallback?.color||"#0f6cbd"),
+      sortOrder:Math.max(1,safeNum(row?.sortOrder)||((idx+1)*10)),
+    };
+  }).sort((a,b)=>{
+    const s=safeNum(a.sortOrder)-safeNum(b.sortOrder);
+    if(s!==0) return s;
+    return (a.name||"").localeCompare(b.name||"","tr");
+  });
+  return {list:rows.length>0?rows:DEFAULT_SUPPLIER_GROUPS.list.map((x,idx)=>({...x,sortOrder:(idx+1)*10}))};
+}
 const DEFAULT_ROUTING_OPERATION_TYPES = [
   { id:"op10", code:"OP-10", name:"Kesim ve Hazirlik", icon:"🧰", color:"#6f86ff", defaultSetupSec:300, defaultCycleSec:60, sortOrder:10 },
   { id:"op20", code:"OP-20", name:"Kaba Isleme", icon:"⚙️", color:"#0f6cbd", defaultSetupSec:240, defaultCycleSec:90, sortOrder:20 },
@@ -1861,6 +1896,118 @@ function SalesCurrencySettings({currentUser}) {
   );
 }
 
+function SupplierGroupSettings({currentUser}) {
+  const [rows,setRows]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [newName,setNewName]=useState("");
+  const [newColor,setNewColor]=useState("#0f6cbd");
+
+  const load=useCallback(async()=>{
+    const doc=await window.DB.getDoc("config","supplierGroups");
+    const normalized=normalizeSupplierGroups(doc||{});
+    setRows(normalized.list||[]);
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  function updateRow(id,key,value){
+    setRows(prev=>prev.map(row=>row.id===id?{...row,[key]:value}:row));
+  }
+  function moveRow(id,dir){
+    setRows(prev=>{
+      const idx=prev.findIndex(x=>x.id===id);
+      if(idx<0) return prev;
+      const target=idx+dir;
+      if(target<0||target>=prev.length) return prev;
+      const copy=[...prev];
+      const [picked]=copy.splice(idx,1);
+      copy.splice(target,0,picked);
+      return copy.map((row,i)=>({...row,sortOrder:(i+1)*10}));
+    });
+  }
+  function removeRow(id){
+    setRows(prev=>{
+      if(prev.length<=1){
+        alert("En az 1 tedarikci grubu tanimli olmali.");
+        return prev;
+      }
+      return prev.filter(x=>x.id!==id).map((row,i)=>({...row,sortOrder:(i+1)*10}));
+    });
+  }
+  function addRow(){
+    const name=String(newName||"").trim();
+    if(!name){alert("Grup adi girin.");return;}
+    setRows(prev=>{
+      const used=new Set(prev.map(x=>x.id));
+      const base=normalizeShiftToken(name)||`grp_${prev.length+1}`;
+      let id=base;
+      let seq=2;
+      while(used.has(id)){
+        id=`${base}_${seq}`;
+        seq+=1;
+      }
+      return [...prev,{id,name,color:normalizeHexColor(newColor,"#0f6cbd"),sortOrder:(prev.length+1)*10}];
+    });
+    setNewName("");
+  }
+  async function save(){
+    const normalized=normalizeSupplierGroups({list:rows.map((row,idx)=>({
+      ...row,
+      name:String(row.name||"").trim()||`Grup ${idx+1}`,
+      color:normalizeHexColor(row.color,"#0f6cbd"),
+      sortOrder:(idx+1)*10,
+    }))});
+    setSaving(true);
+    const ok=await window.DB.setDoc("config","supplierGroups",{
+      ...normalized,
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser?.id||"",
+    });
+    setSaving(false);
+    if(!ok){alert("Tedarikci gruplari kaydedilemedi.");return;}
+    setRows(normalized.list||[]);
+    alert("Tedarikci gruplari kaydedildi.");
+  }
+
+  return (
+    <div style={{marginBottom:18}}>
+      <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Tedarikci Grup Ayarlari</div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+        <div style={{fontSize:12,color:C.muted2,marginBottom:10}}>Satin alma modulu icin grup tanimlari (ornek: malzeme, takim).</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 140px auto",gap:8,marginBottom:10}}>
+          <input style={inputSt} value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Yeni grup adi"/>
+          <input style={{...inputSt,padding:0,height:38}} type="color" value={normalizeHexColor(newColor,"#0f6cbd")} onChange={e=>setNewColor(e.target.value)}/>
+          <button onClick={addRow} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>+ Ekle</button>
+        </div>
+        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 140px 180px",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700}}>
+            <div>Grup Adi</div><div>Renk</div><div/>
+          </div>
+          {loading&&<div style={{padding:"10px 12px",fontSize:12,color:C.muted2}}>Yukleniyor...</div>}
+          {!loading&&rows.map((row,idx)=>(
+            <div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 140px 180px",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
+              <input style={{...inputSt,padding:"7px 8px",fontSize:12}} value={row.name||""} onChange={e=>updateRow(row.id,"name",e.target.value)} placeholder="Grup adi"/>
+              <div style={{display:"grid",gridTemplateColumns:"40px 1fr",gap:6}}>
+                <input style={{...inputSt,padding:0,height:34}} type="color" value={normalizeHexColor(row.color,"#0f6cbd")} onChange={e=>updateRow(row.id,"color",e.target.value)}/>
+                <input style={{...inputSt,padding:"7px 8px",fontSize:12}} value={row.color||"#0f6cbd"} onChange={e=>updateRow(row.id,"color",e.target.value)} placeholder="#0f6cbd"/>
+              </div>
+              <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                <button onClick={()=>moveRow(row.id,-1)} style={{...btnSt("ghost"),padding:"4px 7px",fontSize:11}} disabled={saving||idx===0}>↑</button>
+                <button onClick={()=>moveRow(row.id,1)} style={{...btnSt("ghost"),padding:"4px 7px",fontSize:11}} disabled={saving||idx===rows.length-1}>↓</button>
+                <button onClick={()=>removeRow(row.id)} style={{...btnSt("danger"),padding:"4px 7px",fontSize:11}} disabled={saving}>Sil</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}>
+          <button onClick={save} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={saving||loading}>{saving?"Kaydediliyor...":"Gruplari Kaydet"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ════════════════════════════════════════════════════════════
 //  ADMIN USERS
 // ════════════════════════════════════════════════════════════
@@ -1948,6 +2095,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate}) {
     {id:"genel",label:"Genel",desc:"Logo ve uygulama gorunumu"},
     {id:"ticari",label:"Ticari",desc:"Teklif sablonu ve para birimi"},
     {id:"uretim",label:"Uretim",desc:"Operator, kiosk ve rota ayarlari"},
+    {id:"tedarik",label:"Tedarik",desc:"Tedarikci grup ayarlari"},
     {id:"kullanicilar",label:"Kullanicilar",desc:"Yetki, rol ve hesap onaylari"},
   ];
 
@@ -2052,6 +2200,12 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate}) {
           <OperatorUrlSettings machines={machines}/>
           <KioskProductionSettings currentUser={currentUser}/>
           <RoutingOperationTypeSettings currentUser={currentUser}/>
+        </>
+      )}
+      {settingsView==="tedarik"&&(
+        <>
+          <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Tedarik Ayarlari</div>
+          <SupplierGroupSettings currentUser={currentUser}/>
         </>
       )}
 
@@ -5671,6 +5825,11 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     document.body.style.overflow="hidden";
     return ()=>{ document.body.style.overflow=prev; };
   },[kioskMode,showPicker]);
+  useEffect(()=>{
+    if(!kioskMode||!showPicker) return;
+    setShowPicker(false);
+    setSearch("");
+  },[kioskMode,showPicker]);
 
   useEffect(()=>{
     if(typeof window==="undefined") return;
@@ -5799,19 +5958,27 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
       return {...prev,selectedOrder:plannedOrder||null};
     });
   },[editId,form.machine,form.entryDate,plans,orders]);
-  const resetEntryForm=()=>setForm(p=>({
-    entryDate:p.entryDate,
-    machine:p.machine||machines[0]||"CNC-1",
-    shift:p.shift||(DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1"),
-    selectedOrder:null,
-    correct:"",
-    wrong:"",
-    machineToolId:"",
-    machineToolQty:"1",
-  }));
+  const resetEntryForm=()=>setForm(p=>{
+    const nextMachine=p.machine||machines[0]||"CNC-1";
+    const nextDate=p.entryDate||todayStr();
+    const autoOrder=kioskMode?getPlannedOrder(nextMachine,nextDate):null;
+    return {
+      entryDate:nextDate,
+      machine:nextMachine,
+      shift:p.shift||(DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1"),
+      selectedOrder:autoOrder||null,
+      correct:"",
+      wrong:"",
+      machineToolId:"",
+      machineToolQty:"1",
+    };
+  });
 
   async function submitShiftEnd(correctValue,wrongValue) {
-    if(!form.selectedOrder){alert("İş emri seçin!");return false;}
+    if(!form.selectedOrder){
+      alert(kioskMode?"Bu tezgah icin planlama kaydi yok. Planlama ekranindan is emri atayin.":"İş emri seçin!");
+      return false;
+    }
     if(correctValue===""||Number(correctValue)<0){alert("Doğru adet zorunlu!");return false;}
     const correctNum=Number(correctValue);
     const wrongNum=Number(wrongValue)||0;
@@ -5928,7 +6095,10 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   }
 
   function openRejectPartsModal(){
-    if(!form.selectedOrder){alert("İş emri seçin!");return;}
+    if(!form.selectedOrder){
+      alert(kioskMode?"Bu tezgah icin planlama kaydi yok. Planlama ekranindan is emri atayin.":"İş emri seçin!");
+      return;
+    }
     setShiftModalMode("rejectOnly");
     setShiftDraft({
       correct:"0",
@@ -6310,13 +6480,13 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
           <div style={{background:"#edf1f6",borderRadius:14,overflow:"hidden",border:"1px solid #cdd5e0"}}>
             <div style={{background:topHeaderTheme.gradient,padding:"18px 22px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:12,alignItems:"center",color:"#e7fff2"}}>
               <div>
-                <div style={{fontSize:40,fontWeight:800,lineHeight:1,letterSpacing:.4}}>{form.selectedOrder?.code||"IE-0000"}</div>
+                <div style={{fontSize:40,fontWeight:800,lineHeight:1,letterSpacing:.4}}>{form.selectedOrder?.code||"PLAN YOK"}</div>
                 <div style={{fontSize:20,fontWeight:700,marginTop:6}}>Tezgah: {form.machine}</div>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:7,alignItems:"flex-start"}}>
-                <button onClick={()=>setShowPicker(true)} style={{border:"1px solid rgba(255,255,255,.45)",background:topHeaderTheme.controlBg,color:topHeaderTheme.controlText,borderRadius:10,padding:"8px 12px",fontWeight:700,fontSize:14,cursor:"pointer"}}>
-                  {form.selectedOrder?`İş Emri: ${form.selectedOrder.code}`:"İş Emri Seç"}
-                </button>
+                <div style={{border:"1px solid rgba(255,255,255,.45)",background:topHeaderTheme.controlBg,color:topHeaderTheme.controlText,borderRadius:10,padding:"8px 12px",fontWeight:700,fontSize:14}}>
+                  {form.selectedOrder?`Planlanan İş Emri: ${form.selectedOrder.code}`:"Planlanan İş Emri Yok"}
+                </div>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                   <input type="date" max={todayStr()} value={form.entryDate} onChange={e=>fv("entryDate",e.target.value||todayStr())} style={{...inputSt,padding:"6px 8px",fontSize:12,minWidth:136,background:"rgba(255,255,255,.2)",borderColor:"rgba(255,255,255,.45)",color:"#f3fff8"}}/>
                   <div style={{border:"1px solid rgba(255,255,255,.45)",background:topHeaderTheme.controlSoftBg,color:"#f6fffa",borderRadius:9,padding:"6px 9px",fontSize:11,fontWeight:700}}>
@@ -6416,14 +6586,14 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             </div>
 
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",background:"#fff"}}>
-              <button onClick={()=>setShowPicker(true)} style={{...actionBtnStyle,fontSize:26,color:"#9aa8bb"}}>☰</button>
+              <button disabled style={{...actionBtnStyle,fontSize:17,color:"#7c8ca0",cursor:"default"}}>⦿ Otomatik Plan</button>
               <button onClick={openShiftEndModal} style={actionBtnStyle}>⏹ İşi Durdur</button>
               <button onClick={openRejectPartsModal} style={actionBtnStyle}>⊘ Hata Girişi</button>
               <button onClick={openToolChangeModal} style={{...actionBtnStyle,borderRight:"none"}}>💬 Kategori</button>
             </div>
           </div>
         </div>
-        {showPicker&&(
+        {showPicker&&!kioskMode&&(
           <div style={{position:"fixed",inset:0,background:"rgba(8,12,18,.78)",zIndex:55,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>{setShowPicker(false);setSearch("");}}>
             <div style={{width:"100%",maxWidth:1120,height:"min(88vh,860px)",background:"#f3f6fb",border:"1px solid #cfd8e4",borderRadius:16,overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 24px 60px rgba(0,0,0,.35)"}} onClick={e=>e.stopPropagation()}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"12px 14px",borderBottom:"1px solid #d4dce7",background:"#fff"}}>
@@ -10910,40 +11080,71 @@ function MRPRunModule({currentUser}){
 function PurchasingModule({currentUser}){
   const [loading,setLoading]=useState(true);
   const [suppliers,setSuppliers]=useState([]);
+  const [supplierGroups,setSupplierGroups]=useState(normalizeSupplierGroups({}).list||[]);
   const [materials,setMaterials]=useState([]);
   const [requests,setRequests]=useState([]);
   const [quotes,setQuotes]=useState([]);
   const [orders,setOrders]=useState([]);
   const [receipts,setReceipts]=useState([]);
   const [view,setView]=useState("requests");
-  const [supplierForm,setSupplierForm]=useState({name:"",code:"",leadTimeDays:"7",email:"",phone:"",currency:"TRY"});
+  const [supplierGroupFilter,setSupplierGroupFilter]=useState("all");
+  const [supplierForm,setSupplierForm]=useState({name:"",code:"",groupId:"",leadTimeDays:"7",email:"",phone:"",currency:"TRY"});
   const [reqForm,setReqForm]=useState({materialId:"",qty:"",needDate:todayStr(),priority:"normal",note:""});
   const [quoteForm,setQuoteForm]=useState({requestId:"",supplierId:"",unitPrice:"0",leadTimeDays:"7",currency:"TRY",note:""});
   const [recvForm,setRecvForm]=useState({poId:"",acceptedQty:"",rejectedQty:"0",receiptDate:todayStr(),note:""});
 
   const load=useCallback(async()=>{
-    const [s,m,r,q,p,gr]=await Promise.all([
+    const [s,m,r,q,p,gr,groupDoc]=await Promise.all([
       window.DB.getAll("suppliers"),
       window.DB.getAll("materials"),
       window.DB.getAll("purchaseRequests"),
       window.DB.getAll("supplierQuotes"),
       window.DB.getAll("purchaseOrders"),
       window.DB.getAll("goodsReceipts"),
+      window.DB.getDoc("config","supplierGroups"),
     ]);
+    const normalizedGroups=normalizeSupplierGroups(groupDoc||{}).list||[];
+    setSupplierGroups(normalizedGroups);
     setSuppliers(s); setMaterials(m); setRequests(r); setQuotes(q); setOrders(p); setReceipts(gr);
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    if(!supplierGroups.length) return;
+    setSupplierForm(prev=>{
+      if(prev.groupId&&supplierGroups.some(g=>g.id===prev.groupId)) return prev;
+      return {...prev,groupId:supplierGroups[0].id};
+    });
+  },[supplierGroups]);
+  useEffect(()=>{
+    setSupplierGroupFilter(prev=>{
+      if(prev==="all"||prev==="ungrouped") return prev;
+      return supplierGroups.some(g=>g.id===prev)?prev:"all";
+    });
+  },[supplierGroups]);
   const matById=Object.fromEntries(materials.map(m=>[m.id,m]));
   const reqById=Object.fromEntries(requests.map(r=>[r.id,r]));
+  const supplierGroupById=Object.fromEntries((supplierGroups||[]).map(row=>[row.id,row]));
+
+  function resolveSupplierGroup(row){
+    const match=row?.groupId?supplierGroupById[row.groupId]:null;
+    if(match) return match;
+    return {
+      id:"ungrouped",
+      name:String(row?.groupName||"Grupsuz").trim()||"Grupsuz",
+      color:normalizeHexColor(row?.groupColor,"#64748b"),
+      sortOrder:99999,
+    };
+  }
 
   async function saveSupplier(){
     if(!supplierForm.name.trim()){alert("Tedarikci adi zorunlu.");return;}
-    const payload={name:supplierForm.name.trim(),code:(supplierForm.code||`TED-${Date.now().toString().slice(-4)}`).toUpperCase(),leadTimeDays:Math.max(0,safeNum(supplierForm.leadTimeDays)),email:supplierForm.email.trim(),phone:supplierForm.phone.trim(),currency:supplierForm.currency||"TRY",updatedAt:new Date().toISOString()};
+    const group=supplierGroups.find(x=>x.id===supplierForm.groupId)||supplierGroups[0]||null;
+    const payload={name:supplierForm.name.trim(),code:(supplierForm.code||`TED-${Date.now().toString().slice(-4)}`).toUpperCase(),groupId:group?.id||"",groupName:group?.name||"Grupsuz",groupColor:group?.color||"#64748b",leadTimeDays:Math.max(0,safeNum(supplierForm.leadTimeDays)),email:supplierForm.email.trim(),phone:supplierForm.phone.trim(),currency:supplierForm.currency||"TRY",updatedAt:new Date().toISOString()};
     const id=await window.DB.addDoc("suppliers",payload);
     if(!id){alert("Tedarikci kaydedilemedi.");return;}
     setSuppliers(prev=>[{id,...payload},...prev]);
-    setSupplierForm({name:"",code:"",leadTimeDays:"7",email:"",phone:"",currency:"TRY"});
+    setSupplierForm({name:"",code:"",groupId:supplierGroups[0]?.id||"",leadTimeDays:"7",email:"",phone:"",currency:"TRY"});
   }
   async function saveRequest(){
     if(!reqForm.materialId||safeNum(reqForm.qty)<=0){alert("Malzeme ve miktar zorunlu.");return;}
@@ -10964,7 +11165,9 @@ function PurchasingModule({currentUser}){
     if(!quoteForm.requestId||!quoteForm.supplierId){alert("Talep ve tedarikci secin.");return;}
     const req=reqById[quoteForm.requestId];
     const supplier=suppliers.find(s=>s.id===quoteForm.supplierId);
-    const payload={requestId:req.id,requestCode:req.code||"",supplierId:supplier.id,supplierName:supplier.name||"",unitPrice:Math.max(0,safeNum(quoteForm.unitPrice)),leadTimeDays:Math.max(0,safeNum(quoteForm.leadTimeDays)),currency:quoteForm.currency||supplier.currency||"TRY",total:Math.max(0,safeNum(quoteForm.unitPrice))*safeNum(req.qty),note:quoteForm.note.trim(),status:"new",updatedAt:new Date().toISOString()};
+    if(!req||!supplier){alert("Talep veya tedarikci bulunamadi.");return;}
+    const supplierGroup=resolveSupplierGroup(supplier);
+    const payload={requestId:req.id,requestCode:req.code||"",supplierId:supplier.id,supplierName:supplier.name||"",supplierGroupId:supplierGroup.id||"",supplierGroupName:supplierGroup.name||"Grupsuz",supplierGroupColor:supplierGroup.color||"#64748b",unitPrice:Math.max(0,safeNum(quoteForm.unitPrice)),leadTimeDays:Math.max(0,safeNum(quoteForm.leadTimeDays)),currency:quoteForm.currency||supplier.currency||"TRY",total:Math.max(0,safeNum(quoteForm.unitPrice))*safeNum(req.qty),note:quoteForm.note.trim(),status:"new",updatedAt:new Date().toISOString()};
     const id=await window.DB.addDoc("supplierQuotes",payload);
     if(!id){alert("Teklif kaydedilemedi.");return;}
     setQuotes(prev=>[{id,...payload},...prev]);
@@ -10973,7 +11176,7 @@ function PurchasingModule({currentUser}){
   async function quoteToPo(q){
     const req=reqById[q.requestId];
     if(!req){alert("Talep bulunamadi.");return;}
-    const payload={code:`PO-${String(Date.now()).slice(-6)}`,requestId:req.id,requestCode:req.code||"",supplierId:q.supplierId,supplierName:q.supplierName||"",materialId:req.materialId||"",materialCode:req.materialCode||"",materialName:req.materialName||"",qty:safeNum(req.qty),unitPrice:safeNum(q.unitPrice),currency:q.currency||"TRY",total:safeNum(req.qty)*safeNum(q.unitPrice),orderDate:todayStr(),expectedDate:addDays(todayStr(),safeNum(q.leadTimeDays)),receivedQty:0,rejectedQty:0,status:"ordered",createdBy:currentUser.id,updatedAt:new Date().toISOString()};
+    const payload={code:`PO-${String(Date.now()).slice(-6)}`,requestId:req.id,requestCode:req.code||"",supplierId:q.supplierId,supplierName:q.supplierName||"",supplierGroupId:q.supplierGroupId||"",supplierGroupName:q.supplierGroupName||"",supplierGroupColor:q.supplierGroupColor||"",materialId:req.materialId||"",materialCode:req.materialCode||"",materialName:req.materialName||"",qty:safeNum(req.qty),unitPrice:safeNum(q.unitPrice),currency:q.currency||"TRY",total:safeNum(req.qty)*safeNum(q.unitPrice),orderDate:todayStr(),expectedDate:addDays(todayStr(),safeNum(q.leadTimeDays)),receivedQty:0,rejectedQty:0,status:"ordered",createdBy:currentUser.id,updatedAt:new Date().toISOString()};
     const id=await window.DB.addDoc("purchaseOrders",payload);
     if(!id){alert("PO olusturulamadi.");return;}
     await setRequestStatus(req,"ordered");
@@ -11004,6 +11207,7 @@ function PurchasingModule({currentUser}){
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
   const openReq=requests.filter(r=>!["received","cancelled","closed"].includes(r.status||""));
   const supplierPerf=suppliers.map(s=>{
+    const group=resolveSupplierGroup(s);
     const pos=orders.filter(o=>o.supplierId===s.id);
     const gr=receipts.filter(r=>pos.some(p=>p.id===r.poId));
     const onTime=gr.filter(r=>{
@@ -11012,7 +11216,21 @@ function PurchasingModule({currentUser}){
     }).length;
     const quality=gr.reduce((a,r)=>a+safeNum(r.acceptedQty),0);
     const total=gr.reduce((a,r)=>a+safeNum(r.acceptedQty)+safeNum(r.rejectedQty),0);
-    return {id:s.id,name:s.name||"-",po:pos.length,onTimePct:gr.length?Math.round((onTime/gr.length)*100):0,qualityPct:total?Math.round((quality/total)*100):0};
+    return {id:s.id,name:s.name||"-",groupId:group.id||"ungrouped",groupName:group.name||"Grupsuz",groupColor:group.color||"#64748b",groupSort:safeNum(group.sortOrder)||99999,po:pos.length,onTimePct:gr.length?Math.round((onTime/gr.length)*100):0,qualityPct:total?Math.round((quality/total)*100):0};
+  });
+  const filteredSupplierPerf=supplierGroupFilter==="all"?supplierPerf:supplierPerf.filter(row=>row.groupId===supplierGroupFilter);
+  const supplierPerfMap={};
+  filteredSupplierPerf.forEach(row=>{
+    const key=row.groupId||"ungrouped";
+    if(!supplierPerfMap[key]){
+      supplierPerfMap[key]={id:key,name:row.groupName||"Grupsuz",color:normalizeHexColor(row.groupColor,"#64748b"),sortOrder:safeNum(row.groupSort)||99999,rows:[]};
+    }
+    supplierPerfMap[key].rows.push(row);
+  });
+  const supplierPerfGroups=Object.values(supplierPerfMap).sort((a,b)=>{
+    const s=safeNum(a.sortOrder)-safeNum(b.sortOrder);
+    if(s!==0) return s;
+    return (a.name||"").localeCompare(b.name||"","tr");
   });
 
   return (
@@ -11027,9 +11245,10 @@ function PurchasingModule({currentUser}){
         <>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
             <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Tedarikci Karti</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
               <div><span style={labelSt}>Unvan</span><input style={inputSt} value={supplierForm.name} onChange={e=>setSupplierForm(f=>({...f,name:e.target.value}))}/></div>
               <div><span style={labelSt}>Kod</span><input style={inputSt} value={supplierForm.code} onChange={e=>setSupplierForm(f=>({...f,code:e.target.value}))}/></div>
+              <div><span style={labelSt}>Grup</span><select style={inputSt} value={supplierForm.groupId} onChange={e=>setSupplierForm(f=>({...f,groupId:e.target.value}))}>{supplierGroups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
               <div><span style={labelSt}>Lead-Time</span><input style={inputSt} type="number" min="0" value={supplierForm.leadTimeDays} onChange={e=>setSupplierForm(f=>({...f,leadTimeDays:e.target.value}))}/></div>
               <div><span style={labelSt}>E-Posta</span><input style={inputSt} value={supplierForm.email} onChange={e=>setSupplierForm(f=>({...f,email:e.target.value}))}/></div>
               <div><span style={labelSt}>Telefon</span><input style={inputSt} value={supplierForm.phone} onChange={e=>setSupplierForm(f=>({...f,phone:e.target.value}))}/></div>
@@ -11038,15 +11257,34 @@ function PurchasingModule({currentUser}){
             <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}><button onClick={saveSupplier} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Kaydet</button></div>
           </div>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Tedarikci Performansi</div>
-            {supplierPerf.map(s=>(
-              <div key={s.id} style={{display:"grid",gridTemplateColumns:"1.4fr repeat(3,.8fr)",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
-                <div style={{color:C.text,fontWeight:700}}>{s.name}</div>
-                <div style={{color:C.muted2}}>PO: {s.po}</div>
-                <div style={{color:s.onTimePct<70?C.red:C.green}}>OTD %{s.onTimePct}</div>
-                <div style={{color:s.qualityPct<90?C.warn:C.green}}>Kalite %{s.qualityPct}</div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+              <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Tedarikci Performansi</div>
+              <select style={{...inputSt,padding:"6px 8px",fontSize:12,minWidth:220}} value={supplierGroupFilter} onChange={e=>setSupplierGroupFilter(e.target.value)}>
+                <option value="all">Tum Gruplar</option>
+                {supplierGroups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
+                {supplierPerf.some(x=>x.groupId==="ungrouped")&&<option value="ungrouped">Grupsuz</option>}
+              </select>
+            </div>
+            {supplierPerfGroups.map(group=>(
+              <div key={group.id} style={{border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden",marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",background:C.surface,borderBottom:`1px solid ${C.border}`}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{width:10,height:10,borderRadius:99,background:normalizeHexColor(group.color,"#64748b"),display:"inline-block"}}/>
+                    <div style={{fontSize:12,color:C.text,fontWeight:700}}>{group.name}</div>
+                  </div>
+                  <div style={{fontSize:11,color:C.muted2}}>{group.rows.length} tedarikci</div>
+                </div>
+                {group.rows.map(s=>(
+                  <div key={s.id} style={{display:"grid",gridTemplateColumns:"1.4fr repeat(3,.8fr)",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
+                    <div style={{color:C.text,fontWeight:700}}>{s.name}</div>
+                    <div style={{color:C.muted2}}>PO: {s.po}</div>
+                    <div style={{color:s.onTimePct<70?C.red:C.green}}>OTD %{s.onTimePct}</div>
+                    <div style={{color:s.qualityPct<90?C.warn:C.green}}>Kalite %{s.qualityPct}</div>
+                  </div>
+                ))}
               </div>
             ))}
+            {supplierPerf.length>0&&supplierPerfGroups.length===0&&<div style={{fontSize:12,color:C.muted2}}>Secilen grupte kayit yok.</div>}
             {supplierPerf.length===0&&<div style={{fontSize:12,color:C.muted2}}>Kayitli tedarikci yok.</div>}
           </div>
         </>
@@ -11058,7 +11296,7 @@ function PurchasingModule({currentUser}){
             <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Tedarikci Teklifi</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:8}}>
               <div><span style={labelSt}>Talep</span><select style={inputSt} value={quoteForm.requestId} onChange={e=>setQuoteForm(f=>({...f,requestId:e.target.value}))}><option value="">Secin</option>{openReq.map(r=><option key={r.id} value={r.id}>{r.code} · {r.materialCode} · {r.qty}</option>)}</select></div>
-              <div><span style={labelSt}>Tedarikci</span><select style={inputSt} value={quoteForm.supplierId} onChange={e=>setQuoteForm(f=>({...f,supplierId:e.target.value}))}><option value="">Secin</option>{suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+              <div><span style={labelSt}>Tedarikci</span><select style={inputSt} value={quoteForm.supplierId} onChange={e=>setQuoteForm(f=>({...f,supplierId:e.target.value}))}><option value="">Secin</option>{suppliers.map(s=>{const group=resolveSupplierGroup(s);return <option key={s.id} value={s.id}>{s.name} · {group.name}</option>;})}</select></div>
               <div><span style={labelSt}>Birim Fiyat</span><input style={inputSt} type="number" min="0" value={quoteForm.unitPrice} onChange={e=>setQuoteForm(f=>({...f,unitPrice:e.target.value}))}/></div>
               <div><span style={labelSt}>Lead-Time</span><input style={inputSt} type="number" min="0" value={quoteForm.leadTimeDays} onChange={e=>setQuoteForm(f=>({...f,leadTimeDays:e.target.value}))}/></div>
               <div><span style={labelSt}>Para</span><select style={inputSt} value={quoteForm.currency} onChange={e=>setQuoteForm(f=>({...f,currency:e.target.value}))}><option value="TRY">TRY</option><option value="EUR">EUR</option><option value="USD">USD</option></select></div>
@@ -11070,7 +11308,7 @@ function PurchasingModule({currentUser}){
             <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Teklif Listesi</div>
             {quotes.map(q=>(
               <div key={q.id} style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr 1fr auto",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,alignItems:"center",fontSize:12}}>
-                <div style={{color:C.text,fontWeight:700}}>{q.requestCode} · {q.supplierName}</div>
+                <div style={{color:C.text,fontWeight:700}}>{q.requestCode} · {q.supplierName} {q.supplierGroupName?`· ${q.supplierGroupName}`:""}</div>
                 <div style={{color:C.muted2}}>{moneyFmt(q.unitPrice)} / {q.currency}</div>
                 <div style={{color:C.muted2}}>Toplam {moneyFmt(q.total)}</div>
                 <div style={{color:C.muted2}}>LT {q.leadTimeDays}g</div>
@@ -11122,7 +11360,7 @@ function PurchasingModule({currentUser}){
             <div style={{display:"flex",justifyContent:"flex-end"}}><button onClick={receivePo} style={{...btnSt("green"),padding:"8px 12px",fontSize:12}}>Malzeme Girisi Isle</button></div>
             {orders.map(o=>(
               <div key={o.id} style={{padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.muted2,display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr .8fr",gap:8}}>
-                <div style={{color:C.text,fontWeight:700}}>{o.code} · {o.supplierName}</div>
+                <div style={{color:C.text,fontWeight:700}}>{o.code} · {o.supplierName} {o.supplierGroupName?`· ${o.supplierGroupName}`:""}</div>
                 <div>Malzeme: {o.materialCode} · {o.qty}</div>
                 <div>Alinan: {safeNum(o.receivedQty)} · Red: {safeNum(o.rejectedQty)}</div>
                 <Badge label={o.status||"ordered"} color={o.status==="received"?C.green:C.warn}/>
