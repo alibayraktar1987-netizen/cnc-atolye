@@ -4165,11 +4165,14 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
   const [orders,setOrders]=useState([]);
   const [tools,setTools]=useState([]);
   const [plans,setPlans]=useState([]);
+  const [telemetryRows,setTelemetryRows]=useState([]);
   const [todayEntries,setTodayEntries]=useState([]);
   const [saved,setSaved]=useState(false);
   const [search,setSearch]=useState("");
   const [showPicker,setShowPicker]=useState(false);
   const [editId,setEditId]=useState(null);
+  const [lockedMachine,setLockedMachine]=useState("");
+  const [stationTag,setStationTag]=useState("");
   const [showToolModal,setShowToolModal]=useState(false);
   const [showShiftModal,setShowShiftModal]=useState(false);
   const [previewFile,setPreviewFile]=useState(null);
@@ -4187,12 +4190,57 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
   });
 
   useEffect(()=>{
-    Promise.all([window.DB.getAll("orders"),window.DB.getAll("toolStock"),window.DB.getAll("plans")]).then(([o,t,p])=>{
+    Promise.all([window.DB.getAll("orders"),window.DB.getAll("toolStock"),window.DB.getAll("plans"),window.DB.getAll("machineTelemetryMock")]).then(([o,t,p,tel])=>{
       setOrders(o.filter(x=>isOpenOrderStatus(x.status)));
       setTools(t);
       setPlans(p||[]);
+      setTelemetryRows((tel||[]).sort((a,b)=>(b.collectedAtUtc||b.createdAt||"").localeCompare(a.collectedAtUtc||a.createdAt||"")));
     });
   },[]);
+
+  useEffect(()=>{
+    let timer=0;
+    let cancelled=false;
+    async function refreshTelemetry(){
+      const tel=await window.DB.getAll("machineTelemetryMock");
+      if(cancelled) return;
+      setTelemetryRows((tel||[]).sort((a,b)=>(b.collectedAtUtc||b.createdAt||"").localeCompare(a.collectedAtUtc||a.createdAt||"")));
+    }
+    refreshTelemetry();
+    timer=setInterval(refreshTelemetry,7000);
+    return ()=>{
+      cancelled=true;
+      clearInterval(timer);
+    };
+  },[]);
+
+  useEffect(()=>{
+    if(typeof window==="undefined") return;
+    const params=new URLSearchParams(window.location.search||"");
+    const qpMachine=(params.get("machine")||"").trim();
+    const qpStation=(params.get("station")||params.get("screen")||"").trim();
+    if(qpMachine.toLowerCase()==="all"){
+      try{window.localStorage.removeItem("operator_locked_machine");}catch{}
+      setLockedMachine("");
+      setStationTag(qpStation||"");
+      return;
+    }
+    let resolved=qpMachine;
+    if(!resolved){
+      try{
+        resolved=(window.localStorage.getItem("operator_locked_machine")||"").trim();
+      }catch{}
+    }
+    if(resolved){
+      setLockedMachine(resolved);
+      setStationTag(qpStation||resolved);
+      setForm(prev=>({...prev,machine:resolved,selectedOrder:null}));
+      try{window.localStorage.setItem("operator_locked_machine",resolved);}catch{}
+      return;
+    }
+    setLockedMachine("");
+    setStationTag(qpStation||"");
+  },[machines.join("|")]);
 
   useEffect(()=>{
     window.DB.getAll("entries").then(e=>setTodayEntries(e.filter(x=>x.date===form.entryDate&&x.operatorId===currentUser.id)));
@@ -4280,6 +4328,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
     return null;
   }
   function selectMachine(machine){
+    if(lockedMachine) return;
     const plannedOrder=getPlannedOrder(machine,form.entryDate);
     setForm(p=>({...p,machine,selectedOrder:plannedOrder||null}));
     setShowPicker(false);
@@ -4444,18 +4493,63 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
     if(canFilePreview(file)) setPreviewFile(file);
     else downloadOrderFile(file);
   }
-  const opTheme={
-    shell:"#0f1419",
-    panel:"#1d9944",
-    panelDark:"#177f38",
-    panelSoft:"#21a94b",
-    border:"rgba(255,255,255,.24)",
-    text:"#ecfff2",
-    textDim:"#cbf1d6",
-    textMuted:"#a6dfb8",
-    danger:"#ffb1b1",
-    warn:"#ffe18f",
-  };
+  const latestTelemetryByMachine={};
+  telemetryRows.forEach(r=>{
+    const key=(r.machineName||r.machine||r.machineCode||"").trim();
+    if(!key||latestTelemetryByMachine[key]) return;
+    latestTelemetryByMachine[key]=r;
+  });
+  const machineTelemetry=latestTelemetryByMachine[form.machine]||null;
+  const machineStatus=String(machineTelemetry?.status||"offline").toLowerCase();
+  const statusMeta=(()=>{
+    if(machineStatus==="running") return {label:"CALISIYOR",color:"#27d67a",mode:"running"};
+    if(machineStatus==="idle"||machineStatus==="setup") return {label:"DURMADA",color:"#ffb247",mode:"idle"};
+    if(machineStatus==="alarm") return {label:"ALARM",color:"#ff6161",mode:"alarm"};
+    return {label:"OFFLINE",color:"#ff6161",mode:"offline"};
+  })();
+  const opTheme=(()=>{
+    if(statusMeta.mode==="running"){
+      return {
+        shell:"#0f1419",
+        panel:"#1d9944",
+        panelDark:"#177f38",
+        panelSoft:"#21a94b",
+        border:"rgba(255,255,255,.24)",
+        text:"#ecfff2",
+        textDim:"#cbf1d6",
+        textMuted:"#a6dfb8",
+        danger:"#ffb1b1",
+        warn:"#ffe18f",
+      };
+    }
+    if(statusMeta.mode==="idle"){
+      return {
+        shell:"#17120a",
+        panel:"#b46b1a",
+        panelDark:"#935713",
+        panelSoft:"#c87d27",
+        border:"rgba(255,255,255,.24)",
+        text:"#fff4e4",
+        textDim:"#ffe0b9",
+        textMuted:"#f7c98f",
+        danger:"#ffd2ba",
+        warn:"#ffe18f",
+      };
+    }
+    return {
+      shell:"#1a1010",
+      panel:"#aa3030",
+      panelDark:"#8d2525",
+      panelSoft:"#bc3a3a",
+      border:"rgba(255,255,255,.24)",
+      text:"#ffecec",
+      textDim:"#ffcfcf",
+      textMuted:"#f5abab",
+      danger:"#ffd4d4",
+      warn:"#ffd7a8",
+    };
+  })();
+  const isMachineLocked=Boolean(lockedMachine);
   const orderDayEntries=form.selectedOrder
     ? todayEntries.filter(e=>e.machine===form.machine&&e.jobCode===form.selectedOrder.code)
     : [];
@@ -4480,13 +4574,19 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
           </div>
           <div>
             <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.7,textTransform:"uppercase"}}>Istasyon / Vardiya</div>
-            <div style={{fontSize:17,fontWeight:700,color:opTheme.text}}>{selectedShiftMeta.label} · {selectedShiftMeta.time}</div>
+            <div style={{fontSize:17,fontWeight:700,color:opTheme.text}}>
+              {(stationTag||form.machine)} · {selectedShiftMeta.label} · {selectedShiftMeta.time}
+            </div>
           </div>
           <div>
             <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.7,textTransform:"uppercase"}}>Is Emri</div>
             <div style={{fontSize:17,fontWeight:700,color:opTheme.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{form.selectedOrder?.code||"-"}{form.selectedOrder?.name?` | ${form.selectedOrder.name}`:""}</div>
           </div>
           <div style={{display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
+            <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"6px 10px",border:`1px solid ${opTheme.border}`,borderRadius:8,background:"rgba(255,255,255,.12)",fontSize:11,color:opTheme.text,fontWeight:700}}>
+              <span style={{width:10,height:10,borderRadius:"50%",background:statusMeta.color,display:"inline-block"}}/>
+              {statusMeta.label}
+            </span>
             <input type="date" max={todayStr()} value={form.entryDate} onChange={e=>fv("entryDate",e.target.value||todayStr())} style={{...inputSt,padding:"8px 10px",fontSize:12,maxWidth:160,background:"rgba(255,255,255,.15)",borderColor:opTheme.border,color:opTheme.text}}/>
             {SHIFTS.map(s=><button key={s.id} onClick={()=>fv("shift",s.id)} style={{...btnSt(form.shift===s.id?"primary":"ghost"),padding:"7px 9px",fontSize:11,opacity:form.shift===s.id?1:0.95}}>{s.label}</button>)}
           </div>
@@ -4499,9 +4599,15 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES}) {
           </div>
         )}
 
-        <div style={{marginTop:8,display:"flex",gap:7,flexWrap:"wrap"}}>
-          {machines.map(m=><button key={m} onClick={()=>selectMachine(m)} style={{...chip(form.machine===m,form.machine===m?C.accent:C.muted2),padding:"8px 12px",fontSize:12}}>{m}</button>)}
-        </div>
+        {isMachineLocked?(
+          <div style={{marginTop:8,padding:"8px 10px",borderRadius:10,border:`1px solid ${opTheme.border}`,background:"rgba(255,255,255,.08)",fontSize:12,color:opTheme.textDim}}>
+            Bu ekran tezgaha ozel calisiyor: <strong style={{color:opTheme.text}}>{form.machine}</strong>
+          </div>
+        ):(
+          <div style={{marginTop:8,display:"flex",gap:7,flexWrap:"wrap"}}>
+            {machines.map(m=><button key={m} onClick={()=>selectMachine(m)} style={{...chip(form.machine===m,form.machine===m?C.accent:C.muted2),padding:"8px 12px",fontSize:12}}>{m}</button>)}
+          </div>
+        )}
 
         <div style={{marginTop:10,background:opTheme.panel,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:"12px 10px"}}>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:10}}>
