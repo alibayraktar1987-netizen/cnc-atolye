@@ -6436,6 +6436,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const dayColWidth=26;
   const machineColWidth=144;
   const ganttMinWidth=Math.max(980,machineColWidth+(ganttDays.length*dayColWidth));
+  const ganttGridTemplate=`${machineColWidth}px repeat(${ganttDays.length}, minmax(${dayColWidth}px, 1fr))`;
   const planQueryText=String(planQuery||"").trim().toLowerCase();
   const filteredPlanSegments=sortedPlanSegments.filter(seg=>{
     if(machineFilter!=="all"&&seg.machine!==machineFilter) return false;
@@ -6862,8 +6863,8 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
               {monthOrders.map(o=><span key={o.id} style={{display:"inline-flex",alignItems:"center",gap:6,background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px",fontSize:11,color:C.muted2}}><span style={{width:10,height:10,borderRadius:3,background:o.color,display:"inline-block"}}/>{o.code?`${o.code} - ${o.name||""}${o.customer?` - ${o.customer}`:""}`:(o.name||"İş Emri")}</span>)}
             </div>}
             <div ref={ganttRef} style={{overflow:"auto",border:`1px solid ${C.border}`,borderRadius:10,background:C.card}}>
-              <div style={{minWidth:ganttMinWidth,padding:8}}>
-                <div style={{display:"grid",gridTemplateColumns:`${machineColWidth}px repeat(${ganttDays.length}, ${dayColWidth}px)`,columnGap:1,rowGap:1,alignItems:"center",marginBottom:4}}>
+              <div style={{minWidth:ganttMinWidth,width:"100%",padding:8}}>
+                <div style={{display:"grid",gridTemplateColumns:ganttGridTemplate,columnGap:1,rowGap:1,alignItems:"center",marginBottom:4}}>
                   <div style={{fontSize:10,color:C.muted2,fontWeight:700,textTransform:"uppercase",letterSpacing:.6,paddingLeft:4}}>Tezgah</div>
                   {ganttDays.map((d,i)=>{
                     const wd=parseYmdLocal(d).getDay();
@@ -6872,7 +6873,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                   })}
                 </div>
                 {filteredGanttRows.map(row=>(
-                  <div key={row.machine} style={{display:"grid",gridTemplateColumns:`${machineColWidth}px repeat(${ganttDays.length}, ${dayColWidth}px)`,columnGap:1,rowGap:1,alignItems:"center",marginBottom:3}}>
+                  <div key={row.machine} style={{display:"grid",gridTemplateColumns:ganttGridTemplate,columnGap:1,rowGap:1,alignItems:"center",marginBottom:3}}>
                     <div style={{fontSize:12,fontWeight:700,color:C.text,padding:"0 6px 0 4px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{row.machine}</div>
                     {ganttDays.map(d=>{
                       const p=row.byDate[d];
