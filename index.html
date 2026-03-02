@@ -946,6 +946,147 @@ function MachineSettings({machines,onUpdate}) {
   );
 }
 
+function resolveOperatorBaseUrl(){
+  if(typeof window==="undefined") return "";
+  return `${window.location.origin}${window.location.pathname}`;
+}
+
+function buildOperatorScreenUrl(baseUrl,machine,station){
+  const fallback=resolveOperatorBaseUrl();
+  const raw=(baseUrl||fallback||"").trim()||fallback;
+  try{
+    const u=new URL(raw,typeof window!=="undefined"?window.location.href:undefined);
+    u.searchParams.set("tab","giris");
+    if(machine) u.searchParams.set("machine",machine);
+    if(station) u.searchParams.set("station",station);
+    return u.toString();
+  }catch{
+    const joiner=raw.includes("?")?"&":"?";
+    const parts=["tab=giris"];
+    if(machine) parts.push(`machine=${encodeURIComponent(machine)}`);
+    if(station) parts.push(`station=${encodeURIComponent(station)}`);
+    return `${raw}${joiner}${parts.join("&")}`;
+  }
+}
+
+function OperatorUrlSettings({machines}) {
+  const [baseUrl,setBaseUrl]=useState(resolveOperatorBaseUrl());
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [copiedLabel,setCopiedLabel]=useState("");
+
+  useEffect(()=>{
+    let disposed=false;
+    async function loadConfig(){
+      const doc=await window.DB.getDoc("config","operatorScreenUrl");
+      if(disposed) return;
+      if(doc&&typeof doc.baseUrl==="string"&&doc.baseUrl.trim()){
+        setBaseUrl(doc.baseUrl.trim());
+      }else{
+        setBaseUrl(resolveOperatorBaseUrl());
+      }
+      setLoading(false);
+    }
+    loadConfig();
+    return ()=>{disposed=true;};
+  },[]);
+
+  async function saveBaseUrl(){
+    const clean=(baseUrl||"").trim();
+    if(!clean){alert("Temel URL bos olamaz.");return;}
+    setSaving(true);
+    const ok=await window.DB.setDoc("config","operatorScreenUrl",{
+      baseUrl:clean,
+      updatedAt:new Date().toISOString(),
+    });
+    setSaving(false);
+    if(!ok){alert("URL ayari kaydedilemedi.");return;}
+    setBaseUrl(clean);
+    alert("Operator URL ayari kaydedildi.");
+  }
+
+  function resetBaseUrl(){
+    setBaseUrl(resolveOperatorBaseUrl());
+  }
+
+  async function copyText(label,text){
+    try{
+      if(navigator.clipboard&&window.isSecureContext){
+        await navigator.clipboard.writeText(text);
+      }else{
+        const ta=document.createElement("textarea");
+        ta.value=text;
+        ta.setAttribute("readonly","");
+        ta.style.position="absolute";
+        ta.style.left="-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      setCopiedLabel(label);
+      setTimeout(()=>setCopiedLabel(""),1200);
+    }catch{
+      alert("Kopyalama basarisiz.");
+    }
+  }
+
+  const machineRows=(machines||[]).map(machine=>({
+    machine,
+    station:machine,
+    url:buildOperatorScreenUrl(baseUrl,machine,machine),
+  }));
+  const allUrl=buildOperatorScreenUrl(baseUrl,"all","");
+  const helperText=loading?"Yukleniyor...":(copiedLabel?`${copiedLabel} URL kopyalandi.`:"Her tezgah icin ozel operator linki olusturulur.");
+
+  return (
+    <div style={{marginBottom:18}}>
+      <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Operator Ekrani Ozel URL</div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:8,alignItems:"end",marginBottom:10}}>
+          <div>
+            <span style={labelSt}>Temel URL</span>
+            <input style={inputSt} value={baseUrl} onChange={e=>setBaseUrl(e.target.value)} placeholder="http://localhost:5173/"/>
+          </div>
+          <button onClick={saveBaseUrl} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,whiteSpace:"nowrap"}} disabled={saving||loading}>{saving?"Kaydediliyor...":"URL Kaydet"}</button>
+          <button onClick={resetBaseUrl} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,whiteSpace:"nowrap"}} disabled={saving||loading}>Varsayilan</button>
+        </div>
+        <div style={{fontSize:11,color:C.muted2,marginBottom:10}}>{helperText}</div>
+
+        <div style={{display:"grid",gap:8}}>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:13,color:C.text}}>Tum Tezgahlar (kilit yok)</div>
+                <div style={{fontSize:12,color:C.muted2,marginTop:2,wordBreak:"break-all"}}>{allUrl}</div>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>copyText("Tum Tezgahlar",allUrl)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kopyala</button>
+                <a href={allUrl} target="_blank" rel="noreferrer" style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,textDecoration:"none",display:"inline-flex",alignItems:"center"}}>Ac</a>
+              </div>
+            </div>
+          </div>
+
+          {machineRows.map(row=>(
+            <div key={row.machine} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <div style={{minWidth:180,flex:1}}>
+                  <div style={{fontWeight:700,fontSize:13,color:C.text}}>{row.machine}</div>
+                  <div style={{fontSize:12,color:C.muted2,marginTop:2,wordBreak:"break-all"}}>{row.url}</div>
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={()=>copyText(row.machine,row.url)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kopyala</button>
+                  <a href={row.url} target="_blank" rel="noreferrer" style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,textDecoration:"none",display:"inline-flex",alignItems:"center"}}>Ac</a>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ════════════════════════════════════════════════════════════
 //  ADMIN USERS
 // ════════════════════════════════════════════════════════════
@@ -1076,6 +1217,7 @@ function AdminUsers({currentUser,machines,onMachinesUpdate,currentLogo,onLogoUpd
         </div>
       </div>
       <MachineSettings machines={machines} onUpdate={onMachinesUpdate}/>
+      <OperatorUrlSettings machines={machines}/>
       <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>Ayarlar · Kullanıcı Yönetimi · {list.length} kullanıcı</div>
       {list.map(u=>(
         <div key={u.id} style={{background:C.card,border:`1px solid ${u.status==="pending"?C.warn+"60":C.border}`,borderRadius:14,padding:"14px 16px",marginBottom:10}}>
@@ -8722,6 +8864,7 @@ function App() {
   const [mobileMenuOpen,setMobileMenuOpen]=useState(false);
   const [menuQuery,setMenuQuery]=useState("");
   const [desktopMenuCollapsed,setDesktopMenuCollapsed]=useState(false);
+  const tabFromUrlAppliedRef=useRef(false);
 
   useEffect(()=>{
     async function init() {
@@ -8875,6 +9018,17 @@ function App() {
   const groupOrder=["Planlama","Operasyon","Tedarik ve Stok","Analiz ve Yonetim","Sistem"];
   const visibleGroups=groupOrder.filter(g=>groupedTabs[g]&&groupedTabs[g].length>0);
   const currentRoleLabel=(USER_ROLES.find(r=>r.id===userForPerm.role)||{label:userForPerm.role||"-"}).label;
+
+  useEffect(()=>{
+    if(tabFromUrlAppliedRef.current) return;
+    if(!currentUser) return;
+    if(typeof window==="undefined") return;
+    const params=new URLSearchParams(window.location.search||"");
+    const tabParam=(params.get("tab")||"").trim();
+    tabFromUrlAppliedRef.current=true;
+    if(!tabParam) return;
+    if(tabs.some(t=>t.id===tabParam)) setTab(tabParam);
+  },[currentUser,tabs]);
 
   useEffect(()=>{
     if(tabs.length===0) return;
