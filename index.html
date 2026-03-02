@@ -1835,7 +1835,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
     drawingFile:null,
     notes:"",
   });
-  const [bomForm,setBomForm]=useState({componentType:"raw_material",componentCode:"",componentName:"",qtyPer:"1",scrapPct:"0"});
+  const [bomForm,setBomForm]=useState({componentType:"raw_material",componentCode:"",componentName:"",qtyPer:"1",scrapPct:"0",cutLengthMm:"0",barDiameterMm:"0"});
   const [routingForm,setRoutingForm]=useState({operation:"Op-10",machine:machines[0]||"CNC-1",setupSec:"300",cycleSec:"60",ncProgram:"",tooling:""});
 
   const load=useCallback(async()=>{
@@ -1851,6 +1851,39 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
     const q=search.toLowerCase().trim();
     if(!q) return true;
     return (p.partNo||"").toLowerCase().includes(q)||(p.name||"").toLowerCase().includes(q)||(p.material||"").toLowerCase().includes(q);
+  });
+  const BAR_LENGTH_MM=3000;
+  const normalized=s=>String(s||"").trim().toUpperCase();
+  const findMaterialForBom=(code,name)=>{
+    const codeKey=normalized(code);
+    const nameKey=normalized(name);
+    return materials.find(m=>{
+      const mCode=normalized(m.code);
+      const mName=normalized(m.name);
+      return (codeKey&& (mCode===codeKey||mName===codeKey)) || (nameKey&& (mCode===nameKey||mName===nameKey));
+    })||null;
+  };
+  const calcBarRequirement=({qtyPer,scrapPct,cutLengthMm,barDiameterMm,density})=>{
+    const qty=Math.max(0,safeNum(qtyPer));
+    const scrap=Math.max(0,Math.min(100,safeNum(scrapPct)));
+    const cutLen=Math.max(0,safeNum(cutLengthMm));
+    const diameter=Math.max(0,safeNum(barDiameterMm));
+    const rho=Math.max(0,safeNum(density));
+    const netRequiredMm=qty*cutLen;
+    const requiredWithScrapMm=netRequiredMm*(1+(scrap/100));
+    const barCount3m=requiredWithScrapMm>0?Math.ceil(requiredWithScrapMm/BAR_LENGTH_MM):0;
+    const areaMm2=diameter>0?(Math.PI*diameter*diameter)/4:0;
+    const netWeightKg=(areaMm2>0&&rho>0)?((areaMm2*requiredWithScrapMm*rho)/1000000):0;
+    const purchaseWeightKg=(areaMm2>0&&rho>0&&barCount3m>0)?((areaMm2*(barCount3m*BAR_LENGTH_MM)*rho)/1000000):0;
+    return {netRequiredMm,requiredWithScrapMm,barCount3m,netWeightKg,purchaseWeightKg,density:rho};
+  };
+  const bomMaterial=findMaterialForBom(bomForm.componentCode,bomForm.componentName);
+  const bomBarPreview=calcBarRequirement({
+    qtyPer:bomForm.qtyPer,
+    scrapPct:bomForm.scrapPct,
+    cutLengthMm:bomForm.cutLengthMm,
+    barDiameterMm:bomForm.barDiameterMm,
+    density:bomMaterial?.density,
   });
 
   const partCostCalc=(()=>{
@@ -1941,19 +1974,36 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
   async function addBomLine(){
     if(!selectedPart){alert("Once parca secin.");return;}
     if(!bomForm.componentCode.trim()||safeNum(bomForm.qtyPer)<=0){alert("BOM satiri eksik.");return;}
+    const linkedMaterial=findMaterialForBom(bomForm.componentCode,bomForm.componentName);
+    const barStats=calcBarRequirement({
+      qtyPer:bomForm.qtyPer,
+      scrapPct:bomForm.scrapPct,
+      cutLengthMm:bomForm.cutLengthMm,
+      barDiameterMm:bomForm.barDiameterMm,
+      density:linkedMaterial?.density,
+    });
     const line={
       id:`bom_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`,
       componentType:bomForm.componentType||"raw_material",
       componentCode:bomForm.componentCode.trim().toUpperCase(),
-      componentName:bomForm.componentName.trim(),
+      componentName:bomForm.componentName.trim()||(linkedMaterial?.name||""),
       qtyPer:Math.max(0,safeNum(bomForm.qtyPer)),
       scrapPct:Math.max(0,Math.min(100,safeNum(bomForm.scrapPct))),
+      cutLengthMm:Math.max(0,safeNum(bomForm.cutLengthMm)),
+      barDiameterMm:Math.max(0,safeNum(bomForm.barDiameterMm)),
+      barLengthMm:BAR_LENGTH_MM,
+      materialId:linkedMaterial?.id||"",
+      materialDensity:Math.max(0,safeNum(linkedMaterial?.density)),
+      requiredLengthMm:barStats.requiredWithScrapMm,
+      barCount3m:barStats.barCount3m,
+      netWeightKg:barStats.netWeightKg,
+      purchaseWeightKg:barStats.purchaseWeightKg,
     };
     const nextLines=[...(selectedPart.bomLines||[]),line];
     const ok=await window.DB.updateDoc("parts",selectedPart.id,{bomLines:nextLines,updatedAt:new Date().toISOString(),updatedBy:currentUser.id});
     if(!ok){alert("BOM satiri eklenemedi.");return;}
     setParts(prev=>prev.map(x=>x.id===selectedPart.id?{...x,bomLines:nextLines}:x));
-    setBomForm({componentType:"raw_material",componentCode:"",componentName:"",qtyPer:"1",scrapPct:"0"});
+    setBomForm({componentType:"raw_material",componentCode:"",componentName:"",qtyPer:"1",scrapPct:"0",cutLengthMm:"0",barDiameterMm:"0"});
   }
   async function removeBomLine(lineId){
     if(!selectedPart) return;
@@ -2054,16 +2104,28 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
             <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
               <div style={{fontWeight:700,color:C.text,marginBottom:10}}>BOM (Urun Agaci)</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr .7fr .7fr auto",gap:6}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr .7fr .7fr .9fr .9fr auto",gap:6}}>
                 <select style={{...inputSt,padding:"7px 9px",fontSize:12}} value={bomForm.componentType} onChange={e=>setBomForm(f=>({...f,componentType:e.target.value}))}><option value="raw_material">Hammadde</option><option value="semi_finished">Yari Mamul</option><option value="consumable">Sarf</option></select>
                 <input style={{...inputSt,padding:"7px 9px",fontSize:12}} placeholder="Kod" value={bomForm.componentCode} onChange={e=>setBomForm(f=>({...f,componentCode:e.target.value}))}/>
+                <input style={{...inputSt,padding:"7px 9px",fontSize:12}} placeholder="Ad (opsiyonel)" value={bomForm.componentName} onChange={e=>setBomForm(f=>({...f,componentName:e.target.value}))}/>
                 <input style={{...inputSt,padding:"7px 9px",fontSize:12}} placeholder="Miktar" type="number" min="0" value={bomForm.qtyPer} onChange={e=>setBomForm(f=>({...f,qtyPer:e.target.value}))}/>
                 <input style={{...inputSt,padding:"7px 9px",fontSize:12}} placeholder="Hurda%" type="number" min="0" max="100" value={bomForm.scrapPct} onChange={e=>setBomForm(f=>({...f,scrapPct:e.target.value}))}/>
+                <input style={{...inputSt,padding:"7px 9px",fontSize:12}} placeholder="Kesim Boyu (mm)" type="number" min="0" value={bomForm.cutLengthMm} onChange={e=>setBomForm(f=>({...f,cutLengthMm:e.target.value}))}/>
+                <input style={{...inputSt,padding:"7px 9px",fontSize:12}} placeholder="Cubuk Cap (mm)" type="number" min="0" value={bomForm.barDiameterMm} onChange={e=>setBomForm(f=>({...f,barDiameterMm:e.target.value}))}/>
                 <button onClick={addBomLine} style={{...btnSt("green"),padding:"7px 9px",fontSize:12}}>Ekle</button>
+              </div>
+              <div style={{marginTop:8,padding:"8px 10px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,fontSize:12,color:C.muted2}}>
+                <div>3m Cubuk Ihtiyaci: <span style={{color:C.text,fontWeight:700}}>{bomBarPreview.barCount3m}</span> adet · Gerekli Boy: <span style={{color:C.text,fontWeight:700}}>{(bomBarPreview.requiredWithScrapMm/1000).toFixed(3)}</span> m</div>
+                <div style={{marginTop:2}}>Agirlik (Net): <span style={{color:C.text,fontWeight:700}}>{safeNum(bomBarPreview.netWeightKg).toFixed(3)}</span> kg · Satin Alma Agirligi: <span style={{color:C.text,fontWeight:700}}>{safeNum(bomBarPreview.purchaseWeightKg).toFixed(3)}</span> kg {bomMaterial&&safeNum(bomMaterial.density)>0?`· Yogunluk ${safeNum(bomMaterial.density).toFixed(3)} g/cm3`:""}</div>
               </div>
               {(selectedPart.bomLines||[]).map(line=>(
                 <div key={line.id} style={{marginTop:8,padding:"8px 10px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-                  <div style={{fontSize:12,color:C.muted2}}>{line.componentType} · <span style={{color:C.text,fontWeight:700}}>{line.componentCode}</span>{line.componentName?` - ${line.componentName}`:""} · Qty: {safeNum(line.qtyPer)} · Hurda %{safeNum(line.scrapPct)}</div>
+                  <div style={{fontSize:12,color:C.muted2}}>
+                    {line.componentType} · <span style={{color:C.text,fontWeight:700}}>{line.componentCode}</span>{line.componentName?` - ${line.componentName}`:""} · Qty: {safeNum(line.qtyPer)} · Hurda %{safeNum(line.scrapPct)}
+                    {(safeNum(line.cutLengthMm)>0||safeNum(line.barDiameterMm)>0||safeNum(line.barCount3m)>0)&&(
+                      <span> · Kesim {safeNum(line.cutLengthMm)} mm · Cap {safeNum(line.barDiameterMm)} mm · 3m Cubuk {safeNum(line.barCount3m)} ad · Agirlik {safeNum(line.purchaseWeightKg).toFixed(3)} kg</span>
+                    )}
+                  </div>
                   <button onClick={()=>removeBomLine(line.id)} style={{...btnSt("danger"),padding:"5px 9px",fontSize:11}}>Sil</button>
                 </div>
               ))}
@@ -2476,7 +2538,6 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
         discountPct:Math.max(0,Math.min(100,safeNum(l.discountPct))),
         dueDate:l.dueDate||todayStr(),
         partSec:Math.max(1,safeNum(l.partSec)||safeNum(findPartByNo(l.partNo)?.cycleSec)||60),
-        machine:l.machine||machines[0]||"CNC-1",
       })),
       grossAmount:quoteTotals.gross,
       discountAmount:quoteTotals.discount,
@@ -3207,15 +3268,15 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
               </div>
 
               <div style={{overflowX:"auto"}}>
-                <div style={{minWidth:1240,display:"flex",flexDirection:"column",gap:7}}>
-                  <div style={{display:"grid",gridTemplateColumns:"120px 180px 72px 84px 94px 88px 132px 94px 130px 104px 96px 44px",gap:7,fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:".35px"}}>
-                    <div>Parca No</div><div>Parca Adi</div><div>Rev.</div><div>Adet</div><div>Birim</div><div>Iskonto %</div><div>Termin</div><div>Cevrim sn</div><div>Tezgah</div><div>Tutar</div><div>Kutuphane</div><div/>
+                <div style={{minWidth:1120,display:"flex",flexDirection:"column",gap:7}}>
+                  <div style={{display:"grid",gridTemplateColumns:"120px 180px 72px 84px 94px 88px 132px 94px 104px 96px 44px",gap:7,fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:".35px"}}>
+                    <div>Parca No</div><div>Parca Adi</div><div>Rev.</div><div>Adet</div><div>Birim</div><div>Iskonto %</div><div>Termin</div><div>Cevrim sn</div><div>Tutar</div><div>Kutuphane</div><div/>
                   </div>
                   {quoteForm.lines.map((line,idx)=>{
                     const t=lineTotal(line);
                     const hasPart=Boolean(findPartByNo(line.partNo));
                     return (
-                      <div key={idx} style={{display:"grid",gridTemplateColumns:"120px 180px 72px 84px 94px 88px 132px 94px 130px 104px 96px 44px",gap:7}}>
+                      <div key={idx} style={{display:"grid",gridTemplateColumns:"120px 180px 72px 84px 94px 88px 132px 94px 104px 96px 44px",gap:7}}>
                         <input style={inputSt} list="quote-part-catalog" value={line.partNo} onChange={e=>{const val=e.target.value;setLine(idx,"partNo",val);if(findPartByNo(val)){syncQuoteLineFromPartNo(idx,val);}}} onBlur={()=>{const linked=syncQuoteLineFromPartNo(idx,line.partNo);applyCustomerPrice(idx,linked?.partNo||line.partNo);}} placeholder="P-NO"/>
                         <input style={inputSt} value={line.partName} onChange={e=>setLine(idx,"partName",e.target.value)} placeholder="Parca adi"/>
                         <input style={inputSt} value={line.revision} onChange={e=>setLine(idx,"revision",e.target.value.toUpperCase())} placeholder="A"/>
@@ -3224,7 +3285,6 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                         <input style={inputSt} type="number" min="0" max="100" value={line.discountPct} onChange={e=>setLine(idx,"discountPct",e.target.value)}/>
                         <input style={inputSt} type="date" value={line.dueDate||todayStr()} onChange={e=>setLine(idx,"dueDate",e.target.value)}/>
                         <input style={inputSt} type="number" min="1" value={line.partSec} onChange={e=>setLine(idx,"partSec",e.target.value)}/>
-                        <select style={inputSt} value={line.machine} onChange={e=>setLine(idx,"machine",e.target.value)}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
                         <div style={{...inputSt,display:"flex",alignItems:"center",justifyContent:"flex-end",fontWeight:700,color:C.text}}>{safeNum(t.net).toFixed(2)}</div>
                         <div style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
                           {String(line.partNo||"").trim()?(
