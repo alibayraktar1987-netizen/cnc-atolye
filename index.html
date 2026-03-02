@@ -8760,14 +8760,22 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
 
         <div style={{display:"grid",gridTemplateColumns:"1fr",gap:10}}>
           <div style={{order:0,background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:10,display:"flex",flexDirection:"column",gap:10}}>
-            <div style={{display:"grid",gridTemplateColumns:"minmax(220px,1fr) repeat(4,minmax(140px,.35fr)) auto",gap:8}}>
-              <input value={planQuery} onChange={e=>setPlanQuery(e.target.value)} placeholder="Makine, is emri, musteri, operasyon ara..." style={{...inputSt,padding:"10px 12px",fontSize:13,gridColumn:"span 2"}}/>
-              <select value={planMachineFilter} onChange={e=>setPlanMachineFilter(e.target.value)} style={{...inputSt,padding:"10px 12px",fontSize:13}}>
-                <option value="all">Tum Tezgahlar</option>
-                {machines.map(m=><option key={m} value={m}>{m}</option>)}
-              </select>
-              <input type="date" value={planDateFrom} onChange={e=>setPlanDateFrom(e.target.value||"")} style={{...inputSt,padding:"10px 12px",fontSize:13}}/>
-              <input type="date" value={planDateTo} onChange={e=>setPlanDateTo(e.target.value||"")} style={{...inputSt,padding:"10px 12px",fontSize:13}}/>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end"}}>
+              <div style={{minWidth:240,flex:"1 1 320px"}}>
+                <input value={planQuery} onChange={e=>setPlanQuery(e.target.value)} placeholder="Makine, is emri, musteri, operasyon ara..." style={{...inputSt,padding:"10px 12px",fontSize:13}}/>
+              </div>
+              <div style={{minWidth:150,flex:"1 1 170px"}}>
+                <select value={planMachineFilter} onChange={e=>setPlanMachineFilter(e.target.value)} style={{...inputSt,padding:"10px 12px",fontSize:13}}>
+                  <option value="all">Tum Tezgahlar</option>
+                  {machines.map(m=><option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              <div style={{minWidth:150,flex:"1 1 170px"}}>
+                <input type="date" value={planDateFrom} onChange={e=>setPlanDateFrom(e.target.value||"")} style={{...inputSt,padding:"10px 12px",fontSize:13}}/>
+              </div>
+              <div style={{minWidth:150,flex:"1 1 170px"}}>
+                <input type="date" value={planDateTo} onChange={e=>setPlanDateTo(e.target.value||"")} style={{...inputSt,padding:"10px 12px",fontSize:13}}/>
+              </div>
               <button onClick={()=>{setPlanQuery("");setPlanMachineFilter("all");setPlanDateFrom("");setPlanDateTo("");}} style={{...btnSt("ghost"),padding:"10px 11px",fontSize:12,whiteSpace:"nowrap"}}>
                 Sifirla
               </button>
@@ -8783,7 +8791,8 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
               ))}
             </div>
 
-            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflowX:"auto"}}>
+              <div style={{minWidth:900}}>
               <div style={{display:"grid",gridTemplateColumns:"minmax(220px,1fr) minmax(260px,1.1fr) minmax(420px,1.8fr)",gap:10,padding:"9px 12px",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.muted2,fontWeight:700}}>
                 <div>Machines</div>
                 <div>Active</div>
@@ -8823,6 +8832,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                     Secili filtreye uygun tezgah bulunamadi.
                   </div>
                 )}
+              </div>
               </div>
             </div>
           </div>
