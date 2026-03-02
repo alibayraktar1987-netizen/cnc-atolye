@@ -9478,8 +9478,10 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
   const [faiForm,setFaiForm]=useState({orderId:"",partNo:"",status:"draft",note:"",balloonRunId:""});
   const [balloonForm,setBalloonForm]=useState({orderId:"",fileId:"",page:"1"});
   const [balloonBusy,setBalloonBusy]=useState(false);
+  const [balloonSaveBusy,setBalloonSaveBusy]=useState(false);
   const [balloonError,setBalloonError]=useState("");
   const [balloonPreview,setBalloonPreview]=useState(null);
+  const [editableBalloons,setEditableBalloons]=useState([]);
   const load=useCallback(async()=>{
     const [o,s,t,i,f,b]=await Promise.all([
       window.DB.getAll("orders"),
@@ -9540,6 +9542,103 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
     if(selectedPdfFiles.some(f=>f._pickId===balloonForm.fileId)) return;
     setBalloonForm(f=>({...f,fileId:selectedPdfFiles[0]._pickId}));
   },[selectedPdfOrder?.id,selectedPdfFiles.map(f=>f._pickId).join(","),balloonForm.fileId]);
+  function normalizeBalloonRows(rows){
+    const normalized=(rows||[]).map((row,idx)=>({
+      no:idx+1,
+      text:String(row?.text||"").trim(),
+      page:Math.max(1,safeNum(row?.page)||Math.max(1,safeNum(balloonForm.page)||1)),
+      xPct:Math.max(0,Math.min(100,safeNum(row?.xPct))),
+      yPct:Math.max(0,Math.min(100,safeNum(row?.yPct))),
+    }));
+    return normalized.filter(r=>r.text);
+  }
+  function loadEditableBalloonsFromRun(run){
+    if(!run){
+      setEditableBalloons([]);
+      return;
+    }
+    const rows=Array.isArray(run.dimensions)?run.dimensions:[];
+    const prepared=rows.map((r,idx)=>({
+      no:idx+1,
+      text:String(r?.text||"").trim(),
+      page:Math.max(1,safeNum(r?.page)||Math.max(1,safeNum(run.page)||1)),
+      xPct:Math.max(0,Math.min(100,safeNum(r?.xPct))),
+      yPct:Math.max(0,Math.min(100,safeNum(r?.yPct))),
+    }));
+    setEditableBalloons(prepared);
+  }
+  function updateEditableBalloon(idx,key,value){
+    setEditableBalloons(prev=>prev.map((row,i)=>{
+      if(i!==idx) return row;
+      if(key==="text") return {...row,text:String(value||"")};
+      if(key==="page") return {...row,page:Math.max(1,safeNum(value)||1)};
+      if(key==="xPct"||key==="yPct") return {...row,[key]:Math.max(0,Math.min(100,safeNum(value)))};
+      return row;
+    }));
+  }
+  function addEditableBalloonRow(){
+    setEditableBalloons(prev=>{
+      const nextNo=prev.length+1;
+      return [...prev,{
+        no:nextNo,
+        text:"",
+        page:Math.max(1,safeNum(balloonForm.page)||1),
+        xPct:50,
+        yPct:50,
+      }];
+    });
+  }
+  function removeEditableBalloonRow(idx){
+    setEditableBalloons(prev=>prev.filter((_,i)=>i!==idx).map((row,i)=>({...row,no:i+1})));
+  }
+  async function saveEditableBalloons(){
+    const rows=normalizeBalloonRows(editableBalloons);
+    if(rows.length===0){alert("Kaydedilecek olcu yok.");return;}
+    setBalloonSaveBusy(true);
+    try{
+      const runId=faiForm.balloonRunId||balloonPreview?.runId||"";
+      if(runId){
+        const patch={
+          dimensions:rows,
+          dimensionCount:rows.length,
+          updatedAt:new Date().toISOString(),
+          updatedBy:currentUser.id,
+        };
+        const ok=await window.DB.updateDoc("faiBalloonRuns",runId,patch);
+        if(!ok){alert("Balon run guncellenemedi.");return;}
+        setBalloonRuns(prev=>prev.map(r=>r.id===runId?{...r,...patch}:r));
+        setEditableBalloons(rows);
+        setBalloonPreview(prev=>prev&&prev.runId===runId?{...prev,balloons:rows}:prev);
+        return;
+      }
+      const wo=pdfOrderById[balloonForm.orderId]||orderById[faiForm.orderId];
+      if(!wo){alert("Kayit icin is emri secin.");return;}
+      const payload={
+        orderId:wo.id||"",
+        orderCode:wo.code||"",
+        partNo:wo.partNo||"",
+        filePickId:selectedPdfFile?selectedPdfFile._pickId:"manual",
+        fileName:selectedPdfFile?.name||"manual-entry",
+        page:Math.max(1,safeNum(balloonForm.page)||1),
+        pageCount:Math.max(1,safeNum(balloonForm.page)||1),
+        dimensionCount:rows.length,
+        dimensions:rows,
+        source:"manual",
+        status:"draft",
+        createdBy:currentUser.id,
+        createdAt:new Date().toISOString(),
+        updatedAt:new Date().toISOString(),
+      };
+      const id=await window.DB.addDoc("faiBalloonRuns",payload);
+      if(!id){alert("Balon run kaydedilemedi.");return;}
+      setBalloonRuns(prev=>[{id,...payload},...prev]);
+      setFaiForm(f=>({...f,balloonRunId:id,orderId:f.orderId||wo.id||"",partNo:f.partNo||wo.partNo||""}));
+      setBalloonPreview(prev=>prev?{...prev,runId:id,balloons:rows}:prev);
+      setEditableBalloons(rows);
+    }finally{
+      setBalloonSaveBusy(false);
+    }
+  }
 
   async function saveTrace(){
     const wo=orderById[traceForm.orderId];
@@ -9604,6 +9703,13 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
         fileName:payload.fileName,
         page:payload.page,
       });
+      setEditableBalloons((result.balloons||[]).map((row,idx)=>({
+        no:idx+1,
+        text:String(row.text||""),
+        page:Math.max(1,safeNum(row.page)||payload.page||1),
+        xPct:Math.max(0,Math.min(100,safeNum(row.xPct))),
+        yPct:Math.max(0,Math.min(100,safeNum(row.yPct))),
+      })));
       setFaiForm(f=>({
         ...f,
         orderId:f.orderId||wo.id||"",
@@ -9618,7 +9724,13 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
   }
   function bindSelectedBalloonRunToFai(runId){
     const run=balloonRuns.find(r=>r.id===runId)||null;
-    if(!run){return;}
+    if(!run){
+      setEditableBalloons([]);
+      setBalloonPreview(null);
+      return;
+    }
+    loadEditableBalloonsFromRun(run);
+    setBalloonPreview(prev=>prev&&prev.runId===run.id?prev:null);
     setFaiForm(f=>({
       ...f,
       orderId:f.orderId||run.orderId||"",
@@ -9738,31 +9850,46 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
               </div>
             </div>
             <div style={{display:"flex",gap:8,justifyContent:"space-between",marginTop:8,flexWrap:"wrap"}}>
-              <button onClick={runAutoBalloon} disabled={balloonBusy||!balloonForm.orderId||!balloonForm.fileId} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,opacity:(balloonBusy||!balloonForm.orderId||!balloonForm.fileId)?0.65:1}}>
-                {balloonBusy?"Oto Balonlanıyor...":"Oto Balonla"}
-              </button>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                <button onClick={runAutoBalloon} disabled={balloonBusy||!balloonForm.orderId||!balloonForm.fileId} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,opacity:(balloonBusy||!balloonForm.orderId||!balloonForm.fileId)?0.65:1}}>
+                  {balloonBusy?"Oto Balonlanıyor...":"Oto Balonla"}
+                </button>
+                <button onClick={addEditableBalloonRow} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>
+                  + Manuel Olcu
+                </button>
+                <button onClick={saveEditableBalloons} disabled={balloonSaveBusy||editableBalloons.length===0} style={{...btnSt("green"),padding:"8px 12px",fontSize:12,opacity:(balloonSaveBusy||editableBalloons.length===0)?0.65:1}}>
+                  {balloonSaveBusy?"Kaydediliyor...":"Olculeri Kaydet"}
+                </button>
+              </div>
               <div style={{fontSize:12,color:C.muted2}}>
-                {selectedBalloonRun?`Bagli run: ${selectedBalloonRun.fileName||"-"} · ${selectedBalloonRun.dimensionCount||0} olcu`:`Run secilmedi`}
+                {selectedBalloonRun?`Bagli run: ${selectedBalloonRun.fileName||"-"} · ${selectedBalloonRun.dimensionCount||0} olcu`:`Run secilmedi (manuel kayitta yeni run acilir)`}
               </div>
             </div>
             {balloonError&&<div style={{fontSize:12,color:C.red,marginTop:7}}>{balloonError}</div>}
-            {balloonPreview&&(
+            {(balloonPreview||editableBalloons.length>0)&&(
               <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1.3fr .9fr",gap:10}}>
                 <div style={{border:`1px solid ${C.border}`,borderRadius:8,overflow:"auto",maxHeight:520,background:"#fff"}}>
-                  <div style={{position:"relative",minWidth:420}}>
-                    <img src={balloonPreview.previewDataUrl} alt={balloonPreview.fileName||"PDF"} style={{width:"100%",display:"block"}}/>
-                    {(balloonPreview.balloons||[]).slice(0,300).map(b=>(
-                      <span key={`bal_${b.no}_${b.page}`} title={`${b.no} · ${b.text}`} style={{position:"absolute",left:`${b.xPct}%`,top:`${b.yPct}%`,transform:"translate(-50%,-50%)",minWidth:18,height:18,padding:"0 4px",borderRadius:999,background:"#ef4444",color:"#fff",fontSize:10,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center",lineHeight:1,border:"1px solid #fff",boxShadow:"0 1px 2px rgba(0,0,0,.35)",pointerEvents:"none"}}>{b.no}</span>
-                    ))}
-                  </div>
+                  {balloonPreview?(
+                    <div style={{position:"relative",minWidth:420}}>
+                      <img src={balloonPreview.previewDataUrl} alt={balloonPreview.fileName||"PDF"} style={{width:"100%",display:"block"}}/>
+                      {editableBalloons.slice(0,300).map(b=>(
+                        <span key={`bal_${b.no}_${b.page}`} title={`${b.no} · ${b.text}`} style={{position:"absolute",left:`${b.xPct}%`,top:`${b.yPct}%`,transform:"translate(-50%,-50%)",minWidth:18,height:18,padding:"0 4px",borderRadius:999,background:"#ef4444",color:"#fff",fontSize:10,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center",lineHeight:1,border:"1px solid #fff",boxShadow:"0 1px 2px rgba(0,0,0,.35)",pointerEvents:"none"}}>{b.no}</span>
+                      ))}
+                    </div>
+                  ):(
+                    <div style={{padding:"14px 12px",fontSize:12,color:"#334155"}}>
+                      Bu run icin onizleme goruntusu yok. Olcu listesi yine manuel duzenlenebilir.
+                    </div>
+                  )}
                 </div>
                 <div style={{border:`1px solid ${C.border}`,borderRadius:8,padding:8,maxHeight:520,overflowY:"auto",background:C.card}}>
-                  <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase",marginBottom:6}}>Bulunan Olculer ({(balloonPreview.balloons||[]).length})</div>
-                  {(balloonPreview.balloons||[]).length===0&&<div style={{fontSize:12,color:C.muted2}}>Olcu metni bulunamadi.</div>}
-                  {(balloonPreview.balloons||[]).slice(0,220).map(row=>(
-                    <div key={`dim_${row.no}`} style={{display:"grid",gridTemplateColumns:"36px 1fr",gap:6,padding:"4px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
+                  <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase",marginBottom:6}}>Olcu Listesi ({editableBalloons.length})</div>
+                  {editableBalloons.length===0&&<div style={{fontSize:12,color:C.muted2}}>Olcu satiri yok. "Manuel Olcu" ile ekleyin.</div>}
+                  {editableBalloons.slice(0,260).map((row,idx)=>(
+                    <div key={`dim_${row.no}_${idx}`} style={{display:"grid",gridTemplateColumns:"34px 1fr auto",gap:6,padding:"5px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,alignItems:"center"}}>
                       <div style={{fontWeight:700,color:C.accent}}>#{row.no}</div>
-                      <div style={{color:C.text,wordBreak:"break-word"}}>{row.text}</div>
+                      <input style={{...inputSt,padding:"5px 7px",fontSize:12}} value={row.text} onChange={e=>updateEditableBalloon(idx,"text",e.target.value)} placeholder="Olcu metni"/>
+                      <button onClick={()=>removeEditableBalloonRow(idx)} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Sil</button>
                     </div>
                   ))}
                 </div>
@@ -9773,7 +9900,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
             <div><span style={labelSt}>Is Emri</span><select style={inputSt} value={faiForm.orderId} onChange={e=>setFaiForm(f=>({...f,orderId:e.target.value}))}><option value="">Secin</option>{orders.map(o=><option key={o.id} value={o.id}>{o.code}</option>)}</select></div>
             <div><span style={labelSt}>Parca No</span><input style={inputSt} value={faiForm.partNo} onChange={e=>setFaiForm(f=>({...f,partNo:e.target.value}))}/></div>
             <div><span style={labelSt}>Durum</span><select style={inputSt} value={faiForm.status} onChange={e=>setFaiForm(f=>({...f,status:e.target.value}))}><option value="draft">Taslak</option><option value="pending">Beklemede</option><option value="approved">Onayli</option><option value="rejected">Reddedildi</option></select></div>
-            <div><span style={labelSt}>Balon Run</span><select style={inputSt} value={faiForm.balloonRunId||""} onChange={e=>setFaiForm(f=>({...f,balloonRunId:e.target.value}))}><option value="">Yok</option>{balloonRuns.filter(r=>!faiForm.orderId||r.orderId===faiForm.orderId).map(r=><option key={r.id} value={r.id}>{r.orderCode||"-"} · {r.fileName||"PDF"} · {r.dimensionCount||0}</option>)}</select></div>
+            <div><span style={labelSt}>Balon Run</span><select style={inputSt} value={faiForm.balloonRunId||""} onChange={e=>{const id=e.target.value;setFaiForm(f=>({...f,balloonRunId:id}));if(id){bindSelectedBalloonRunToFai(id);}else{setEditableBalloons([]);setBalloonPreview(null);}}}><option value="">Yok</option>{balloonRuns.filter(r=>!faiForm.orderId||r.orderId===faiForm.orderId).map(r=><option key={r.id} value={r.id}>{r.orderCode||"-"} · {r.fileName||"PDF"} · {r.dimensionCount||0}</option>)}</select></div>
             <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Not</span><textarea rows={2} style={{...inputSt,minHeight:62,resize:"vertical"}} value={faiForm.note} onChange={e=>setFaiForm(f=>({...f,note:e.target.value}))}/></div>
           </div>
           <div style={{display:"flex",justifyContent:"space-between",marginTop:10,flexWrap:"wrap",gap:8}}>
