@@ -126,7 +126,12 @@ function App() {
       </section>
 
       <section className="grid-two viewer-section">
-        <ModelViewer modelUrl={modelUrl} modelFormat={selectedPart?.model_format ?? null} />
+        <ModelViewer
+          modelUrl={modelUrl}
+          modelFormat={selectedPart?.model_format ?? null}
+          geometry={(selectedPart?.geometry_json as Record<string, unknown> | null) ?? null}
+          stock={(selectedPart?.stock_json as Record<string, unknown> | null) ?? null}
+        />
         <EstimatePanel part={selectedPart} />
       </section>
     </main>
