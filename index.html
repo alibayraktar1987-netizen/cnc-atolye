@@ -7165,6 +7165,9 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const [dragPlanId,setDragPlanId]=useState(null);
   const [exporting,setExporting]=useState(false);
   const [planQuery,setPlanQuery]=useState("");
+  const [planMachineFilter,setPlanMachineFilter]=useState("all");
+  const [planDateFrom,setPlanDateFrom]=useState("");
+  const [planDateTo,setPlanDateTo]=useState("");
   const ganttRef=useRef(null);
 
   const load=useCallback(async()=>{
@@ -7211,6 +7214,11 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       setForm(f=>({...f,machine:machines[0]||"CNC-1"}));
     }
   },[machines.join(","),form.machine]);
+  useEffect(()=>{
+    if(planMachineFilter!=="all"&&!machines.includes(planMachineFilter)){
+      setPlanMachineFilter("all");
+    }
+  },[machines.join(","),planMachineFilter]);
 
   const fv=(k,v)=>setForm(f=>({...f,[k]:v}));
   const selectedOrder=orders.find(o=>o.id===form.orderId)||null;
@@ -7362,42 +7370,23 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const ganttDaysCount=new Date(ganttDate.getFullYear(),ganttDate.getMonth()+1,0).getDate();
   const ganttDays=Array.from({length:ganttDaysCount},(_,i)=>`${ganttMonth}-${pad2(i+1)}`);
   const monthPlans=plans.filter(p=>(p.date||"").startsWith(ganttMonth+"-"));
+  const monthSegments=buildPlanSegments(monthPlans);
+  const monthSegmentsByMachine={};
+  monthSegments.forEach(seg=>{
+    const key=seg.machine||"";
+    if(!monthSegmentsByMachine[key]) monthSegmentsByMachine[key]=[];
+    monthSegmentsByMachine[key].push(seg);
+  });
   const segmentById={};
   const ganttRows=machines.map(machine=>{
     const byDate={};
-    const machinePlans=monthPlans
-      .filter(p=>p.machine===machine)
-      .sort((a,b)=>(a.date||"").localeCompare(b.date||""));
-    let current=null;
-    machinePlans.forEach(p=>{
-      if(!current){
-        current={machine,orderId:p.orderId,orderCode:p.orderCode,orderName:p.orderName,orderCustomerName:p.orderCustomerName,note:p.note,startDate:p.date,endDate:p.date,plans:[p]};
-        return;
-      }
-      const prevDate=current.endDate;
-      const nextDate=ymdLocal(new Date(parseYmdLocal(prevDate).getFullYear(),parseYmdLocal(prevDate).getMonth(),parseYmdLocal(prevDate).getDate()+1));
-      const sameOrder=(current.orderId||"")===(p.orderId||"");
-      if(sameOrder&&p.date===nextDate){
-        current.endDate=p.date;
-        current.plans.push(p);
-      }else{
-        const segId=`${current.machine}|${current.orderId||current.orderCode||"x"}|${current.startDate}|${current.endDate}`;
-        const seg={...current,id:segId};
-        segmentById[segId]=seg;
-        current.plans.forEach(cp=>{
-          byDate[cp.date]={...cp,_segmentId:segId,_isStart:cp.date===seg.startDate,_isEnd:cp.date===seg.endDate};
-        });
-        current={machine,orderId:p.orderId,orderCode:p.orderCode,orderName:p.orderName,orderCustomerName:p.orderCustomerName,note:p.note,startDate:p.date,endDate:p.date,plans:[p]};
-      }
-    });
-    if(current){
-      const segId=`${current.machine}|${current.orderId||current.orderCode||"x"}|${current.startDate}|${current.endDate}`;
-      const seg={...current,id:segId};
-      segmentById[segId]=seg;
-      current.plans.forEach(cp=>{
-        byDate[cp.date]={...cp,_segmentId:segId,_isStart:cp.date===seg.startDate,_isEnd:cp.date===seg.endDate};
+    const machineSegments=monthSegmentsByMachine[machine]||[];
+    machineSegments.forEach(seg=>{
+      segmentById[seg.id]=seg;
+      (seg.plans||[]).forEach(cp=>{
+        byDate[cp.date]={...cp,_segmentId:seg.id,_isStart:cp.date===seg.startDate,_isEnd:cp.date===seg.endDate};
       });
-    }
+    });
     return {machine,byDate};
   });
   const orderColorPalette=["#4f8ef7","#00c896","#ffb830","#9b7ff4","#ff4d6d","#2dd4bf","#f97316","#38bdf8","#22c55e","#ef4444","#eab308","#14b8a6"];
@@ -7416,6 +7405,9 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const ganttGridTemplate=`${machineColWidth}px repeat(${ganttDays.length}, minmax(${dayColWidth}px, 1fr))`;
   const planQueryText=String(planQuery||"").trim().toLowerCase();
   const filteredPlanSegments=sortedPlanSegments.filter(seg=>{
+    if(planMachineFilter!=="all"&&seg.machine!==planMachineFilter) return false;
+    if(planDateFrom&&String(seg.endDate||"")<planDateFrom) return false;
+    if(planDateTo&&String(seg.startDate||"")>planDateTo) return false;
     if(!planQueryText) return true;
     const hay=[
       seg.orderCode||"",
@@ -7793,6 +7785,26 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
               <span style={labelSt}>Plan Ara</span>
               <input value={planQuery} onChange={e=>setPlanQuery(e.target.value)} placeholder="İş emri, müşteri, not..." style={{...inputSt,padding:"8px 10px",fontSize:12}}/>
             </div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"flex-end"}}>
+              <div style={{minWidth:140,flex:"1 1 140px"}}>
+                <span style={labelSt}>Tezgah</span>
+                <select value={planMachineFilter} onChange={e=>setPlanMachineFilter(e.target.value)} style={{...inputSt,padding:"8px 10px",fontSize:12}}>
+                  <option value="all">Tum Tezgahlar</option>
+                  {machines.map(m=><option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              <div style={{minWidth:140,flex:"1 1 140px"}}>
+                <span style={labelSt}>Baslangic</span>
+                <input type="date" value={planDateFrom} onChange={e=>setPlanDateFrom(e.target.value||"")} style={{...inputSt,padding:"8px 10px",fontSize:12}}/>
+              </div>
+              <div style={{minWidth:140,flex:"1 1 140px"}}>
+                <span style={labelSt}>Bitis</span>
+                <input type="date" value={planDateTo} onChange={e=>setPlanDateTo(e.target.value||"")} style={{...inputSt,padding:"8px 10px",fontSize:12}}/>
+              </div>
+              <button onClick={()=>{setPlanQuery("");setPlanMachineFilter("all");setPlanDateFrom("");setPlanDateTo("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12,whiteSpace:"nowrap"}}>
+                Filtreyi Temizle
+              </button>
+            </div>
             <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase"}}>Plan Havuzu</div>
             <div style={{display:"flex",flexDirection:"column",gap:7,overflowY:"auto",paddingRight:2,flex:1}}>
               {filteredPlanSegments.length===0&&(
@@ -7857,13 +7869,29 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                       const col=colorFromOrder(p.orderId||p.orderCode||p.orderName);
                       const opMeta=orderOperationMetaById[p.orderId]||null;
                       const isSelected=p._segmentId===selectedSegmentId;
+                      const borderColor=isSelected?C.text:col;
+                      const edgeLeft=Boolean(p._isStart);
+                      const edgeRight=Boolean(p._isEnd);
+                      const cellRadius=edgeLeft?(edgeRight?"3px":"3px 0 0 3px"):(edgeRight?"0 3px 3px 0":"0");
                       return <div
                         key={d}
                         title={`${d} · ${row.machine} · ${p.orderCode||""} ${p.orderName||""}${p.orderCustomerName?` · ${p.orderCustomerName}`:""}`}
                         onDragOver={e=>e.preventDefault()}
                         onDrop={async e=>{e.preventDefault();const raw=e.dataTransfer.getData("text/plain")||dragPlanId;if(!raw) return;let payload=null;try{payload=JSON.parse(raw);}catch{}if(payload&&payload.type&&payload.segmentId){await resizeSegment(payload.segmentId,d,payload.type);}setDragPlanId(null);}}
                         onClick={()=>setSelectedPlan(p)}
-                        style={{height:20,borderRadius:3,background:col,border:`1px solid ${isSelected?C.text:col}99`,boxShadow:isSelected?`inset 0 0 0 1px ${C.text}aa`:`inset 0 0 0 1px ${col}99`,cursor:"pointer",position:"relative"}}
+                        style={{
+                          height:20,
+                          borderRadius:cellRadius,
+                          background:col,
+                          borderTop:`1px solid ${borderColor}99`,
+                          borderBottom:`1px solid ${borderColor}99`,
+                          borderLeft:edgeLeft?`1px solid ${borderColor}99`:"0",
+                          borderRight:edgeRight?`1px solid ${borderColor}99`:"0",
+                          boxShadow:isSelected?`inset 0 0 0 1px ${C.text}aa`:"none",
+                          cursor:"pointer",
+                          position:"relative",
+                          marginLeft:edgeLeft?0:-1,
+                        }}
                       >
                         {p._isStart&&<span
                           draggable
