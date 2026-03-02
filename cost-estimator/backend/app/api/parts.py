@@ -99,7 +99,15 @@ def get_part_model(part_id: str, db: Session = Depends(get_db)) -> Response:
 
     storage = StorageService()
     content, content_type = storage.get_model_bytes(part.model_key)
-    return Response(content=content, media_type=content_type)
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 @router.get("/{part_id}/raw")

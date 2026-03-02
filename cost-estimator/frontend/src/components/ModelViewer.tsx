@@ -101,9 +101,21 @@ export function ModelViewer({ modelUrl, modelFormat, geometry, stock }: Props) {
   const normalizedFormat = useMemo(() => (modelFormat ?? "glb").toLowerCase(), [modelFormat]);
   const [modelError, setModelError] = useState(false);
   const fallbackAvailable = hasUsableGeometry(geometry);
+  const canvasKey = useMemo(() => {
+    if (modelUrl) return `${modelUrl}|${normalizedFormat}`;
+    const bbox = ((geometry?.bbox ?? {}) as Record<string, unknown>) ?? {};
+    return `fallback:${bbox.x_mm ?? "x"}:${bbox.y_mm ?? "y"}:${bbox.z_mm ?? "z"}:${String(stock?.stock_type ?? "")}`;
+  }, [modelUrl, normalizedFormat, geometry, stock]);
 
   useEffect(() => {
     setModelError(false);
+  }, [modelUrl, normalizedFormat]);
+
+  useEffect(() => {
+    if (!modelUrl || normalizedFormat !== "glb") return;
+    return () => {
+      useGLTF.clear(modelUrl);
+    };
   }, [modelUrl, normalizedFormat]);
 
   const showModel = Boolean(modelUrl) && !modelError;
@@ -116,7 +128,7 @@ export function ModelViewer({ modelUrl, modelFormat, geometry, stock }: Props) {
       {emptyState ? (
         <div className="muted">Model not ready yet.</div>
       ) : (
-        <Canvas camera={{ position: [210, 150, 200], fov: 40 }}>
+        <Canvas key={canvasKey} camera={{ position: [210, 150, 200], fov: 40 }}>
           <color attach="background" args={["#0e1118"]} />
           <ambientLight intensity={0.7} />
           <directionalLight position={[240, 260, 200]} intensity={1.2} />

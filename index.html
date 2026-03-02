@@ -1814,13 +1814,7 @@ function MaterialLibrary() {
 //  PART & PRODUCT DEFINITIONS
 // ════════════════════════════════════════════════════════════
 function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
-  const [parts,setParts]=useState([]);
-  const [materials,setMaterials]=useState([]);
-  const [loading,setLoading]=useState(true);
-  const [search,setSearch]=useState("");
-  const [selectedPartId,setSelectedPartId]=useState("");
-  const [uploading,setUploading]=useState(false);
-  const [partForm,setPartForm]=useState({
+  const emptyPartForm={
     partNo:"",
     name:"",
     material:"",
@@ -1834,7 +1828,15 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
     ncProgramVersion:"V1",
     drawingFile:null,
     notes:"",
-  });
+  };
+  const [parts,setParts]=useState([]);
+  const [materials,setMaterials]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [search,setSearch]=useState("");
+  const [selectedPartId,setSelectedPartId]=useState("");
+  const [uploading,setUploading]=useState(false);
+  const [showPartModal,setShowPartModal]=useState(false);
+  const [partForm,setPartForm]=useState(emptyPartForm);
   const [bomForm,setBomForm]=useState({componentType:"raw_material",componentCode:"",componentName:"",qtyPer:"1",scrapPct:"0",cutLengthMm:"0",barDiameterMm:"0"});
   const [routingForm,setRoutingForm]=useState({operation:"Op-10",machine:machines[0]||"CNC-1",setupSec:"300",cycleSec:"60",ncProgram:"",tooling:""});
 
@@ -1901,6 +1903,21 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
   })();
 
   const fv=(k,v)=>setPartForm(f=>({...f,[k]:v}));
+  const openCreatePartModal=()=>{
+    setSelectedPartId("");
+    setPartForm({...emptyPartForm});
+    setShowPartModal(true);
+  };
+  const openEditPartModal=(part)=>{
+    if(part){
+      setSelectedPartId(part.id||"");
+      loadPartToForm(part);
+    }else{
+      setSelectedPartId("");
+      setPartForm({...emptyPartForm});
+    }
+    setShowPartModal(true);
+  };
 
   async function pickDrawing(e){
     const file=e.target.files&&e.target.files[0];
@@ -1943,6 +1960,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
       await addAuditLog(currentUser.id,"part",existing.id,"update",existing,payload,{module:"parts"});
       setParts(prev=>prev.map(x=>x.id===existing.id?{...x,...payload}:x));
       setSelectedPartId(existing.id);
+      setShowPartModal(false);
       return;
     }
     const id=await window.DB.addDoc("parts",payload);
@@ -1951,6 +1969,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
     const next=[{id,...payload,createdAt:new Date().toISOString()},...parts].sort((a,b)=>(a.partNo||"").localeCompare(b.partNo||"","tr"));
     setParts(next);
     setSelectedPartId(id);
+    setShowPartModal(false);
   }
 
   function loadPartToForm(p){
@@ -2042,7 +2061,10 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
   return (
     <div style={{padding:16,display:"grid",gridTemplateColumns:"340px minmax(0,1fr)",gap:12,alignItems:"start"}}>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12,position:"sticky",top:82}}>
-        <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Parca Kutuphanesi</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8}}>
+          <div style={{fontWeight:700,color:C.text}}>Parca Kutuphanesi</div>
+          <button onClick={openCreatePartModal} style={{...btnSt("primary"),padding:"6px 10px",fontSize:11}}>+ Parca Ekle</button>
+        </div>
         <input style={{...inputSt,padding:"8px 10px",fontSize:12,marginBottom:8}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Parca no / ad / malzeme ara..."/>
         <div style={{maxHeight:"64vh",overflowY:"auto",paddingRight:4}}>
           {filtered.map(p=>(
@@ -2057,48 +2079,77 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
 
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <div style={{fontWeight:700,color:C.text}}>Parca Tanimi</div>
-            {selectedPart&&<Badge label={`Secili: ${selectedPart.partNo}`} color={C.accent}/>}
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-            <div><span style={labelSt}>Parca No *</span><input style={inputSt} value={partForm.partNo} onChange={e=>fv("partNo",e.target.value)} placeholder="PRT-001"/></div>
-            <div><span style={labelSt}>Parca Adi *</span><input style={inputSt} value={partForm.name} onChange={e=>fv("name",e.target.value)} placeholder="Govde"/></div>
-            <div><span style={labelSt}>Revizyon</span><input style={inputSt} value={partForm.revision} onChange={e=>fv("revision",e.target.value)}/></div>
-            <div>
-              <span style={labelSt}>Malzeme</span>
-              <select style={inputSt} value={partForm.material} onChange={e=>fv("material",e.target.value)}>
-                <option value="">Secin...</option>
-                {materials.map(m=><option key={m.id} value={m.name||""}>{m.code?`${m.code} - `:""}{m.name||""}</option>)}
-              </select>
-            </div>
-            <div><span style={labelSt}>Setup (sn)</span><input style={inputSt} type="number" min="0" value={partForm.setupSec} onChange={e=>fv("setupSec",e.target.value)}/></div>
-            <div><span style={labelSt}>Cycle (sn)</span><input style={inputSt} type="number" min="0" value={partForm.cycleSec} onChange={e=>fv("cycleSec",e.target.value)}/></div>
-            <div><span style={labelSt}>Hammadde Miktar</span><input style={inputSt} type="number" min="0" value={partForm.qtyPerRaw} onChange={e=>fv("qtyPerRaw",e.target.value)}/></div>
-            <div><span style={labelSt}>Hammadde Birim Maliyet</span><input style={inputSt} type="number" min="0" value={partForm.rawUnitCost} onChange={e=>fv("rawUnitCost",e.target.value)}/></div>
-            <div><span style={labelSt}>NC Program Versiyon</span><input style={inputSt} value={partForm.ncProgramVersion} onChange={e=>fv("ncProgramVersion",e.target.value)} placeholder="V1"/></div>
-            <div><span style={labelSt}>Iscilik Saatlik</span><input style={inputSt} type="number" min="0" value={partForm.laborRateHour} onChange={e=>fv("laborRateHour",e.target.value)}/></div>
-            <div><span style={labelSt}>Tezgah Saatlik</span><input style={inputSt} type="number" min="0" value={partForm.machineRateHour} onChange={e=>fv("machineRateHour",e.target.value)}/></div>
-            <div>
-              <span style={labelSt}>Teknik Resim</span>
-              <label style={{...inputSt,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
-                <span style={{fontSize:12,color:C.muted2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{partForm.drawingFile?.name||"Dosya sec..."}</span>
-                <span style={{fontSize:11,color:C.accent}}>{uploading?"Yukleniyor":"Sec"}</span>
-                <input type="file" accept=".pdf,.dxf,.dwg,image/*" style={{display:"none"}} onChange={pickDrawing}/>
-              </label>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8,flexWrap:"wrap"}}>
+            <button onClick={()=>openEditPartModal(selectedPart)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>
+              Parca Tanimi
+            </button>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              {selectedPart&&<Badge label={`Secili: ${selectedPart.partNo}`} color={C.accent}/>}
+              <button onClick={openCreatePartModal} style={{...btnSt("primary"),padding:"7px 10px",fontSize:12}}>+ Parca Ekle</button>
             </div>
           </div>
-          <div style={{marginTop:8}}>
-            <span style={labelSt}>Not</span>
-            <textarea rows={2} style={{...inputSt,minHeight:62,resize:"vertical"}} value={partForm.notes} onChange={e=>fv("notes",e.target.value)}/>
+          <div style={{fontSize:12,color:C.muted2}}>
+            Parca tanim kartini acmak icin <strong style={{color:C.text}}>Parca Tanimi</strong> butonuna tiklayin.
+            Yeni kayit icin <strong style={{color:C.text}}>+ Parca Ekle</strong> kullanin.
           </div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:10}}>
-            <div style={{fontSize:12,color:C.muted2}}>
-              Birim Maliyet = Malzeme {partCostCalc.materialCost.toFixed(2)} + Iscilik {partCostCalc.laborCost.toFixed(2)} + Tezgah {partCostCalc.machineCost.toFixed(2)} = <span style={{color:C.text,fontWeight:700}}>{partCostCalc.unitCost.toFixed(2)} TRY</span>
+          {selectedPart&&(
+            <div style={{marginTop:10,padding:"9px 10px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,fontSize:12,color:C.muted2}}>
+              <div><span style={{color:C.text,fontWeight:700}}>{selectedPart.partNo}</span> · {selectedPart.name||"-"} · Rev.{selectedPart.revision||"A"}</div>
+              <div style={{marginTop:2}}>Birim maliyet: <span style={{color:C.text,fontWeight:700}}>{safeNum(selectedPart.unitCost).toFixed(2)} TRY</span></div>
             </div>
-            <button onClick={savePart} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Parca Kaydet/Guncelle</button>
-          </div>
+          )}
         </div>
+
+        {showPartModal&&(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.68)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:54,padding:14}} onClick={()=>setShowPartModal(false)}>
+            <div style={{width:"100%",maxWidth:980,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16,maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8,flexWrap:"wrap"}}>
+                <div style={{fontWeight:700,color:C.text,fontSize:16}}>Parca Tanimi</div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  {selectedPart&&<Badge label={`Secili: ${selectedPart.partNo}`} color={C.accent}/>}
+                  <button onClick={()=>setShowPartModal(false)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                <div><span style={labelSt}>Parca No *</span><input style={inputSt} value={partForm.partNo} onChange={e=>fv("partNo",e.target.value)} placeholder="PRT-001"/></div>
+                <div><span style={labelSt}>Parca Adi *</span><input style={inputSt} value={partForm.name} onChange={e=>fv("name",e.target.value)} placeholder="Govde"/></div>
+                <div><span style={labelSt}>Revizyon</span><input style={inputSt} value={partForm.revision} onChange={e=>fv("revision",e.target.value)}/></div>
+                <div>
+                  <span style={labelSt}>Malzeme</span>
+                  <select style={inputSt} value={partForm.material} onChange={e=>fv("material",e.target.value)}>
+                    <option value="">Secin...</option>
+                    {materials.map(m=><option key={m.id} value={m.name||""}>{m.code?`${m.code} - `:""}{m.name||""}</option>)}
+                  </select>
+                </div>
+                <div><span style={labelSt}>Setup (sn)</span><input style={inputSt} type="number" min="0" value={partForm.setupSec} onChange={e=>fv("setupSec",e.target.value)}/></div>
+                <div><span style={labelSt}>Cycle (sn)</span><input style={inputSt} type="number" min="0" value={partForm.cycleSec} onChange={e=>fv("cycleSec",e.target.value)}/></div>
+                <div><span style={labelSt}>Hammadde Miktar</span><input style={inputSt} type="number" min="0" value={partForm.qtyPerRaw} onChange={e=>fv("qtyPerRaw",e.target.value)}/></div>
+                <div><span style={labelSt}>Hammadde Birim Maliyet</span><input style={inputSt} type="number" min="0" value={partForm.rawUnitCost} onChange={e=>fv("rawUnitCost",e.target.value)}/></div>
+                <div><span style={labelSt}>NC Program Versiyon</span><input style={inputSt} value={partForm.ncProgramVersion} onChange={e=>fv("ncProgramVersion",e.target.value)} placeholder="V1"/></div>
+                <div><span style={labelSt}>Iscilik Saatlik</span><input style={inputSt} type="number" min="0" value={partForm.laborRateHour} onChange={e=>fv("laborRateHour",e.target.value)}/></div>
+                <div><span style={labelSt}>Tezgah Saatlik</span><input style={inputSt} type="number" min="0" value={partForm.machineRateHour} onChange={e=>fv("machineRateHour",e.target.value)}/></div>
+                <div>
+                  <span style={labelSt}>Teknik Resim</span>
+                  <label style={{...inputSt,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
+                    <span style={{fontSize:12,color:C.muted2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{partForm.drawingFile?.name||"Dosya sec..."}</span>
+                    <span style={{fontSize:11,color:C.accent}}>{uploading?"Yukleniyor":"Sec"}</span>
+                    <input type="file" accept=".pdf,.dxf,.dwg,image/*" style={{display:"none"}} onChange={pickDrawing}/>
+                  </label>
+                </div>
+              </div>
+              <div style={{marginTop:8}}>
+                <span style={labelSt}>Not</span>
+                <textarea rows={2} style={{...inputSt,minHeight:62,resize:"vertical"}} value={partForm.notes} onChange={e=>fv("notes",e.target.value)}/>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:10}}>
+                <div style={{fontSize:12,color:C.muted2}}>
+                  Birim Maliyet = Malzeme {partCostCalc.materialCost.toFixed(2)} + Iscilik {partCostCalc.laborCost.toFixed(2)} + Tezgah {partCostCalc.machineCost.toFixed(2)} = <span style={{color:C.text,fontWeight:700}}>{partCostCalc.unitCost.toFixed(2)} TRY</span>
+                </div>
+                <button onClick={savePart} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Parca Kaydet/Guncelle</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {selectedPart&&(
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
@@ -3051,12 +3102,6 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
 
   return (
     <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        <button onClick={()=>setView("orders")} style={chip(view==="orders",C.accent)}>Siparisler</button>
-        <button onClick={()=>setView("quotes")} style={chip(view==="quotes",C.warn)}>Teklifler</button>
-        <button onClick={()=>setView("pricing")} style={chip(view==="pricing",C.green)}>Musteri/Fiyat</button>
-      </div>
-
       {view==="pricing"&&(
         <>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
@@ -5756,21 +5801,32 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const [form,setForm]=useState(emptyForm);
   const [orders,setOrders]=useState([]);
   const [plans,setPlans]=useState([]);
+  const [sales,setSales]=useState([]);
+  const [mpsPlans,setMpsPlans]=useState([]);
   const [editId,setEditId]=useState(null);
   const [loading,setLoading]=useState(true);
   const [dateFilter,setDateFilter]=useState(todayStr());
   const [ganttMonth,setGanttMonth]=useState(monthStr());
   const [selectedPlan,setSelectedPlan]=useState(null);
+  const [showPlanModal,setShowPlanModal]=useState(false);
+  const [showMpsModal,setShowMpsModal]=useState(false);
+  const [mpsForm,setMpsForm]=useState({partNo:"",weekStart:startOfWeekYmd(todayStr()),plannedQty:"0",note:""});
   const [dragPlanId,setDragPlanId]=useState(null);
   const [exporting,setExporting]=useState(false);
   const ganttRef=useRef(null);
-  const planningFormRef=useRef(null);
 
   const load=useCallback(async()=>{
     setLoading(true);
-    const [o,p]=await Promise.all([window.DB.getAll("orders"),window.DB.getAll("plans")]);
+    const [o,p,s,m]=await Promise.all([
+      window.DB.getAll("orders"),
+      window.DB.getAll("plans"),
+      window.DB.getAll("salesOrders"),
+      window.DB.getAll("mpsPlans"),
+    ]);
     setOrders(o.filter(x=>isOpenOrderStatus(x.status)));
     setPlans(p.sort((a,b)=>(b.date||"").localeCompare(a.date||"")));
+    setSales(s);
+    setMpsPlans(m);
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
@@ -5784,16 +5840,11 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
         const today=todayStr();
         setEditId(null);
         setSelectedPlan(null);
+        setShowMpsModal(false);
         setForm({startDate:today,endDate:today,machine:machineDefault,orderId:"",note:""});
         setDateFilter(today);
         setGanttMonth(monthStr());
-        setTimeout(()=>{
-          if(planningFormRef.current&&planningFormRef.current.scrollIntoView){
-            planningFormRef.current.scrollIntoView({behavior:"smooth",block:"start"});
-          }else{
-            window.scrollTo({top:0,behavior:"smooth"});
-          }
-        },40);
+        setShowPlanModal(true);
       }
     }
     window.addEventListener("mrp:tab-action",onTabAction);
@@ -5808,8 +5859,27 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
 
   const fv=(k,v)=>setForm(f=>({...f,[k]:v}));
   const selectedOrder=orders.find(o=>o.id===form.orderId)||null;
+  const setMpsF=(k,v)=>setMpsForm(p=>({...p,[k]:v}));
   const allPlanSegments=buildPlanSegments(plans);
   const sortedPlanSegments=allPlanSegments.filter(seg=>!dateFilter||((seg.startDate||"")<=dateFilter&&(seg.endDate||"")>=dateFilter));
+  const mpsBaseWeek=startOfWeekYmd(todayStr());
+  const mpsBuckets=Array.from({length:8},(_,i)=>{
+    const start=addDays(mpsBaseWeek,i*7);
+    const end=addDays(start,6);
+    const demand=sales.reduce((sum,s)=>{
+      if(["cancelled","delivered"].includes(s.status||"")) return sum;
+      if(s.lines&&s.lines.length){
+        return sum+s.lines.filter(l=>l.dueDate>=start&&l.dueDate<=end).reduce((x,l)=>x+safeNum(l.qty),0);
+      }
+      if(s.dueDate>=start&&s.dueDate<=end) return sum+safeNum(s.qty);
+      return sum;
+    },0);
+    const wo=orders.filter(o=>o.dueDate>=start&&o.dueDate<=end).reduce((s,o)=>s+safeNum(o.qty),0);
+    const mps=mpsPlans.filter(p=>p.weekStart===start).reduce((s,p)=>s+safeNum(p.plannedQty),0);
+    const balance=(wo+mps)-demand;
+    return {start,end,demand,wo,mps,balance};
+  });
+  const mpsExportRows=mpsBuckets.map(b=>({hafta:`${b.start} - ${b.end}`,talep:b.demand,isEmriArz:b.wo,mpsPlan:b.mps,bakiye:b.balance}));
   const startObj=parseYmdLocal(form.startDate||todayStr());
   const endObj=parseYmdLocal(form.endDate||form.startDate||todayStr());
   const rangeStart=startObj<=endObj?startObj:endObj;
@@ -6102,6 +6172,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       });
       setEditId(null);
       setForm({...emptyForm,machine:form.machine,startDate:form.startDate,endDate:form.endDate});
+      setShowPlanModal(false);
       return;
     }
     const created=[];
@@ -6122,7 +6193,23 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     if(created.length>0){
       setPlans(p=>[...created.reverse(),...p]);
       setForm({...emptyForm,machine:form.machine,startDate:form.startDate,endDate:form.endDate});
+      setShowPlanModal(false);
     }
+  }
+
+  async function saveMpsPlan(){
+    if(!mpsForm.partNo.trim()){alert("Parca no zorunlu.");return;}
+    const payload={
+      partNo:mpsForm.partNo.trim().toUpperCase(),
+      weekStart:startOfWeekYmd(mpsForm.weekStart||todayStr()),
+      plannedQty:Math.max(0,safeNum(mpsForm.plannedQty)),
+      note:mpsForm.note.trim(),
+      updatedAt:new Date().toISOString(),
+    };
+    const id=await window.DB.addDoc("mpsPlans",payload);
+    if(!id){alert("MPS kaydi olusturulamadi.");return;}
+    setMpsPlans(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
+    setMpsForm({partNo:"",weekStart:startOfWeekYmd(todayStr()),plannedQty:"0",note:""});
   }
 
   function startEdit(plan){
@@ -6136,6 +6223,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       orderId:firstPlan?.orderId||"",
       note:firstPlan?.note||"",
     });
+    setShowPlanModal(true);
   }
 
   async function removePlan(plan){
@@ -6167,6 +6255,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
             <div style={{fontSize:13,color:C.text,minWidth:140,textAlign:"center",textTransform:"capitalize"}}>{ganttMonthLabel}</div>
             <button onClick={()=>shiftGanttMonth(1)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>▶</button>
             <button onClick={()=>setGanttMonth(monthStr())} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Bu Ay</button>
+            <button onClick={()=>setShowMpsModal(true)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}>MPS Run</button>
             <button onClick={exportGanttPng} disabled={exporting} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,opacity:exporting?0.7:1}}>PNG</button>
             <button onClick={exportGanttPdf} disabled={exporting} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,opacity:exporting?0.7:1}}>PDF</button>
           </div>
@@ -6238,39 +6327,80 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
           </div>
         </div>
       )}
-      <div ref={planningFormRef} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-          <div style={{fontWeight:700,color:C.text}}>Yeni Planlama</div>
-          {editId&&<Badge label="Düzenleme" color={C.warn}/>}
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-          <div><span style={labelSt}>Başlangıç</span><input type="date" value={form.startDate} onChange={e=>fv("startDate",e.target.value||todayStr())} style={{...inputSt,padding:"9px 10px",fontSize:13}}/></div>
-          <div><span style={labelSt}>Bitiş</span><input type="date" value={form.endDate} onChange={e=>fv("endDate",e.target.value||form.startDate||todayStr())} style={{...inputSt,padding:"9px 10px",fontSize:13}}/></div>
-        </div>
-        <div style={{fontSize:12,color:C.muted2,marginTop:6}}>{editId?`Düzenlenen aralık: ${form.startDate}${form.endDate&&form.endDate!==form.startDate?` - ${form.endDate}`:""}`:`Uygulanacak aralık: ${rangeLabel}`}</div>
-        <div style={{marginTop:9}}>
-          <span style={labelSt}>Tezgah</span>
-          <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-            {machines.map(m=><button key={m} onClick={()=>fv("machine",m)} style={chip(form.machine===m)}>{m}</button>)}
+      {showPlanModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.68)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:54,padding:14}} onClick={()=>setShowPlanModal(false)}>
+          <div style={{width:"100%",maxWidth:640,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8}}>
+              <div style={{fontWeight:700,color:C.text,fontSize:16}}>{editId?"Planlama Düzenle":"Yeni Planlama"}</div>
+              {editId&&<Badge label="Düzenleme" color={C.warn}/>}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div><span style={labelSt}>Başlangıç</span><input type="date" value={form.startDate} onChange={e=>fv("startDate",e.target.value||todayStr())} style={{...inputSt,padding:"9px 10px",fontSize:13}}/></div>
+              <div><span style={labelSt}>Bitiş</span><input type="date" value={form.endDate} onChange={e=>fv("endDate",e.target.value||form.startDate||todayStr())} style={{...inputSt,padding:"9px 10px",fontSize:13}}/></div>
+            </div>
+            <div style={{fontSize:12,color:C.muted2,marginTop:6}}>{editId?`Düzenlenen aralık: ${form.startDate}${form.endDate&&form.endDate!==form.startDate?` - ${form.endDate}`:""}`:`Uygulanacak aralık: ${rangeLabel}`}</div>
+            <div style={{marginTop:9}}>
+              <span style={labelSt}>Tezgah</span>
+              <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+                {machines.map(m=><button key={m} onClick={()=>fv("machine",m)} style={chip(form.machine===m)}>{m}</button>)}
+              </div>
+            </div>
+            <div style={{marginTop:9}}>
+              <span style={labelSt}>İş Emri</span>
+              <select value={form.orderId} onChange={e=>fv("orderId",e.target.value)} style={inputSt}>
+                <option value="">İş emri seçin...</option>
+                {orders.map(o=><option key={o.id} value={o.id}>{o.code} - {o.name}{o.customerName?` - ${o.customerName}`:""} ({(o.machines||[]).join(", ")})</option>)}
+              </select>
+              {selectedOrder&&<div style={{fontSize:12,color:C.muted2,marginTop:6}}>Parça süresi: {fmtSec(selectedOrder.partSec)} · Maks/gün: {selectedOrder.partSec?Math.floor(EFFECTIVE_SECONDS/selectedOrder.partSec):"-"}</div>}
+            </div>
+            <div style={{marginTop:9}}>
+              <span style={labelSt}>Not</span>
+              <textarea value={form.note} onChange={e=>fv("note",e.target.value)} rows={2} style={{...inputSt,minHeight:64,resize:"vertical"}} placeholder="Opsiyonel not..."/>
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:12,justifyContent:"flex-end"}}>
+              <button onClick={()=>setShowPlanModal(false)} style={{...btnSt("ghost"),padding:"10px 14px"}}>Kapat</button>
+              {editId&&<button onClick={()=>{setEditId(null);setForm({...emptyForm,machine:form.machine,startDate:form.startDate,endDate:form.endDate});setShowPlanModal(false);}} style={{...btnSt("ghost"),padding:"10px 14px"}}>İptal</button>}
+              <button onClick={savePlan} style={{...btnSt("primary"),padding:"10px 14px"}}>{editId?"Planı Güncelle":"Aralığı Planla"}</button>
+            </div>
           </div>
         </div>
-        <div style={{marginTop:9}}>
-          <span style={labelSt}>İş Emri</span>
-          <select value={form.orderId} onChange={e=>fv("orderId",e.target.value)} style={inputSt}>
-            <option value="">İş emri seçin...</option>
-            {orders.map(o=><option key={o.id} value={o.id}>{o.code} - {o.name}{o.customerName?` - ${o.customerName}`:""} ({(o.machines||[]).join(", ")})</option>)}
-          </select>
-          {selectedOrder&&<div style={{fontSize:12,color:C.muted2,marginTop:6}}>Parça süresi: {fmtSec(selectedOrder.partSec)} · Maks/gün: {selectedOrder.partSec?Math.floor(EFFECTIVE_SECONDS/selectedOrder.partSec):"-"}</div>}
+      )}
+      {showMpsModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.68)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:53,padding:14}} onClick={()=>setShowMpsModal(false)}>
+          <div style={{width:"100%",maxWidth:920,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16,maxHeight:"88vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8,flexWrap:"wrap"}}>
+              <div style={{fontWeight:700,color:C.text,fontSize:16}}>MPS Run</div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <button onClick={()=>downloadCsv(`mps-${todayStr()}.csv`,[{label:"Hafta",key:"hafta"},{label:"Talep",key:"talep"},{label:"Is Emri Arz",key:"isEmriArz"},{label:"MPS Plan",key:"mpsPlan"},{label:"Bakiye",key:"bakiye"}],mpsExportRows)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>CSV İndir</button>
+                <button onClick={()=>setShowMpsModal(false)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
+              </div>
+            </div>
+            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                <div><span style={labelSt}>Parça No</span><input style={inputSt} value={mpsForm.partNo} onChange={e=>setMpsF("partNo",e.target.value)} placeholder="PRT-001"/></div>
+                <div><span style={labelSt}>Hafta Başlangıç</span><input style={inputSt} type="date" value={mpsForm.weekStart} onChange={e=>setMpsF("weekStart",e.target.value||todayStr())}/></div>
+                <div><span style={labelSt}>Planlanan Adet</span><input style={inputSt} type="number" min="0" value={mpsForm.plannedQty} onChange={e=>setMpsF("plannedQty",e.target.value)}/></div>
+              </div>
+              <div style={{marginTop:8}}><span style={labelSt}>Not</span><textarea rows={2} style={{...inputSt,minHeight:62,resize:"vertical"}} value={mpsForm.note} onChange={e=>setMpsF("note",e.target.value)}/></div>
+              <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}>
+                <button onClick={saveMpsPlan} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>MPS Kaydet</button>
+              </div>
+            </div>
+            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 10px",marginTop:10}}>
+              <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>8 Haftalık Ana Üretim Planı</div>
+              {mpsBuckets.map(b=>(
+                <div key={b.start} style={{display:"grid",gridTemplateColumns:"1.3fr repeat(4,.8fr)",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,alignItems:"center"}}>
+                  <div style={{color:C.text,fontWeight:700}}>{b.start} - {b.end}</div>
+                  <div style={{color:C.muted2}}>Talep: {b.demand}</div>
+                  <div style={{color:C.muted2}}>WO: {b.wo}</div>
+                  <div style={{color:C.muted2}}>MPS: {b.mps}</div>
+                  <div style={{color:b.balance<0?C.red:C.green,fontWeight:700}}>Bakiye: {b.balance}</div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
-        <div style={{marginTop:9}}>
-          <span style={labelSt}>Not</span>
-          <textarea value={form.note} onChange={e=>fv("note",e.target.value)} rows={2} style={{...inputSt,minHeight:64,resize:"vertical"}} placeholder="Opsiyonel not..."/>
-        </div>
-        <div style={{display:"flex",gap:8,marginTop:10}}>
-          <button onClick={savePlan} style={{...btnSt("primary"),flex:1,padding:12}}>{editId?"Planı Güncelle":"Aralığı Planla"}</button>
-          {editId&&<button onClick={()=>{setEditId(null);setForm({...emptyForm,machine:form.machine,startDate:form.startDate,endDate:form.endDate});}} style={{...btnSt("ghost"),padding:"12px 14px"}}>İptal</button>}
-        </div>
-      </div>
+      )}
 
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
         <div style={{fontSize:12,color:C.muted2}}>Planlar ({sortedPlanSegments.length})</div>
@@ -8291,8 +8421,7 @@ function App() {
   const canSmartFactory=canOrders||canReport||canEntry||canPurchasing||canQuality;
   const allTabs=useMemo(()=>[
     {id:"dashboard",icon:"dashboard",label:"Gösterge Paneli",group:"Planlama",enabled:(canEntry||canOrders||canReport||canSales||canPurchasing)},
-    {id:"planning",icon:"planning",label:"Yeni Planlama",group:"Planlama",enabled:canPlanning},
-    {id:"mps",icon:"mps",label:"MPS",group:"Planlama",enabled:canPlanning},
+    {id:"planning",icon:"planning",label:"Planlama",group:"Planlama",enabled:canPlanning},
     {id:"mrp",icon:"mrp",label:"MRP Run",group:"Planlama",enabled:canPlanning},
     {id:"parts",icon:"parts",label:"Parca ve BOM",group:"Planlama",enabled:canPlanning},
     {id:"quotes",icon:"quotes",label:"Teklif Yonetimi",group:"Planlama",enabled:canSales},
@@ -8354,7 +8483,6 @@ function App() {
   const activeContextLabel=activeTabMeta?.label||"Modul";
   const menuResultText=`${visibleTabs.length}/${tabs.length} modul`;
   const createActions={
-    mps:"Yeni Planlama",
     planning:"Yeni Planlama",
     customers:"Yeni Musteri",
     materials:"Yeni Malzeme",
@@ -8409,7 +8537,6 @@ function App() {
     if(tab==="orders") return <WorkOrders currentUser={currentUser} machines={machines}/>;
     if(tab==="users") return <AdminUsers currentUser={currentUser} machines={machines} onMachinesUpdate={updateMachines} currentLogo={logoSrc} onLogoUpdate={updateLogo}/>;
     if(tab==="dashboard") return <MRPDashboard currentUser={currentUser} machines={machines}/>;
-    if(tab==="mps") return <MPSModule/>;
     if(tab==="mrp") return <MRPRunModule currentUser={currentUser}/>;
     if(tab==="quotes") return <SalesManagement currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")} defaultView="quotes"/>;
     if(tab==="purchase") return <PurchasingModule currentUser={currentUser}/>;

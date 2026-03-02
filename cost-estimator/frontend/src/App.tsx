@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchJob, fetchMachineProfiles, fetchMaterials, fetchPart, fetchParts, getModelUrl, uploadStep } from "./api";
+import {
+  clearMockData,
+  fetchJob,
+  fetchMachineProfiles,
+  fetchMaterials,
+  fetchPart,
+  fetchParts,
+  getModelUrl,
+  isMockModeActive,
+  uploadStep,
+} from "./api";
 import { EstimatePanel } from "./components/EstimatePanel";
 import { ModelViewer } from "./components/ModelViewer";
 import { PartList } from "./components/PartList";
@@ -16,6 +26,7 @@ function App() {
   const [activeJob, setActiveJob] = useState<AnalysisJob | null>(null);
   const [uploadBusy, setUploadBusy] = useState(false);
   const [globalError, setGlobalError] = useState("");
+  const [mockMode, setMockMode] = useState(isMockModeActive());
 
   async function loadInitial() {
     setGlobalError("");
@@ -28,12 +39,16 @@ function App() {
       setMaterials(materialsData);
       setMachineProfiles(machineProfilesData);
       setParts(partsData);
-      if (!selectedPartId && partsData.length > 0) {
-        setSelectedPartId(partsData[0].id);
-      }
+      setMockMode(isMockModeActive());
+      setSelectedPartId((current) => {
+        if (partsData.length === 0) return null;
+        if (current && partsData.some((p) => p.id === current)) return current;
+        return partsData[0].id;
+      });
     } catch (error) {
       console.error(error);
       setGlobalError("API connection failed. Check backend service.");
+      setMockMode(isMockModeActive());
     }
   }
 
@@ -46,12 +61,23 @@ function App() {
       setSelectedPart(null);
       return;
     }
+    // Do not keep showing the previous part while loading the newly selected one.
+    setSelectedPart((current) => (current?.id === selectedPartId ? current : null));
+    let cancelled = false;
     fetchPart(selectedPartId)
-      .then((data) => setSelectedPart(data))
+      .then((data) => {
+        if (cancelled) return;
+        setSelectedPart(data);
+      })
       .catch((error) => {
+        if (cancelled) return;
         console.error(error);
         setGlobalError("Part details could not be loaded.");
+        setSelectedPart(null);
       });
+    return () => {
+      cancelled = true;
+    };
   }, [selectedPartId]);
 
   useEffect(() => {
@@ -108,6 +134,25 @@ function App() {
       </header>
 
       {globalError && <div className="alert error">{globalError}</div>}
+      {mockMode && (
+        <div className="alert info">
+          Backend baglantisi olmadigi icin yerel demo modu aktif. Gosterilen model ve hesaplar gercek STEP analizinden
+          gelmez.
+          <button
+            className="ghost"
+            onClick={() => {
+              clearMockData();
+              setSelectedPartId(null);
+              setSelectedPart(null);
+              setActiveJob(null);
+              loadInitial();
+            }}
+            style={{ marginLeft: 10, padding: "4px 10px" }}
+          >
+            Demo veriyi temizle
+          </button>
+        </div>
+      )}
       {activeJob && (
         <div className={`alert ${activeJob.status === "failed" ? "error" : "info"}`}>
           Job {activeJob.id.slice(0, 8)}... status: <strong>{activeJob.status}</strong>

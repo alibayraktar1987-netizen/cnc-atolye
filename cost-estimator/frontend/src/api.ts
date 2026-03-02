@@ -115,6 +115,17 @@ function writeMockMode(value: boolean): void {
   window.localStorage.setItem(MOCK_MODE_KEY, value ? "1" : "0");
 }
 
+export function isMockModeActive(): boolean {
+  return forceMockMode || readMockMode();
+}
+
+export function clearMockData(): void {
+  forceMockMode = false;
+  if (!canUseStorage()) return;
+  window.localStorage.removeItem(MOCK_DB_KEY);
+  window.localStorage.removeItem(MOCK_MODE_KEY);
+}
+
 function nowIso(): string {
   return new Date().toISOString();
 }
