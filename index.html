@@ -2266,16 +2266,70 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES}) {
           </div>
         </div>
         <input style={{...inputSt,padding:"8px 10px",fontSize:12,marginBottom:8}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Parca no / musteri kodu / ad / malzeme ara..."/>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:8}}>
-          {filtered.map(p=>(
-            <button key={p.id} onClick={()=>{setSelectedPartId(p.id);loadPartToForm(p);}} style={{width:"100%",textAlign:"left",background:selectedPartId===p.id?C.accent+"16":C.surface,border:`1px solid ${selectedPartId===p.id?C.accent+"50":C.border}`,borderRadius:10,padding:"10px 11px",color:C.text,cursor:"pointer",fontFamily:"inherit",minHeight:72}}>
-              <div style={{fontSize:13,fontWeight:700}}>{p.partNo}</div>
-              <div style={{fontSize:11,color:C.muted2,marginTop:2}}>
-                {p.name||"-"} · Rev.{p.revision||"A"}{p.customerPartCode?` · Musteri Kod: ${p.customerPartCode}`:""} · {safeNum(p.unitCost).toFixed(2)} TRY
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:.5,textTransform:"uppercase"}}>
+            Toplam {parts.length} parca · Filtrelenen {filtered.length}
+          </div>
+          {selectedPart&&(
+            <div style={{fontSize:11,color:C.muted2}}>
+              Aktif parca: <strong style={{color:C.text}}>{selectedPart.partNo||"-"}</strong> {selectedPart.name?`· ${selectedPart.name}`:""}
+            </div>
+          )}
+        </div>
+        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
+          <div style={{overflowX:"auto"}}>
+            <div style={{minWidth:980}}>
+              <div style={{display:"grid",gridTemplateColumns:"1.1fr 2fr 1.2fr .8fr 1.2fr .9fr .7fr",gap:8,padding:"9px 10px",borderBottom:`1px solid ${C.border}`,background:C.card,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700}}>
+                <div>Parca No</div>
+                <div>Parca Adi</div>
+                <div>Musteri Kodu</div>
+                <div>Rev</div>
+                <div>Malzeme</div>
+                <div style={{textAlign:"right"}}>Birim Maliyet</div>
+                <div style={{textAlign:"right"}}>Dosya</div>
               </div>
-            </button>
-          ))}
-          {filtered.length===0&&<div style={{fontSize:12,color:C.muted2,padding:"6px 2px"}}>Parca bulunamadi</div>}
+              {filtered.map((p,idx)=>{
+                const selected=selectedPartId===p.id;
+                const docsCount=(Array.isArray(p.documents)?p.documents.length:0)+(p.drawingFile?1:0);
+                return (
+                  <button
+                    key={p.id}
+                    onClick={()=>{setSelectedPartId(p.id);loadPartToForm(p);}}
+                    style={{
+                      width:"100%",
+                      textAlign:"left",
+                      display:"grid",
+                      gridTemplateColumns:"1.1fr 2fr 1.2fr .8fr 1.2fr .9fr .7fr",
+                      gap:8,
+                      padding:"10px 10px",
+                      border:"none",
+                      borderBottom:`1px solid ${C.border}`,
+                      background:selected?C.accent+"1a":(idx%2===0?C.surface:C.card),
+                      color:C.text,
+                      cursor:"pointer",
+                      fontFamily:"inherit",
+                      alignItems:"center",
+                      boxShadow:selected?`inset 3px 0 0 ${C.accent}`:"none",
+                    }}
+                  >
+                    <div style={{fontSize:12,fontWeight:800,fontFamily:"monospace"}}>{p.partNo||"-"}</div>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name||"-"}</div>
+                      <div style={{fontSize:10,color:C.muted2,marginTop:2}}>
+                        Setup {safeNum(p.setupSec)} sn · Cycle {safeNum(p.cycleSec)} sn
+                      </div>
+                    </div>
+                    <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.customerPartCode||"-"}</div>
+                    <div style={{fontSize:11,color:C.text,fontWeight:700}}>{p.revision||"A"}</div>
+                    <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.material||"-"}</div>
+                    <div style={{fontSize:11,color:C.text,fontWeight:700,textAlign:"right"}}>{safeNum(p.unitCost).toFixed(2)} TRY</div>
+                    <div style={{fontSize:11,color:C.muted2,textAlign:"right"}}>{docsCount}</div>
+                  </button>
+                );
+              })}
+              {filtered.length===0&&<div style={{fontSize:12,color:C.muted2,padding:"12px 10px"}}>Parca bulunamadi.</div>}
+            </div>
+          </div>
         </div>
       </div>
 
