@@ -4788,11 +4788,17 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const stockGridStyle=kioskMode
     ? {display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:10,flex:1,minHeight:0,alignItems:"stretch"}
     : {display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:10};
+  const topInfoGridStyle=kioskMode
+    ? {background:opTheme.panelDark,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:"10px 12px",display:"grid",gridTemplateColumns:"repeat(3,minmax(220px,1fr))",gap:8,alignItems:"center"}
+    : {background:opTheme.panelDark,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:"10px 12px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8,alignItems:"center"};
+  const topControlStyle=kioskMode
+    ? {display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"nowrap",gridColumn:"1 / -1",overflowX:"auto",paddingBottom:2}
+    : {display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"};
 
   return (
     <div style={entryRootStyle}>
       <div style={shellStyle}>
-        <div style={{background:opTheme.panelDark,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:"10px 12px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8,alignItems:"center"}}>
+        <div style={topInfoGridStyle}>
           <div>
             <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.7,textTransform:"uppercase"}}>Tezgah</div>
             <div style={{fontSize:24,fontWeight:800,color:opTheme.text,lineHeight:1.1}}>{form.machine}</div>
@@ -4807,12 +4813,12 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.7,textTransform:"uppercase"}}>Is Emri</div>
             <div style={{fontSize:17,fontWeight:700,color:opTheme.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{form.selectedOrder?.code||"-"}{form.selectedOrder?.name?` | ${form.selectedOrder.name}`:""}</div>
           </div>
-          <div style={{display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
+          <div style={topControlStyle}>
             <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"6px 10px",border:`1px solid ${opTheme.border}`,borderRadius:8,background:"rgba(255,255,255,.12)",fontSize:11,color:opTheme.text,fontWeight:700}}>
               <span style={{width:10,height:10,borderRadius:"50%",background:statusMeta.color,display:"inline-block"}}/>
               {statusMeta.label}
             </span>
-            <input type="date" max={todayStr()} value={form.entryDate} onChange={e=>fv("entryDate",e.target.value||todayStr())} style={{...inputSt,padding:"8px 10px",fontSize:12,maxWidth:160,background:"rgba(255,255,255,.15)",borderColor:opTheme.border,color:opTheme.text}}/>
+            <input type="date" max={todayStr()} value={form.entryDate} onChange={e=>fv("entryDate",e.target.value||todayStr())} style={{...inputSt,padding:"8px 10px",fontSize:12,width:160,background:"rgba(255,255,255,.15)",borderColor:opTheme.border,color:opTheme.text}}/>
             {SHIFTS.map(s=><button key={s.id} onClick={()=>fv("shift",s.id)} style={{...btnSt(form.shift===s.id?"primary":"ghost"),padding:"7px 9px",fontSize:11,opacity:form.shift===s.id?1:0.95}}>{s.label}</button>)}
           </div>
         </div>
