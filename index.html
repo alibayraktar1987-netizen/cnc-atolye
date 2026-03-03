@@ -8820,6 +8820,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
   const [qualityInspections,setQualityInspections]=useState([]);
   const [customReports,setCustomReports]=useState([]);
   const [selectedCustomReportId,setSelectedCustomReportId]=useState("");
+  const [reportPage,setReportPage]=useState("list");
   const [showBuilder,setShowBuilder]=useState(false);
   const [savingReport,setSavingReport]=useState(false);
   const [editingReportId,setEditingReportId]=useState("");
@@ -8868,18 +8869,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
       if(d.tab!=="rapor") return;
       if(d.type==="refresh"){load();return;}
       if(d.type==="new"){
-        setShowBuilder(true);
-        setEditingReportId("");
-        setSelectedCustomReportId("");
-        setReportForm({
-          name:"",
-          source:"entries",
-          dimension:"machine",
-          metric:"totalParts",
-          aggregation:"sum",
-          chartType:"column",
-          maxItems:"10",
-        });
+        openCreateReportPage();
         window.scrollTo({top:0,behavior:"smooth"});
       }
     }
@@ -8891,6 +8881,9 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
       setSelectedCustomReportId("");
     }
   },[customReports,selectedCustomReportId]);
+  useEffect(()=>{
+    if(reportPage==="detail"&&!selectedCustomReportId) setReportPage("list");
+  },[reportPage,selectedCustomReportId]);
 
   function applyRangePreset(type){
     const end=todayStr();
@@ -9098,6 +9091,24 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
     });
     setEditingReportId("");
   }
+  function openReportListPage(){
+    setReportPage("list");
+    setShowBuilder(false);
+    setEditingReportId("");
+  }
+  function openCreateReportPage(){
+    resetReportBuilder();
+    setSelectedCustomReportId("");
+    setShowBuilder(true);
+    setReportPage("builder");
+  }
+  function openReportDetailPage(reportId){
+    if(!reportId) return;
+    setSelectedCustomReportId(reportId);
+    setShowBuilder(false);
+    setEditingReportId("");
+    setReportPage("detail");
+  }
   async function saveCustomReport(){
     const cfg=normalizeCustomConfig(reportForm);
     if(!cfg.name){alert("Rapor adi zorunlu.");return;}
@@ -9121,6 +9132,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
       setSelectedCustomReportId(editingReportId);
       setEditingReportId("");
       setShowBuilder(false);
+      setReportPage("detail");
       return;
     }
     const id=await window.DB.addDoc("customReports",{...payload,createdBy:currentUser.id||""});
@@ -9131,6 +9143,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
     setSelectedCustomReportId(id);
     setEditingReportId("");
     setShowBuilder(false);
+    setReportPage("detail");
   }
   async function removeCustomReport(report){
     if(!report) return;
@@ -9140,6 +9153,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
     setCustomReports(prev=>prev.filter(r=>r.id!==report.id));
     if(selectedCustomReportId===report.id) setSelectedCustomReportId("");
     if(editingReportId===report.id) setEditingReportId("");
+    if(reportPage==="detail"&&selectedCustomReportId===report.id) setReportPage("list");
   }
   function startEditCustomReport(report){
     if(!report) return;
@@ -9156,6 +9170,41 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
     setEditingReportId(report.id);
     setSelectedCustomReportId(report.id);
     setShowBuilder(true);
+    setReportPage("builder");
+  }
+  function normalizeDashboardWidgetRows(rows){
+    const src=Array.isArray(rows)?rows:[];
+    const out=[];
+    const seen=new Set();
+    src.forEach((row,idx)=>{
+      const id=String(row?.id||`w_${idx}`).trim();
+      const reportId=String(row?.reportId||"").trim();
+      if(!id||!reportId||seen.has(id)) return;
+      seen.add(id);
+      const size=row?.size==="sm"||row?.size==="lg"?row.size:"md";
+      out.push({id,reportId,size});
+    });
+    return out;
+  }
+  async function addReportToDashboard(report){
+    if(!report||!report.id){alert("Rapor bulunamadi.");return;}
+    const userKey=String(currentUser?.id||"default");
+    const cfg=await window.DB.getDoc("config","dashboardReportWidgets");
+    const widgetsByUser=(cfg&&typeof cfg.widgetsByUser==="object")?cfg.widgetsByUser:{};
+    const currentRows=normalizeDashboardWidgetRows(widgetsByUser[userKey]);
+    if(currentRows.some(x=>x.reportId===report.id)){
+      alert("Bu rapor zaten gosterge paneline ekli.");
+      return;
+    }
+    const nextRows=[...currentRows,{id:`w_${Date.now()}_${Math.floor(Math.random()*1000)}`,reportId:report.id,size:"md"}];
+    const ok=await window.DB.setDoc("config","dashboardReportWidgets",{
+      widgetsByUser:{...widgetsByUser,[userKey]:nextRows},
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser?.id||"",
+    });
+    if(!ok){alert("Rapor gosterge paneline eklenemedi.");return;}
+    window.dispatchEvent(new CustomEvent("dashboard:report-widgets-updated",{detail:{userId:userKey}}));
+    alert("Rapor grafigi gosterge paneline eklendi.");
   }
   function aggregateCustomReport(configRaw){
     const cfg=normalizeCustomConfig(configRaw);
@@ -9342,7 +9391,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
   ];
 
   return (
-    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+    <div style={{padding:"0 0 12px",display:"flex",flexDirection:"column",gap:12}}>
       <div style={{...panelStyle,padding:"14px 16px",background:`linear-gradient(180deg, ${C.surface} 0%, ${C.surface2} 100%)`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
           <div>
@@ -9385,26 +9434,21 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
       <div style={{...panelStyle,padding:"12px 14px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
           <div>
-            <div style={sectionCaptionStyle}>Ozel Rapor Tasarimi</div>
-            <div style={{fontSize:13,color:C.text,fontWeight:700,marginTop:2}}>Secilebilir alanlarla rapor olusturup kaydedin</div>
+            <div style={sectionCaptionStyle}>Rapor Sayfalari</div>
+            <div style={{fontSize:13,color:C.text,fontWeight:700,marginTop:2}}>
+              {reportPage==="builder"?(editingReportId?"Raporu Duzenle":"Rapor Olustur"):reportPage==="detail"?"Rapor Detayi":"Rapor Listesi"}
+            </div>
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            <button
-              onClick={()=>{
-                if(showBuilder){
-                  setShowBuilder(false);
-                  setEditingReportId("");
-                }else{
-                  resetReportBuilder();
-                  setSelectedCustomReportId("");
-                  setShowBuilder(true);
-                }
-              }}
-              style={{...btnSt("primary"),padding:"7px 11px",fontSize:12}}
-            >
-              {showBuilder?"Formu Kapat":"+ Yeni Rapor"}
+            {reportPage!=="list"&&(
+              <button onClick={openReportListPage} style={{...btnSt("ghost"),padding:"7px 11px",fontSize:12}}>
+                Raporlara Don
+              </button>
+            )}
+            <button onClick={openCreateReportPage} style={{...btnSt("primary"),padding:"7px 11px",fontSize:12}}>
+              Rapor Olustur
             </button>
-            {!!selectedCustomReport&&(
+            {reportPage==="detail"&&!!selectedCustomReport&&(
               <button onClick={()=>startEditCustomReport(selectedCustomReport)} style={{...btnSt("ghost"),padding:"7px 11px",fontSize:12}}>
                 Duzenle
               </button>
@@ -9423,68 +9467,100 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
             Aktif Grafik: <span style={{color:C.text,fontWeight:700}}>{CHART_TYPE_LABELS[(previewCustomReport?.cfg?.chartType)||""]||"-"}</span>
           </div>
         </div>
-        {customReports.length===0&&(
-          <div style={{marginBottom:10,padding:"12px 10px",border:`1px dashed ${C.border}`,borderRadius:10,fontSize:12,color:C.muted2,background:C.surface2}}>
-            Henuz kayitli ozel rapor yok. "Yeni Rapor" butonu ile ilk raporu olusturun.
-          </div>
+        {reportPage==="list"&&(
+          <>
+            {customReports.length===0&&(
+              <div style={{marginBottom:10,padding:"12px 10px",border:`1px dashed ${C.border}`,borderRadius:10,fontSize:12,color:C.muted2,background:C.surface2}}>
+                Henuz kayitli ozel rapor yok. "Rapor Olustur" ile yeni rapor tasarlayin.
+              </div>
+            )}
+            {customReports.length>0&&(
+              <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:10,maxHeight:340,overflowY:"auto",paddingRight:2}}>
+                {customReports.map(rep=>{
+                  const isActive=rep.id===selectedCustomReportId;
+                  return (
+                    <div key={rep.id} style={{display:"grid",gridTemplateColumns:"1fr auto",gap:8,alignItems:"center",padding:"8px 10px",border:`1px solid ${isActive?C.accent+"66":C.border}`,borderRadius:10,background:isActive?C.brandTint:C.surface}}>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontWeight:700,fontSize:13,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{rep.name||"Adsiz Rapor"}</div>
+                        <div style={{fontSize:11,color:C.muted2,marginTop:2}}>
+                          {(REPORT_SOURCE_DEFS[rep.source]?.label)||rep.source||"-"} · {CHART_TYPE_LABELS[rep.chartType]||rep.chartType||"-"} · {String(rep.aggregation||"").toUpperCase()||"-"}
+                        </div>
+                      </div>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                        <button onClick={()=>openReportDetailPage(rep.id)} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11}}>Ac</button>
+                        <button onClick={()=>startEditCustomReport(rep)} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11}}>Duzenle</button>
+                        <button onClick={()=>addReportToDashboard(rep)} style={{...btnSt("primary"),padding:"6px 9px",fontSize:11}}>Panele Ekle</button>
+                        <button onClick={()=>removeCustomReport(rep)} style={{...btnSt("danger"),padding:"6px 9px",fontSize:11}}>Sil</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
 
-        {customReports.length>0&&(
-          <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:10,maxHeight:280,overflowY:"auto",paddingRight:2}}>
-            {customReports.map(rep=>{
-              const isActive=rep.id===selectedCustomReportId;
-              return (
-                <div key={rep.id} style={{display:"grid",gridTemplateColumns:"1fr auto",gap:8,alignItems:"center",padding:"8px 10px",border:`1px solid ${isActive?C.accent+"66":C.border}`,borderRadius:10,background:isActive?C.brandTint:C.surface}}>
-                  <div style={{minWidth:0}}>
-                    <div style={{fontWeight:700,fontSize:13,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{rep.name||"Adsiz Rapor"}</div>
-                    <div style={{fontSize:11,color:C.muted2,marginTop:2}}>
-                      {(REPORT_SOURCE_DEFS[rep.source]?.label)||rep.source||"-"} · {CHART_TYPE_LABELS[rep.chartType]||rep.chartType||"-"} · {rep.aggregation||"-"}
+        {reportPage==="builder"&&(
+          <>
+            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10,marginBottom:10}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
+                <div><span style={labelSt}>Rapor Adi *</span><input style={inputSt} value={reportForm.name} onChange={e=>updateReportFormField("name",e.target.value)} placeholder="Orn. Tezgah Performans Ozeti"/></div>
+                <div><span style={labelSt}>Veri Kaynagi</span><select style={inputSt} value={reportForm.source} onChange={e=>updateReportFormField("source",e.target.value)}>{Object.entries(REPORT_SOURCE_DEFS).map(([id,def])=><option key={id} value={id}>{def.label}</option>)}</select></div>
+                <div><span style={labelSt}>Boyut (X Alan)</span><select style={inputSt} value={reportForm.dimension} onChange={e=>updateReportFormField("dimension",e.target.value)}>{activeBuilderSource.dimensions.map(dim=><option key={dim.id} value={dim.id}>{dim.label}</option>)}</select></div>
+                <div><span style={labelSt}>Olcum (Y Alan)</span><select style={inputSt} value={reportForm.metric} onChange={e=>updateReportFormField("metric",e.target.value)}>{activeBuilderSource.metrics.map(met=><option key={met.id} value={met.id}>{met.label}</option>)}</select></div>
+                <div><span style={labelSt}>Toplama</span><select style={inputSt} value={reportForm.aggregation} onChange={e=>updateReportFormField("aggregation",e.target.value)}>{(activeBuilderMetric?.aggs||["sum"]).map(agg=><option key={agg} value={agg}>{agg.toUpperCase()}</option>)}</select></div>
+                <div><span style={labelSt}>Grafik Tipi</span><select style={inputSt} value={reportForm.chartType} onChange={e=>updateReportFormField("chartType",e.target.value)}>{CHART_TYPE_OPTIONS.map(opt=><option key={opt.id} value={opt.id}>{opt.label}</option>)}</select></div>
+                <div><span style={labelSt}>Maks Satir</span><input style={inputSt} type="number" min="3" max="40" value={reportForm.maxItems} onChange={e=>updateReportFormField("maxItems",e.target.value)}/></div>
+              </div>
+              <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10,flexWrap:"wrap"}}>
+                <button onClick={()=>resetReportBuilder(reportForm.source)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Temizle</button>
+                <button onClick={saveCustomReport} disabled={savingReport} style={{...btnSt("green"),padding:"8px 12px",fontSize:12,opacity:savingReport?0.7:1}}>
+                  {savingReport?"Kaydediliyor...":(editingReportId?"Raporu Guncelle":"Raporu Kaydet")}
+                </button>
+              </div>
+            </div>
+            {previewCustomReport&&(
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"center",marginBottom:9,flexWrap:"wrap"}}>
+                  <div>
+                    <div style={{fontWeight:700,color:C.text,fontSize:14}}>{reportForm.name||"Yeni Rapor Onizleme"}</div>
+                    <div style={{fontSize:11,color:C.muted2,marginTop:1}}>
+                      {previewCustomReport.src.label} · {previewCustomReport.dimensionLabel} / {previewCustomReport.metricLabel} · {previewCustomReport.cfg.aggregation.toUpperCase()}
                     </div>
                   </div>
-                  <div style={{display:"flex",gap:6}}>
-                    <button onClick={()=>{setSelectedCustomReportId(rep.id);setShowBuilder(false);}} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11}}>Ac</button>
-                    <button onClick={()=>startEditCustomReport(rep)} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11}}>Duzenle</button>
-                    <button onClick={()=>removeCustomReport(rep)} style={{...btnSt("danger"),padding:"6px 9px",fontSize:11}}>Sil</button>
+                  <Badge label={CHART_TYPE_LABELS[previewCustomReport.cfg.chartType]||previewCustomReport.cfg.chartType} color={C.accent}/>
+                </div>
+                {renderCustomReportView(previewCustomReport)}
+              </div>
+            )}
+          </>
+        )}
+
+        {reportPage==="detail"&&(
+          <>
+            {!selectedCustomReport&&(
+              <div style={{padding:"16px 12px",border:`1px dashed ${C.border}`,borderRadius:10,color:C.muted2,fontSize:12,background:C.surface2}}>
+                Rapor secimi bulunamadi. Listeye donup bir rapor secin.
+              </div>
+            )}
+            {!!selectedCustomReport&&!!previewCustomReport&&(
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"center",marginBottom:9,flexWrap:"wrap"}}>
+                  <div>
+                    <div style={{fontWeight:700,color:C.text,fontSize:14}}>{selectedCustomReport.name||"Rapor"}</div>
+                    <div style={{fontSize:11,color:C.muted2,marginTop:1}}>
+                      {previewCustomReport.src.label} · {previewCustomReport.dimensionLabel} / {previewCustomReport.metricLabel} · {previewCustomReport.cfg.aggregation.toUpperCase()}
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+                    <Badge label={CHART_TYPE_LABELS[previewCustomReport.cfg.chartType]||previewCustomReport.cfg.chartType} color={C.accent}/>
+                    <button onClick={()=>addReportToDashboard(selectedCustomReport)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:11}}>Gosterge Paneline Ekle</button>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
-
-        {showBuilder&&(
-          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10,marginBottom:10}}>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
-              <div><span style={labelSt}>Rapor Adi *</span><input style={inputSt} value={reportForm.name} onChange={e=>updateReportFormField("name",e.target.value)} placeholder="Orn. Tezgah Performans Ozeti"/></div>
-              <div><span style={labelSt}>Veri Kaynagi</span><select style={inputSt} value={reportForm.source} onChange={e=>updateReportFormField("source",e.target.value)}>{Object.entries(REPORT_SOURCE_DEFS).map(([id,def])=><option key={id} value={id}>{def.label}</option>)}</select></div>
-              <div><span style={labelSt}>Boyut (X Alan)</span><select style={inputSt} value={reportForm.dimension} onChange={e=>updateReportFormField("dimension",e.target.value)}>{activeBuilderSource.dimensions.map(dim=><option key={dim.id} value={dim.id}>{dim.label}</option>)}</select></div>
-              <div><span style={labelSt}>Olcum (Y Alan)</span><select style={inputSt} value={reportForm.metric} onChange={e=>updateReportFormField("metric",e.target.value)}>{activeBuilderSource.metrics.map(met=><option key={met.id} value={met.id}>{met.label}</option>)}</select></div>
-              <div><span style={labelSt}>Toplama</span><select style={inputSt} value={reportForm.aggregation} onChange={e=>updateReportFormField("aggregation",e.target.value)}>{(activeBuilderMetric?.aggs||["sum"]).map(agg=><option key={agg} value={agg}>{agg.toUpperCase()}</option>)}</select></div>
-              <div><span style={labelSt}>Grafik Tipi</span><select style={inputSt} value={reportForm.chartType} onChange={e=>updateReportFormField("chartType",e.target.value)}>{CHART_TYPE_OPTIONS.map(opt=><option key={opt.id} value={opt.id}>{opt.label}</option>)}</select></div>
-              <div><span style={labelSt}>Maks Satir</span><input style={inputSt} type="number" min="3" max="40" value={reportForm.maxItems} onChange={e=>updateReportFormField("maxItems",e.target.value)}/></div>
-            </div>
-            <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10,flexWrap:"wrap"}}>
-              <button onClick={()=>resetReportBuilder(reportForm.source)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Temizle</button>
-              <button onClick={saveCustomReport} disabled={savingReport} style={{...btnSt("green"),padding:"8px 12px",fontSize:12,opacity:savingReport?0.7:1}}>
-                {savingReport?"Kaydediliyor...":(editingReportId?"Raporu Guncelle":"Raporu Kaydet")}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {previewCustomReport&&(
-          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10}}>
-            <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"center",marginBottom:9,flexWrap:"wrap"}}>
-              <div>
-                <div style={{fontWeight:700,color:C.text,fontSize:14}}>{showBuilder?(reportForm.name||"Yeni Rapor Onizleme"):(selectedCustomReport?.name||"Rapor Onizleme")}</div>
-                <div style={{fontSize:11,color:C.muted2,marginTop:1}}>
-                  {previewCustomReport.src.label} · {previewCustomReport.dimensionLabel} / {previewCustomReport.metricLabel} · {previewCustomReport.cfg.aggregation.toUpperCase()}
-                </div>
+                {renderCustomReportView(previewCustomReport)}
               </div>
-              <Badge label={CHART_TYPE_LABELS[previewCustomReport.cfg.chartType]||previewCustomReport.cfg.chartType} color={C.accent}/>
-            </div>
-            {renderCustomReportView(previewCustomReport)}
-          </div>
+            )}
+          </>
         )}
       </div>
       {filtered.length===0?(
@@ -12312,9 +12388,46 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
   const [machineQuery,setMachineQuery]=useState("");
   const [statusFilter,setStatusFilter]=useState("all");
   const [lastLoadedAt,setLastLoadedAt]=useState("");
-  const [data,setData]=useState({orders:[],sales:[],materials:[],prs:[],connectors:[],telemetry:[],downtimes:[],entries:[],notifs:[],tools:[]});
+  const [customReports,setCustomReports]=useState([]);
+  const [dashboardWidgets,setDashboardWidgets]=useState([]);
+  const [dashboardEditMode,setDashboardEditMode]=useState(false);
+  const [widgetReportId,setWidgetReportId]=useState("");
+  const [dragWidgetId,setDragWidgetId]=useState("");
+  const [isNarrow,setIsNarrow]=useState(()=>typeof window!=="undefined"?window.innerWidth<980:false);
+  const [data,setData]=useState({orders:[],sales:[],materials:[],prs:[],connectors:[],telemetry:[],downtimes:[],entries:[],quality:[],notifs:[],tools:[]});
+  const dashboardUserKey=String(currentUser?.id||"default");
+  function sortReports(rows=[]){
+    return [...rows].sort((a,b)=>{
+      const ad=b.updatedAt||b.createdAt||"";
+      const bd=a.updatedAt||a.createdAt||"";
+      return ad.localeCompare(bd);
+    });
+  }
+  function normalizeDashboardWidgetRows(rows){
+    const src=Array.isArray(rows)?rows:[];
+    const out=[];
+    const seen=new Set();
+    src.forEach((row,idx)=>{
+      const id=String(row?.id||`w_${idx}`).trim();
+      const reportId=String(row?.reportId||"").trim();
+      if(!id||!reportId||seen.has(id)) return;
+      seen.add(id);
+      const size=row?.size==="sm"||row?.size==="lg"?row.size:"md";
+      out.push({id,reportId,size});
+    });
+    return out;
+  }
+  const dashboardReportSourceMeta=useMemo(()=>({
+    entries:{label:"Uretim Kayitlari"},
+    orders:{label:"Is Emirleri"},
+    salesOrders:{label:"Satis Siparisleri"},
+    materials:{label:"Malzeme Kartlari"},
+    downtime:{label:"Durus Kayitlari"},
+    quality:{label:"Kalite Muayeneleri"},
+  }),[]);
   const load=useCallback(async()=>{
-    const [orders,sales,materials,prs,connectors,telemetry,downtimes,entries,notifs,tools]=await Promise.all([
+    setLoading(true);
+    const [orders,sales,materials,prs,connectors,telemetry,downtimes,entries,quality,notifs,tools,reportRows,dashboardCfg]=await Promise.all([
       window.DB.getAll("orders"),
       window.DB.getAll("salesOrders"),
       window.DB.getAll("materials"),
@@ -12323,14 +12436,308 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
       window.DB.getAll("machineTelemetryMock"),
       window.DB.getAll("downtimeEvents"),
       window.DB.getAll("entries"),
+      window.DB.getAll("qualityInspections"),
       window.DB.getAll("notifications"),
       window.DB.getAll("toolStock"),
+      window.DB.getAll("customReports"),
+      window.DB.getDoc("config","dashboardReportWidgets"),
     ]);
-    setData({orders,sales,materials,prs,connectors,telemetry,downtimes,entries,notifs,tools});
+    const widgetsByUser=(dashboardCfg&&typeof dashboardCfg.widgetsByUser==="object")?dashboardCfg.widgetsByUser:{};
+    setData({orders,sales,materials,prs,connectors,telemetry,downtimes,entries,quality,notifs,tools});
+    setCustomReports(sortReports(reportRows||[]));
+    setDashboardWidgets(normalizeDashboardWidgetRows(widgetsByUser[dashboardUserKey]));
     setLastLoadedAt(new Date().toISOString());
     setLoading(false);
-  },[]);
+  },[dashboardUserKey]);
   useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    function onResize(){
+      setIsNarrow(window.innerWidth<980);
+    }
+    window.addEventListener("resize",onResize);
+    return ()=>window.removeEventListener("resize",onResize);
+  },[]);
+  useEffect(()=>{
+    function onDashboardWidgetSync(ev){
+      const userId=String(ev&&ev.detail&&ev.detail.userId||"");
+      if(userId&&userId!==dashboardUserKey) return;
+      load();
+    }
+    window.addEventListener("dashboard:report-widgets-updated",onDashboardWidgetSync);
+    return ()=>window.removeEventListener("dashboard:report-widgets-updated",onDashboardWidgetSync);
+  },[dashboardUserKey,load]);
+  useEffect(()=>{
+    if(widgetReportId&&customReports.some(r=>r.id===widgetReportId)) return;
+    setWidgetReportId(customReports[0]?.id||"");
+  },[customReports,widgetReportId]);
+  async function persistDashboardWidgets(nextRows){
+    const cfg=await window.DB.getDoc("config","dashboardReportWidgets");
+    const widgetsByUser=(cfg&&typeof cfg.widgetsByUser==="object")?cfg.widgetsByUser:{};
+    const normalized=normalizeDashboardWidgetRows(nextRows);
+    const ok=await window.DB.setDoc("config","dashboardReportWidgets",{
+      widgetsByUser:{...widgetsByUser,[dashboardUserKey]:normalized},
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser?.id||"",
+    });
+    if(!ok){
+      alert("Dashboard duzeni kaydedilemedi.");
+      return false;
+    }
+    setDashboardWidgets(normalized);
+    window.dispatchEvent(new CustomEvent("dashboard:report-widgets-updated",{detail:{userId:dashboardUserKey}}));
+    return true;
+  }
+  async function addDashboardWidgetFromReport(reportId){
+    const rid=String(reportId||"").trim();
+    if(!rid){alert("Eklenecek raporu secin.");return;}
+    if(!customReports.some(r=>r.id===rid)){alert("Secilen rapor bulunamadi.");return;}
+    if(dashboardWidgets.some(w=>w.reportId===rid)){alert("Bu rapor zaten dashboard'da var.");return;}
+    const next=[...dashboardWidgets,{id:`w_${Date.now()}_${Math.floor(Math.random()*1000)}`,reportId:rid,size:"md"}];
+    await persistDashboardWidgets(next);
+  }
+  async function removeDashboardWidget(widgetId){
+    const id=String(widgetId||"").trim();
+    if(!id) return;
+    const next=dashboardWidgets.filter(w=>w.id!==id);
+    await persistDashboardWidgets(next);
+  }
+  async function updateDashboardWidgetSize(widgetId,size){
+    const nextSize=size==="sm"||size==="lg"?size:"md";
+    const next=dashboardWidgets.map(w=>w.id===widgetId?{...w,size:nextSize}:w);
+    await persistDashboardWidgets(next);
+  }
+  async function moveDashboardWidget(sourceId,targetId){
+    const source=String(sourceId||"").trim();
+    const target=String(targetId||"").trim();
+    if(!source||!target||source===target) return;
+    const from=dashboardWidgets.findIndex(w=>w.id===source);
+    const to=dashboardWidgets.findIndex(w=>w.id===target);
+    if(from<0||to<0) return;
+    const next=[...dashboardWidgets];
+    const [item]=next.splice(from,1);
+    next.splice(to,0,item);
+    await persistDashboardWidgets(next);
+  }
+  const reportById=useMemo(()=>Object.fromEntries(customReports.map(r=>[r.id,r])),[customReports]);
+  const dashboardWidgetRows=useMemo(
+    ()=>dashboardWidgets.map(w=>({...w,report:reportById[w.reportId]||null})).filter(w=>w.report),
+    [dashboardWidgets,reportById]
+  );
+  const dashboardSourceRows=useMemo(()=>({
+    entries:(data.entries||[]).map(row=>({
+      ...row,
+      operatorName:row.operatorName||row.operatorId||"-",
+      totalParts:safeNum(row.correct)+safeNum(row.wrong),
+    })),
+    orders:(data.orders||[]).map(row=>({
+      ...row,
+      machineMain:(row.machines&&row.machines.length>0)?row.machines[0]:"Atanmamis",
+      recordDate:row.dueDate||String(row.createdAt||"").slice(0,10),
+      qty:safeNum(row.qty),
+      partSec:safeNum(row.partSec),
+    })),
+    salesOrders:(data.sales||[]).map(row=>({
+      ...row,
+      recordDate:row.dueDate||String(row.createdAt||"").slice(0,10),
+      qty:safeNum(row.qty),
+      deliveredQty:safeNum(row.deliveredQty),
+      openQty:Math.max(0,safeNum(row.qty)-safeNum(row.deliveredQty)),
+      totalAmount:safeNum(row.totalAmount),
+    })),
+    materials:(data.materials||[]).map(row=>({
+      ...row,
+      recordDate:String(row.updatedAt||row.createdAt||"").slice(0,10),
+      stock:safeNum(row.stock),
+      reorderPoint:safeNum(row.reorderPoint),
+      safetyStock:safeNum(row.safetyStock),
+      leadTimeDays:safeNum(row.leadTimeDays),
+    })),
+    downtime:(data.downtimes||[]).map(row=>({
+      ...row,
+      date:row.date||String(row.startAt||"").slice(0,10),
+      durationMin:safeNum(row.durationMin),
+    })),
+    quality:(data.quality||[]).map(row=>({
+      ...row,
+      date:String(row.createdAt||"").slice(0,10),
+      scrapQty:safeNum(row.scrapQty),
+      scrapCost:safeNum(row.scrapCost),
+    })),
+  }),[data]);
+  const widgetChartPalette=["#4f8ef7","#00c896","#ffb830","#9b7ff4","#ff4d6d","#2dd4bf","#f97316","#38bdf8"];
+  function normalizeWidgetReportConfig(raw){
+    const sourceRaw=String(raw?.source||"entries");
+    const source=Object.prototype.hasOwnProperty.call(dashboardSourceRows,sourceRaw)?sourceRaw:"entries";
+    const chartTypeRaw=String(raw?.chartType||"column");
+    const chartType=["column","line","pie","donut","table"].includes(chartTypeRaw)?chartTypeRaw:"column";
+    const aggregationRaw=String(raw?.aggregation||"sum");
+    const aggregation=["sum","avg","max","min"].includes(aggregationRaw)?aggregationRaw:"sum";
+    const dimension=String(raw?.dimension||"__all");
+    const metric=String(raw?.metric||"__count");
+    const maxItems=Math.max(3,Math.min(40,Math.floor(safeNum(raw?.maxItems)||10)));
+    return {source,chartType,aggregation,dimension,metric,maxItems};
+  }
+  function aggregateWidgetReport(report){
+    if(!report) return null;
+    const cfg=normalizeWidgetReportConfig(report);
+    const srcRows=[...(dashboardSourceRows[cfg.source]||[])];
+    const grouped={};
+    srcRows.forEach(row=>{
+      const rawLabel=cfg.dimension==="__all"?"Toplam":row[cfg.dimension];
+      const label=(rawLabel===undefined||rawLabel===null||String(rawLabel).trim()==="")?"(Bos)":String(rawLabel);
+      if(!grouped[label]) grouped[label]=[];
+      grouped[label].push(cfg.metric==="__count"?1:safeNum(row[cfg.metric]));
+    });
+    let dataRows=Object.entries(grouped).map(([label,values])=>{
+      let value=0;
+      if(cfg.metric==="__count"){
+        value=values.length;
+      }else if(cfg.aggregation==="avg"){
+        value=values.length?values.reduce((s,v)=>s+v,0)/values.length:0;
+      }else if(cfg.aggregation==="max"){
+        value=values.length?Math.max(...values):0;
+      }else if(cfg.aggregation==="min"){
+        value=values.length?Math.min(...values):0;
+      }else{
+        value=values.reduce((s,v)=>s+v,0);
+      }
+      return {label,value,count:values.length};
+    }).sort((a,b)=>b.value-a.value);
+    if(cfg.chartType!=="table") dataRows=dataRows.slice(0,cfg.maxItems);
+    const sourceLabel=dashboardReportSourceMeta[cfg.source]?.label||cfg.source;
+    return {cfg,rowCount:srcRows.length,data:dataRows,sourceLabel};
+  }
+  function formatWidgetMetric(value){
+    return safeNum(value).toLocaleString("tr-TR",{maximumFractionDigits:2});
+  }
+  function renderDashboardWidgetChart(preview){
+    if(!preview){
+      return (
+        <div style={{padding:"14px 10px",border:`1px dashed ${C.border}`,borderRadius:9,color:C.muted2,fontSize:12,background:C.surface2}}>
+          Rapor onizlemesi yuklenemedi.
+        </div>
+      );
+    }
+    if(preview.rowCount===0||!preview.data.length){
+      return (
+        <div style={{padding:"14px 10px",border:`1px dashed ${C.border}`,borderRadius:9,color:C.muted2,fontSize:12,background:C.surface2}}>
+          Bu rapor icin gosterilecek veri yok.
+        </div>
+      );
+    }
+    const rows=preview.data||[];
+    const maxVal=Math.max(1,...rows.map(r=>safeNum(r.value)));
+    if(preview.cfg.chartType==="table"){
+      return (
+        <div style={{overflowX:"auto",border:`1px solid ${C.border}`,borderRadius:9}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:340}}>
+            <thead>
+              <tr style={{background:C.surface2,color:C.muted2,textAlign:"left"}}>
+                <th style={{padding:"7px 8px",borderBottom:`1px solid ${C.border}`}}>Alan</th>
+                <th style={{padding:"7px 8px",borderBottom:`1px solid ${C.border}`}}>Deger</th>
+                <th style={{padding:"7px 8px",borderBottom:`1px solid ${C.border}`}}>Kayit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r,i)=>(
+                <tr key={`${r.label}_${i}`} style={{borderBottom:`1px solid ${C.border}`}}>
+                  <td style={{padding:"7px 8px",color:C.text}}>{r.label}</td>
+                  <td style={{padding:"7px 8px",color:C.text,fontWeight:700}}>{formatWidgetMetric(r.value)}</td>
+                  <td style={{padding:"7px 8px",color:C.muted2}}>{r.count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+    if(preview.cfg.chartType==="pie"||preview.cfg.chartType==="donut"){
+      const total=rows.reduce((s,r)=>s+safeNum(r.value),0);
+      let cursor=0;
+      const segments=rows.map((r,i)=>{
+        const share=total>0?(safeNum(r.value)/total)*360:0;
+        const start=cursor;
+        cursor+=share;
+        return `${widgetChartPalette[i%widgetChartPalette.length]} ${start.toFixed(2)}deg ${cursor.toFixed(2)}deg`;
+      });
+      const pieStyle=segments.length?`conic-gradient(${segments.join(",")})`:C.border;
+      return (
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+          <div style={{position:"relative",width:160,height:160,borderRadius:"50%",background:pieStyle,border:`1px solid ${C.border}`,flexShrink:0}}>
+            {preview.cfg.chartType==="donut"&&<div style={{position:"absolute",inset:36,borderRadius:"50%",background:C.card,border:`1px solid ${C.border}`}}/>}
+          </div>
+          <div style={{flex:1,minWidth:170,display:"flex",flexDirection:"column",gap:6}}>
+            {rows.map((r,i)=>{
+              const share=total>0?(safeNum(r.value)/total)*100:0;
+              return (
+                <div key={`${r.label}_${i}`} style={{display:"grid",gridTemplateColumns:"14px 1fr auto",gap:7,alignItems:"center",fontSize:11}}>
+                  <span style={{width:10,height:10,borderRadius:2,background:widgetChartPalette[i%widgetChartPalette.length],display:"inline-block"}}/>
+                  <span style={{color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.label}</span>
+                  <span style={{color:C.muted2}}>{share.toFixed(1)}%</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+    if(preview.cfg.chartType==="line"){
+      const lineRows=rows.slice(0,16);
+      const lineMax=Math.max(1,...lineRows.map(r=>safeNum(r.value)));
+      const n=Math.max(lineRows.length-1,1);
+      const points=lineRows.map((r,i)=>{
+        const x=42+(500*(i/n));
+        const y=154-((safeNum(r.value)/lineMax)*128);
+        return `${x},${y}`;
+      }).join(" ");
+      return (
+        <div style={{height:188,overflowX:"auto"}}>
+          <svg width="100%" height="188" viewBox="0 0 560 188" preserveAspectRatio="none">
+            {[0,1,2,3].map(i=>{
+              const y=18+i*34;
+              return <line key={i} x1="42" y1={y} x2="548" y2={y} stroke={C.border} strokeWidth="1"/>;
+            })}
+            <polyline points={points} fill="none" stroke={C.accent} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"/>
+            {lineRows.map((r,i)=>{
+              const x=42+(500*(i/n));
+              const y=154-((safeNum(r.value)/lineMax)*128);
+              const lbl=String(r.label||"");
+              const shortLbl=lbl.length>8?`${lbl.slice(0,7)}…`:lbl;
+              return (
+                <g key={`${r.label}_${i}`}>
+                  <circle cx={x} cy={y} r="3.2" fill={C.accent}/>
+                  <text x={x} y="176" fill={C.muted2} fontSize="10" textAnchor="middle">{shortLbl}</text>
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+      );
+    }
+    return (
+      <div style={{display:"flex",flexDirection:"column",gap:7}}>
+        {rows.map((r,i)=>{
+          const pct=(safeNum(r.value)/maxVal)*100;
+          return (
+            <div key={`${r.label}_${i}`} style={{display:"grid",gridTemplateColumns:"1fr 1.4fr auto",gap:8,alignItems:"center"}}>
+              <div style={{fontSize:11,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.label}</div>
+              <div style={{height:9,background:C.surface2,border:`1px solid ${C.border}`,borderRadius:999,overflow:"hidden"}}>
+                <div style={{width:`${Math.max(4,pct)}%`,height:"100%",background:widgetChartPalette[i%widgetChartPalette.length]}}/>
+              </div>
+              <div style={{fontSize:11,color:C.text,fontWeight:700}}>{formatWidgetMetric(r.value)}</div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+  const widgetPreviewMap=useMemo(()=>{
+    const out={};
+    dashboardWidgetRows.forEach(row=>{
+      out[row.id]=aggregateWidgetReport(row.report);
+    });
+    return out;
+  },[dashboardWidgetRows,dashboardSourceRows,dashboardReportSourceMeta]);
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
   const today=todayStr();
@@ -12470,7 +12877,7 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
   const userLabel=String(currentUser?.fullName||"").trim();
 
   return (
-    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+    <div style={{padding:"0 0 12px",display:"flex",flexDirection:"column",gap:12}}>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
           <div>
@@ -12481,6 +12888,9 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
             </div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+            <button onClick={()=>setDashboardEditMode(v=>!v)} style={{...(dashboardEditMode?btnSt("green"):btnSt("ghost")),padding:"8px 11px",fontSize:12}}>
+              {dashboardEditMode?"Duzenleme Bitti":"Sayfayi Duzenle"}
+            </button>
             <input value={machineQuery} onChange={e=>setMachineQuery(e.target.value)} placeholder="Tezgah veya program ara..." style={{...inputSt,minWidth:220,padding:"8px 10px",fontSize:12}}/>
             <button onClick={()=>{setMachineQuery("");setStatusFilter("all");}} style={{...btnSt("ghost"),padding:"8px 11px",fontSize:12}}>Filtreyi Temizle</button>
             <button onClick={load} style={{...btnSt("primary"),padding:"8px 11px",fontSize:12}}>Yenile</button>
@@ -12502,6 +12912,101 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
             </div>
           ))}
         </div>
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+          <div>
+            <div style={{fontWeight:800,color:C.text,fontSize:16}}>Rapor Grafik Alani</div>
+            <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{dashboardWidgetRows.length} grafik widget</div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            {dashboardEditMode&&(
+              <>
+                <select value={widgetReportId} onChange={e=>setWidgetReportId(e.target.value)} style={{...inputSt,minWidth:220,padding:"8px 10px",fontSize:12}}>
+                  {customReports.length===0&&<option value="">Kayitli rapor yok</option>}
+                  {customReports.map(rep=><option key={rep.id} value={rep.id}>{rep.name||"Adsiz Rapor"}</option>)}
+                </select>
+                <button onClick={()=>addDashboardWidgetFromReport(widgetReportId)} disabled={customReports.length===0} style={{...btnSt("primary"),padding:"8px 11px",fontSize:12,opacity:customReports.length===0?0.6:1}}>
+                  Rapor Grafigi Ekle
+                </button>
+              </>
+            )}
+            <Badge label={`${dashboardWidgetRows.length} Widget`} color={dashboardWidgetRows.length>0?C.accent:C.muted2}/>
+          </div>
+        </div>
+        {dashboardEditMode&&(
+          <div style={{marginBottom:10,padding:"9px 10px",border:`1px dashed ${C.border}`,borderRadius:9,fontSize:11,color:C.muted2,background:C.surface2}}>
+            Duzenleme modu acik. Kartlari surukleyip birakabilir, boyutunu degistirebilir ve kaldirabilirsiniz.
+          </div>
+        )}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(12,minmax(0,1fr))",gap:10}}>
+          {dashboardWidgetRows.map(row=>{
+            const preview=widgetPreviewMap[row.id]||null;
+            const span=isNarrow?12:(row.size==="sm"?4:row.size==="lg"?12:6);
+            return (
+              <div
+                key={row.id}
+                draggable={dashboardEditMode}
+                onDragStart={e=>{
+                  if(!dashboardEditMode) return;
+                  setDragWidgetId(row.id);
+                  e.dataTransfer.effectAllowed="move";
+                  e.dataTransfer.setData("text/plain",row.id);
+                }}
+                onDragEnd={()=>setDragWidgetId("")}
+                onDragOver={e=>{if(dashboardEditMode) e.preventDefault();}}
+                onDrop={e=>{
+                  if(!dashboardEditMode) return;
+                  e.preventDefault();
+                  const sourceId=e.dataTransfer.getData("text/plain")||dragWidgetId;
+                  if(!sourceId) return;
+                  moveDashboardWidget(sourceId,row.id);
+                  setDragWidgetId("");
+                }}
+                style={{
+                  gridColumn:`span ${span}`,
+                  background:C.surface,
+                  border:`1px solid ${dragWidgetId===row.id?C.accent:C.border}`,
+                  borderRadius:12,
+                  padding:10,
+                  minHeight:220,
+                  display:"flex",
+                  flexDirection:"column",
+                  gap:8,
+                  cursor:dashboardEditMode?"grab":"default",
+                }}
+              >
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,flexWrap:"wrap"}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontSize:13,color:C.text,fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{row.report.name||"Adsiz Rapor"}</div>
+                    <div style={{fontSize:11,color:C.muted2,marginTop:2}}>
+                      {(dashboardReportSourceMeta[row.report.source]?.label)||row.report.source||"-"} · {String(row.report.chartType||"").toUpperCase()||"-"}
+                    </div>
+                  </div>
+                  {dashboardEditMode&&(
+                    <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                      <select value={row.size} onChange={e=>updateDashboardWidgetSize(row.id,e.target.value)} style={{...inputSt,width:84,padding:"5px 7px",fontSize:11}}>
+                        <option value="sm">Kucuk</option>
+                        <option value="md">Orta</option>
+                        <option value="lg">Genis</option>
+                      </select>
+                      <button onClick={()=>removeDashboardWidget(row.id)} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Kaldir</button>
+                    </div>
+                  )}
+                </div>
+                <div style={{flex:1}}>
+                  {renderDashboardWidgetChart(preview)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {dashboardWidgetRows.length===0&&(
+          <div style={{padding:"24px 12px",textAlign:"center",color:C.muted2,fontSize:12}}>
+            Dashboard'a ekli rapor grafigi yok. {dashboardEditMode?"Rapor Grafigi Ekle ile baslayin.":"Sayfayi Duzenle modundan rapor ekleyin."}
+          </div>
+        )}
       </div>
 
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
@@ -15162,45 +15667,93 @@ function App() {
     );
   }
   const activeView=getActiveView();
+  const leftNavColors={
+    bg:"#223764",
+    bgSoft:"#2a4276",
+    border:"rgba(216,226,255,.16)",
+    text:"#e8eeff",
+    muted:"rgba(214,224,255,.72)",
+    activeBg:"rgba(130,164,255,.24)",
+    activeBorder:"rgba(173,196,255,.58)",
+  };
 
-  const menuSearch=(
-    <div style={{marginBottom:12,paddingBottom:10,borderBottom:`1px solid ${C.border}`}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:8}}>
-        <div style={{fontSize:11,fontWeight:700,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Modul Navigasyon</div>
-        <div style={{fontSize:11,color:C.muted2}}>{menuResultText}</div>
+  const menuSearch=(opts={})=>{
+    const sideTone=Boolean(opts.sideTone);
+    return (
+      <div style={{marginBottom:12,paddingBottom:10,borderBottom:`1px solid ${sideTone?leftNavColors.border:C.border}`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:8}}>
+          <div style={{fontSize:11,fontWeight:700,color:sideTone?leftNavColors.muted:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Modul Navigasyon</div>
+          <div style={{fontSize:11,color:sideTone?leftNavColors.muted:C.muted2}}>{menuResultText}</div>
+        </div>
+        <input
+          value={menuQuery}
+          onChange={e=>setMenuQuery(e.target.value)}
+          placeholder="Modul ara..."
+          style={{
+            ...inputSt,
+            padding:"9px 10px",
+            fontSize:12,
+            ...(sideTone?{
+              background:leftNavColors.bgSoft,
+              color:leftNavColors.text,
+              border:`1px solid ${leftNavColors.border}`,
+            }:{}),
+          }}
+        />
       </div>
-      <input
-        value={menuQuery}
-        onChange={e=>setMenuQuery(e.target.value)}
-        placeholder="Modul ara..."
-        style={{...inputSt,padding:"9px 10px",fontSize:12}}
-      />
-    </div>
-  );
+    );
+  };
 
   const menuSection=(opts={})=>{
     const compact=Boolean(opts.compact);
     const iconOnly=Boolean(opts.iconOnly);
+    const sideTone=Boolean(opts.sideTone);
     return (
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
       {visibleGroups.length===0&&(
-        <div style={{background:C.surface2,border:`1px dashed ${C.border}`,borderRadius:10,padding:"14px 10px",fontSize:12,color:C.muted2,textAlign:"center"}}>
+        <div style={{background:sideTone?leftNavColors.bgSoft:C.surface2,border:`1px dashed ${sideTone?leftNavColors.border:C.border}`,borderRadius:10,padding:"14px 10px",fontSize:12,color:sideTone?leftNavColors.muted:C.muted2,textAlign:"center"}}>
           Arama sonucunda modul bulunamadi.
         </div>
       )}
       {visibleGroups.map(g=>(
         <div key={g}>
-          <div title={g} style={{fontSize:10,color:C.muted2,letterSpacing:.5,textTransform:"uppercase",marginBottom:6,padding:compact?"0 2px":"0 6px",fontWeight:800,textAlign:iconOnly?"center":"left",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+          <div title={g} style={{fontSize:10,color:sideTone?leftNavColors.muted:C.muted2,letterSpacing:.5,textTransform:"uppercase",marginBottom:6,padding:compact?"0 2px":"0 6px",fontWeight:800,textAlign:iconOnly?"center":"left",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
             {iconOnly?g.split(" ").map(x=>x[0]||"").join("").slice(0,3):g}
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
             {groupedTabs[g].map(t=>(
-              <button key={t.id} title={`${g} · ${t.label}`} onClick={()=>{setTab(t.id);setMobileMenuOpen(false);}} style={{display:"flex",alignItems:"center",gap:10,textAlign:"left",padding:iconOnly?"9px 8px":(compact?"9px 10px":"10px 12px"),borderRadius:8,border:`1px solid ${tab===t.id?C.accent+"55":C.border}`,background:tab===t.id?C.brandTint:C.surface,color:tab===t.id?C.accent:C.text,cursor:"pointer",fontFamily:"inherit",justifyContent:iconOnly?"center":"space-between"}}>
+              <button
+                key={t.id}
+                title={`${g} · ${t.label}`}
+                onClick={()=>{setTab(t.id);setMobileMenuOpen(false);}}
+                style={{
+                  display:"flex",
+                  alignItems:"center",
+                  gap:10,
+                  textAlign:"left",
+                  padding:iconOnly?"9px 8px":(compact?"9px 10px":"10px 12px"),
+                  borderRadius:8,
+                  border:`1px solid ${
+                    sideTone
+                      ? (tab===t.id?leftNavColors.activeBorder:"transparent")
+                      : (tab===t.id?C.accent+"55":C.border)
+                  }`,
+                  background:sideTone
+                    ? (tab===t.id?leftNavColors.activeBg:"transparent")
+                    : (tab===t.id?C.brandTint:C.surface),
+                  color:sideTone
+                    ? (tab===t.id?"#fff":leftNavColors.text)
+                    : (tab===t.id?C.accent:C.text),
+                  cursor:"pointer",
+                  fontFamily:"inherit",
+                  justifyContent:iconOnly?"center":"space-between",
+                }}
+              >
                 <span style={{display:"inline-flex",alignItems:"center",gap:10,minWidth:0,maxWidth:iconOnly?22:"100%"}}>
-                  <span style={{width:22,display:"inline-flex",justifyContent:"center",alignItems:"center",color:tab===t.id?C.accent:C.muted2}}><NavIcon name={t.icon}/></span>
+                  <span style={{width:22,display:"inline-flex",justifyContent:"center",alignItems:"center",color:sideTone?(tab===t.id?"#fff":"#b8c8ef"):(tab===t.id?C.accent:C.muted2)}}><NavIcon name={t.icon}/></span>
                   {!iconOnly&&<span style={{fontSize:compact?12:13,fontWeight:tab===t.id?700:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.label}</span>}
                 </span>
-                {!iconOnly&&tab===t.id&&<span style={{fontSize:10,fontWeight:700,color:C.accent,letterSpacing:.4}}>AKTIF</span>}
+                {!iconOnly&&tab===t.id&&<span style={{fontSize:10,fontWeight:700,color:sideTone?"#dce6ff":C.accent,letterSpacing:.4}}>AKTIF</span>}
               </button>
             ))}
           </div>
@@ -15209,112 +15762,119 @@ function App() {
     </div>
     );
   };
+  const topBar=(
+    <div className="mrp-topbar" style={{background:`linear-gradient(180deg, ${C.surface} 0%, ${C.surface2} 100%)`,border:`1px solid ${C.border}`}}>
+      <div style={{padding:isMobile?"12px 12px 10px":"14px 16px 12px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:10}}>
+          <div style={{width:40,height:40,borderRadius:10,background:C.surface2,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",border:`1px solid ${C.border}`}}>
+            {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:16}}>⚙️</span>}
+          </div>
+          <div style={{flex:1,minWidth:isMobile?160:260}}>
+            <div style={{fontWeight:800,fontSize:isMobile?14:16,color:C.text,letterSpacing:.2}}>CNC Atolye MRP</div>
+            <div style={{color:C.muted2,fontSize:11,display:"flex",alignItems:"center",gap:5,flexWrap:"wrap",marginTop:2}}>
+              <span>{activeContextLabel}</span>
+              <span>•</span>
+              <span>{currentUser.fullName}</span>
+              <Badge label={currentRoleLabel} color={isAdmin?C.accent:C.muted2}/>
+              <Badge label={layoutMode==="desktop"?"Desktop":(layoutMode==="tablet"?"Tablet":"Mobil")} color={C.muted2}/>
+            </div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:isMobile?"flex-start":"flex-end"}}>
+            {isMobile&&(
+              <button onClick={()=>setMobileMenuOpen(true)} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:82}}>Menu</button>
+            )}
+            <button onClick={()=>updateTheme(themeMode==="dark"?"light":"dark")} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:98}}>
+              {themeMode==="dark"?"Acik Tema":"Koyu Tema"}
+            </button>
+            <button onClick={logout} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:72}}>Cikis</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{background:C.bg,minHeight:"100vh",color:C.text}}>
-      <div className="mrp-shell" style={{width:"100%",maxWidth:contentMaxWidth,margin:"0 auto",paddingBottom:isMobile?78:20}}>
-        <div style={{padding:headerPadding,position:"sticky",top:0,zIndex:22}}>
-          <div className="mrp-topbar" style={{background:`linear-gradient(180deg, ${C.surface} 0%, ${C.surface2} 100%)`,border:`1px solid ${C.border}`}}>
-            <div style={{padding:isMobile?"12px 12px 10px":"14px 16px 12px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:10}}>
-                <div style={{width:40,height:40,borderRadius:10,background:C.surface2,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",border:`1px solid ${C.border}`}}>
-                  {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:16}}>⚙️</span>}
-                </div>
-                <div style={{flex:1,minWidth:isMobile?160:260}}>
-                  <div style={{fontWeight:800,fontSize:isMobile?14:16,color:C.text,letterSpacing:.2}}>CNC Atolye MRP</div>
-                  <div style={{color:C.muted2,fontSize:11,display:"flex",alignItems:"center",gap:5,flexWrap:"wrap",marginTop:2}}>
-                    <span>{activeContextLabel}</span>
-                    <span>•</span>
-                    <span>{currentUser.fullName}</span>
-                    <Badge label={currentRoleLabel} color={isAdmin?C.accent:C.muted2}/>
-                    <Badge label={layoutMode==="desktop"?"Desktop":(layoutMode==="tablet"?"Tablet":"Mobil")} color={C.muted2}/>
+      {!isMobile&&(
+        <div style={{display:"grid",gridTemplateColumns:`${sidebarWidth}px minmax(0,1fr)`,minHeight:"100vh",transition:"grid-template-columns .18s ease"}}>
+          <aside style={{position:"sticky",top:0,height:"100vh",background:leftNavColors.bg,color:leftNavColors.text,borderRight:`1px solid ${leftNavColors.border}`,display:"flex",flexDirection:"column"}}>
+            <div style={{padding:desktopMenuIconOnly?"12px 8px":"12px 10px",borderBottom:`1px solid ${leftNavColors.border}`}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:desktopMenuIconOnly?"center":"space-between",gap:8}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+                  <div style={{width:34,height:34,borderRadius:9,background:"rgba(255,255,255,.12)",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
+                    {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:14,color:"#fff"}}>⚙️</span>}
                   </div>
+                  {!desktopMenuIconOnly&&<div style={{fontSize:15,fontWeight:800,color:"#fff",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>CNC Atolye MRP</div>}
                 </div>
-                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:isMobile?"flex-start":"flex-end"}}>
-                  {layoutMode==="desktop"&&(
-                    <button
-                      onClick={toggleDesktopMenuCollapse}
-                      title={desktopMenuCollapsed?"Menuyu Ac":"Menuyu Daralt"}
-                      aria-label={desktopMenuCollapsed?"Menuyu Ac":"Menuyu Daralt"}
-                      style={{...btnSt("ghost"),width:38,height:34,padding:0,display:"inline-flex",alignItems:"center",justifyContent:"center"}}
-                    >
-                      <SidebarToggleIcon collapsed={desktopMenuCollapsed} size={16}/>
-                    </button>
-                  )}
-                  {isMobile&&(
-                    <button onClick={()=>setMobileMenuOpen(true)} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:82}}>Menu</button>
-                  )}
-                  <button onClick={()=>updateTheme(themeMode==="dark"?"light":"dark")} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:98}}>
-                    {themeMode==="dark"?"Acik Tema":"Koyu Tema"}
+                {layoutMode==="desktop"&&(
+                  <button
+                    onClick={toggleDesktopMenuCollapse}
+                    title={desktopMenuIconOnly?"Menuyu Genislet":"Menuyu Daralt"}
+                    aria-label={desktopMenuIconOnly?"Menuyu Genislet":"Menuyu Daralt"}
+                    style={{width:30,height:30,padding:0,display:"inline-flex",alignItems:"center",justifyContent:"center",border:`1px solid ${leftNavColors.border}`,borderRadius:8,background:"rgba(255,255,255,.08)",color:"#dce6ff",cursor:"pointer"}}
+                  >
+                    <SidebarToggleIcon collapsed={desktopMenuCollapsed} size={14}/>
                   </button>
-                  <button onClick={logout} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:72}}>Cikis</button>
-                </div>
+                )}
               </div>
+            </div>
+            <div className="mrp-scrollbar" style={{flex:1,overflowY:"auto",padding:desktopMenuIconOnly?"10px 8px":"10px"}}>
+              {!desktopMenuIconOnly&&menuSearch({sideTone:true})}
+              {menuSection({compact:true,iconOnly:desktopMenuIconOnly,sideTone:true})}
+            </div>
+            {!desktopMenuIconOnly&&(
+              <div style={{padding:"10px 12px",borderTop:`1px solid ${leftNavColors.border}`,fontSize:11,color:leftNavColors.muted}}>
+                {currentUser.fullName}
+              </div>
+            )}
+          </aside>
+          <div style={{minWidth:0,display:"flex",flexDirection:"column"}}>
+            <div style={{padding:headerPadding,position:"sticky",top:0,zIndex:22,background:C.bg}}>
+              {topBar}
+            </div>
+            <div style={{padding:shellPadding,flex:1,minWidth:0}}>
+              {activeView}
             </div>
           </div>
         </div>
+      )}
 
-        {!isMobile&&(
-          <div style={{display:"grid",gridTemplateColumns:`${sidebarWidth}px minmax(0,1fr)`,gap:16,alignItems:"start",padding:shellPadding,transition:"grid-template-columns .18s ease"}}>
-            <div style={{position:"sticky",top:118}}>
-              <div className="mrp-panel mrp-scrollbar" style={{background:C.surface,border:`1px solid ${C.border}`,padding:10,maxHeight:"calc(100vh - 140px)",overflowY:"auto"}}>
-                {layoutMode==="desktop"&&(
-                  <div style={{display:"flex",justifyContent:desktopMenuIconOnly?"center":"space-between",alignItems:"center",marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${C.border}`}}>
-                    {!desktopMenuIconOnly&&<div style={{fontSize:11,fontWeight:700,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>MRP Menu</div>}
-                    <button
-                      onClick={toggleDesktopMenuCollapse}
-                      title={desktopMenuIconOnly?"Menuyu Genislet":"Menuyu Daralt"}
-                      aria-label={desktopMenuIconOnly?"Menuyu Genislet":"Menuyu Daralt"}
-                      style={{...btnSt("ghost"),padding:0,width:32,height:30,display:"inline-flex",alignItems:"center",justifyContent:"center"}}
-                    >
-                      <SidebarToggleIcon collapsed={desktopMenuCollapsed} size={14}/>
-                    </button>
-                  </div>
-                )}
-                {!desktopMenuIconOnly&&menuSearch}
-                {menuSection({compact:layoutMode!=="desktop"||desktopMenuIconOnly,iconOnly:desktopMenuIconOnly})}
-              </div>
-            </div>
-            <div style={{minWidth:0}}>
-              {activeView}
+      {isMobile&&(
+        <div className="mrp-shell" style={{width:"100%",maxWidth:contentMaxWidth,margin:"0 auto",paddingBottom:isMobile?78:20}}>
+          <div style={{padding:headerPadding,position:"sticky",top:0,zIndex:22}}>
+            {topBar}
+          </div>
+          <div style={{paddingBottom:76}}>
+            {activeView}
+          </div>
+          <div className="mrp-bottom-nav" style={{position:"fixed",left:0,right:0,bottom:0,background:`${C.surface}f0`,borderTop:`1px solid ${C.border}`,zIndex:24}}>
+            <div style={{width:"100%",maxWidth:contentMaxWidth,margin:"0 auto",display:"grid",gridTemplateColumns:`repeat(${mobilePrimary.length+1},minmax(0,1fr))`,alignItems:"stretch"}}>
+              {mobilePrimary.map(t=>(
+                <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"10px 8px 8px",border:"none",background:tab===t.id?C.brandTint:"transparent",cursor:"pointer",color:tab===t.id?C.accent:C.muted,borderTop:`2px solid ${tab===t.id?C.accent:"transparent"}`,fontFamily:"inherit",minWidth:0}}>
+                  <div style={{display:"inline-flex",justifyContent:"center",alignItems:"center",height:20}}><NavIcon name={t.icon} size={18}/></div>
+                  <div style={{fontSize:10,fontWeight:tab===t.id?700:500,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.label}</div>
+                </button>
+              ))}
+              <button onClick={()=>setMobileMenuOpen(true)} style={{padding:"10px 8px 8px",border:"none",background:mobileMenuOpen?C.brandTint:"transparent",cursor:"pointer",color:mobileMenuOpen?C.accent:C.muted,borderTop:`2px solid ${mobileMenuOpen?C.accent:"transparent"}`,fontFamily:"inherit",minWidth:0}}>
+                <div style={{display:"inline-flex",justifyContent:"center",alignItems:"center",height:20}}><NavIcon name="users" size={18}/></div>
+                <div style={{fontSize:10,fontWeight:mobileMenuOpen?700:500,marginTop:2}}>Menu</div>
+              </button>
             </div>
           </div>
-        )}
-
-        {isMobile&&(
-          <>
-            <div style={{paddingBottom:76}}>
-              {activeView}
-            </div>
-            <div className="mrp-bottom-nav" style={{position:"fixed",left:0,right:0,bottom:0,background:`${C.surface}f0`,borderTop:`1px solid ${C.border}`,zIndex:24}}>
-              <div style={{width:"100%",maxWidth:contentMaxWidth,margin:"0 auto",display:"grid",gridTemplateColumns:`repeat(${mobilePrimary.length+1},minmax(0,1fr))`,alignItems:"stretch"}}>
-                {mobilePrimary.map(t=>(
-                  <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"10px 8px 8px",border:"none",background:tab===t.id?C.brandTint:"transparent",cursor:"pointer",color:tab===t.id?C.accent:C.muted,borderTop:`2px solid ${tab===t.id?C.accent:"transparent"}`,fontFamily:"inherit",minWidth:0}}>
-                    <div style={{display:"inline-flex",justifyContent:"center",alignItems:"center",height:20}}><NavIcon name={t.icon} size={18}/></div>
-                    <div style={{fontSize:10,fontWeight:tab===t.id?700:500,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.label}</div>
-                  </button>
-                ))}
-                <button onClick={()=>setMobileMenuOpen(true)} style={{padding:"10px 8px 8px",border:"none",background:mobileMenuOpen?C.brandTint:"transparent",cursor:"pointer",color:mobileMenuOpen?C.accent:C.muted,borderTop:`2px solid ${mobileMenuOpen?C.accent:"transparent"}`,fontFamily:"inherit",minWidth:0}}>
-                  <div style={{display:"inline-flex",justifyContent:"center",alignItems:"center",height:20}}><NavIcon name="users" size={18}/></div>
-                  <div style={{fontSize:10,fontWeight:mobileMenuOpen?700:500,marginTop:2}}>Menu</div>
-                </button>
-              </div>
-            </div>
-            {mobileMenuOpen&&(
-              <div onClick={()=>setMobileMenuOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:30,display:"flex",alignItems:"flex-end"}}>
-                <div onClick={e=>e.stopPropagation()} className="mrp-scrollbar" style={{width:"100%",maxHeight:"84vh",background:C.surface,borderTop:`1px solid ${C.border}`,borderTopLeftRadius:16,borderTopRightRadius:16,padding:12,overflowY:"auto"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                    <div style={{fontWeight:700,color:C.text}}>MRP Menusu</div>
-                    <button onClick={()=>setMobileMenuOpen(false)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kapat</button>
-                  </div>
-                  {menuSearch}
-                  {menuSection({compact:true})}
+          {mobileMenuOpen&&(
+            <div onClick={()=>setMobileMenuOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:30,display:"flex",alignItems:"flex-end"}}>
+              <div onClick={e=>e.stopPropagation()} className="mrp-scrollbar" style={{width:"100%",maxHeight:"84vh",background:C.surface,borderTop:`1px solid ${C.border}`,borderTopLeftRadius:16,borderTopRightRadius:16,padding:12,overflowY:"auto"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <div style={{fontWeight:700,color:C.text}}>MRP Menusu</div>
+                  <button onClick={()=>setMobileMenuOpen(false)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kapat</button>
                 </div>
+                {menuSearch()}
+                {menuSection({compact:true})}
               </div>
-            )}
-          </>
-        )}
-      </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
