@@ -7,12 +7,17 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-html,body,#root{min-height:100%;}
+html,body,#root{
+  min-height:100%;
+  height:100%;
+  overscroll-behavior-y:none;
+}
 body{
   background:#F4F7F8;
   font-family:"DM Sans","Segoe UI","Segoe UI Variable Text",Tahoma,Arial,sans-serif;
   -webkit-font-smoothing:antialiased;
   text-rendering:optimizeLegibility;
+  overflow-x:hidden;
 }
 .mrp-shell{width:100%;margin:0 auto;}
 .mrp-topbar{
@@ -6590,7 +6595,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
     : materials;
 
   if(viewOrder) return (
-    <div style={{padding:16}}>
+    <div style={{padding:0}}>
       <button onClick={()=>{setPreviewFile(null);setViewOrder(null);}} style={{...btnSt("ghost"),marginBottom:16,padding:"8px 14px",fontSize:13}}>← Geri</button>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16,marginBottom:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
@@ -6659,7 +6664,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   );
 
   if(showForm) return (
-    <div style={{padding:16}}>
+    <div style={{padding:0}}>
       <button onClick={()=>{setShowForm(false);setForm(emptyForm);setEditId(null);}} style={{...btnSt("ghost"),marginBottom:16,padding:"8px 14px",fontSize:13}}>← Geri</button>
       <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:16}}>{editId?"İş Emri Düzenle":"Yeni İş Emri"}</div>
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -6742,7 +6747,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   );
 
   return (
-    <div style={{padding:16,display:"flex",flexDirection:"column",gap:10}}>
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:10}}>
       <div ref={workListPanelRef} style={workSplitWrapStyle}>
         <div style={workFilterPanelStyle}>
           <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Is Emirleri</div>
@@ -16234,9 +16239,9 @@ function App() {
   const showLegacyTopBar=tab!=="dashboard";
 
   return (
-    <div style={{background:C.bg,minHeight:"100vh",color:C.text}}>
+    <div style={{background:C.bg,height:"100dvh",minHeight:"100vh",overflow:"hidden",color:C.text}}>
       {!isMobile&&(
-        <div style={{display:"grid",gridTemplateColumns:`${sidebarWidth}px minmax(0,1fr)`,minHeight:"100vh",transition:"grid-template-columns .18s ease"}}>
+        <div style={{display:"grid",gridTemplateColumns:`${sidebarWidth}px minmax(0,1fr)`,height:"100%",minHeight:0,transition:"grid-template-columns .18s ease"}}>
           <aside style={{position:"sticky",top:0,height:"100vh",backgroundColor:leftNavColors.bg,color:leftNavColors.text,borderRight:`1px solid ${leftNavColors.border}`,boxShadow:leftNavColors.shellShadow,display:"flex",flexDirection:"column"}}>
             <div style={{padding:desktopMenuIconOnly?"12px 8px":"12px 10px",borderBottom:`1px solid ${leftNavColors.border}`}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:desktopMenuIconOnly?"center":"space-between",gap:8}}>
@@ -16267,13 +16272,13 @@ function App() {
               </div>
             )}
           </aside>
-          <div style={{minWidth:0,display:"flex",flexDirection:"column"}}>
+          <div style={{minWidth:0,minHeight:0,display:"flex",flexDirection:"column"}}>
             {showLegacyTopBar&&(
               <div style={{padding:headerPadding,position:"sticky",top:0,zIndex:22,background:C.bg}}>
                 {topBar}
               </div>
             )}
-            <div style={{padding:shellPadding,flex:1,minWidth:0}}>
+            <div style={{padding:shellPadding,flex:1,minWidth:0,minHeight:0,overflowY:"auto",overscrollBehavior:"contain"}}>
               {activeView}
             </div>
           </div>
@@ -16281,13 +16286,13 @@ function App() {
       )}
 
       {isMobile&&(
-        <div className="mrp-shell" style={{width:"100%",maxWidth:contentMaxWidth,margin:"0 auto",paddingBottom:isMobile?78:20}}>
+        <div className="mrp-shell" style={{width:"100%",maxWidth:contentMaxWidth,height:"100%",margin:"0 auto",display:"flex",flexDirection:"column",overflow:"hidden",paddingBottom:isMobile?78:20}}>
           {showLegacyTopBar&&(
             <div style={{padding:headerPadding,position:"sticky",top:0,zIndex:22}}>
               {topBar}
             </div>
           )}
-          <div style={{paddingBottom:76}}>
+          <div style={{flex:1,minHeight:0,overflowY:"auto",overscrollBehavior:"contain",paddingBottom:76}}>
             {activeView}
           </div>
           <div className="mrp-bottom-nav" style={{position:"fixed",left:0,right:0,bottom:0,background:`${C.surface}f0`,borderTop:`1px solid ${C.border}`,zIndex:24}}>
