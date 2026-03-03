@@ -2776,7 +2776,7 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
 
   return (
-    <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
           <div>
@@ -16155,7 +16155,7 @@ function App() {
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 12px",borderTop:`1px solid ${appCommandBarTone.subBorder}`,background:appCommandBarTone.subBg}}>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
           <button onClick={()=>setGlobalFilterOpen(v=>!v)} style={{...(globalFilterOpen?btnSt("primary"):btnSt("ghost")),padding:"7px 10px",fontSize:12}}>
-            Filtre Uygula
+            {globalFilterOpen?"Filtreyi Gizle":"Filtre Uygula"}
           </button>
           <div style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",border:`1px solid ${C.border}`,borderRadius:8,background:C.card}}>
             <span style={{fontSize:11,color:C.muted2,fontWeight:700}}>Sirala</span>
@@ -16194,11 +16194,9 @@ function App() {
       </div>
       {globalFilterOpen&&(
         <div style={{padding:"10px 12px",borderTop:`1px solid ${C.border}`,background:C.card}}>
-          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"minmax(260px,320px) minmax(0,1fr)",gap:12}}>
-            <div>{menuSearch()}</div>
-            <div className="mrp-scrollbar" style={{maxHeight:isMobile?230:300,overflowY:"auto",paddingRight:2}}>
-              {menuSection({compact:true})}
-            </div>
+          <div style={{maxWidth:isMobile?"100%":320,background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+            <div style={{fontSize:13,fontWeight:800,color:C.text,marginBottom:2}}>Filtreleme Menuler</div>
+            {menuSearch({includeReset:true})}
           </div>
         </div>
       )}
@@ -16232,7 +16230,6 @@ function App() {
               </div>
             </div>
             <div className="mrp-scrollbar" style={{flex:1,overflowY:"auto",padding:desktopMenuIconOnly?"10px 8px":"10px"}}>
-              {!desktopMenuIconOnly&&menuSearch({sideTone:true})}
               {menuSection({compact:true,iconOnly:desktopMenuIconOnly,sideTone:true})}
             </div>
             {!desktopMenuIconOnly&&(
@@ -16285,7 +16282,6 @@ function App() {
                   <div style={{fontWeight:700,color:C.text}}>MRP Menusu</div>
                   <button onClick={()=>setMobileMenuOpen(false)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kapat</button>
                 </div>
-                {menuSearch()}
                 {menuSection({compact:true})}
               </div>
             </div>
