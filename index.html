@@ -6277,7 +6277,7 @@ function SalesOrders({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders}) {
 }
 //  WORK ORDERS
 // ════════════════════════════════════════════════════════════
-function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
+function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true}) {
   const [orders,setOrders]=useState([]);
   const [customers,setCustomers]=useState([]);
   const [materials,setMaterials]=useState([]);
@@ -6794,27 +6794,29 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   return (
     <div style={{padding:0,display:"flex",flexDirection:"column",gap:10,minHeight:"100%"}}>
       <div ref={workListPanelRef} style={workSplitWrapStyle}>
-        <div style={workFilterPanelStyle}>
-          <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Is Emirleri</div>
-          <input style={{...inputSt,padding:"8px 10px",fontSize:12}} placeholder="Kod, parca, musteri ara..." value={search} onChange={e=>setSearch(e.target.value)}/>
-          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Termin Araligi</div>
-          <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={dueDateFrom} onChange={e=>setDueDateFrom(e.target.value||"")}/>
-          <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={dueDateTo} onChange={e=>setDueDateTo(e.target.value||"")}/>
-          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Durum</div>
-          <button onClick={()=>setStatusFilters([])} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:statusFilters.length===0?C.accent:C.border,color:statusFilters.length===0?C.accent:C.text}}>
-            <span>Tum Durumlar</span>
-            <span style={{fontSize:11,color:C.muted2}}>{orders.length}</span>
-          </button>
-          <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:260,overflowY:"auto"}}>
-            {ORDER_STATUS_OPTIONS.map(s=>(
-              <button key={s.id} onClick={()=>toggleStatusFilter(s.id)} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:statusFilters.includes(s.id)?s.color:C.border,color:statusFilters.includes(s.id)?s.color:C.text}}>
-                <span>{s.label}</span>
-                <span style={{fontSize:11,color:C.muted2}}>{orderStatusCountMap[s.id]||0}</span>
-              </button>
-            ))}
+        {filtersVisible&&(
+          <div style={workFilterPanelStyle}>
+            <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Is Emirleri</div>
+            <input style={{...inputSt,padding:"8px 10px",fontSize:12}} placeholder="Kod, parca, musteri ara..." value={search} onChange={e=>setSearch(e.target.value)}/>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Termin Araligi</div>
+            <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={dueDateFrom} onChange={e=>setDueDateFrom(e.target.value||"")}/>
+            <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={dueDateTo} onChange={e=>setDueDateTo(e.target.value||"")}/>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Durum</div>
+            <button onClick={()=>setStatusFilters([])} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:statusFilters.length===0?C.accent:C.border,color:statusFilters.length===0?C.accent:C.text}}>
+              <span>Tum Durumlar</span>
+              <span style={{fontSize:11,color:C.muted2}}>{orders.length}</span>
+            </button>
+            <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:260,overflowY:"auto"}}>
+              {ORDER_STATUS_OPTIONS.map(s=>(
+                <button key={s.id} onClick={()=>toggleStatusFilter(s.id)} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:statusFilters.includes(s.id)?s.color:C.border,color:statusFilters.includes(s.id)?s.color:C.text}}>
+                  <span>{s.label}</span>
+                  <span style={{fontSize:11,color:C.muted2}}>{orderStatusCountMap[s.id]||0}</span>
+                </button>
+              ))}
+            </div>
+            <button onClick={()=>{setStatusFilters([]);setDueDateFrom("");setDueDateTo("");setSearch("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
           </div>
-          <button onClick={()=>{setStatusFilters([]);setDueDateFrom("");setDueDateTo("");setSearch("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
-        </div>
+        )}
         <div style={workListColumnStyle}>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <div style={{fontSize:12,color:C.muted2}}>Gosterilen Kayit: {filteredOrders.length}</div>
@@ -15616,6 +15618,7 @@ function App() {
   const [menuQuery,setMenuQuery]=useState("");
   const [menuGroupFilter,setMenuGroupFilter]=useState("all");
   const [globalFilterOpen,setGlobalFilterOpen]=useState(false);
+  const [ordersFilterOpen,setOrdersFilterOpen]=useState(true);
   const [globalSortMode,setGlobalSortMode]=useState("group");
   const [globalViewMode,setGlobalViewMode]=useState("cards");
   const [globalQuickDate,setGlobalQuickDate]=useState(()=>todayStr());
@@ -15928,7 +15931,7 @@ function App() {
     if(tab==="sales") return <SalesManagement currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")} defaultView="orders"/>;
     if(tab==="rapor") return <Report currentUser={currentUser} machines={machines}/>;
     if(tab==="tools") return <ToolStock currentUser={currentUser} machines={machines}/>;
-    if(tab==="orders") return <WorkOrders currentUser={currentUser} machines={machines}/>;
+    if(tab==="orders") return <WorkOrders currentUser={currentUser} machines={machines} filtersVisible={ordersFilterOpen}/>;
     if(tab==="users") return <AdminUsers currentUser={currentUser} machines={machines} currentLogo={logoSrc} onLogoUpdate={updateLogo} menuCatalog={allTabs} menuVisibility={menuVisibility} onMenuVisibilityChange={setMenuVisibility}/>;
     if(tab==="dashboard") return <MRPDashboard currentUser={currentUser} machines={machines} logoSrc={logoSrc} themeMode={themeMode} onThemeToggle={()=>updateTheme(themeMode==="dark"?"light":"dark")} onLogout={logout} roleLabel={currentRoleLabel} layoutMode={layoutMode}/>;
     if(tab==="cncmonitor") return <CncMonitorWall currentUser={currentUser} machines={machines}/>;
@@ -16187,6 +16190,14 @@ function App() {
     if(modeId==="compact"&&!desktopMenuCollapsed) setDesktopMenuCollapsed(true);
     if(modeId!=="compact"&&desktopMenuCollapsed) setDesktopMenuCollapsed(false);
   }
+  const topFiltersOpen=tab==="orders"?ordersFilterOpen:globalFilterOpen;
+  const toggleTopFilters=()=>{
+    if(tab==="orders"){
+      setOrdersFilterOpen(v=>!v);
+      return;
+    }
+    setGlobalFilterOpen(v=>!v);
+  };
   const topBar=(
     <div className="mrp-topbar" style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:appCommandBarTone.heroShadow}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",background:appCommandBarTone.heroBg}}>
@@ -16229,8 +16240,8 @@ function App() {
       </div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 12px",borderTop:`1px solid ${appCommandBarTone.subBorder}`,background:appCommandBarTone.subBg}}>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-          <button onClick={()=>setGlobalFilterOpen(v=>!v)} style={{...(globalFilterOpen?btnSt("primary"):btnSt("ghost")),padding:"7px 10px",fontSize:12}}>
-            {globalFilterOpen?"Filtreyi Gizle":"Filtre Uygula"}
+          <button onClick={toggleTopFilters} style={{...(topFiltersOpen?btnSt("primary"):btnSt("ghost")),padding:"7px 10px",fontSize:12}}>
+            {topFiltersOpen?"Filtreyi Gizle":"Filtre Uygula"}
           </button>
           <div style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",border:`1px solid ${C.border}`,borderRadius:8,background:C.card}}>
             <span style={{fontSize:11,color:C.muted2,fontWeight:700}}>Sirala</span>
