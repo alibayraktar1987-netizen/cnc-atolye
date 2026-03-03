@@ -4331,6 +4331,17 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       const d=ev&&ev.detail?ev.detail:{};
       if(d.tab!=="sales"&&d.tab!=="quotes") return;
       if(d.type==="refresh"){load(); return;}
+      if(d.type==="sort"){
+        const nextDir=d.sortMode==="date_asc"?"asc":"desc";
+        if(d.tab==="quotes"){
+          setView("quotes");
+          setQuoteSortDir(nextDir);
+        } else {
+          setView("orders");
+          setOrderSortDir(nextDir);
+        }
+        return;
+      }
       if(d.type==="new"){
         if(d.tab==="quotes"){
           setView("quotes");
@@ -6732,10 +6743,6 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
 
   return (
     <div style={{padding:16,display:"flex",flexDirection:"column",gap:10}}>
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-        <div style={{fontSize:12,color:C.muted2}}>Is Emirleri · {orders.filter(o=>isOpenOrderStatus(o.status)).length} acik</div>
-        <button onClick={()=>{setEditId(null);setForm({...emptyForm,code:nextOrderCode()});setShowForm(true);}} style={{...btnSt("primary"),padding:"7px 12px",fontSize:12}}>Is Emri Olustur</button>
-      </div>
       <div ref={workListPanelRef} style={workSplitWrapStyle}>
         <div style={workFilterPanelStyle}>
           <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Is Emirleri</div>
@@ -16057,11 +16064,20 @@ function App() {
     {id:"mail",label:"Mesajlar",icon:"✉"},
     {id:"settings",label:"Ayarlar",icon:"⚙"},
   ];
-  const topSortChoices=[
-    {id:"group",label:"Gruplara Gore"},
-    {id:"name_asc",label:"Modul (A-Z)"},
-    {id:"name_desc",label:"Modul (Z-A)"},
-  ];
+  const isSalesTopSortContext=tab==="quotes"||tab==="sales";
+  const topSortChoices=isSalesTopSortContext
+    ? [
+      {id:"date_desc",label:tab==="quotes"?"Teklif (Yeniden Eskiye)":"Siparis (Yeniden Eskiye)"},
+      {id:"date_asc",label:tab==="quotes"?"Teklif (Eskiden Yeniye)":"Siparis (Eskiden Yeniye)"},
+    ]
+    : [
+      {id:"group",label:"Gruplara Gore"},
+      {id:"name_asc",label:"Modul (A-Z)"},
+      {id:"name_desc",label:"Modul (Z-A)"},
+    ];
+  const topSortValue=isSalesTopSortContext
+    ? (globalSortMode==="date_asc"||globalSortMode==="date_desc"?globalSortMode:"date_desc")
+    : (globalSortMode==="name_asc"||globalSortMode==="name_desc"||globalSortMode==="group"?globalSortMode:"group");
   const topViewChoices=[
     {id:"cards",label:"Kartlar",icon:"◧"},
     {id:"compact",label:"Liste",icon:"☰"},
@@ -16099,6 +16115,15 @@ function App() {
   }
   function triggerTopAction(type){
     window.dispatchEvent(new CustomEvent("mrp:tab-action",{detail:{tab,type}}));
+  }
+  function applyTopSortMode(modeId){
+    setGlobalSortMode(modeId);
+    if(!isSalesTopSortContext) return;
+    window.dispatchEvent(new CustomEvent("mrp:tab-action",{detail:{tab,type:"sort",sortMode:modeId}}));
+  }
+  function resetTopSort(){
+    const next=isSalesTopSortContext?"date_desc":"group";
+    applyTopSortMode(next);
   }
   function handleTopQuickAction(actionId){
     if(actionId==="notif"){switchToTabIfVisible("notifications");return;}
@@ -16159,10 +16184,10 @@ function App() {
           </button>
           <div style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",border:`1px solid ${C.border}`,borderRadius:8,background:C.card}}>
             <span style={{fontSize:11,color:C.muted2,fontWeight:700}}>Sirala</span>
-            <select value={globalSortMode} onChange={e=>setGlobalSortMode(e.target.value)} style={{...inputSt,padding:"5px 6px",fontSize:12,minWidth:150}}>
+            <select value={topSortValue} onChange={e=>applyTopSortMode(e.target.value)} style={{...inputSt,padding:"5px 6px",fontSize:12,minWidth:170}}>
               {topSortChoices.map(opt=><option key={opt.id} value={opt.id}>{opt.label}</option>)}
             </select>
-            {globalSortMode!=="group"&&<button onClick={()=>setGlobalSortMode("group")} style={{...btnSt("ghost"),padding:"3px 6px",fontSize:11}}>×</button>}
+            {topSortValue!==(isSalesTopSortContext?"date_desc":"group")&&<button onClick={resetTopSort} style={{...btnSt("ghost"),padding:"3px 6px",fontSize:11}}>×</button>}
           </div>
           <div style={{display:"flex",alignItems:"center",gap:4,padding:"4px",border:`1px solid ${C.border}`,borderRadius:9,background:C.card}}>
             {topViewChoices.map(mode=>(
@@ -16177,7 +16202,11 @@ function App() {
           <button onClick={()=>{
             setMenuQuery("");
             setMenuGroupFilter("all");
-            setGlobalSortMode("group");
+            if(isSalesTopSortContext){
+              applyTopSortMode("date_desc");
+            } else {
+              setGlobalSortMode("group");
+            }
             setGlobalViewMode("cards");
             setGlobalFilterOpen(false);
             if(layoutMode==="desktop") setDesktopMenuCollapsed(false);
