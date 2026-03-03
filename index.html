@@ -15557,6 +15557,7 @@ function App() {
   const [logoError,setLogoError]=useState(false);
   const [mobileMenuOpen,setMobileMenuOpen]=useState(false);
   const [menuQuery,setMenuQuery]=useState("");
+  const [menuGroupFilter,setMenuGroupFilter]=useState("all");
   const [globalFilterOpen,setGlobalFilterOpen]=useState(false);
   const [globalSortMode,setGlobalSortMode]=useState("group");
   const [globalViewMode,setGlobalViewMode]=useState("cards");
@@ -15753,11 +15754,30 @@ function App() {
     return filteredTabs.length>0?filteredTabs:permissionTabs;
   },[allTabs,hiddenTabs]);
   const tabs=enabledTabs;
+  const groupOrder=["Planlama","Operasyon","Tedarik ve Stok","Analiz ve Yonetim","Sistem"];
+  const menuGroupCountMap=useMemo(()=>{
+    const map={all:tabs.length};
+    groupOrder.forEach(g=>{
+      map[g]=tabs.filter(t=>t.group===g).length;
+    });
+    return map;
+  },[tabs]);
+  const menuGroupOptions=useMemo(()=>{
+    const rows=[{id:"all",label:"Tum Menuler",count:menuGroupCountMap.all||0}];
+    groupOrder.forEach(g=>{
+      const count=menuGroupCountMap[g]||0;
+      if(count>0) rows.push({id:g,label:g,count});
+    });
+    return rows;
+  },[menuGroupCountMap]);
   const visibleTabs=useMemo(()=>{
     const q=(menuQuery||"").trim().toLowerCase();
-    const filtered=!q
+    const groupFiltered=menuGroupFilter==="all"
       ? tabs
-      : tabs.filter(t=>(t.label||"").toLowerCase().includes(q)||(t.group||"").toLowerCase().includes(q));
+      : tabs.filter(t=>String(t.group||"")===menuGroupFilter);
+    const filtered=!q
+      ? groupFiltered
+      : groupFiltered.filter(t=>(t.label||"").toLowerCase().includes(q)||(t.group||"").toLowerCase().includes(q));
     const list=[...filtered];
     if(globalSortMode==="name_asc"){
       list.sort((a,b)=>(a.label||"").localeCompare(b.label||"","tr"));
@@ -15768,7 +15788,7 @@ function App() {
       return list;
     }
     return list;
-  },[tabs,menuQuery,globalSortMode]);
+  },[tabs,menuQuery,menuGroupFilter,globalSortMode]);
   const groupedTabs=useMemo(()=>{
     const out={};
     visibleTabs.forEach(t=>{
@@ -15777,7 +15797,6 @@ function App() {
     });
     return out;
   },[visibleTabs]);
-  const groupOrder=["Planlama","Operasyon","Tedarik ve Stok","Analiz ve Yonetim","Sistem"];
   const visibleGroups=groupOrder.filter(g=>groupedTabs[g]&&groupedTabs[g].length>0);
   const currentRoleLabel=(USER_ROLES.find(r=>r.id===userForPerm.role)||{label:userForPerm.role||"-"}).label;
 
@@ -15796,6 +15815,11 @@ function App() {
     if(tabs.length===0) return;
     if(!tabs.some(t=>t.id===tab)) setTab(tabs[0].id);
   },[tabs,tab]);
+  useEffect(()=>{
+    if(menuGroupFilter==="all") return;
+    if(tabs.some(t=>String(t.group||"")===menuGroupFilter)) return;
+    setMenuGroupFilter("all");
+  },[tabs,menuGroupFilter]);
   useEffect(()=>{
     setMobileMenuOpen(false);
     setGlobalFilterOpen(false);
@@ -15908,6 +15932,8 @@ function App() {
 
   const menuSearch=(opts={})=>{
     const sideTone=Boolean(opts.sideTone);
+    const includeReset=opts.includeReset!==undefined?Boolean(opts.includeReset):!sideTone;
+    const buttonBaseTone=sideTone?leftNavColors.bgSoft:C.card;
     return (
       <div style={{marginBottom:12,paddingBottom:10,borderBottom:`1px solid ${sideTone?leftNavColors.border:C.border}`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:8}}>
@@ -15929,6 +15955,40 @@ function App() {
             }:{}),
           }}
         />
+        <div style={{fontSize:11,color:sideTone?leftNavColors.muted:C.muted2,letterSpacing:.6,textTransform:"uppercase",marginTop:9}}>Menu Grubu</div>
+        <div className="mrp-scrollbar" style={{display:"flex",flexDirection:"column",gap:6,maxHeight:sideTone?180:220,overflowY:"auto",marginTop:6,paddingRight:2}}>
+          {menuGroupOptions.map(opt=>(
+            <button
+              key={opt.id}
+              onClick={()=>setMenuGroupFilter(opt.id)}
+              style={{
+                ...btnSt("ghost"),
+                padding:"7px 9px",
+                fontSize:12,
+                justifyContent:"space-between",
+                display:"flex",
+                alignItems:"center",
+                borderColor:menuGroupFilter===opt.id
+                  ? (sideTone?leftNavColors.activeBorder:C.accent)
+                  : (sideTone?leftNavColors.border:C.border),
+                background:menuGroupFilter===opt.id
+                  ? (sideTone?leftNavColors.activeBg:C.brandTint)
+                  : buttonBaseTone,
+                color:menuGroupFilter===opt.id
+                  ? (sideTone?leftNavColors.activeText:C.accent)
+                  : (sideTone?leftNavColors.text:C.text),
+              }}
+            >
+              <span>{opt.label}</span>
+              <span style={{fontSize:11,color:sideTone?leftNavColors.muted:C.muted2}}>{opt.count}</span>
+            </button>
+          ))}
+        </div>
+        {includeReset&&(
+          <button onClick={()=>{setMenuQuery("");setMenuGroupFilter("all");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12,width:"100%",marginTop:8}}>
+            Filtreleri Temizle
+          </button>
+        )}
       </div>
     );
   };
@@ -16116,6 +16176,7 @@ function App() {
           <input type="date" value={globalQuickDate} onChange={e=>setGlobalQuickDate(e.target.value||todayStr())} style={{...inputSt,padding:"7px 9px",fontSize:12,width:150}}/>
           <button onClick={()=>{
             setMenuQuery("");
+            setMenuGroupFilter("all");
             setGlobalSortMode("group");
             setGlobalViewMode("cards");
             setGlobalFilterOpen(false);
