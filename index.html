@@ -12400,7 +12400,11 @@ function CncMonitorWall({currentUser,machines=DEFAULT_MACHINES}){
 function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
   const [loading,setLoading]=useState(true);
   const [machineQuery,setMachineQuery]=useState("");
+  const [filterPanelOpen,setFilterPanelOpen]=useState(false);
   const [statusFilter,setStatusFilter]=useState("all");
+  const [sortMode,setSortMode]=useState("status");
+  const [viewMode,setViewMode]=useState("cards");
+  const [quickDate,setQuickDate]=useState(()=>todayStr());
   const [lastLoadedAt,setLastLoadedAt]=useState("");
   const [customReports,setCustomReports]=useState([]);
   const [dashboardWidgets,setDashboardWidgets]=useState([]);
@@ -12846,6 +12850,14 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
     return m?`${h}s ${m}dk`:`${h}s`;
   }
   const machineRowsSorted=[...machineRows].sort((a,b)=>{
+    if(sortMode==="oee_desc"){
+      const d=safeNum(b.oee)-safeNum(a.oee);
+      if(d!==0) return d;
+      return (a.machineName||"").localeCompare(b.machineName||"","tr");
+    }
+    if(sortMode==="name_asc"){
+      return (a.machineName||"").localeCompare(b.machineName||"","tr");
+    }
     const rank={alarm:0,setup:1,idle:2,running:3,offline:4};
     const ka=statusMeta(a.status).key;
     const kb=statusMeta(b.status).key;
@@ -12887,13 +12899,29 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
     {id:"alarm",label:"Alarm"},
     {id:"offline",label:"Bağlı Değil"},
   ];
+  const sortChoices=[
+    {id:"status",label:"Duruma Gore"},
+    {id:"oee_desc",label:"OEE (Yuksek)"},
+    {id:"name_asc",label:"Makine (A-Z)"},
+  ];
+  const viewChoices=[
+    {id:"cards",label:"Kartlar",icon:"◧"},
+    {id:"compact",label:"Liste",icon:"☰"},
+    {id:"table",label:"Tablo",icon:"▦"},
+  ];
+  const quickActions=[
+    {id:"notif",label:"Bildirimler",icon:"🔔"},
+    {id:"calendar",label:"Takvim",icon:"📅"},
+    {id:"mail",label:"Mesajlar",icon:"✉"},
+    {id:"settings",label:"Ayarlar",icon:"⚙"},
+  ];
   const lastLoadText=lastLoadedAt?new Intl.DateTimeFormat("tr-TR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(new Date(lastLoadedAt)):"-";
   const userLabel=String(currentUser?.fullName||"").trim();
 
   return (
     <div style={{padding:"0 0 12px",display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+      <div style={{position:"sticky",top:8,zIndex:24,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:"0 12px 24px rgba(0,0,0,.08)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px"}}>
           <div>
             <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase"}}>Canlı Üretim Panosu</div>
             <div style={{fontWeight:800,color:C.text,fontSize:20}}>Gösterge Paneli</div>
@@ -12901,22 +12929,63 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
               Tarih: {today} · Son güncelleme: {lastLoadText}{userLabel?` · ${userLabel}`:""}
             </div>
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
-            <button onClick={()=>setDashboardEditMode(v=>!v)} style={{...(dashboardEditMode?btnSt("green"):btnSt("ghost")),padding:"8px 11px",fontSize:12}}>
-              {dashboardEditMode?"Duzenleme Bitti":"Sayfayi Duzenle"}
-            </button>
-            <input value={machineQuery} onChange={e=>setMachineQuery(e.target.value)} placeholder="Tezgah veya program ara..." style={{...inputSt,minWidth:220,padding:"8px 10px",fontSize:12}}/>
-            <button onClick={()=>{setMachineQuery("");setStatusFilter("all");}} style={{...btnSt("ghost"),padding:"8px 11px",fontSize:12}}>Filtreyi Temizle</button>
-            <button onClick={load} style={{...btnSt("primary"),padding:"8px 11px",fontSize:12}}>Yenile</button>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <div style={{position:"relative",minWidth:isNarrow?190:250}}>
+              <span style={{position:"absolute",left:10,top:8,color:C.muted2,fontSize:13}}>⌕</span>
+              <input value={machineQuery} onChange={e=>setMachineQuery(e.target.value)} placeholder="Kayitlarda ara..." style={{...inputSt,padding:"8px 10px 8px 30px",fontSize:12,minWidth:isNarrow?190:250}}/>
+            </div>
+            <button onClick={()=>setDashboardEditMode(v=>!v)} title="Yeni aksiyon" style={{...btnSt("ghost"),padding:"8px 10px",fontSize:14,minWidth:34}}>{dashboardEditMode?"×":"+"}</button>
+            {quickActions.map(act=>(
+              <button key={act.id} title={act.label} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:13,minWidth:34}}>
+                {act.icon}
+              </button>
+            ))}
           </div>
         </div>
-        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-          {filterButtons.map(f=>(
-            <button key={f.id} onClick={()=>setStatusFilter(f.id)} style={chip(statusFilter===f.id,statusFilter===f.id?C.accent:C.muted2)}>
-              {f.label}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 12px",borderTop:`1px solid ${C.border}`,background:C.surface2}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <button onClick={()=>setFilterPanelOpen(v=>!v)} style={{...(filterPanelOpen?btnSt("primary"):btnSt("ghost")),padding:"7px 10px",fontSize:12}}>
+              Filtre Uygula
             </button>
-          ))}
+            <div style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",border:`1px solid ${C.border}`,borderRadius:8,background:C.card}}>
+              <span style={{fontSize:11,color:C.muted2,fontWeight:700}}>Sırala</span>
+              <select value={sortMode} onChange={e=>setSortMode(e.target.value)} style={{...inputSt,padding:"5px 6px",fontSize:12,minWidth:140}}>
+                {sortChoices.map(opt=><option key={opt.id} value={opt.id}>{opt.label}</option>)}
+              </select>
+              {sortMode!=="status"&&<button onClick={()=>setSortMode("status")} style={{...btnSt("ghost"),padding:"3px 6px",fontSize:11}}>×</button>}
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:4,padding:"4px",border:`1px solid ${C.border}`,borderRadius:9,background:C.card}}>
+              {viewChoices.map(mode=>(
+                <button key={mode.id} onClick={()=>setViewMode(mode.id)} title={mode.label} style={{border:"none",background:viewMode===mode.id?C.accent:"transparent",color:viewMode===mode.id?"#fff":C.muted2,padding:"6px 8px",fontSize:12,borderRadius:6,cursor:"pointer"}}>
+                  {mode.icon}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+            <input type="date" value={quickDate} onChange={e=>setQuickDate(e.target.value||today)} style={{...inputSt,padding:"7px 9px",fontSize:12,width:150}}/>
+            <button onClick={()=>{setMachineQuery("");setStatusFilter("all");setSortMode("status");}} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Temizle</button>
+            <button onClick={()=>setDashboardEditMode(true)} style={{...btnSt("primary"),padding:"7px 12px",fontSize:12,minWidth:140}}>Yeni Kayit Olustur</button>
+            <button onClick={()=>setDashboardEditMode(v=>!v)} style={{...(dashboardEditMode?btnSt("green"):btnSt("ghost")),padding:"7px 10px",fontSize:12}}>
+              {dashboardEditMode?"Duzenleme Bitti":"Sayfayi Duzenle"}
+            </button>
+            <button onClick={load} style={{...btnSt("primary"),padding:"7px 10px",fontSize:12}}>Yenile</button>
+          </div>
         </div>
+        {filterPanelOpen&&(
+          <div style={{padding:"10px 12px",borderTop:`1px solid ${C.border}`,background:C.card}}>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {filterButtons.map(f=>(
+                <button key={f.id} onClick={()=>setStatusFilter(f.id)} style={chip(statusFilter===f.id,statusFilter===f.id?C.accent:C.muted2)}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(185px,1fr))",gap:8}}>
           {kpiCards.map(card=>(
             <div key={card.label} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}>
@@ -13032,6 +13101,7 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
           <Badge label={`Alarm: ${statusCounts.alarm}`} color={statusCounts.alarm>0?C.red:C.green}/>
         </div>
         <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:12,padding:10}}>
+          {viewMode==="cards"&&(
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(290px,1fr))",gap:10}}>
             {filteredMachineRows.map(m=>{
               const meta=statusMeta(m.status);
@@ -13101,6 +13171,63 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
             );
             })}
           </div>
+          )}
+          {viewMode==="compact"&&filteredMachineRows.length>0&&(
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {filteredMachineRows.map(m=>{
+                const meta=statusMeta(m.status);
+                return (
+                  <div key={`compact_${m.id}`} style={{display:"grid",gridTemplateColumns:"minmax(200px,1.2fr) repeat(5,minmax(90px,1fr))",gap:8,alignItems:"center",padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:10,background:C.card}}>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:800,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.machineName}</div>
+                      <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.program||"-"}</div>
+                    </div>
+                    <div style={{fontSize:11,fontWeight:700,color:meta.color}}>{meta.label}</div>
+                    <div style={{fontSize:12,color:C.text,fontWeight:700}}>OEE %{m.oee}</div>
+                    <div style={{fontSize:12,color:C.text,fontWeight:700}}>Parça {Math.max(m.partCounter,m.produced)}</div>
+                    <div style={{fontSize:12,color:m.alarms>0?C.red:C.text,fontWeight:700}}>Alarm {m.alarms}</div>
+                    <div style={{fontSize:12,color:m.gapParts>=0?C.green:C.red,fontWeight:700}}>{m.gapParts>=0?`+${m.gapParts}`:m.gapParts}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {viewMode==="table"&&filteredMachineRows.length>0&&(
+            <div style={{border:`1px solid ${C.border}`,borderRadius:10,overflow:"auto",background:C.card}}>
+              <table style={{width:"100%",borderCollapse:"collapse",minWidth:760}}>
+                <thead>
+                  <tr>
+                    <th style={{textAlign:"left",padding:"8px 10px",fontSize:11,color:C.muted2,borderBottom:`1px solid ${C.border}`}}>Makine</th>
+                    <th style={{textAlign:"left",padding:"8px 10px",fontSize:11,color:C.muted2,borderBottom:`1px solid ${C.border}`}}>Durum</th>
+                    <th style={{textAlign:"right",padding:"8px 10px",fontSize:11,color:C.muted2,borderBottom:`1px solid ${C.border}`}}>OEE</th>
+                    <th style={{textAlign:"right",padding:"8px 10px",fontSize:11,color:C.muted2,borderBottom:`1px solid ${C.border}`}}>Parça</th>
+                    <th style={{textAlign:"right",padding:"8px 10px",fontSize:11,color:C.muted2,borderBottom:`1px solid ${C.border}`}}>Alarm</th>
+                    <th style={{textAlign:"right",padding:"8px 10px",fontSize:11,color:C.muted2,borderBottom:`1px solid ${C.border}`}}>A/P/Q</th>
+                    <th style={{textAlign:"right",padding:"8px 10px",fontSize:11,color:C.muted2,borderBottom:`1px solid ${C.border}`}}>Durus</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredMachineRows.map(m=>{
+                    const meta=statusMeta(m.status);
+                    return (
+                      <tr key={`table_${m.id}`}>
+                        <td style={{padding:"9px 10px",fontSize:12,color:C.text,borderBottom:`1px solid ${C.border}`}}>
+                          <div style={{fontWeight:700}}>{m.machineName}</div>
+                          <div style={{fontSize:11,color:C.muted2}}>{m.program||"-"}</div>
+                        </td>
+                        <td style={{padding:"9px 10px",fontSize:12,color:meta.color,fontWeight:700,borderBottom:`1px solid ${C.border}`}}>{meta.label}</td>
+                        <td style={{padding:"9px 10px",fontSize:12,color:C.text,fontWeight:700,textAlign:"right",borderBottom:`1px solid ${C.border}`}}>%{m.oee}</td>
+                        <td style={{padding:"9px 10px",fontSize:12,color:C.text,fontWeight:700,textAlign:"right",borderBottom:`1px solid ${C.border}`}}>{Math.max(m.partCounter,m.produced)}</td>
+                        <td style={{padding:"9px 10px",fontSize:12,color:m.alarms>0?C.red:C.text,fontWeight:700,textAlign:"right",borderBottom:`1px solid ${C.border}`}}>{m.alarms}</td>
+                        <td style={{padding:"9px 10px",fontSize:11,color:C.muted2,textAlign:"right",borderBottom:`1px solid ${C.border}`}}>A %{m.availability} · P %{m.performance} · Q %{m.quality}</td>
+                        <td style={{padding:"9px 10px",fontSize:12,color:C.text,textAlign:"right",borderBottom:`1px solid ${C.border}`}}>{fmtMinute(m.stopMin)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
           {filteredMachineRows.length===0&&(
             <div style={{padding:"26px 12px",textAlign:"center",color:C.muted2,fontSize:12}}>
               Seçili filtrede tezgah bulunamadı.
