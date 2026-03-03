@@ -9,7 +9,7 @@
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body,#root{min-height:100%;}
 body{
-  background:#DEF2F1;
+  background:#F4F7F8;
   font-family:"DM Sans","Segoe UI","Segoe UI Variable Text",Tahoma,Arial,sans-serif;
   -webkit-font-smoothing:antialiased;
   text-rendering:optimizeLegibility;
@@ -447,40 +447,40 @@ const ROLE_PERMISSION_DEFAULTS = {
 
 const THEME_PRESETS = {
   light:{
-    bg:"#DEF2F1", bgAlt:"#FEFFFF",
-    surface:"#FEFFFF", surface2:"#DEF2F1", card:"#FEFFFF", border:"#B7D5D4",
-    accent:"#3AAFA9", accentDim:"#D5EFEE", brandTint:"#EAF8F7",
-    green:"#2B7A78", greenDim:"#D5ECEB",
-    red:"#17252A", redDim:"#DDE6E8",
-    warn:"#2B7A78", warnDim:"#D5ECEB",
-    purple:"#2B7A78",
-    text:"#17252A", muted:"#2B7A78", muted2:"#4A8E8B",
+    bg:"#F4F7F8", bgAlt:"#FEFFFF",
+    surface:"#FEFFFF", surface2:"#F0F4F6", card:"#FEFFFF", border:"#D9E0E3",
+    accent:"#57BE90", accentDim:"#E4F4EE", brandTint:"#E8F6F8",
+    green:"#57BE90", greenDim:"#E4F4EE",
+    red:"#015249", redDim:"#DDEAE8",
+    warn:"#79C9D4", warnDim:"#E6F4F7",
+    purple:"#79C9D4",
+    text:"#015249", muted:"#5F8B91", muted2:"#A5A5AF",
   },
   dark:{
-    bg:"#17252A", bgAlt:"#1D3238",
-    surface:"#1F373D", surface2:"#1A3035", card:"#223D43", border:"#2B7A78",
-    accent:"#3AAFA9", accentDim:"#173A3C", brandTint:"#1F4A4B",
-    green:"#3AAFA9", greenDim:"#1D4D4C",
-    red:"#DEF2F1", redDim:"#2B7A78",
-    warn:"#2B7A78", warnDim:"#244F4E",
-    purple:"#2B7A78",
-    text:"#FEFFFF", muted:"#DEF2F1", muted2:"#8EC5C3",
+    bg:"#013838", bgAlt:"#01443F",
+    surface:"#0A4B46", surface2:"#083E3A", card:"#0D544E", border:"#1F6D67",
+    accent:"#79C9D4", accentDim:"#1E5A63", brandTint:"#206268",
+    green:"#57BE90", greenDim:"#1F5A46",
+    red:"#A5A5AF", redDim:"#334B50",
+    warn:"#79C9D4", warnDim:"#2A5961",
+    purple:"#79C9D4",
+    text:"#F2FCFD", muted:"#C5DDE1", muted2:"#A5A5AF",
   },
 };
 const C = { ...THEME_PRESETS.light };
 const CORPORATE_CHART_PALETTE = [
-  "#3AAFA9",
-  "#2B7A78",
-  "#17252A",
-  "#4BC0BA",
-  "#2F8B89",
-  "#1F5F5D",
-  "#61CDC8",
-  "#7AD8D3",
-  "#3B6669",
-  "#5B9F9C",
-  "#98E1DD",
-  "#C2EBE8",
+  "#79C9D4",
+  "#57BE90",
+  "#015249",
+  "#A5A5AF",
+  "#66C4CF",
+  "#4AB587",
+  "#0C6B60",
+  "#B6BDC5",
+  "#8FD6DE",
+  "#6EC9A0",
+  "#2B7A73",
+  "#D9E0E6",
 ];
 function applyThemeMode(mode){
   const next=THEME_PRESETS[mode]||THEME_PRESETS.light;
@@ -567,7 +567,7 @@ const DEFAULT_QUOTE_TEMPLATE = {
   documentTitleQuote:"Proforma Teklif",
   documentTitleOrder:"Siparis Onay Formu",
   footerNote:"Bu teklif belirtilen sure boyunca gecerlidir.",
-  accentColor:"#3AAFA9",
+  accentColor:"#57BE90",
   showLogo:false,
 };
 const DEFAULT_SALES_CURRENCIES = {
@@ -601,8 +601,8 @@ function normalizeSalesCurrencies(raw){
 }
 const DEFAULT_SUPPLIER_GROUPS = {
   list:[
-    {id:"malzeme",name:"Malzeme Satanlar",color:"#3AAFA9",sortOrder:10},
-    {id:"takim",name:"Takim Satanlar",color:"#2B7A78",sortOrder:20},
+    {id:"malzeme",name:"Malzeme Satanlar",color:"#57BE90",sortOrder:10},
+    {id:"takim",name:"Takim Satanlar",color:"#015249",sortOrder:20},
   ],
 };
 function normalizeSupplierGroups(raw){
@@ -624,7 +624,7 @@ function normalizeSupplierGroups(raw){
     return {
       id,
       name,
-      color:normalizeHexColor(row?.color,fallback?.color||"#3AAFA9"),
+      color:normalizeHexColor(row?.color,fallback?.color||"#57BE90"),
       sortOrder:Math.max(1,safeNum(row?.sortOrder)||((idx+1)*10)),
     };
   }).sort((a,b)=>{
@@ -649,18 +649,18 @@ function normalizeMenuVisibilityConfig(raw){
   return {hiddenTabs};
 }
 const DEFAULT_ROUTING_OPERATION_TYPES = [
-  { id:"op10", code:"OP-10", name:"Kesim ve Hazirlik", icon:"🧰", color:"#3AAFA9", defaultSetupSec:300, defaultCycleSec:60, sortOrder:10 },
-  { id:"op20", code:"OP-20", name:"Kaba Isleme", icon:"⚙️", color:"#2B7A78", defaultSetupSec:240, defaultCycleSec:90, sortOrder:20 },
-  { id:"op30", code:"OP-30", name:"Finis Isleme", icon:"🔩", color:"#17252A", defaultSetupSec:180, defaultCycleSec:80, sortOrder:30 },
-  { id:"op40", code:"OP-40", name:"Delik Delme ve Klavuz", icon:"🧵", color:"#4BC0BA", defaultSetupSec:120, defaultCycleSec:45, sortOrder:40 },
-  { id:"op50", code:"OP-50", name:"Olcum ve Kontrol", icon:"📏", color:"#5ECCC7", defaultSetupSec:90, defaultCycleSec:30, sortOrder:50 },
+  { id:"op10", code:"OP-10", name:"Kesim ve Hazirlik", icon:"🧰", color:"#57BE90", defaultSetupSec:300, defaultCycleSec:60, sortOrder:10 },
+  { id:"op20", code:"OP-20", name:"Kaba Isleme", icon:"⚙️", color:"#79C9D4", defaultSetupSec:240, defaultCycleSec:90, sortOrder:20 },
+  { id:"op30", code:"OP-30", name:"Finis Isleme", icon:"🔩", color:"#015249", defaultSetupSec:180, defaultCycleSec:80, sortOrder:30 },
+  { id:"op40", code:"OP-40", name:"Delik Delme ve Klavuz", icon:"🧵", color:"#A5A5AF", defaultSetupSec:120, defaultCycleSec:45, sortOrder:40 },
+  { id:"op50", code:"OP-50", name:"Olcum ve Kontrol", icon:"📏", color:"#4AB587", defaultSetupSec:90, defaultCycleSec:30, sortOrder:50 },
 ];
 const OPERATION_ICON_OPTIONS = ["⚙️","🛠️","🔧","🪛","🔩","🧰","🪚","🧵","📏","🏭"];
 const LEGACY_OPERATION_ICON_MAP = {
   "✨":"🔩",
   "🧪":"📏",
 };
-function normalizeHexColor(value,fallback="#3AAFA9"){
+function normalizeHexColor(value,fallback="#57BE90"){
   const raw=String(value||"").trim();
   if(/^#?[0-9a-fA-F]{6}$/.test(raw)) return raw.startsWith("#")?raw:`#${raw}`;
   return fallback;
@@ -684,7 +684,7 @@ function normalizeRoutingOperationTypes(raw){
       code,
       name,
       icon:normalizeOperationIcon(row?.icon,fallback?.icon||"⚙️"),
-      color:normalizeHexColor(row?.color,fallback?.color||"#3AAFA9"),
+      color:normalizeHexColor(row?.color,fallback?.color||"#57BE90"),
       defaultSetupSec:Math.max(0,safeNum(row?.defaultSetupSec)),
       defaultCycleSec:Math.max(0,safeNum(row?.defaultCycleSec)),
       sortOrder:Math.max(1,safeNum(row?.sortOrder)||((idx+1)*10)),
@@ -712,7 +712,7 @@ function normalizeQuoteTemplate(raw){
     showLogo:Boolean(src.showLogo),
   };
 }
-function hexToRgb(hex,fallback={r:58,g:175,b:169}){
+function hexToRgb(hex,fallback={r:87,g:190,b:144}){
   const clean=String(hex||"").replace("#","").trim();
   if(!/^[0-9a-fA-F]{6}$/.test(clean)) return fallback;
   return {
@@ -1882,7 +1882,7 @@ function RoutingOperationTypeSettings({currentUser}) {
     code:"",
     name:"",
     icon:DEFAULT_ROUTING_OPERATION_TYPES[0]?.icon||"⚙️",
-    color:DEFAULT_ROUTING_OPERATION_TYPES[0]?.color||"#3AAFA9",
+    color:DEFAULT_ROUTING_OPERATION_TYPES[0]?.color||"#57BE90",
     defaultSetupSec:"0",
     defaultCycleSec:"0",
   });
@@ -1900,7 +1900,7 @@ function RoutingOperationTypeSettings({currentUser}) {
       code:"",
       name:"",
       icon:DEFAULT_ROUTING_OPERATION_TYPES[0]?.icon||"⚙️",
-      color:DEFAULT_ROUTING_OPERATION_TYPES[0]?.color||"#3AAFA9",
+      color:DEFAULT_ROUTING_OPERATION_TYPES[0]?.color||"#57BE90",
       defaultSetupSec:"0",
       defaultCycleSec:"0",
     });
@@ -1997,7 +1997,7 @@ function RoutingOperationTypeSettings({currentUser}) {
             <span style={labelSt}>Renk</span>
             <div style={{display:"flex",gap:6,alignItems:"center"}}>
               <input style={{...inputSt,padding:0,width:40,height:36,flex:"0 0 auto"}} type="color" value={normalizeHexColor(form.color)} onChange={e=>setForm(f=>({...f,color:e.target.value}))}/>
-              <input style={{...inputSt,padding:"9px 8px",fontSize:12}} value={form.color} onChange={e=>setForm(f=>({...f,color:e.target.value}))} placeholder="#3AAFA9"/>
+              <input style={{...inputSt,padding:"9px 8px",fontSize:12}} value={form.color} onChange={e=>setForm(f=>({...f,color:e.target.value}))} placeholder="#57BE90"/>
             </div>
           </div>
           <div><span style={labelSt}>Vars. Kurulum(sn)</span><input style={inputSt} type="number" min="0" value={form.defaultSetupSec} onChange={e=>setForm(f=>({...f,defaultSetupSec:e.target.value}))}/></div>
@@ -2127,7 +2127,7 @@ function SupplierGroupSettings({currentUser}) {
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
   const [newName,setNewName]=useState("");
-  const [newColor,setNewColor]=useState("#3AAFA9");
+  const [newColor,setNewColor]=useState("#57BE90");
 
   const load=useCallback(async()=>{
     const doc=await window.DB.getDoc("config","supplierGroups");
@@ -2173,7 +2173,7 @@ function SupplierGroupSettings({currentUser}) {
         id=`${base}_${seq}`;
         seq+=1;
       }
-      return [...prev,{id,name,color:normalizeHexColor(newColor,"#3AAFA9"),sortOrder:(prev.length+1)*10}];
+      return [...prev,{id,name,color:normalizeHexColor(newColor,"#57BE90"),sortOrder:(prev.length+1)*10}];
     });
     setNewName("");
   }
@@ -2181,7 +2181,7 @@ function SupplierGroupSettings({currentUser}) {
     const normalized=normalizeSupplierGroups({list:rows.map((row,idx)=>({
       ...row,
       name:String(row.name||"").trim()||`Grup ${idx+1}`,
-      color:normalizeHexColor(row.color,"#3AAFA9"),
+      color:normalizeHexColor(row.color,"#57BE90"),
       sortOrder:(idx+1)*10,
     }))});
     setSaving(true);
@@ -2203,7 +2203,7 @@ function SupplierGroupSettings({currentUser}) {
         <div style={{fontSize:12,color:C.muted2,marginBottom:10}}>Satin alma modulu icin grup tanimlari (ornek: malzeme, takim).</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 140px auto",gap:8,marginBottom:10}}>
           <input style={inputSt} value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Yeni grup adi"/>
-          <input style={{...inputSt,padding:0,height:38}} type="color" value={normalizeHexColor(newColor,"#3AAFA9")} onChange={e=>setNewColor(e.target.value)}/>
+          <input style={{...inputSt,padding:0,height:38}} type="color" value={normalizeHexColor(newColor,"#57BE90")} onChange={e=>setNewColor(e.target.value)}/>
           <button onClick={addRow} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>+ Ekle</button>
         </div>
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
@@ -2215,8 +2215,8 @@ function SupplierGroupSettings({currentUser}) {
             <div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 140px 180px",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
               <input style={{...inputSt,padding:"7px 8px",fontSize:12}} value={row.name||""} onChange={e=>updateRow(row.id,"name",e.target.value)} placeholder="Grup adi"/>
               <div style={{display:"grid",gridTemplateColumns:"40px 1fr",gap:6}}>
-                <input style={{...inputSt,padding:0,height:34}} type="color" value={normalizeHexColor(row.color,"#3AAFA9")} onChange={e=>updateRow(row.id,"color",e.target.value)}/>
-                <input style={{...inputSt,padding:"7px 8px",fontSize:12}} value={row.color||"#3AAFA9"} onChange={e=>updateRow(row.id,"color",e.target.value)} placeholder="#3AAFA9"/>
+                <input style={{...inputSt,padding:0,height:34}} type="color" value={normalizeHexColor(row.color,"#57BE90")} onChange={e=>updateRow(row.id,"color",e.target.value)}/>
+                <input style={{...inputSt,padding:"7px 8px",fontSize:12}} value={row.color||"#57BE90"} onChange={e=>updateRow(row.id,"color",e.target.value)} placeholder="#57BE90"/>
               </div>
               <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
                 <button onClick={()=>moveRow(row.id,-1)} style={{...btnSt("ghost"),padding:"4px 7px",fontSize:11}} disabled={saving||idx===0}>↑</button>
@@ -2490,7 +2490,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,menuCatalog=[
             <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:8}}>
                 <div><span style={labelSt}>Sirket Adi</span><input style={inputSt} value={quoteTemplate.companyName} onChange={e=>setTemplateField("companyName",e.target.value)} placeholder="Firma adi"/></div>
-                <div><span style={labelSt}>Renk</span><div style={{display:"flex",gap:8}}><input style={{...inputSt,padding:0,width:48,height:36}} type="color" value={normalizeQuoteTemplate(quoteTemplate).accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)}/><input style={{...inputSt,flex:1}} value={quoteTemplate.accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)} placeholder="#3AAFA9"/></div></div>
+                <div><span style={labelSt}>Renk</span><div style={{display:"flex",gap:8}}><input style={{...inputSt,padding:0,width:48,height:36}} type="color" value={normalizeQuoteTemplate(quoteTemplate).accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)}/><input style={{...inputSt,flex:1}} value={quoteTemplate.accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)} placeholder="#57BE90"/></div></div>
                 <div><span style={labelSt}>Adres</span><input style={inputSt} value={quoteTemplate.companyAddress} onChange={e=>setTemplateField("companyAddress",e.target.value)} placeholder="Adres"/></div>
                 <div><span style={labelSt}>Telefon</span><input style={inputSt} value={quoteTemplate.companyPhone} onChange={e=>setTemplateField("companyPhone",e.target.value)} placeholder="+90 ..."/></div>
                 <div><span style={labelSt}>E-Posta</span><input style={inputSt} value={quoteTemplate.companyEmail} onChange={e=>setTemplateField("companyEmail",e.target.value)} placeholder="mail@firma.com"/></div>
@@ -10021,7 +10021,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     if(!firstOp) return null;
     const type=firstOp.operationTypeId?operationTypeById[firstOp.operationTypeId]:null;
     const icon=String(firstOp.operationIcon||type?.icon||"⚙️").trim()||"⚙️";
-    const color=normalizeHexColor(firstOp.operationColor||type?.color||"#3AAFA9");
+    const color=normalizeHexColor(firstOp.operationColor||type?.color||"#57BE90");
     const code=String(firstOp.operationCode||type?.code||"").trim();
     const name=String(firstOp.operationName||type?.name||firstOp.operation||"Operasyon").trim()||"Operasyon";
     return {icon,color,code,name,machine:firstOp.machine||""};
@@ -12397,7 +12397,16 @@ function CncMonitorWall({currentUser,machines=DEFAULT_MACHINES}){
   );
 }
 
-function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
+function MRPDashboard({
+  currentUser,
+  machines=DEFAULT_MACHINES,
+  logoSrc=LOGO_SRC,
+  themeMode="light",
+  onThemeToggle=()=>{},
+  onLogout=()=>{},
+  roleLabel="Kullanici",
+  layoutMode="desktop",
+}){
   const [loading,setLoading]=useState(true);
   const [machineQuery,setMachineQuery]=useState("");
   const [filterPanelOpen,setFilterPanelOpen]=useState(false);
@@ -12915,34 +12924,60 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
     {id:"mail",label:"Mesajlar",icon:"✉"},
     {id:"settings",label:"Ayarlar",icon:"⚙"},
   ];
+  const commandBarTone={
+    heroBg:"linear-gradient(108deg,#79C9D4 0%, #57BE90 100%)",
+    heroText:"#FEFFFF",
+    heroMuted:"rgba(254,255,255,.86)",
+    heroFieldBg:"rgba(255,255,255,.20)",
+    heroFieldBorder:"rgba(255,255,255,.45)",
+    heroChipBg:"rgba(255,255,255,.16)",
+    heroChipBorder:"rgba(255,255,255,.42)",
+    subBg:"#F2F5F7",
+  };
   const lastLoadText=lastLoadedAt?new Intl.DateTimeFormat("tr-TR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(new Date(lastLoadedAt)):"-";
   const userLabel=String(currentUser?.fullName||"").trim();
+  const layoutBadge=layoutMode==="desktop"?"DESKTOP":(layoutMode==="tablet"?"TABLET":"MOBIL");
 
   return (
     <div style={{padding:"0 0 12px",display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{position:"sticky",top:8,zIndex:24,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:"0 12px 24px rgba(0,0,0,.08)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px"}}>
-          <div>
-            <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase"}}>Canlı Üretim Panosu</div>
-            <div style={{fontWeight:800,color:C.text,fontSize:20}}>Gösterge Paneli</div>
-            <div style={{fontSize:12,color:C.muted2,marginTop:2}}>
-              Tarih: {today} · Son güncelleme: {lastLoadText}{userLabel?` · ${userLabel}`:""}
+      <div style={{position:"sticky",top:8,zIndex:24,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:"0 14px 28px rgba(1,82,73,.14)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",background:commandBarTone.heroBg}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+            <div style={{width:40,height:40,borderRadius:10,background:"rgba(255,255,255,.16)",border:`1px solid ${commandBarTone.heroChipBorder}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
+              {logoSrc?<img src={logoSrc} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:17,color:commandBarTone.heroText}}>⚙️</span>}
+            </div>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:11,color:commandBarTone.heroMuted,letterSpacing:.7,textTransform:"uppercase"}}>Canlı Üretim Panosu</div>
+              <div style={{fontWeight:800,color:commandBarTone.heroText,fontSize:20,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Gösterge Paneli</div>
+              <div style={{fontSize:12,color:commandBarTone.heroMuted,marginTop:2,display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+                <span>{userLabel||"-"}</span>
+                <Badge label={String(roleLabel||"Kullanici").toUpperCase()} color={C.accent}/>
+                <Badge label={layoutBadge} color={C.muted2}/>
+                <span>·</span>
+                <span>Son güncelleme: {lastLoadText}</span>
+              </div>
             </div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <div style={{position:"relative",minWidth:isNarrow?190:250}}>
-              <span style={{position:"absolute",left:10,top:8,color:C.muted2,fontSize:13}}>⌕</span>
-              <input value={machineQuery} onChange={e=>setMachineQuery(e.target.value)} placeholder="Kayitlarda ara..." style={{...inputSt,padding:"8px 10px 8px 30px",fontSize:12,minWidth:isNarrow?190:250}}/>
+              <span style={{position:"absolute",left:10,top:8,color:commandBarTone.heroMuted,fontSize:13}}>⌕</span>
+              <input value={machineQuery} onChange={e=>setMachineQuery(e.target.value)} placeholder="Kayitlarda ara..." style={{...inputSt,padding:"8px 10px 8px 30px",fontSize:12,minWidth:isNarrow?190:250,background:commandBarTone.heroFieldBg,borderColor:commandBarTone.heroFieldBorder,color:commandBarTone.heroText}}/>
             </div>
-            <button onClick={()=>setDashboardEditMode(v=>!v)} title="Yeni aksiyon" style={{...btnSt("ghost"),padding:"8px 10px",fontSize:14,minWidth:34}}>{dashboardEditMode?"×":"+"}</button>
+            <button onClick={()=>setDashboardEditMode(v=>!v)} title="Yeni aksiyon" style={{border:`1px solid ${commandBarTone.heroChipBorder}`,background:commandBarTone.heroChipBg,color:commandBarTone.heroText,padding:"8px 10px",fontSize:14,minWidth:34,borderRadius:8,cursor:"pointer"}}>{dashboardEditMode?"×":"+"}</button>
             {quickActions.map(act=>(
-              <button key={act.id} title={act.label} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:13,minWidth:34}}>
+              <button key={act.id} title={act.label} style={{border:`1px solid ${commandBarTone.heroChipBorder}`,background:commandBarTone.heroChipBg,color:commandBarTone.heroText,padding:"7px 9px",fontSize:13,minWidth:34,borderRadius:8,cursor:"pointer"}}>
                 {act.icon}
               </button>
             ))}
+            <button onClick={onThemeToggle} style={{border:`1px solid ${commandBarTone.heroChipBorder}`,background:commandBarTone.heroChipBg,color:commandBarTone.heroText,padding:"7px 10px",fontSize:12,borderRadius:8,cursor:"pointer",minWidth:98}}>
+              {themeMode==="dark"?"Acik Tema":"Koyu Tema"}
+            </button>
+            <button onClick={onLogout} style={{border:`1px solid ${commandBarTone.heroChipBorder}`,background:commandBarTone.heroChipBg,color:commandBarTone.heroText,padding:"7px 10px",fontSize:12,borderRadius:8,cursor:"pointer",minWidth:72}}>
+              Cikis
+            </button>
           </div>
         </div>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 12px",borderTop:`1px solid ${C.border}`,background:C.surface2}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 12px",borderTop:`1px solid ${C.border}`,background:commandBarTone.subBg}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <button onClick={()=>setFilterPanelOpen(v=>!v)} style={{...(filterPanelOpen?btnSt("primary"):btnSt("ghost")),padding:"7px 10px",fontSize:12}}>
               Filtre Uygula
@@ -15781,7 +15816,7 @@ function App() {
     if(tab==="tools") return <ToolStock currentUser={currentUser} machines={machines}/>;
     if(tab==="orders") return <WorkOrders currentUser={currentUser} machines={machines}/>;
     if(tab==="users") return <AdminUsers currentUser={currentUser} machines={machines} currentLogo={logoSrc} onLogoUpdate={updateLogo} menuCatalog={allTabs} menuVisibility={menuVisibility} onMenuVisibilityChange={setMenuVisibility}/>;
-    if(tab==="dashboard") return <MRPDashboard currentUser={currentUser} machines={machines}/>;
+    if(tab==="dashboard") return <MRPDashboard currentUser={currentUser} machines={machines} logoSrc={logoSrc} themeMode={themeMode} onThemeToggle={()=>updateTheme(themeMode==="dark"?"light":"dark")} onLogout={logout} roleLabel={currentRoleLabel} layoutMode={layoutMode}/>;
     if(tab==="cncmonitor") return <CncMonitorWall currentUser={currentUser} machines={machines}/>;
     if(tab==="mrp") return <MRPRunModule currentUser={currentUser}/>;
     if(tab==="quotes") return <SalesManagement currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")} defaultView="quotes"/>;
@@ -15933,6 +15968,7 @@ function App() {
       </div>
     </div>
   );
+  const showLegacyTopBar=tab!=="dashboard";
 
   return (
     <div style={{background:C.bg,minHeight:"100vh",color:C.text}}>
@@ -15970,9 +16006,11 @@ function App() {
             )}
           </aside>
           <div style={{minWidth:0,display:"flex",flexDirection:"column"}}>
-            <div style={{padding:headerPadding,position:"sticky",top:0,zIndex:22,background:C.bg}}>
-              {topBar}
-            </div>
+            {showLegacyTopBar&&(
+              <div style={{padding:headerPadding,position:"sticky",top:0,zIndex:22,background:C.bg}}>
+                {topBar}
+              </div>
+            )}
             <div style={{padding:shellPadding,flex:1,minWidth:0}}>
               {activeView}
             </div>
@@ -15982,9 +16020,11 @@ function App() {
 
       {isMobile&&(
         <div className="mrp-shell" style={{width:"100%",maxWidth:contentMaxWidth,margin:"0 auto",paddingBottom:isMobile?78:20}}>
-          <div style={{padding:headerPadding,position:"sticky",top:0,zIndex:22}}>
-            {topBar}
-          </div>
+          {showLegacyTopBar&&(
+            <div style={{padding:headerPadding,position:"sticky",top:0,zIndex:22}}>
+              {topBar}
+            </div>
+          )}
           <div style={{paddingBottom:76}}>
             {activeView}
           </div>
