@@ -4280,6 +4280,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   }=useTableColumnLayout("sales_management_orders",SALES_ORDER_LIST_COLUMNS);
   const salesListPanelRef=useRef(null);
   const {
+    height:salesListPanelHeight,
     isNarrow:salesListPanelsStacked,
   }=useViewportPanelMetrics(salesListPanelRef,{minHeight:340,bottomGap:14,narrowWidth:1180});
   const [customerEditId,setCustomerEditId]=useState("");
@@ -5502,6 +5503,8 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     ...(salesListPanelsStacked
       ? {}
       : {
+        height:salesListPanelHeight,
+        maxHeight:salesListPanelHeight,
         flex:1,
         minHeight:0,
         overflow:"hidden",
@@ -6304,6 +6307,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
   }=useTableColumnLayout("work_orders_list",WORK_ORDER_LIST_COLUMNS);
   const workListPanelRef=useRef(null);
   const {
+    height:workListPanelHeight,
     isNarrow:workListPanelsStacked,
   }=useViewportPanelMetrics(workListPanelRef,{minHeight:340,bottomGap:14,narrowWidth:1180});
   const fileRef=useRef();
@@ -6582,6 +6586,8 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
     ...(workListPanelsStacked
       ? {}
       : {
+        height:workListPanelHeight,
+        maxHeight:workListPanelHeight,
         flex:1,
         minHeight:0,
         overflow:"hidden",
