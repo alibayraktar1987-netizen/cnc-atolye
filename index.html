@@ -7376,7 +7376,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const topHeaderTheme=(()=>{
     if(statusMeta.mode==="running"){
       return {
-        gradient:"linear-gradient(120deg,#3ca36b 0%,#68b993 100%)",
+        gradient:"#3ca36b",
         controlBg:"rgba(8,29,19,.22)",
         controlSoftBg:"rgba(9,33,22,.18)",
         controlText:"#f2fff7",
@@ -7385,7 +7385,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     }
     if(statusMeta.mode==="idle"){
       return {
-        gradient:"linear-gradient(120deg,#c57b29 0%,#e2a24f 100%)",
+        gradient:"#c57b29",
         controlBg:"rgba(55,31,7,.24)",
         controlSoftBg:"rgba(64,36,10,.2)",
         controlText:"#fff8ef",
@@ -7393,7 +7393,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
       };
     }
     return {
-      gradient:"linear-gradient(120deg,#ba4d4d 0%,#de6d6d 100%)",
+      gradient:"#ba4d4d",
       controlBg:"rgba(55,10,10,.24)",
       controlSoftBg:"rgba(62,12,12,.18)",
       controlText:"#fff2f2",
@@ -7404,13 +7404,13 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     if(statusMeta.mode==="running"){
       return {
         shell:"#0d1218",
-        shellGradient:"radial-gradient(150% 130% at 0% 0%, #21432f 0%, #101a23 55%, #090d12 100%)",
+        shellGradient:"#101a23",
         panel:"#1d9944",
-        panelGradient:"linear-gradient(165deg,#1f9f4c 0%,#177c39 100%)",
+        panelGradient:"#1f9f4c",
         panelDark:"#177f38",
-        panelDarkGradient:"linear-gradient(155deg,#177239 0%,#11592b 100%)",
+        panelDarkGradient:"#177239",
         panelSoft:"#21a94b",
-        panelSoftGradient:"linear-gradient(165deg,#27aa57 0%,#1a8140 100%)",
+        panelSoftGradient:"#27aa57",
         border:"rgba(255,255,255,.24)",
         borderStrong:"rgba(255,255,255,.35)",
         text:"#ecfff2",
@@ -7427,13 +7427,13 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     if(statusMeta.mode==="idle"){
       return {
         shell:"#161109",
-        shellGradient:"radial-gradient(150% 130% at 0% 0%, #66441b 0%, #22170d 55%, #120d08 100%)",
+        shellGradient:"#22170d",
         panel:"#b46b1a",
-        panelGradient:"linear-gradient(165deg,#be741f 0%,#954f11 100%)",
+        panelGradient:"#be741f",
         panelDark:"#935713",
-        panelDarkGradient:"linear-gradient(155deg,#915312 0%,#6d3a0a 100%)",
+        panelDarkGradient:"#915312",
         panelSoft:"#c87d27",
-        panelSoftGradient:"linear-gradient(165deg,#ce842f 0%,#a9601a 100%)",
+        panelSoftGradient:"#ce842f",
         border:"rgba(255,255,255,.24)",
         borderStrong:"rgba(255,255,255,.34)",
         text:"#fff4e4",
@@ -7449,13 +7449,13 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     }
     return {
       shell:"#1a1010",
-      shellGradient:"radial-gradient(150% 130% at 0% 0%, #592121 0%, #241111 55%, #120b0b 100%)",
+      shellGradient:"#241111",
       panel:"#aa3030",
-      panelGradient:"linear-gradient(165deg,#b63b3b 0%,#842525 100%)",
+      panelGradient:"#b63b3b",
       panelDark:"#8d2525",
-      panelDarkGradient:"linear-gradient(155deg,#8f2828 0%,#681b1b 100%)",
+      panelDarkGradient:"#8f2828",
       panelSoft:"#bc3a3a",
-      panelSoftGradient:"linear-gradient(165deg,#c34343 0%,#9c2e2e 100%)",
+      panelSoftGradient:"#c34343",
       border:"rgba(255,255,255,.24)",
       borderStrong:"rgba(255,255,255,.34)",
       text:"#ffecec",
@@ -7731,11 +7731,11 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
 
   if(kioskMode){
     return (
-      <div style={{width:"100vw",height:"100dvh",overflow:"hidden",background:"radial-gradient(140% 130% at 18% 12%, #131a25 0%, #0b0f14 56%, #080b10 100%)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{width:"100vw",height:"100dvh",overflow:"hidden",background:"#0b0f14",display:"flex",alignItems:"center",justifyContent:"center"}}>
         <div style={{width:kioskStageWidth,height:kioskStageHeight,position:"relative",overflow:"hidden"}}>
           <div style={{width:kioskBaseWidth,height:kioskBaseHeight,transform:`scale(${kioskScale})`,transformOrigin:"top left"}}>
             <div style={{width:"100%",height:"100%",padding:12,display:"flex"}}>
-              <div style={{width:"100%",height:"100%",borderRadius:28,padding:12,background:"linear-gradient(145deg,#111721 0%,#0d1118 48%,#161d28 100%)",boxShadow:"0 30px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.15)"}}>
+              <div style={{width:"100%",height:"100%",borderRadius:28,padding:12,background:"#111721",boxShadow:"0 30px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.15)"}}>
                 <div style={{background:"#edf1f6",borderRadius:14,overflow:"hidden",border:"1px solid #cdd5e0",height:"100%",display:"flex",flexDirection:"column"}}>
             <div style={{background:topHeaderTheme.gradient,padding:"18px 22px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:12,alignItems:"center",color:"#e7fff2"}}>
               <div>
@@ -7795,7 +7795,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                     </div>
                   </div>
                   <div style={{height:20,background:"#d8dfe8",borderRadius:99,overflow:"hidden",position:"relative"}}>
-                    <div style={{width:`${Math.max(0,Math.min(100,waitingProgressPct))}%`,height:"100%",background:"repeating-linear-gradient(45deg,#8d68d4 0,#8d68d4 18px,#946fe0 18px,#946fe0 36px)"}}/>
+                    <div style={{width:`${Math.max(0,Math.min(100,waitingProgressPct))}%`,height:"100%",background:"#8d68d4"}}/>
                   </div>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:7,fontSize:13,color:"#74849a",fontWeight:700}}>
                     <span>Kurulum hedefi: {fmtDurationLong(waitingExpectedSec)}</span>
@@ -9314,7 +9314,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
         cursor+=share;
         return `${chartPalette[i%chartPalette.length]} ${start.toFixed(2)}deg ${cursor.toFixed(2)}deg`;
       });
-      const pieStyle=segments.length?`conic-gradient(${segments.join(",")})`:C.border;
+      const pieStyle=rows.length?chartPalette[0]:C.border;
       return (
         <div style={{display:"flex",gap:14,flexWrap:"wrap",alignItems:"center"}}>
           <div style={{position:"relative",width:220,height:220,borderRadius:"50%",background:pieStyle,border:`1px solid ${C.border}`,flexShrink:0}}>
@@ -9406,7 +9406,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
 
   return (
     <div style={{padding:"0 0 12px",display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{...panelStyle,padding:"14px 16px",background:`linear-gradient(180deg, ${C.surface} 0%, ${C.surface2} 100%)`}}>
+      <div style={{...panelStyle,padding:"14px 16px",background:C.surface}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
           <div>
             <div style={{fontSize:18,fontWeight:800,color:C.text}}>Rapor Merkezi</div>
@@ -10818,7 +10818,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   function segmentTone(seg){
     const risk=segmentRiskType(seg);
     if(risk==="critical") return {
-      header:"linear-gradient(145deg,#eb3b3b 0%,#c92a2a 100%)",
+      header:"#eb3b3b",
       border:"#e55d5d",
       bg:"#fff7f7",
       text:"#7f1d1d",
@@ -10826,7 +10826,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       badgeText:"#b42323",
     };
     if(risk==="warning") return {
-      header:"linear-gradient(145deg,#f59e0b 0%,#e27f18 100%)",
+      header:"#f59e0b",
       border:"#efb351",
       bg:"#fffaf0",
       text:"#8a4b08",
@@ -10834,7 +10834,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       badgeText:"#a76200",
     };
     return {
-      header:"linear-gradient(145deg,#5a6fdb 0%,#445ac7 100%)",
+      header:"#5a6fdb",
       border:"#97a7ea",
       bg:"#f8f9ff",
       text:"#2b3a8a",
@@ -12094,12 +12094,12 @@ function CncMonitorWall({currentUser,machines=DEFAULT_MACHINES}){
     return "Raporlanmadi";
   }
   function statusMetaOf(key){
-    if(key==="running") return {label:"Calisiyor",chip:C.green,banner:`linear-gradient(145deg,${C.green} 0%,${C.accent} 100%)`};
-    if(key==="idle") return {label:"Beklemede",chip:C.accent,banner:`linear-gradient(145deg,${C.accent} 0%,${C.purple} 100%)`};
-    if(key==="setup") return {label:"Ayar",chip:C.warn,banner:`linear-gradient(145deg,${C.warn} 0%,${C.accent} 100%)`};
-    if(key==="alarm") return {label:"Alarm",chip:C.red,banner:`linear-gradient(145deg,${C.red} 0%,${C.warn} 100%)`};
-    if(key==="stopped") return {label:"Durdu",chip:C.red,banner:`linear-gradient(145deg,${C.red} 0%,${C.warn} 100%)`};
-    return {label:"Bagli Degil",chip:C.muted2,banner:`linear-gradient(145deg,${C.muted2} 0%,${C.border} 100%)`};
+    if(key==="running") return {label:"Calisiyor",chip:C.green,banner:C.green};
+    if(key==="idle") return {label:"Beklemede",chip:C.accent,banner:C.accent};
+    if(key==="setup") return {label:"Ayar",chip:C.warn,banner:C.warn};
+    if(key==="alarm") return {label:"Alarm",chip:C.red,banner:C.red};
+    if(key==="stopped") return {label:"Durdu",chip:C.red,banner:C.red};
+    return {label:"Bagli Degil",chip:C.muted2,banner:C.muted2};
   }
   function toneForCard(card){
     if(!card.hasTelemetry||card.status==="offline"){
@@ -12687,7 +12687,7 @@ function MRPDashboard({
         cursor+=share;
         return `${widgetChartPalette[i%widgetChartPalette.length]} ${start.toFixed(2)}deg ${cursor.toFixed(2)}deg`;
       });
-      const pieStyle=segments.length?`conic-gradient(${segments.join(",")})`:C.border;
+      const pieStyle=rows.length?widgetChartPalette[0]:C.border;
       return (
         <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
           <div style={{position:"relative",width:160,height:160,borderRadius:"50%",background:pieStyle,border:`1px solid ${C.border}`,flexShrink:0}}>
@@ -12829,11 +12829,11 @@ function MRPDashboard({
   });
   const statusMeta=s=>{
     const key=String(s||"offline").toLowerCase();
-    if(["running","live"].includes(key)) return {key:"running",label:"Çalışıyor",color:C.green,banner:`linear-gradient(145deg,${C.green} 0%,${C.accent} 100%)`};
-    if(key==="setup") return {key:"setup",label:"Kurulum",color:C.warn,banner:`linear-gradient(145deg,${C.warn} 0%,${C.accent} 100%)`};
-    if(["idle","simulation"].includes(key)) return {key:"idle",label:"Beklemede",color:C.accent,banner:`linear-gradient(145deg,${C.accent} 0%,${C.purple} 100%)`};
-    if(key==="alarm") return {key:"alarm",label:"Alarm",color:C.red,banner:`linear-gradient(145deg,${C.red} 0%,${C.warn} 100%)`};
-    return {key:"offline",label:"Bağlı Değil",color:C.muted2,banner:`linear-gradient(145deg,${C.muted2} 0%,${C.border} 100%)`};
+    if(["running","live"].includes(key)) return {key:"running",label:"Çalışıyor",color:C.green,banner:C.green};
+    if(key==="setup") return {key:"setup",label:"Kurulum",color:C.warn,banner:C.warn};
+    if(["idle","simulation"].includes(key)) return {key:"idle",label:"Beklemede",color:C.accent,banner:C.accent};
+    if(key==="alarm") return {key:"alarm",label:"Alarm",color:C.red,banner:C.red};
+    return {key:"offline",label:"Bağlı Değil",color:C.muted2,banner:C.muted2};
   };
   function formatAge(sec){
     const v=Math.max(0,Math.floor(safeNum(sec)));
@@ -15557,6 +15557,10 @@ function App() {
   const [logoError,setLogoError]=useState(false);
   const [mobileMenuOpen,setMobileMenuOpen]=useState(false);
   const [menuQuery,setMenuQuery]=useState("");
+  const [globalFilterOpen,setGlobalFilterOpen]=useState(false);
+  const [globalSortMode,setGlobalSortMode]=useState("group");
+  const [globalViewMode,setGlobalViewMode]=useState("cards");
+  const [globalQuickDate,setGlobalQuickDate]=useState(()=>todayStr());
   const [desktopMenuCollapsed,setDesktopMenuCollapsed]=useState(false);
   const [kioskMachine,setKioskMachine]=useState(()=>detectLockedMachineFromUrl());
   const tabFromUrlAppliedRef=useRef(false);
@@ -15751,9 +15755,20 @@ function App() {
   const tabs=enabledTabs;
   const visibleTabs=useMemo(()=>{
     const q=(menuQuery||"").trim().toLowerCase();
-    if(!q) return tabs;
-    return tabs.filter(t=>(t.label||"").toLowerCase().includes(q)||(t.group||"").toLowerCase().includes(q));
-  },[tabs,menuQuery]);
+    const filtered=!q
+      ? tabs
+      : tabs.filter(t=>(t.label||"").toLowerCase().includes(q)||(t.group||"").toLowerCase().includes(q));
+    const list=[...filtered];
+    if(globalSortMode==="name_asc"){
+      list.sort((a,b)=>(a.label||"").localeCompare(b.label||"","tr"));
+      return list;
+    }
+    if(globalSortMode==="name_desc"){
+      list.sort((a,b)=>(b.label||"").localeCompare(a.label||"","tr"));
+      return list;
+    }
+    return list;
+  },[tabs,menuQuery,globalSortMode]);
   const groupedTabs=useMemo(()=>{
     const out={};
     visibleTabs.forEach(t=>{
@@ -15781,7 +15796,10 @@ function App() {
     if(tabs.length===0) return;
     if(!tabs.some(t=>t.id===tab)) setTab(tabs[0].id);
   },[tabs,tab]);
-  useEffect(()=>{setMobileMenuOpen(false);},[tab]);
+  useEffect(()=>{
+    setMobileMenuOpen(false);
+    setGlobalFilterOpen(false);
+  },[tab]);
 
   const layoutMode=isDesktop?"desktop":(isTablet?"tablet":"mobile");
   const isMobile=layoutMode==="mobile";
@@ -15973,34 +15991,156 @@ function App() {
     </div>
     );
   };
+  const topQuickActions=[
+    {id:"notif",label:"Bildirimler",icon:"🔔"},
+    {id:"calendar",label:"Takvim",icon:"📅"},
+    {id:"mail",label:"Mesajlar",icon:"✉"},
+    {id:"settings",label:"Ayarlar",icon:"⚙"},
+  ];
+  const topSortChoices=[
+    {id:"group",label:"Gruplara Gore"},
+    {id:"name_asc",label:"Modul (A-Z)"},
+    {id:"name_desc",label:"Modul (Z-A)"},
+  ];
+  const topViewChoices=[
+    {id:"cards",label:"Kartlar",icon:"◧"},
+    {id:"compact",label:"Liste",icon:"☰"},
+    {id:"table",label:"Tablo",icon:"▦"},
+  ];
+  const appCommandBarTone=themeMode==="dark"
+    ? {
+      heroBg:"#1E4F55",
+      heroText:"#DEF2F1",
+      heroMuted:"rgba(222,242,241,.84)",
+      heroFieldBg:"rgba(222,242,241,.10)",
+      heroFieldBorder:"rgba(222,242,241,.32)",
+      heroChipBg:"rgba(222,242,241,.08)",
+      heroChipBorder:"rgba(222,242,241,.26)",
+      heroShadow:"0 16px 34px rgba(6,19,23,.42)",
+      subBg:"#14383C",
+      subBorder:"rgba(222,242,241,.16)",
+    }
+    : {
+      heroBg:"#2B7A78",
+      heroText:"#FEFFFF",
+      heroMuted:"rgba(254,255,255,.90)",
+      heroFieldBg:"rgba(255,255,255,.22)",
+      heroFieldBorder:"rgba(255,255,255,.44)",
+      heroChipBg:"rgba(255,255,255,.16)",
+      heroChipBorder:"rgba(255,255,255,.38)",
+      heroShadow:"0 14px 30px rgba(23,82,73,.20)",
+      subBg:"#DEF2F1",
+      subBorder:"#CBE3E1",
+    };
+  const appLayoutBadge=layoutMode==="desktop"?"DESKTOP":(layoutMode==="tablet"?"TABLET":"MOBIL");
+  const appUserLabel=String(currentUser?.fullName||"").trim();
+  function switchToTabIfVisible(tabId){
+    if(tabs.some(t=>t.id===tabId)) setTab(tabId);
+  }
+  function triggerTopAction(type){
+    window.dispatchEvent(new CustomEvent("mrp:tab-action",{detail:{tab,type}}));
+  }
+  function handleTopQuickAction(actionId){
+    if(actionId==="notif"){switchToTabIfVisible("notifications");return;}
+    if(actionId==="calendar"){switchToTabIfVisible("planning");return;}
+    if(actionId==="mail"){switchToTabIfVisible("sales");return;}
+    if(actionId==="settings"){switchToTabIfVisible("users");}
+  }
+  function applyTopViewMode(modeId){
+    setGlobalViewMode(modeId);
+    if(layoutMode!=="desktop") return;
+    if(modeId==="compact"&&!desktopMenuCollapsed) setDesktopMenuCollapsed(true);
+    if(modeId!=="compact"&&desktopMenuCollapsed) setDesktopMenuCollapsed(false);
+  }
   const topBar=(
-    <div className="mrp-topbar" style={{background:C.surface,border:`1px solid ${C.border}`}}>
-      <div style={{padding:isMobile?"12px 12px 10px":"14px 16px 12px"}}>
-        <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:10}}>
-          <div style={{width:40,height:40,borderRadius:10,background:C.surface2,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",border:`1px solid ${C.border}`}}>
-            {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:16}}>⚙️</span>}
+    <div className="mrp-topbar" style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:appCommandBarTone.heroShadow}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",background:appCommandBarTone.heroBg}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+          <div style={{width:40,height:40,borderRadius:10,background:"rgba(255,255,255,.16)",border:`1px solid ${appCommandBarTone.heroChipBorder}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
+            {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:17,color:appCommandBarTone.heroText}}>⚙️</span>}
           </div>
-          <div style={{flex:1,minWidth:isMobile?160:260}}>
-            <div style={{fontWeight:800,fontSize:isMobile?14:16,color:C.text,letterSpacing:.2}}>CNC Atolye MRP</div>
-            <div style={{color:C.muted2,fontSize:11,display:"flex",alignItems:"center",gap:5,flexWrap:"wrap",marginTop:2}}>
-              <span>{activeContextLabel}</span>
-              <span>•</span>
-              <span>{currentUser.fullName}</span>
-              <Badge label={currentRoleLabel} color={isAdmin?C.accent:C.muted2}/>
-              <Badge label={layoutMode==="desktop"?"Desktop":(layoutMode==="tablet"?"Tablet":"Mobil")} color={C.muted2}/>
+          <div style={{minWidth:0}}>
+            <div style={{fontSize:11,color:appCommandBarTone.heroMuted,letterSpacing:.7,textTransform:"uppercase"}}>Canli Uretim Panosu</div>
+            <div style={{fontWeight:800,color:appCommandBarTone.heroText,fontSize:20,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{activeContextLabel}</div>
+            <div style={{fontSize:12,color:appCommandBarTone.heroMuted,marginTop:2,display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+              <span>{appUserLabel||"-"}</span>
+              <Badge label={String(currentRoleLabel||"Kullanici").toUpperCase()} color={C.accent}/>
+              <Badge label={appLayoutBadge} color={C.muted2}/>
             </div>
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:isMobile?"flex-start":"flex-end"}}>
-            {isMobile&&(
-              <button onClick={()=>setMobileMenuOpen(true)} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:82}}>Menu</button>
-            )}
-            <button onClick={()=>updateTheme(themeMode==="dark"?"light":"dark")} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:98}}>
-              {themeMode==="dark"?"Acik Tema":"Koyu Tema"}
-            </button>
-            <button onClick={logout} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:72}}>Cikis</button>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <div style={{position:"relative",minWidth:isMobile?180:250}}>
+            <span style={{position:"absolute",left:10,top:8,color:appCommandBarTone.heroMuted,fontSize:13}}>⌕</span>
+            <input value={menuQuery} onChange={e=>setMenuQuery(e.target.value)} placeholder="Modul veya kayit ara..." style={{...inputSt,padding:"8px 10px 8px 30px",fontSize:12,minWidth:isMobile?180:250,background:appCommandBarTone.heroFieldBg,borderColor:appCommandBarTone.heroFieldBorder,color:appCommandBarTone.heroText}}/>
           </div>
+          {isMobile&&(
+            <button onClick={()=>setMobileMenuOpen(true)} style={{border:`1px solid ${appCommandBarTone.heroChipBorder}`,background:appCommandBarTone.heroChipBg,color:appCommandBarTone.heroText,padding:"7px 10px",fontSize:12,borderRadius:8,cursor:"pointer",minWidth:78}}>
+              Menu
+            </button>
+          )}
+          {topQuickActions.map(act=>(
+            <button key={act.id} onClick={()=>handleTopQuickAction(act.id)} title={act.label} style={{border:`1px solid ${appCommandBarTone.heroChipBorder}`,background:appCommandBarTone.heroChipBg,color:appCommandBarTone.heroText,padding:"7px 9px",fontSize:13,minWidth:34,borderRadius:8,cursor:"pointer"}}>
+              {act.icon}
+            </button>
+          ))}
+          <button onClick={()=>updateTheme(themeMode==="dark"?"light":"dark")} style={{border:`1px solid ${appCommandBarTone.heroChipBorder}`,background:appCommandBarTone.heroChipBg,color:appCommandBarTone.heroText,padding:"7px 10px",fontSize:12,borderRadius:8,cursor:"pointer",minWidth:98}}>
+            {themeMode==="dark"?"Acik Tema":"Koyu Tema"}
+          </button>
+          <button onClick={logout} style={{border:`1px solid ${appCommandBarTone.heroChipBorder}`,background:appCommandBarTone.heroChipBg,color:appCommandBarTone.heroText,padding:"7px 10px",fontSize:12,borderRadius:8,cursor:"pointer",minWidth:72}}>
+            Cikis
+          </button>
         </div>
       </div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 12px",borderTop:`1px solid ${appCommandBarTone.subBorder}`,background:appCommandBarTone.subBg}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <button onClick={()=>setGlobalFilterOpen(v=>!v)} style={{...(globalFilterOpen?btnSt("primary"):btnSt("ghost")),padding:"7px 10px",fontSize:12}}>
+            Filtre Uygula
+          </button>
+          <div style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",border:`1px solid ${C.border}`,borderRadius:8,background:C.card}}>
+            <span style={{fontSize:11,color:C.muted2,fontWeight:700}}>Sirala</span>
+            <select value={globalSortMode} onChange={e=>setGlobalSortMode(e.target.value)} style={{...inputSt,padding:"5px 6px",fontSize:12,minWidth:150}}>
+              {topSortChoices.map(opt=><option key={opt.id} value={opt.id}>{opt.label}</option>)}
+            </select>
+            {globalSortMode!=="group"&&<button onClick={()=>setGlobalSortMode("group")} style={{...btnSt("ghost"),padding:"3px 6px",fontSize:11}}>×</button>}
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:4,padding:"4px",border:`1px solid ${C.border}`,borderRadius:9,background:C.card}}>
+            {topViewChoices.map(mode=>(
+              <button key={mode.id} onClick={()=>applyTopViewMode(mode.id)} title={mode.label} style={{border:"none",background:globalViewMode===mode.id?C.accent:"transparent",color:globalViewMode===mode.id?"#fff":C.muted2,padding:"6px 8px",fontSize:12,borderRadius:6,cursor:"pointer"}}>
+                {mode.icon}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+          <input type="date" value={globalQuickDate} onChange={e=>setGlobalQuickDate(e.target.value||todayStr())} style={{...inputSt,padding:"7px 9px",fontSize:12,width:150}}/>
+          <button onClick={()=>{
+            setMenuQuery("");
+            setGlobalSortMode("group");
+            setGlobalViewMode("cards");
+            setGlobalFilterOpen(false);
+            if(layoutMode==="desktop") setDesktopMenuCollapsed(false);
+          }} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>
+            Temizle
+          </button>
+          <button onClick={()=>triggerTopAction("new")} style={{...btnSt("primary"),padding:"7px 12px",fontSize:12,minWidth:126}}>
+            Yeni Kayit
+          </button>
+          <button onClick={()=>triggerTopAction("refresh")} style={{...btnSt("primary"),padding:"7px 10px",fontSize:12}}>
+            Yenile
+          </button>
+        </div>
+      </div>
+      {globalFilterOpen&&(
+        <div style={{padding:"10px 12px",borderTop:`1px solid ${C.border}`,background:C.card}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"minmax(260px,320px) minmax(0,1fr)",gap:12}}>
+            <div>{menuSearch()}</div>
+            <div className="mrp-scrollbar" style={{maxHeight:isMobile?230:300,overflowY:"auto",paddingRight:2}}>
+              {menuSection({compact:true})}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
   const showLegacyTopBar=tab!=="dashboard";
