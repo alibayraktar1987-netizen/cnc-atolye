@@ -12924,23 +12924,38 @@ function MRPDashboard({
     {id:"mail",label:"Mesajlar",icon:"✉"},
     {id:"settings",label:"Ayarlar",icon:"⚙"},
   ];
-  const commandBarTone={
-    heroBg:"linear-gradient(108deg,#79C9D4 0%, #57BE90 100%)",
-    heroText:"#FEFFFF",
-    heroMuted:"rgba(254,255,255,.86)",
-    heroFieldBg:"rgba(255,255,255,.20)",
-    heroFieldBorder:"rgba(255,255,255,.45)",
-    heroChipBg:"rgba(255,255,255,.16)",
-    heroChipBorder:"rgba(255,255,255,.42)",
-    subBg:"#F2F5F7",
-  };
+  const commandBarTone=themeMode==="dark"
+    ? {
+      heroBg:"linear-gradient(112deg,#17252A 0%, #1E4F55 48%, #2B7A78 100%)",
+      heroText:"#DEF2F1",
+      heroMuted:"rgba(222,242,241,.84)",
+      heroFieldBg:"rgba(222,242,241,.10)",
+      heroFieldBorder:"rgba(222,242,241,.32)",
+      heroChipBg:"rgba(222,242,241,.08)",
+      heroChipBorder:"rgba(222,242,241,.26)",
+      heroShadow:"0 16px 34px rgba(6,19,23,.42)",
+      subBg:"linear-gradient(180deg,#0F2F34 0%, #14383C 100%)",
+      subBorder:"rgba(222,242,241,.16)",
+    }
+    : {
+      heroBg:"linear-gradient(112deg,#2B7A78 0%, #3AAFA9 52%, #57BE90 100%)",
+      heroText:"#FEFFFF",
+      heroMuted:"rgba(254,255,255,.90)",
+      heroFieldBg:"rgba(255,255,255,.22)",
+      heroFieldBorder:"rgba(255,255,255,.44)",
+      heroChipBg:"rgba(255,255,255,.16)",
+      heroChipBorder:"rgba(255,255,255,.38)",
+      heroShadow:"0 14px 30px rgba(23,82,73,.20)",
+      subBg:"linear-gradient(180deg,#ECF7F6 0%, #DEF2F1 100%)",
+      subBorder:"#CBE3E1",
+    };
   const lastLoadText=lastLoadedAt?new Intl.DateTimeFormat("tr-TR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(new Date(lastLoadedAt)):"-";
   const userLabel=String(currentUser?.fullName||"").trim();
   const layoutBadge=layoutMode==="desktop"?"DESKTOP":(layoutMode==="tablet"?"TABLET":"MOBIL");
 
   return (
     <div style={{padding:"0 0 12px",display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{position:"sticky",top:8,zIndex:24,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:"0 14px 28px rgba(1,82,73,.14)"}}>
+      <div style={{position:"sticky",top:8,zIndex:24,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:commandBarTone.heroShadow}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",background:commandBarTone.heroBg}}>
           <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
             <div style={{width:40,height:40,borderRadius:10,background:"rgba(255,255,255,.16)",border:`1px solid ${commandBarTone.heroChipBorder}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
@@ -12977,7 +12992,7 @@ function MRPDashboard({
             </button>
           </div>
         </div>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 12px",borderTop:`1px solid ${C.border}`,background:commandBarTone.subBg}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 12px",borderTop:`1px solid ${commandBarTone.subBorder}`,background:commandBarTone.subBg}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <button onClick={()=>setFilterPanelOpen(v=>!v)} style={{...(filterPanelOpen?btnSt("primary"):btnSt("ghost")),padding:"7px 10px",fontSize:12}}>
               Filtre Uygula
@@ -15843,15 +15858,37 @@ function App() {
     );
   }
   const activeView=getActiveView();
-  const leftNavColors={
-    bg:"#212121",
-    bgSoft:"#2a2a2a",
-    border:"rgba(255,255,255,.14)",
-    text:"#f2f2f2",
-    muted:"rgba(255,255,255,.70)",
-    activeBg:"rgba(255,255,255,.12)",
-    activeBorder:"rgba(255,255,255,.32)",
-  };
+  const leftNavColors=themeMode==="dark"
+    ? {
+      bg:"#0F1D20",
+      bgGradient:"linear-gradient(180deg,#0F1D20 0%, #17363C 46%, #1F5C5A 100%)",
+      bgSoft:"rgba(222,242,241,.06)",
+      panelBg:"rgba(12,22,25,.34)",
+      border:"rgba(222,242,241,.17)",
+      text:"#DEF2F1",
+      muted:"rgba(222,242,241,.72)",
+      icon:"rgba(222,242,241,.76)",
+      activeBg:"linear-gradient(120deg,#2B7A78 0%, #3AAFA9 100%)",
+      activeBorder:"rgba(222,242,241,.42)",
+      activeText:"#FEFFFF",
+      toggleBg:"rgba(222,242,241,.08)",
+      shellShadow:"inset -1px 0 0 rgba(255,255,255,.04)",
+    }
+    : {
+      bg:"#17252A",
+      bgGradient:"linear-gradient(180deg,#17252A 0%, #1E4E54 40%, #2B7A78 100%)",
+      bgSoft:"rgba(222,242,241,.07)",
+      panelBg:"rgba(23,37,42,.30)",
+      border:"rgba(222,242,241,.20)",
+      text:"#DEF2F1",
+      muted:"rgba(222,242,241,.74)",
+      icon:"rgba(222,242,241,.78)",
+      activeBg:"linear-gradient(120deg,#3AAFA9 0%, #2B7A78 100%)",
+      activeBorder:"rgba(222,242,241,.45)",
+      activeText:"#FEFFFF",
+      toggleBg:"rgba(222,242,241,.10)",
+      shellShadow:"inset -1px 0 0 rgba(255,255,255,.05)",
+    };
 
   const menuSearch=(opts={})=>{
     const sideTone=Boolean(opts.sideTone);
@@ -15887,7 +15924,7 @@ function App() {
     return (
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
       {visibleGroups.length===0&&(
-        <div style={{background:sideTone?leftNavColors.bgSoft:C.surface2,border:`1px dashed ${sideTone?leftNavColors.border:C.border}`,borderRadius:10,padding:"14px 10px",fontSize:12,color:sideTone?leftNavColors.muted:C.muted2,textAlign:"center"}}>
+        <div style={{background:sideTone?leftNavColors.panelBg:C.surface2,border:`1px dashed ${sideTone?leftNavColors.border:C.border}`,borderRadius:10,padding:"14px 10px",fontSize:12,color:sideTone?leftNavColors.muted:C.muted2,textAlign:"center"}}>
           Arama sonucunda modul bulunamadi.
         </div>
       )}
@@ -15918,7 +15955,7 @@ function App() {
                     ? (tab===t.id?leftNavColors.activeBg:"transparent")
                     : (tab===t.id?C.brandTint:C.surface),
                   color:sideTone
-                    ? (tab===t.id?"#fff":leftNavColors.text)
+                    ? (tab===t.id?leftNavColors.activeText:leftNavColors.text)
                     : (tab===t.id?C.accent:C.text),
                   cursor:"pointer",
                   fontFamily:"inherit",
@@ -15926,10 +15963,10 @@ function App() {
                 }}
               >
                 <span style={{display:"inline-flex",alignItems:"center",gap:10,minWidth:0,maxWidth:iconOnly?22:"100%"}}>
-                  <span style={{width:22,display:"inline-flex",justifyContent:"center",alignItems:"center",color:sideTone?(tab===t.id?"#fff":"#b8c8ef"):(tab===t.id?C.accent:C.muted2)}}><NavIcon name={t.icon}/></span>
+                  <span style={{width:22,display:"inline-flex",justifyContent:"center",alignItems:"center",color:sideTone?(tab===t.id?leftNavColors.activeText:leftNavColors.icon):(tab===t.id?C.accent:C.muted2)}}><NavIcon name={t.icon}/></span>
                   {!iconOnly&&<span style={{fontSize:compact?12:13,fontWeight:tab===t.id?700:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.label}</span>}
                 </span>
-                {!iconOnly&&tab===t.id&&<span style={{fontSize:10,fontWeight:700,color:sideTone?"#dce6ff":C.accent,letterSpacing:.4}}>AKTIF</span>}
+                {!iconOnly&&tab===t.id&&<span style={{fontSize:10,fontWeight:700,color:sideTone?leftNavColors.activeText:C.accent,letterSpacing:.4}}>AKTIF</span>}
               </button>
             ))}
           </div>
@@ -15974,21 +16011,21 @@ function App() {
     <div style={{background:C.bg,minHeight:"100vh",color:C.text}}>
       {!isMobile&&(
         <div style={{display:"grid",gridTemplateColumns:`${sidebarWidth}px minmax(0,1fr)`,minHeight:"100vh",transition:"grid-template-columns .18s ease"}}>
-          <aside style={{position:"sticky",top:0,height:"100vh",background:leftNavColors.bg,color:leftNavColors.text,borderRight:`1px solid ${leftNavColors.border}`,display:"flex",flexDirection:"column"}}>
+          <aside style={{position:"sticky",top:0,height:"100vh",backgroundColor:leftNavColors.bg,backgroundImage:leftNavColors.bgGradient,color:leftNavColors.text,borderRight:`1px solid ${leftNavColors.border}`,boxShadow:leftNavColors.shellShadow,display:"flex",flexDirection:"column"}}>
             <div style={{padding:desktopMenuIconOnly?"12px 8px":"12px 10px",borderBottom:`1px solid ${leftNavColors.border}`}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:desktopMenuIconOnly?"center":"space-between",gap:8}}>
                 <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
-                  <div style={{width:34,height:34,borderRadius:9,background:"rgba(255,255,255,.12)",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
-                    {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:14,color:"#fff"}}>⚙️</span>}
+                  <div style={{width:34,height:34,borderRadius:9,background:leftNavColors.toggleBg,border:`1px solid ${leftNavColors.border}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
+                    {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:14,color:leftNavColors.activeText}}>⚙️</span>}
                   </div>
-                  {!desktopMenuIconOnly&&<div style={{fontSize:15,fontWeight:800,color:"#fff",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>CNC Atolye MRP</div>}
+                  {!desktopMenuIconOnly&&<div style={{fontSize:15,fontWeight:800,color:leftNavColors.activeText,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>CNC Atolye MRP</div>}
                 </div>
                 {layoutMode==="desktop"&&(
                   <button
                     onClick={toggleDesktopMenuCollapse}
                     title={desktopMenuIconOnly?"Menuyu Genislet":"Menuyu Daralt"}
                     aria-label={desktopMenuIconOnly?"Menuyu Genislet":"Menuyu Daralt"}
-                    style={{width:30,height:30,padding:0,display:"inline-flex",alignItems:"center",justifyContent:"center",border:`1px solid ${leftNavColors.border}`,borderRadius:8,background:"rgba(255,255,255,.08)",color:"#dce6ff",cursor:"pointer"}}
+                    style={{width:30,height:30,padding:0,display:"inline-flex",alignItems:"center",justifyContent:"center",border:`1px solid ${leftNavColors.border}`,borderRadius:8,background:leftNavColors.toggleBg,color:leftNavColors.icon,cursor:"pointer"}}
                   >
                     <SidebarToggleIcon collapsed={desktopMenuCollapsed} size={14}/>
                   </button>
