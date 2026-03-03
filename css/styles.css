@@ -12,16 +12,16 @@
 }
 @media (prefers-color-scheme: dark){
   :root{
-    --bg:#013838;
-    --card:#0D544E;
-    --surface:#0A4B46;
-    --accent:#79C9D4;
-    --text:#F2FCFD;
-    --muted:#C5DDE1;
-    --border:#1F6D67;
-    --input-border:#2D756F;
-    --hover:#0F5A54;
-    --shadow:0 10px 26px #00000055;
+    --bg:#16181C;
+    --card:#272D35;
+    --surface:#232830;
+    --accent:#8FA2B6;
+    --text:#ECEFF3;
+    --muted:#B9C0CA;
+    --border:#3A414C;
+    --input-border:#4A5361;
+    --hover:#2D3440;
+    --shadow:0 10px 26px #00000066;
   }
 }
 *{box-sizing:border-box;font-family:DM Sans,Inter,Arial, sans-serif}

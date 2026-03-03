@@ -457,14 +457,14 @@ const THEME_PRESETS = {
     text:"#015249", muted:"#5F8B91", muted2:"#A5A5AF",
   },
   dark:{
-    bg:"#013838", bgAlt:"#01443F",
-    surface:"#0A4B46", surface2:"#083E3A", card:"#0D544E", border:"#1F6D67",
-    accent:"#79C9D4", accentDim:"#1E5A63", brandTint:"#206268",
-    green:"#57BE90", greenDim:"#1F5A46",
-    red:"#A5A5AF", redDim:"#334B50",
-    warn:"#79C9D4", warnDim:"#2A5961",
-    purple:"#79C9D4",
-    text:"#F2FCFD", muted:"#C5DDE1", muted2:"#A5A5AF",
+    bg:"#16181C", bgAlt:"#1C2025",
+    surface:"#232830", surface2:"#1E232A", card:"#272D35", border:"#3A414C",
+    accent:"#8FA2B6", accentDim:"#2E3742", brandTint:"#303946",
+    green:"#7FA08F", greenDim:"#2F3B35",
+    red:"#C19397", redDim:"#413338",
+    warn:"#B7A483", warnDim:"#3E3930",
+    purple:"#9A92AE",
+    text:"#ECEFF3", muted:"#B9C0CA", muted2:"#8D95A1",
   },
 };
 const C = { ...THEME_PRESETS.light };
@@ -12926,16 +12926,16 @@ function MRPDashboard({
   ];
   const commandBarTone=themeMode==="dark"
     ? {
-      heroBg:"#1E4F55",
-      heroText:"#DEF2F1",
-      heroMuted:"rgba(222,242,241,.84)",
-      heroFieldBg:"rgba(222,242,241,.10)",
-      heroFieldBorder:"rgba(222,242,241,.32)",
-      heroChipBg:"rgba(222,242,241,.08)",
-      heroChipBorder:"rgba(222,242,241,.26)",
-      heroShadow:"0 16px 34px rgba(6,19,23,.42)",
-      subBg:"#14383C",
-      subBorder:"rgba(222,242,241,.16)",
+      heroBg:"#2A3038",
+      heroText:"#F2F4F7",
+      heroMuted:"rgba(242,244,247,.82)",
+      heroFieldBg:"rgba(255,255,255,.08)",
+      heroFieldBorder:"rgba(255,255,255,.24)",
+      heroChipBg:"rgba(255,255,255,.07)",
+      heroChipBorder:"rgba(255,255,255,.20)",
+      heroShadow:"0 16px 34px rgba(0,0,0,.42)",
+      subBg:"#232931",
+      subBorder:"rgba(255,255,255,.10)",
     }
     : {
       heroBg:"#2B7A78",
@@ -15878,18 +15878,18 @@ function App() {
   const activeView=getActiveView();
   const leftNavColors=themeMode==="dark"
     ? {
-      bg:"#0F1D20",
-      bgSoft:"rgba(222,242,241,.06)",
-      panelBg:"rgba(12,22,25,.34)",
-      border:"rgba(222,242,241,.17)",
-      text:"#DEF2F1",
-      muted:"rgba(222,242,241,.72)",
-      icon:"rgba(222,242,241,.76)",
-      activeBg:"#2B7A78",
-      activeBorder:"rgba(222,242,241,.42)",
+      bg:"#1B2027",
+      bgSoft:"rgba(255,255,255,.06)",
+      panelBg:"rgba(255,255,255,.04)",
+      border:"rgba(255,255,255,.14)",
+      text:"#E8ECF1",
+      muted:"rgba(232,236,241,.68)",
+      icon:"rgba(232,236,241,.74)",
+      activeBg:"#3A4452",
+      activeBorder:"rgba(232,236,241,.38)",
       activeText:"#FEFFFF",
-      toggleBg:"rgba(222,242,241,.08)",
-      shellShadow:"inset -1px 0 0 rgba(255,255,255,.04)",
+      toggleBg:"rgba(255,255,255,.08)",
+      shellShadow:"inset -1px 0 0 rgba(255,255,255,.05)",
     }
     : {
       bg:"#17252A",
@@ -16009,16 +16009,16 @@ function App() {
   ];
   const appCommandBarTone=themeMode==="dark"
     ? {
-      heroBg:"#1E4F55",
-      heroText:"#DEF2F1",
-      heroMuted:"rgba(222,242,241,.84)",
-      heroFieldBg:"rgba(222,242,241,.10)",
-      heroFieldBorder:"rgba(222,242,241,.32)",
-      heroChipBg:"rgba(222,242,241,.08)",
-      heroChipBorder:"rgba(222,242,241,.26)",
-      heroShadow:"0 16px 34px rgba(6,19,23,.42)",
-      subBg:"#14383C",
-      subBorder:"rgba(222,242,241,.16)",
+      heroBg:"#2A3038",
+      heroText:"#F2F4F7",
+      heroMuted:"rgba(242,244,247,.82)",
+      heroFieldBg:"rgba(255,255,255,.08)",
+      heroFieldBorder:"rgba(255,255,255,.24)",
+      heroChipBg:"rgba(255,255,255,.07)",
+      heroChipBorder:"rgba(255,255,255,.20)",
+      heroShadow:"0 16px 34px rgba(0,0,0,.42)",
+      subBg:"#232931",
+      subBorder:"rgba(255,255,255,.10)",
     }
     : {
       heroBg:"#2B7A78",
