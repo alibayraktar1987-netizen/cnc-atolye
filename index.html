@@ -16341,7 +16341,9 @@ function App() {
               </div>
             )}
             <div style={{padding:shellPadding,flex:1,minWidth:0,minHeight:0,overflowY:"auto",overscrollBehavior:"none"}}>
-              {activeView}
+              <div style={{minHeight:"100%",display:"flex",flexDirection:"column"}}>
+                {activeView}
+              </div>
             </div>
           </div>
         </div>
@@ -16355,7 +16357,9 @@ function App() {
             </div>
           )}
           <div style={{flex:1,minHeight:0,overflowY:"auto",overscrollBehavior:"none",paddingBottom:76}}>
-            {activeView}
+            <div style={{minHeight:"100%",display:"flex",flexDirection:"column"}}>
+              {activeView}
+            </div>
           </div>
           <div className="mrp-bottom-nav" style={{position:"fixed",left:0,right:0,bottom:0,background:`${C.surface}f0`,borderTop:`1px solid ${C.border}`,zIndex:24}}>
             <div style={{width:"100%",maxWidth:contentMaxWidth,margin:"0 auto",display:"grid",gridTemplateColumns:`repeat(${mobilePrimary.length+1},minmax(0,1fr))`,alignItems:"stretch"}}>
