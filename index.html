@@ -9,7 +9,7 @@
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body,#root{min-height:100%;}
 body{
-  background:#f3f2f1;
+  background:#f7f7f7;
   font-family:"DM Sans","Segoe UI","Segoe UI Variable Text",Tahoma,Arial,sans-serif;
   -webkit-font-smoothing:antialiased;
   text-rendering:optimizeLegibility;
@@ -468,6 +468,20 @@ const THEME_PRESETS = {
   },
 };
 const C = { ...THEME_PRESETS.light };
+const CORPORATE_CHART_PALETTE = [
+  "#1ebbf0",
+  "#39dfaa",
+  "#23aadd",
+  "#64c7e8",
+  "#f39c3d",
+  "#f2b463",
+  "#ff6f7c",
+  "#c73a4d",
+  "#8fa2b2",
+  "#7b858f",
+  "#173142",
+  "#113140",
+];
 function applyThemeMode(mode){
   const next=THEME_PRESETS[mode]||THEME_PRESETS.light;
   Object.assign(C,next);
@@ -553,7 +567,7 @@ const DEFAULT_QUOTE_TEMPLATE = {
   documentTitleQuote:"Proforma Teklif",
   documentTitleOrder:"Siparis Onay Formu",
   footerNote:"Bu teklif belirtilen sure boyunca gecerlidir.",
-  accentColor:"#0f6cbd",
+  accentColor:"#1ebbf0",
   showLogo:false,
 };
 const DEFAULT_SALES_CURRENCIES = {
@@ -587,8 +601,8 @@ function normalizeSalesCurrencies(raw){
 }
 const DEFAULT_SUPPLIER_GROUPS = {
   list:[
-    {id:"malzeme",name:"Malzeme Satanlar",color:"#0f6cbd",sortOrder:10},
-    {id:"takim",name:"Takim Satanlar",color:"#00a78f",sortOrder:20},
+    {id:"malzeme",name:"Malzeme Satanlar",color:"#1ebbf0",sortOrder:10},
+    {id:"takim",name:"Takim Satanlar",color:"#39dfaa",sortOrder:20},
   ],
 };
 function normalizeSupplierGroups(raw){
@@ -610,7 +624,7 @@ function normalizeSupplierGroups(raw){
     return {
       id,
       name,
-      color:normalizeHexColor(row?.color,fallback?.color||"#0f6cbd"),
+      color:normalizeHexColor(row?.color,fallback?.color||"#1ebbf0"),
       sortOrder:Math.max(1,safeNum(row?.sortOrder)||((idx+1)*10)),
     };
   }).sort((a,b)=>{
@@ -635,18 +649,18 @@ function normalizeMenuVisibilityConfig(raw){
   return {hiddenTabs};
 }
 const DEFAULT_ROUTING_OPERATION_TYPES = [
-  { id:"op10", code:"OP-10", name:"Kesim ve Hazirlik", icon:"🧰", color:"#6f86ff", defaultSetupSec:300, defaultCycleSec:60, sortOrder:10 },
-  { id:"op20", code:"OP-20", name:"Kaba Isleme", icon:"⚙️", color:"#0f6cbd", defaultSetupSec:240, defaultCycleSec:90, sortOrder:20 },
-  { id:"op30", code:"OP-30", name:"Finis Isleme", icon:"🔩", color:"#00a78f", defaultSetupSec:180, defaultCycleSec:80, sortOrder:30 },
-  { id:"op40", code:"OP-40", name:"Delik Delme ve Klavuz", icon:"🧵", color:"#b15e00", defaultSetupSec:120, defaultCycleSec:45, sortOrder:40 },
-  { id:"op50", code:"OP-50", name:"Olcum ve Kontrol", icon:"📏", color:"#8c6cff", defaultSetupSec:90, defaultCycleSec:30, sortOrder:50 },
+  { id:"op10", code:"OP-10", name:"Kesim ve Hazirlik", icon:"🧰", color:"#64c7e8", defaultSetupSec:300, defaultCycleSec:60, sortOrder:10 },
+  { id:"op20", code:"OP-20", name:"Kaba Isleme", icon:"⚙️", color:"#1ebbf0", defaultSetupSec:240, defaultCycleSec:90, sortOrder:20 },
+  { id:"op30", code:"OP-30", name:"Finis Isleme", icon:"🔩", color:"#39dfaa", defaultSetupSec:180, defaultCycleSec:80, sortOrder:30 },
+  { id:"op40", code:"OP-40", name:"Delik Delme ve Klavuz", icon:"🧵", color:"#f39c3d", defaultSetupSec:120, defaultCycleSec:45, sortOrder:40 },
+  { id:"op50", code:"OP-50", name:"Olcum ve Kontrol", icon:"📏", color:"#23aadd", defaultSetupSec:90, defaultCycleSec:30, sortOrder:50 },
 ];
 const OPERATION_ICON_OPTIONS = ["⚙️","🛠️","🔧","🪛","🔩","🧰","🪚","🧵","📏","🏭"];
 const LEGACY_OPERATION_ICON_MAP = {
   "✨":"🔩",
   "🧪":"📏",
 };
-function normalizeHexColor(value,fallback="#0f6cbd"){
+function normalizeHexColor(value,fallback="#1ebbf0"){
   const raw=String(value||"").trim();
   if(/^#?[0-9a-fA-F]{6}$/.test(raw)) return raw.startsWith("#")?raw:`#${raw}`;
   return fallback;
@@ -670,7 +684,7 @@ function normalizeRoutingOperationTypes(raw){
       code,
       name,
       icon:normalizeOperationIcon(row?.icon,fallback?.icon||"⚙️"),
-      color:normalizeHexColor(row?.color,fallback?.color||"#0f6cbd"),
+      color:normalizeHexColor(row?.color,fallback?.color||"#1ebbf0"),
       defaultSetupSec:Math.max(0,safeNum(row?.defaultSetupSec)),
       defaultCycleSec:Math.max(0,safeNum(row?.defaultCycleSec)),
       sortOrder:Math.max(1,safeNum(row?.sortOrder)||((idx+1)*10)),
@@ -698,7 +712,7 @@ function normalizeQuoteTemplate(raw){
     showLogo:Boolean(src.showLogo),
   };
 }
-function hexToRgb(hex,fallback={r:15,g:108,b:189}){
+function hexToRgb(hex,fallback={r:30,g:187,b:240}){
   const clean=String(hex||"").replace("#","").trim();
   if(!/^[0-9a-fA-F]{6}$/.test(clean)) return fallback;
   return {
@@ -1440,7 +1454,7 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
         {portal==="operator"?(
           <div style={{width:"100%",maxWidth:380,margin:"0 auto"}}>
             <div style={{textAlign:"center",marginBottom:28}}>
-              <div style={{width:60,height:60,borderRadius:18,background:`linear-gradient(135deg,${C.accent},#7b5cf0)`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 10px",overflow:"hidden"}}>
+              <div style={{width:60,height:60,borderRadius:18,background:`linear-gradient(135deg,${C.accent},${C.green})`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 10px",overflow:"hidden"}}>
                 {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:28}}>⚙️</span>}
               </div>
               <div style={{fontWeight:800,fontSize:22,color:C.text,letterSpacing:-.5}}>CNC Atölye</div>
@@ -1470,7 +1484,7 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16,alignItems:"stretch"}}>
             <div style={{background:`linear-gradient(155deg,${C.surface},${C.card})`,border:`1px solid ${C.border}`,borderRadius:16,padding:22}}>
               <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:18}}>
-                <div style={{width:42,height:42,borderRadius:12,background:`linear-gradient(135deg,${C.accent},#7b5cf0)`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
+                <div style={{width:42,height:42,borderRadius:12,background:`linear-gradient(135deg,${C.accent},${C.green})`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
                   {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:18}}>⚙️</span>}
                 </div>
                 <div>
@@ -1868,7 +1882,7 @@ function RoutingOperationTypeSettings({currentUser}) {
     code:"",
     name:"",
     icon:DEFAULT_ROUTING_OPERATION_TYPES[0]?.icon||"⚙️",
-    color:DEFAULT_ROUTING_OPERATION_TYPES[0]?.color||"#0f6cbd",
+    color:DEFAULT_ROUTING_OPERATION_TYPES[0]?.color||"#1ebbf0",
     defaultSetupSec:"0",
     defaultCycleSec:"0",
   });
@@ -1886,7 +1900,7 @@ function RoutingOperationTypeSettings({currentUser}) {
       code:"",
       name:"",
       icon:DEFAULT_ROUTING_OPERATION_TYPES[0]?.icon||"⚙️",
-      color:DEFAULT_ROUTING_OPERATION_TYPES[0]?.color||"#0f6cbd",
+      color:DEFAULT_ROUTING_OPERATION_TYPES[0]?.color||"#1ebbf0",
       defaultSetupSec:"0",
       defaultCycleSec:"0",
     });
@@ -1983,7 +1997,7 @@ function RoutingOperationTypeSettings({currentUser}) {
             <span style={labelSt}>Renk</span>
             <div style={{display:"flex",gap:6,alignItems:"center"}}>
               <input style={{...inputSt,padding:0,width:40,height:36,flex:"0 0 auto"}} type="color" value={normalizeHexColor(form.color)} onChange={e=>setForm(f=>({...f,color:e.target.value}))}/>
-              <input style={{...inputSt,padding:"9px 8px",fontSize:12}} value={form.color} onChange={e=>setForm(f=>({...f,color:e.target.value}))} placeholder="#0f6cbd"/>
+              <input style={{...inputSt,padding:"9px 8px",fontSize:12}} value={form.color} onChange={e=>setForm(f=>({...f,color:e.target.value}))} placeholder="#1ebbf0"/>
             </div>
           </div>
           <div><span style={labelSt}>Vars. Kurulum(sn)</span><input style={inputSt} type="number" min="0" value={form.defaultSetupSec} onChange={e=>setForm(f=>({...f,defaultSetupSec:e.target.value}))}/></div>
@@ -2113,7 +2127,7 @@ function SupplierGroupSettings({currentUser}) {
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
   const [newName,setNewName]=useState("");
-  const [newColor,setNewColor]=useState("#0f6cbd");
+  const [newColor,setNewColor]=useState("#1ebbf0");
 
   const load=useCallback(async()=>{
     const doc=await window.DB.getDoc("config","supplierGroups");
@@ -2159,7 +2173,7 @@ function SupplierGroupSettings({currentUser}) {
         id=`${base}_${seq}`;
         seq+=1;
       }
-      return [...prev,{id,name,color:normalizeHexColor(newColor,"#0f6cbd"),sortOrder:(prev.length+1)*10}];
+      return [...prev,{id,name,color:normalizeHexColor(newColor,"#1ebbf0"),sortOrder:(prev.length+1)*10}];
     });
     setNewName("");
   }
@@ -2167,7 +2181,7 @@ function SupplierGroupSettings({currentUser}) {
     const normalized=normalizeSupplierGroups({list:rows.map((row,idx)=>({
       ...row,
       name:String(row.name||"").trim()||`Grup ${idx+1}`,
-      color:normalizeHexColor(row.color,"#0f6cbd"),
+      color:normalizeHexColor(row.color,"#1ebbf0"),
       sortOrder:(idx+1)*10,
     }))});
     setSaving(true);
@@ -2189,7 +2203,7 @@ function SupplierGroupSettings({currentUser}) {
         <div style={{fontSize:12,color:C.muted2,marginBottom:10}}>Satin alma modulu icin grup tanimlari (ornek: malzeme, takim).</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 140px auto",gap:8,marginBottom:10}}>
           <input style={inputSt} value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Yeni grup adi"/>
-          <input style={{...inputSt,padding:0,height:38}} type="color" value={normalizeHexColor(newColor,"#0f6cbd")} onChange={e=>setNewColor(e.target.value)}/>
+          <input style={{...inputSt,padding:0,height:38}} type="color" value={normalizeHexColor(newColor,"#1ebbf0")} onChange={e=>setNewColor(e.target.value)}/>
           <button onClick={addRow} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>+ Ekle</button>
         </div>
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
@@ -2201,8 +2215,8 @@ function SupplierGroupSettings({currentUser}) {
             <div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 140px 180px",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
               <input style={{...inputSt,padding:"7px 8px",fontSize:12}} value={row.name||""} onChange={e=>updateRow(row.id,"name",e.target.value)} placeholder="Grup adi"/>
               <div style={{display:"grid",gridTemplateColumns:"40px 1fr",gap:6}}>
-                <input style={{...inputSt,padding:0,height:34}} type="color" value={normalizeHexColor(row.color,"#0f6cbd")} onChange={e=>updateRow(row.id,"color",e.target.value)}/>
-                <input style={{...inputSt,padding:"7px 8px",fontSize:12}} value={row.color||"#0f6cbd"} onChange={e=>updateRow(row.id,"color",e.target.value)} placeholder="#0f6cbd"/>
+                <input style={{...inputSt,padding:0,height:34}} type="color" value={normalizeHexColor(row.color,"#1ebbf0")} onChange={e=>updateRow(row.id,"color",e.target.value)}/>
+                <input style={{...inputSt,padding:"7px 8px",fontSize:12}} value={row.color||"#1ebbf0"} onChange={e=>updateRow(row.id,"color",e.target.value)} placeholder="#1ebbf0"/>
               </div>
               <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
                 <button onClick={()=>moveRow(row.id,-1)} style={{...btnSt("ghost"),padding:"4px 7px",fontSize:11}} disabled={saving||idx===0}>↑</button>
@@ -2476,7 +2490,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,menuCatalog=[
             <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:8}}>
                 <div><span style={labelSt}>Sirket Adi</span><input style={inputSt} value={quoteTemplate.companyName} onChange={e=>setTemplateField("companyName",e.target.value)} placeholder="Firma adi"/></div>
-                <div><span style={labelSt}>Renk</span><div style={{display:"flex",gap:8}}><input style={{...inputSt,padding:0,width:48,height:36}} type="color" value={normalizeQuoteTemplate(quoteTemplate).accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)}/><input style={{...inputSt,flex:1}} value={quoteTemplate.accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)} placeholder="#0f6cbd"/></div></div>
+                <div><span style={labelSt}>Renk</span><div style={{display:"flex",gap:8}}><input style={{...inputSt,padding:0,width:48,height:36}} type="color" value={normalizeQuoteTemplate(quoteTemplate).accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)}/><input style={{...inputSt,flex:1}} value={quoteTemplate.accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)} placeholder="#1ebbf0"/></div></div>
                 <div><span style={labelSt}>Adres</span><input style={inputSt} value={quoteTemplate.companyAddress} onChange={e=>setTemplateField("companyAddress",e.target.value)} placeholder="Adres"/></div>
                 <div><span style={labelSt}>Telefon</span><input style={inputSt} value={quoteTemplate.companyPhone} onChange={e=>setTemplateField("companyPhone",e.target.value)} placeholder="+90 ..."/></div>
                 <div><span style={labelSt}>E-Posta</span><input style={inputSt} value={quoteTemplate.companyEmail} onChange={e=>setTemplateField("companyEmail",e.target.value)} placeholder="mail@firma.com"/></div>
@@ -7352,12 +7366,12 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     time:`${normalizeHm(fallbackShiftRow.start,"00:00")}-${normalizeHm(fallbackShiftRow.end,normalizeHm(fallbackShiftRow.start,"00:00"))}`,
   };
   const statusMeta=(()=>{
-    if(machineStatus==="running") return {label:"ÇALIŞIYOR",color:"#27d67a",mode:"running"};
-    if(machineStatus==="setup") return {label:"AYARDA",color:"#ffb247",mode:"idle"};
-    if(machineStatus==="idle"||machineStatus==="waiting") return {label:"BEKLEMEDE",color:"#ffb247",mode:"idle"};
-    if(machineStatus==="stopped"||machineStatus==="down") return {label:"DURUYOR",color:"#ff6161",mode:"stopped"};
-    if(machineStatus==="alarm") return {label:"ALARM",color:"#ff6161",mode:"alarm"};
-    return {label:"ÇEVRİMDIŞI",color:"#ff6161",mode:"offline"};
+    if(machineStatus==="running") return {label:"ÇALIŞIYOR",color:C.green,mode:"running"};
+    if(machineStatus==="setup") return {label:"AYARDA",color:C.warn,mode:"idle"};
+    if(machineStatus==="idle"||machineStatus==="waiting") return {label:"BEKLEMEDE",color:C.warn,mode:"idle"};
+    if(machineStatus==="stopped"||machineStatus==="down") return {label:"DURUYOR",color:C.red,mode:"stopped"};
+    if(machineStatus==="alarm") return {label:"ALARM",color:C.red,mode:"alarm"};
+    return {label:"ÇEVRİMDIŞI",color:C.muted2,mode:"offline"};
   })();
   const topHeaderTheme=(()=>{
     if(statusMeta.mode==="running"){
@@ -8929,7 +8943,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
     wrongPct:(totalC+totalW)>0?(b.wrong/(totalC+totalW))*100:0,
   }));
   const dailyMaxPct=Math.max(5,Math.ceil((Math.max(0,...dailyBarsPct.map(b=>b.correctPct+b.wrongPct))+2)/5)*5);
-  const chartPalette=["#4f8ef7","#00c896","#ffb830","#9b7ff4","#ff4d6d","#2dd4bf","#f97316","#38bdf8"];
+  const chartPalette=[...CORPORATE_CHART_PALETTE];
   const dayKeys=(()=>{
     if(rangeEnabled){
       const start=parseYmdLocal(rangeStart);
@@ -10007,7 +10021,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     if(!firstOp) return null;
     const type=firstOp.operationTypeId?operationTypeById[firstOp.operationTypeId]:null;
     const icon=String(firstOp.operationIcon||type?.icon||"⚙️").trim()||"⚙️";
-    const color=normalizeHexColor(firstOp.operationColor||type?.color||"#0f6cbd");
+    const color=normalizeHexColor(firstOp.operationColor||type?.color||"#1ebbf0");
     const code=String(firstOp.operationCode||type?.code||"").trim();
     const name=String(firstOp.operationName||type?.name||firstOp.operation||"Operasyon").trim()||"Operasyon";
     return {icon,color,code,name,machine:firstOp.machine||""};
@@ -10038,7 +10052,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     });
     return {machine,byDate};
   });
-  const orderColorPalette=["#4f8ef7","#00c896","#ffb830","#9b7ff4","#ff4d6d","#2dd4bf","#f97316","#38bdf8","#22c55e","#ef4444","#eab308","#14b8a6"];
+  const orderColorPalette=[...CORPORATE_CHART_PALETTE];
   function colorFromOrder(orderId){
     const key=String(orderId||"");
     let h=0;
@@ -12080,12 +12094,12 @@ function CncMonitorWall({currentUser,machines=DEFAULT_MACHINES}){
     return "Raporlanmadi";
   }
   function statusMetaOf(key){
-    if(key==="running") return {label:"Calisiyor",chip:C.green,banner:"linear-gradient(145deg,#1fb45a 0%,#10803f 100%)"};
-    if(key==="idle") return {label:"Beklemede",chip:C.accent,banner:"linear-gradient(145deg,#4f93e5 0%,#2b68cf 100%)"};
-    if(key==="setup") return {label:"Ayar",chip:C.warn,banner:"linear-gradient(145deg,#f0af3f 0%,#c98216 100%)"};
-    if(key==="alarm") return {label:"Alarm",chip:C.red,banner:"linear-gradient(145deg,#e4576f 0%,#c83249 100%)"};
-    if(key==="stopped") return {label:"Durdu",chip:C.red,banner:"linear-gradient(145deg,#e4576f 0%,#c83249 100%)"};
-    return {label:"Bagli Degil",chip:C.muted2,banner:"linear-gradient(145deg,#8d95a3 0%,#6f7785 100%)"};
+    if(key==="running") return {label:"Calisiyor",chip:C.green,banner:`linear-gradient(145deg,${C.green} 0%,${C.accent} 100%)`};
+    if(key==="idle") return {label:"Beklemede",chip:C.accent,banner:`linear-gradient(145deg,${C.accent} 0%,${C.purple} 100%)`};
+    if(key==="setup") return {label:"Ayar",chip:C.warn,banner:`linear-gradient(145deg,${C.warn} 0%,${C.accent} 100%)`};
+    if(key==="alarm") return {label:"Alarm",chip:C.red,banner:`linear-gradient(145deg,${C.red} 0%,${C.warn} 100%)`};
+    if(key==="stopped") return {label:"Durdu",chip:C.red,banner:`linear-gradient(145deg,${C.red} 0%,${C.warn} 100%)`};
+    return {label:"Bagli Degil",chip:C.muted2,banner:`linear-gradient(145deg,${C.muted2} 0%,${C.border} 100%)`};
   }
   function toneForCard(card){
     if(!card.hasTelemetry||card.status==="offline"){
@@ -12564,7 +12578,7 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
       scrapCost:safeNum(row.scrapCost),
     })),
   }),[data]);
-  const widgetChartPalette=["#4f8ef7","#00c896","#ffb830","#9b7ff4","#ff4d6d","#2dd4bf","#f97316","#38bdf8"];
+  const widgetChartPalette=[...CORPORATE_CHART_PALETTE];
   function normalizeWidgetReportConfig(raw){
     const sourceRaw=String(raw?.source||"entries");
     const source=Object.prototype.hasOwnProperty.call(dashboardSourceRows,sourceRaw)?sourceRaw:"entries";
@@ -12802,11 +12816,11 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
   });
   const statusMeta=s=>{
     const key=String(s||"offline").toLowerCase();
-    if(["running","live"].includes(key)) return {key:"running",label:"Çalışıyor",color:"#13a14c",banner:"linear-gradient(145deg,#21b85b 0%,#109245 100%)"};
-    if(key==="setup") return {key:"setup",label:"Kurulum",color:"#c9860f",banner:"linear-gradient(145deg,#f0af3f 0%,#cf8a1a 100%)"};
-    if(["idle","simulation"].includes(key)) return {key:"idle",label:"Beklemede",color:"#2c7be5",banner:"linear-gradient(145deg,#5c96e6 0%,#2b68cf 100%)"};
-    if(key==="alarm") return {key:"alarm",label:"Alarm",color:"#cf2f49",banner:"linear-gradient(145deg,#eb5470 0%,#cd2f4a 100%)"};
-    return {key:"offline",label:"Bağlı Değil",color:"#6b7280",banner:"linear-gradient(145deg,#8b929d 0%,#6e7580 100%)"};
+    if(["running","live"].includes(key)) return {key:"running",label:"Çalışıyor",color:C.green,banner:`linear-gradient(145deg,${C.green} 0%,${C.accent} 100%)`};
+    if(key==="setup") return {key:"setup",label:"Kurulum",color:C.warn,banner:`linear-gradient(145deg,${C.warn} 0%,${C.accent} 100%)`};
+    if(["idle","simulation"].includes(key)) return {key:"idle",label:"Beklemede",color:C.accent,banner:`linear-gradient(145deg,${C.accent} 0%,${C.purple} 100%)`};
+    if(key==="alarm") return {key:"alarm",label:"Alarm",color:C.red,banner:`linear-gradient(145deg,${C.red} 0%,${C.warn} 100%)`};
+    return {key:"offline",label:"Bağlı Değil",color:C.muted2,banner:`linear-gradient(145deg,${C.muted2} 0%,${C.border} 100%)`};
   };
   function formatAge(sec){
     const v=Math.max(0,Math.floor(safeNum(sec)));
@@ -12816,13 +12830,13 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
   }
   function toneByRow(row){
     const meta=statusMeta(row.status);
-    if(meta.key==="alarm") return {ring:"#cf2f49",bg:"#fff6f8",border:"#f2bac4"};
-    if(meta.key==="offline") return {ring:"#6b7280",bg:"#f7f8fa",border:"#d8dde6"};
-    if(meta.key==="setup") return {ring:"#c9860f",bg:"#fff8ee",border:"#f3d4a4"};
-    if(meta.key==="idle") return {ring:"#2c7be5",bg:"#f3f7ff",border:"#bfd1f8"};
-    if((row.oee||0)>=85) return {ring:"#13a14c",bg:"#f0fff5",border:"#b7ebcb"};
-    if((row.oee||0)>=60) return {ring:"#c9860f",bg:"#fff9ee",border:"#f1d7aa"};
-    return {ring:"#cf2f49",bg:"#fff6f8",border:"#f2bac4"};
+    if(meta.key==="alarm") return {ring:C.red,bg:C.redDim,border:`${C.red}55`};
+    if(meta.key==="offline") return {ring:C.muted2,bg:C.surface2,border:C.border};
+    if(meta.key==="setup") return {ring:C.warn,bg:C.warnDim,border:`${C.warn}55`};
+    if(meta.key==="idle") return {ring:C.accent,bg:C.accentDim,border:`${C.accent}55`};
+    if((row.oee||0)>=85) return {ring:C.green,bg:C.greenDim,border:`${C.green}55`};
+    if((row.oee||0)>=60) return {ring:C.warn,bg:C.warnDim,border:`${C.warn}55`};
+    return {ring:C.red,bg:C.redDim,border:`${C.red}55`};
   }
   function fmtMinute(min){
     const v=Math.max(0,Math.round(safeNum(min)));
@@ -12858,7 +12872,7 @@ function MRPDashboard({currentUser,machines=DEFAULT_MACHINES}){
   const totalParts=machineRowsSorted.reduce((s,r)=>s+Math.max(safeNum(r.partCounter),safeNum(r.produced)),0);
   const runningPct=machineCount?Math.round((safeNum(statusCounts.running)/machineCount)*100):0;
   const kpiCards=[
-    {label:"Çalışan Tezgah",value:`${statusCounts.running}/${machineCount}`,sub:`%${runningPct} aktif`,tone:"#13a14c"},
+    {label:"Çalışan Tezgah",value:`${statusCounts.running}/${machineCount}`,sub:`%${runningPct} aktif`,tone:C.green},
     {label:"Ortalama OEE",value:`%${avgOee}`,sub:`A %${avgAvailability} · Q %${avgQuality}`,tone:avgOee>=75?C.green:(avgOee>=55?C.warn:C.red)},
     {label:"Toplam Üretim",value:String(totalParts),sub:"Bugün toplam parça",tone:C.accent},
     {label:"Alarmlı Tezgah",value:String(statusCounts.alarm),sub:statusCounts.alarm>0?"Anlık müdahale gerekli":"Alarm yok",tone:statusCounts.alarm>0?C.red:C.green},
@@ -15882,5 +15896,3 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
 </body>
 </html>
-
-
