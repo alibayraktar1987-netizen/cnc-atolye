@@ -9,7 +9,7 @@
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body,#root{min-height:100%;}
 body{
-  background:#f7f7f7;
+  background:#DEF2F1;
   font-family:"DM Sans","Segoe UI","Segoe UI Variable Text",Tahoma,Arial,sans-serif;
   -webkit-font-smoothing:antialiased;
   text-rendering:optimizeLegibility;
@@ -447,40 +447,40 @@ const ROLE_PERMISSION_DEFAULTS = {
 
 const THEME_PRESETS = {
   light:{
-    bg:"#f7f7f7", bgAlt:"#ffffff",
-    surface:"#ffffff", surface2:"#f3f6f8", card:"#ffffff", border:"#d8e2e8",
-    accent:"#1ebbf0", accentDim:"#e5f7fd", brandTint:"#eefbfd",
-    green:"#39dfaa", greenDim:"#e5fbf3",
-    red:"#c73a4d", redDim:"#fdecef",
-    warn:"#f39c3d", warnDim:"#fff4e5",
-    purple:"#23aadd",
-    text:"#191411", muted:"#4d4b49", muted2:"#7b858f",
+    bg:"#DEF2F1", bgAlt:"#FEFFFF",
+    surface:"#FEFFFF", surface2:"#DEF2F1", card:"#FEFFFF", border:"#B7D5D4",
+    accent:"#3AAFA9", accentDim:"#D5EFEE", brandTint:"#EAF8F7",
+    green:"#2B7A78", greenDim:"#D5ECEB",
+    red:"#17252A", redDim:"#DDE6E8",
+    warn:"#2B7A78", warnDim:"#D5ECEB",
+    purple:"#2B7A78",
+    text:"#17252A", muted:"#2B7A78", muted2:"#4A8E8B",
   },
   dark:{
-    bg:"#13181d", bgAlt:"#1a1f26",
-    surface:"#1d252d", surface2:"#161d24", card:"#1f2730", border:"#2e3945",
-    accent:"#39c8f4", accentDim:"#113140", brandTint:"#173142",
-    green:"#39dfaa", greenDim:"#17352c",
-    red:"#ff6f7c", redDim:"#4a2530",
-    warn:"#f2b463", warnDim:"#49361f",
-    purple:"#64c7e8",
-    text:"#edf4f8", muted:"#b7c5d0", muted2:"#8fa2b2",
+    bg:"#17252A", bgAlt:"#1D3238",
+    surface:"#1F373D", surface2:"#1A3035", card:"#223D43", border:"#2B7A78",
+    accent:"#3AAFA9", accentDim:"#173A3C", brandTint:"#1F4A4B",
+    green:"#3AAFA9", greenDim:"#1D4D4C",
+    red:"#DEF2F1", redDim:"#2B7A78",
+    warn:"#2B7A78", warnDim:"#244F4E",
+    purple:"#2B7A78",
+    text:"#FEFFFF", muted:"#DEF2F1", muted2:"#8EC5C3",
   },
 };
 const C = { ...THEME_PRESETS.light };
 const CORPORATE_CHART_PALETTE = [
-  "#1ebbf0",
-  "#39dfaa",
-  "#23aadd",
-  "#64c7e8",
-  "#f39c3d",
-  "#f2b463",
-  "#ff6f7c",
-  "#c73a4d",
-  "#8fa2b2",
-  "#7b858f",
-  "#173142",
-  "#113140",
+  "#3AAFA9",
+  "#2B7A78",
+  "#17252A",
+  "#4BC0BA",
+  "#2F8B89",
+  "#1F5F5D",
+  "#61CDC8",
+  "#7AD8D3",
+  "#3B6669",
+  "#5B9F9C",
+  "#98E1DD",
+  "#C2EBE8",
 ];
 function applyThemeMode(mode){
   const next=THEME_PRESETS[mode]||THEME_PRESETS.light;
@@ -567,7 +567,7 @@ const DEFAULT_QUOTE_TEMPLATE = {
   documentTitleQuote:"Proforma Teklif",
   documentTitleOrder:"Siparis Onay Formu",
   footerNote:"Bu teklif belirtilen sure boyunca gecerlidir.",
-  accentColor:"#1ebbf0",
+  accentColor:"#3AAFA9",
   showLogo:false,
 };
 const DEFAULT_SALES_CURRENCIES = {
@@ -601,8 +601,8 @@ function normalizeSalesCurrencies(raw){
 }
 const DEFAULT_SUPPLIER_GROUPS = {
   list:[
-    {id:"malzeme",name:"Malzeme Satanlar",color:"#1ebbf0",sortOrder:10},
-    {id:"takim",name:"Takim Satanlar",color:"#39dfaa",sortOrder:20},
+    {id:"malzeme",name:"Malzeme Satanlar",color:"#3AAFA9",sortOrder:10},
+    {id:"takim",name:"Takim Satanlar",color:"#2B7A78",sortOrder:20},
   ],
 };
 function normalizeSupplierGroups(raw){
@@ -624,7 +624,7 @@ function normalizeSupplierGroups(raw){
     return {
       id,
       name,
-      color:normalizeHexColor(row?.color,fallback?.color||"#1ebbf0"),
+      color:normalizeHexColor(row?.color,fallback?.color||"#3AAFA9"),
       sortOrder:Math.max(1,safeNum(row?.sortOrder)||((idx+1)*10)),
     };
   }).sort((a,b)=>{
@@ -649,18 +649,18 @@ function normalizeMenuVisibilityConfig(raw){
   return {hiddenTabs};
 }
 const DEFAULT_ROUTING_OPERATION_TYPES = [
-  { id:"op10", code:"OP-10", name:"Kesim ve Hazirlik", icon:"🧰", color:"#64c7e8", defaultSetupSec:300, defaultCycleSec:60, sortOrder:10 },
-  { id:"op20", code:"OP-20", name:"Kaba Isleme", icon:"⚙️", color:"#1ebbf0", defaultSetupSec:240, defaultCycleSec:90, sortOrder:20 },
-  { id:"op30", code:"OP-30", name:"Finis Isleme", icon:"🔩", color:"#39dfaa", defaultSetupSec:180, defaultCycleSec:80, sortOrder:30 },
-  { id:"op40", code:"OP-40", name:"Delik Delme ve Klavuz", icon:"🧵", color:"#f39c3d", defaultSetupSec:120, defaultCycleSec:45, sortOrder:40 },
-  { id:"op50", code:"OP-50", name:"Olcum ve Kontrol", icon:"📏", color:"#23aadd", defaultSetupSec:90, defaultCycleSec:30, sortOrder:50 },
+  { id:"op10", code:"OP-10", name:"Kesim ve Hazirlik", icon:"🧰", color:"#3AAFA9", defaultSetupSec:300, defaultCycleSec:60, sortOrder:10 },
+  { id:"op20", code:"OP-20", name:"Kaba Isleme", icon:"⚙️", color:"#2B7A78", defaultSetupSec:240, defaultCycleSec:90, sortOrder:20 },
+  { id:"op30", code:"OP-30", name:"Finis Isleme", icon:"🔩", color:"#17252A", defaultSetupSec:180, defaultCycleSec:80, sortOrder:30 },
+  { id:"op40", code:"OP-40", name:"Delik Delme ve Klavuz", icon:"🧵", color:"#4BC0BA", defaultSetupSec:120, defaultCycleSec:45, sortOrder:40 },
+  { id:"op50", code:"OP-50", name:"Olcum ve Kontrol", icon:"📏", color:"#5ECCC7", defaultSetupSec:90, defaultCycleSec:30, sortOrder:50 },
 ];
 const OPERATION_ICON_OPTIONS = ["⚙️","🛠️","🔧","🪛","🔩","🧰","🪚","🧵","📏","🏭"];
 const LEGACY_OPERATION_ICON_MAP = {
   "✨":"🔩",
   "🧪":"📏",
 };
-function normalizeHexColor(value,fallback="#1ebbf0"){
+function normalizeHexColor(value,fallback="#3AAFA9"){
   const raw=String(value||"").trim();
   if(/^#?[0-9a-fA-F]{6}$/.test(raw)) return raw.startsWith("#")?raw:`#${raw}`;
   return fallback;
@@ -684,7 +684,7 @@ function normalizeRoutingOperationTypes(raw){
       code,
       name,
       icon:normalizeOperationIcon(row?.icon,fallback?.icon||"⚙️"),
-      color:normalizeHexColor(row?.color,fallback?.color||"#1ebbf0"),
+      color:normalizeHexColor(row?.color,fallback?.color||"#3AAFA9"),
       defaultSetupSec:Math.max(0,safeNum(row?.defaultSetupSec)),
       defaultCycleSec:Math.max(0,safeNum(row?.defaultCycleSec)),
       sortOrder:Math.max(1,safeNum(row?.sortOrder)||((idx+1)*10)),
@@ -712,7 +712,7 @@ function normalizeQuoteTemplate(raw){
     showLogo:Boolean(src.showLogo),
   };
 }
-function hexToRgb(hex,fallback={r:30,g:187,b:240}){
+function hexToRgb(hex,fallback={r:58,g:175,b:169}){
   const clean=String(hex||"").replace("#","").trim();
   if(!/^[0-9a-fA-F]{6}$/.test(clean)) return fallback;
   return {
@@ -1882,7 +1882,7 @@ function RoutingOperationTypeSettings({currentUser}) {
     code:"",
     name:"",
     icon:DEFAULT_ROUTING_OPERATION_TYPES[0]?.icon||"⚙️",
-    color:DEFAULT_ROUTING_OPERATION_TYPES[0]?.color||"#1ebbf0",
+    color:DEFAULT_ROUTING_OPERATION_TYPES[0]?.color||"#3AAFA9",
     defaultSetupSec:"0",
     defaultCycleSec:"0",
   });
@@ -1900,7 +1900,7 @@ function RoutingOperationTypeSettings({currentUser}) {
       code:"",
       name:"",
       icon:DEFAULT_ROUTING_OPERATION_TYPES[0]?.icon||"⚙️",
-      color:DEFAULT_ROUTING_OPERATION_TYPES[0]?.color||"#1ebbf0",
+      color:DEFAULT_ROUTING_OPERATION_TYPES[0]?.color||"#3AAFA9",
       defaultSetupSec:"0",
       defaultCycleSec:"0",
     });
@@ -1997,7 +1997,7 @@ function RoutingOperationTypeSettings({currentUser}) {
             <span style={labelSt}>Renk</span>
             <div style={{display:"flex",gap:6,alignItems:"center"}}>
               <input style={{...inputSt,padding:0,width:40,height:36,flex:"0 0 auto"}} type="color" value={normalizeHexColor(form.color)} onChange={e=>setForm(f=>({...f,color:e.target.value}))}/>
-              <input style={{...inputSt,padding:"9px 8px",fontSize:12}} value={form.color} onChange={e=>setForm(f=>({...f,color:e.target.value}))} placeholder="#1ebbf0"/>
+              <input style={{...inputSt,padding:"9px 8px",fontSize:12}} value={form.color} onChange={e=>setForm(f=>({...f,color:e.target.value}))} placeholder="#3AAFA9"/>
             </div>
           </div>
           <div><span style={labelSt}>Vars. Kurulum(sn)</span><input style={inputSt} type="number" min="0" value={form.defaultSetupSec} onChange={e=>setForm(f=>({...f,defaultSetupSec:e.target.value}))}/></div>
@@ -2127,7 +2127,7 @@ function SupplierGroupSettings({currentUser}) {
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
   const [newName,setNewName]=useState("");
-  const [newColor,setNewColor]=useState("#1ebbf0");
+  const [newColor,setNewColor]=useState("#3AAFA9");
 
   const load=useCallback(async()=>{
     const doc=await window.DB.getDoc("config","supplierGroups");
@@ -2173,7 +2173,7 @@ function SupplierGroupSettings({currentUser}) {
         id=`${base}_${seq}`;
         seq+=1;
       }
-      return [...prev,{id,name,color:normalizeHexColor(newColor,"#1ebbf0"),sortOrder:(prev.length+1)*10}];
+      return [...prev,{id,name,color:normalizeHexColor(newColor,"#3AAFA9"),sortOrder:(prev.length+1)*10}];
     });
     setNewName("");
   }
@@ -2181,7 +2181,7 @@ function SupplierGroupSettings({currentUser}) {
     const normalized=normalizeSupplierGroups({list:rows.map((row,idx)=>({
       ...row,
       name:String(row.name||"").trim()||`Grup ${idx+1}`,
-      color:normalizeHexColor(row.color,"#1ebbf0"),
+      color:normalizeHexColor(row.color,"#3AAFA9"),
       sortOrder:(idx+1)*10,
     }))});
     setSaving(true);
@@ -2203,7 +2203,7 @@ function SupplierGroupSettings({currentUser}) {
         <div style={{fontSize:12,color:C.muted2,marginBottom:10}}>Satin alma modulu icin grup tanimlari (ornek: malzeme, takim).</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 140px auto",gap:8,marginBottom:10}}>
           <input style={inputSt} value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Yeni grup adi"/>
-          <input style={{...inputSt,padding:0,height:38}} type="color" value={normalizeHexColor(newColor,"#1ebbf0")} onChange={e=>setNewColor(e.target.value)}/>
+          <input style={{...inputSt,padding:0,height:38}} type="color" value={normalizeHexColor(newColor,"#3AAFA9")} onChange={e=>setNewColor(e.target.value)}/>
           <button onClick={addRow} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>+ Ekle</button>
         </div>
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
@@ -2215,8 +2215,8 @@ function SupplierGroupSettings({currentUser}) {
             <div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 140px 180px",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
               <input style={{...inputSt,padding:"7px 8px",fontSize:12}} value={row.name||""} onChange={e=>updateRow(row.id,"name",e.target.value)} placeholder="Grup adi"/>
               <div style={{display:"grid",gridTemplateColumns:"40px 1fr",gap:6}}>
-                <input style={{...inputSt,padding:0,height:34}} type="color" value={normalizeHexColor(row.color,"#1ebbf0")} onChange={e=>updateRow(row.id,"color",e.target.value)}/>
-                <input style={{...inputSt,padding:"7px 8px",fontSize:12}} value={row.color||"#1ebbf0"} onChange={e=>updateRow(row.id,"color",e.target.value)} placeholder="#1ebbf0"/>
+                <input style={{...inputSt,padding:0,height:34}} type="color" value={normalizeHexColor(row.color,"#3AAFA9")} onChange={e=>updateRow(row.id,"color",e.target.value)}/>
+                <input style={{...inputSt,padding:"7px 8px",fontSize:12}} value={row.color||"#3AAFA9"} onChange={e=>updateRow(row.id,"color",e.target.value)} placeholder="#3AAFA9"/>
               </div>
               <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
                 <button onClick={()=>moveRow(row.id,-1)} style={{...btnSt("ghost"),padding:"4px 7px",fontSize:11}} disabled={saving||idx===0}>↑</button>
@@ -2490,7 +2490,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,menuCatalog=[
             <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:8}}>
                 <div><span style={labelSt}>Sirket Adi</span><input style={inputSt} value={quoteTemplate.companyName} onChange={e=>setTemplateField("companyName",e.target.value)} placeholder="Firma adi"/></div>
-                <div><span style={labelSt}>Renk</span><div style={{display:"flex",gap:8}}><input style={{...inputSt,padding:0,width:48,height:36}} type="color" value={normalizeQuoteTemplate(quoteTemplate).accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)}/><input style={{...inputSt,flex:1}} value={quoteTemplate.accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)} placeholder="#1ebbf0"/></div></div>
+                <div><span style={labelSt}>Renk</span><div style={{display:"flex",gap:8}}><input style={{...inputSt,padding:0,width:48,height:36}} type="color" value={normalizeQuoteTemplate(quoteTemplate).accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)}/><input style={{...inputSt,flex:1}} value={quoteTemplate.accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)} placeholder="#3AAFA9"/></div></div>
                 <div><span style={labelSt}>Adres</span><input style={inputSt} value={quoteTemplate.companyAddress} onChange={e=>setTemplateField("companyAddress",e.target.value)} placeholder="Adres"/></div>
                 <div><span style={labelSt}>Telefon</span><input style={inputSt} value={quoteTemplate.companyPhone} onChange={e=>setTemplateField("companyPhone",e.target.value)} placeholder="+90 ..."/></div>
                 <div><span style={labelSt}>E-Posta</span><input style={inputSt} value={quoteTemplate.companyEmail} onChange={e=>setTemplateField("companyEmail",e.target.value)} placeholder="mail@firma.com"/></div>
@@ -10021,7 +10021,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     if(!firstOp) return null;
     const type=firstOp.operationTypeId?operationTypeById[firstOp.operationTypeId]:null;
     const icon=String(firstOp.operationIcon||type?.icon||"⚙️").trim()||"⚙️";
-    const color=normalizeHexColor(firstOp.operationColor||type?.color||"#1ebbf0");
+    const color=normalizeHexColor(firstOp.operationColor||type?.color||"#3AAFA9");
     const code=String(firstOp.operationCode||type?.code||"").trim();
     const name=String(firstOp.operationName||type?.name||firstOp.operation||"Operasyon").trim()||"Operasyon";
     return {icon,color,code,name,machine:firstOp.machine||""};
