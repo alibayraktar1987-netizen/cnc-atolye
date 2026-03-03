@@ -17,6 +17,7 @@ body{
   font-family:"DM Sans","Segoe UI","Segoe UI Variable Text",Tahoma,Arial,sans-serif;
   -webkit-font-smoothing:antialiased;
   text-rendering:optimizeLegibility;
+  overflow:hidden;
   overflow-x:hidden;
 }
 .mrp-shell{width:100%;margin:0 auto;}
@@ -1267,33 +1268,81 @@ function useTableColumnLayout(scope,defs){
   },[visibleColumns]);
   return {columns,visibleColumns,tableMinWidth,moveColumn,toggleColumn,resetColumns};
 }
+function findScrollParent(node){
+  if(!node||typeof window==="undefined") return null;
+  let cur=node.parentElement;
+  while(cur&&cur!==document.body){
+    const style=window.getComputedStyle(cur);
+    const oy=String(style.overflowY||"").toLowerCase();
+    if(oy==="auto"||oy==="scroll") return cur;
+    cur=cur.parentElement;
+  }
+  return null;
+}
 function useViewportPanelMetrics(ref,{minHeight=320,bottomGap=14,narrowWidth=1180}={}){
   const [state,setState]=useState({height:560,isNarrow:false});
   useEffect(()=>{
     let raf=0;
-    const update=()=>{
+    let scrollParent=null;
+    let resizeObserver=null;
+    let observedParent=null;
+    function schedule(){
+      if(raf) cancelAnimationFrame(raf);
+      raf=requestAnimationFrame(update);
+    }
+    function syncObservedParent(next){
+      if(!resizeObserver) return;
+      if(observedParent&&observedParent!==next){
+        try{resizeObserver.unobserve(observedParent);}catch{}
+        observedParent=null;
+      }
+      if(next&&observedParent!==next){
+        resizeObserver.observe(next);
+        observedParent=next;
+      }
+    }
+    function bindScrollParent(next){
+      if(scrollParent===next) return;
+      if(scrollParent) scrollParent.removeEventListener("scroll",schedule);
+      scrollParent=next;
+      if(scrollParent) scrollParent.addEventListener("scroll",schedule,{passive:true});
+      syncObservedParent(scrollParent);
+    }
+    function update(){
       const node=ref&&ref.current?ref.current:null;
-      const top=node&&typeof node.getBoundingClientRect==="function"
-        ? Math.max(0,safeNum(node.getBoundingClientRect().top))
-        : 0;
-      const height=Math.max(minHeight,Math.floor(window.innerHeight-top-bottomGap));
+      if(!node) return;
+      bindScrollParent(findScrollParent(node));
+      let height=minHeight;
+      if(scrollParent&&typeof scrollParent.getBoundingClientRect==="function"){
+        const nodeRect=node.getBoundingClientRect();
+        const parentRect=scrollParent.getBoundingClientRect();
+        const parentStyle=window.getComputedStyle(scrollParent);
+        const parentPadBottom=Math.max(0,safeNum(parseFloat(parentStyle.paddingBottom)));
+        const logicalTop=safeNum(nodeRect.top-parentRect.top)+safeNum(scrollParent.scrollTop);
+        const available=scrollParent.clientHeight-logicalTop-bottomGap-parentPadBottom;
+        height=Math.max(minHeight,Math.floor(Math.max(0,available)));
+      }else{
+        const top=Math.max(0,safeNum(node.getBoundingClientRect().top));
+        height=Math.max(minHeight,Math.floor(window.innerHeight-top-bottomGap));
+      }
       const isNarrow=window.innerWidth<narrowWidth;
       setState(prev=>{
         if(prev.height===height&&prev.isNarrow===isNarrow) return prev;
         return {height,isNarrow};
       });
-    };
-    const schedule=()=>{
-      if(raf) cancelAnimationFrame(raf);
-      raf=requestAnimationFrame(update);
-    };
+    }
+    if(typeof ResizeObserver!=="undefined"){
+      resizeObserver=new ResizeObserver(()=>schedule());
+      if(ref&&ref.current) resizeObserver.observe(ref.current);
+    }
+    bindScrollParent(findScrollParent(ref&&ref.current?ref.current:null));
     schedule();
     window.addEventListener("resize",schedule);
-    window.addEventListener("scroll",schedule,{passive:true});
     return ()=>{
       if(raf) cancelAnimationFrame(raf);
       window.removeEventListener("resize",schedule);
-      window.removeEventListener("scroll",schedule);
+      if(scrollParent) scrollParent.removeEventListener("scroll",schedule);
+      if(resizeObserver) resizeObserver.disconnect();
     };
   },[ref,minHeight,bottomGap,narrowWidth]);
   return state;
@@ -16278,8 +16327,10 @@ function App() {
                 {topBar}
               </div>
             )}
-            <div style={{padding:shellPadding,flex:1,minWidth:0,minHeight:0,overflowY:"auto",overscrollBehavior:"contain"}}>
-              {activeView}
+            <div style={{padding:shellPadding,flex:1,minWidth:0,minHeight:0,overflowY:"auto",overscrollBehavior:"none"}}>
+              <div style={{minHeight:"100%",display:"flex",flexDirection:"column"}}>
+                {activeView}
+              </div>
             </div>
           </div>
         </div>
@@ -16292,8 +16343,10 @@ function App() {
               {topBar}
             </div>
           )}
-          <div style={{flex:1,minHeight:0,overflowY:"auto",overscrollBehavior:"contain",paddingBottom:76}}>
-            {activeView}
+          <div style={{flex:1,minHeight:0,overflowY:"auto",overscrollBehavior:"none",paddingBottom:76}}>
+            <div style={{minHeight:"100%",display:"flex",flexDirection:"column"}}>
+              {activeView}
+            </div>
           </div>
           <div className="mrp-bottom-nav" style={{position:"fixed",left:0,right:0,bottom:0,background:`${C.surface}f0`,borderTop:`1px solid ${C.border}`,zIndex:24}}>
             <div style={{width:"100%",maxWidth:contentMaxWidth,margin:"0 auto",display:"grid",gridTemplateColumns:`repeat(${mobilePrimary.length+1},minmax(0,1fr))`,alignItems:"stretch"}}>
