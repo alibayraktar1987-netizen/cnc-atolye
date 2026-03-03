@@ -12926,7 +12926,7 @@ function MRPDashboard({
   ];
   const commandBarTone=themeMode==="dark"
     ? {
-      heroBg:"linear-gradient(112deg,#17252A 0%, #1E4F55 48%, #2B7A78 100%)",
+      heroBg:"#1E4F55",
       heroText:"#DEF2F1",
       heroMuted:"rgba(222,242,241,.84)",
       heroFieldBg:"rgba(222,242,241,.10)",
@@ -12934,11 +12934,11 @@ function MRPDashboard({
       heroChipBg:"rgba(222,242,241,.08)",
       heroChipBorder:"rgba(222,242,241,.26)",
       heroShadow:"0 16px 34px rgba(6,19,23,.42)",
-      subBg:"linear-gradient(180deg,#0F2F34 0%, #14383C 100%)",
+      subBg:"#14383C",
       subBorder:"rgba(222,242,241,.16)",
     }
     : {
-      heroBg:"linear-gradient(112deg,#2B7A78 0%, #3AAFA9 52%, #57BE90 100%)",
+      heroBg:"#2B7A78",
       heroText:"#FEFFFF",
       heroMuted:"rgba(254,255,255,.90)",
       heroFieldBg:"rgba(255,255,255,.22)",
@@ -12946,7 +12946,7 @@ function MRPDashboard({
       heroChipBg:"rgba(255,255,255,.16)",
       heroChipBorder:"rgba(255,255,255,.38)",
       heroShadow:"0 14px 30px rgba(23,82,73,.20)",
-      subBg:"linear-gradient(180deg,#ECF7F6 0%, #DEF2F1 100%)",
+      subBg:"#DEF2F1",
       subBorder:"#CBE3E1",
     };
   const lastLoadText=lastLoadedAt?new Intl.DateTimeFormat("tr-TR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(new Date(lastLoadedAt)):"-";
@@ -15861,14 +15861,13 @@ function App() {
   const leftNavColors=themeMode==="dark"
     ? {
       bg:"#0F1D20",
-      bgGradient:"linear-gradient(180deg,#0F1D20 0%, #17363C 46%, #1F5C5A 100%)",
       bgSoft:"rgba(222,242,241,.06)",
       panelBg:"rgba(12,22,25,.34)",
       border:"rgba(222,242,241,.17)",
       text:"#DEF2F1",
       muted:"rgba(222,242,241,.72)",
       icon:"rgba(222,242,241,.76)",
-      activeBg:"linear-gradient(120deg,#2B7A78 0%, #3AAFA9 100%)",
+      activeBg:"#2B7A78",
       activeBorder:"rgba(222,242,241,.42)",
       activeText:"#FEFFFF",
       toggleBg:"rgba(222,242,241,.08)",
@@ -15876,14 +15875,13 @@ function App() {
     }
     : {
       bg:"#17252A",
-      bgGradient:"linear-gradient(180deg,#17252A 0%, #1E4E54 40%, #2B7A78 100%)",
       bgSoft:"rgba(222,242,241,.07)",
       panelBg:"rgba(23,37,42,.30)",
       border:"rgba(222,242,241,.20)",
       text:"#DEF2F1",
       muted:"rgba(222,242,241,.74)",
       icon:"rgba(222,242,241,.78)",
-      activeBg:"linear-gradient(120deg,#3AAFA9 0%, #2B7A78 100%)",
+      activeBg:"#3AAFA9",
       activeBorder:"rgba(222,242,241,.45)",
       activeText:"#FEFFFF",
       toggleBg:"rgba(222,242,241,.10)",
@@ -15976,7 +15974,7 @@ function App() {
     );
   };
   const topBar=(
-    <div className="mrp-topbar" style={{background:`linear-gradient(180deg, ${C.surface} 0%, ${C.surface2} 100%)`,border:`1px solid ${C.border}`}}>
+    <div className="mrp-topbar" style={{background:C.surface,border:`1px solid ${C.border}`}}>
       <div style={{padding:isMobile?"12px 12px 10px":"14px 16px 12px"}}>
         <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:10}}>
           <div style={{width:40,height:40,borderRadius:10,background:C.surface2,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",border:`1px solid ${C.border}`}}>
@@ -16011,7 +16009,7 @@ function App() {
     <div style={{background:C.bg,minHeight:"100vh",color:C.text}}>
       {!isMobile&&(
         <div style={{display:"grid",gridTemplateColumns:`${sidebarWidth}px minmax(0,1fr)`,minHeight:"100vh",transition:"grid-template-columns .18s ease"}}>
-          <aside style={{position:"sticky",top:0,height:"100vh",backgroundColor:leftNavColors.bg,backgroundImage:leftNavColors.bgGradient,color:leftNavColors.text,borderRight:`1px solid ${leftNavColors.border}`,boxShadow:leftNavColors.shellShadow,display:"flex",flexDirection:"column"}}>
+          <aside style={{position:"sticky",top:0,height:"100vh",backgroundColor:leftNavColors.bg,color:leftNavColors.text,borderRight:`1px solid ${leftNavColors.border}`,boxShadow:leftNavColors.shellShadow,display:"flex",flexDirection:"column"}}>
             <div style={{padding:desktopMenuIconOnly?"12px 8px":"12px 10px",borderBottom:`1px solid ${leftNavColors.border}`}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:desktopMenuIconOnly?"center":"space-between",gap:8}}>
                 <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
