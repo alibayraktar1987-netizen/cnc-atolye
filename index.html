@@ -4280,7 +4280,6 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   }=useTableColumnLayout("sales_management_orders",SALES_ORDER_LIST_COLUMNS);
   const salesListPanelRef=useRef(null);
   const {
-    height:salesListPanelHeight,
     isNarrow:salesListPanelsStacked,
   }=useViewportPanelMetrics(salesListPanelRef,{minHeight:340,bottomGap:14,narrowWidth:1180});
   const [customerEditId,setCustomerEditId]=useState("");
@@ -5495,17 +5494,16 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   ];
   const statusLabel=s=>getSalesStatusMeta(s).label;
   const statusColor=s=>getSalesStatusMeta(s).color;
-  const salesListPanelHeightPx=`${salesListPanelHeight}px`;
   const salesSplitWrapStyle={
     display:"flex",
     gap:10,
-    alignItems:"flex-start",
+    alignItems:salesListPanelsStacked?"flex-start":"stretch",
     flexWrap:"wrap",
     ...(salesListPanelsStacked
       ? {}
       : {
-        minHeight:salesListPanelHeightPx,
-        maxHeight:salesListPanelHeightPx,
+        flex:1,
+        minHeight:0,
         overflow:"hidden",
       }),
   };
@@ -5616,8 +5614,8 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     ...(salesListPanelsStacked
       ? {}
       : {
-        minHeight:salesListPanelHeightPx,
-        maxHeight:salesListPanelHeightPx,
+        minHeight:0,
+        height:"100%",
         overflowY:"auto",
         overscrollBehavior:"contain",
         scrollbarGutter:"stable",
@@ -5632,8 +5630,8 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     ...(salesListPanelsStacked
       ? {}
       : {
-        minHeight:salesListPanelHeightPx,
-        maxHeight:salesListPanelHeightPx,
+        minHeight:0,
+        height:"100%",
       }),
   };
   const salesListTableCardStyle={
@@ -5652,7 +5650,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
 
   return (
-    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
       {view==="pricing"&&(
         <>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
@@ -6306,7 +6304,6 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   }=useTableColumnLayout("work_orders_list",WORK_ORDER_LIST_COLUMNS);
   const workListPanelRef=useRef(null);
   const {
-    height:workListPanelHeight,
     isNarrow:workListPanelsStacked,
   }=useViewportPanelMetrics(workListPanelRef,{minHeight:340,bottomGap:14,narrowWidth:1180});
   const fileRef=useRef();
@@ -6577,17 +6574,16 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
     }
     return null;
   };
-  const workListPanelHeightPx=`${workListPanelHeight}px`;
   const workSplitWrapStyle={
     display:"flex",
     gap:10,
-    alignItems:"flex-start",
+    alignItems:workListPanelsStacked?"flex-start":"stretch",
     flexWrap:"wrap",
     ...(workListPanelsStacked
       ? {}
       : {
-        minHeight:workListPanelHeightPx,
-        maxHeight:workListPanelHeightPx,
+        flex:1,
+        minHeight:0,
         overflow:"hidden",
       }),
   };
@@ -6605,8 +6601,8 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
     ...(workListPanelsStacked
       ? {}
       : {
-        minHeight:workListPanelHeightPx,
-        maxHeight:workListPanelHeightPx,
+        minHeight:0,
+        height:"100%",
         overflowY:"auto",
         overscrollBehavior:"contain",
         scrollbarGutter:"stable",
@@ -6621,8 +6617,8 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
     ...(workListPanelsStacked
       ? {}
       : {
-        minHeight:workListPanelHeightPx,
-        maxHeight:workListPanelHeightPx,
+        minHeight:0,
+        height:"100%",
       }),
   };
   const workListTableCardStyle={
@@ -6796,7 +6792,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES}) {
   );
 
   return (
-    <div style={{padding:0,display:"flex",flexDirection:"column",gap:10}}>
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:10,minHeight:"100%"}}>
       <div ref={workListPanelRef} style={workSplitWrapStyle}>
         <div style={workFilterPanelStyle}>
           <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Is Emirleri</div>
@@ -16328,9 +16324,7 @@ function App() {
               </div>
             )}
             <div style={{padding:shellPadding,flex:1,minWidth:0,minHeight:0,overflowY:"auto",overscrollBehavior:"none"}}>
-              <div style={{minHeight:"100%",display:"flex",flexDirection:"column"}}>
-                {activeView}
-              </div>
+              {activeView}
             </div>
           </div>
         </div>
@@ -16344,9 +16338,7 @@ function App() {
             </div>
           )}
           <div style={{flex:1,minHeight:0,overflowY:"auto",overscrollBehavior:"none",paddingBottom:76}}>
-            <div style={{minHeight:"100%",display:"flex",flexDirection:"column"}}>
-              {activeView}
-            </div>
+            {activeView}
           </div>
           <div className="mrp-bottom-nav" style={{position:"fixed",left:0,right:0,bottom:0,background:`${C.surface}f0`,borderTop:`1px solid ${C.border}`,zIndex:24}}>
             <div style={{width:"100%",maxWidth:contentMaxWidth,margin:"0 auto",display:"grid",gridTemplateColumns:`repeat(${mobilePrimary.length+1},minmax(0,1fr))`,alignItems:"stretch"}}>
