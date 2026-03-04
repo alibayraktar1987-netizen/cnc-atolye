@@ -3710,6 +3710,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
   const [loading,setLoading]=useState(true);
   const [search,setSearch]=useState("");
   const [sortMode,setSortMode]=useState("partno_asc");
+  const [partPage,setPartPage]=useState("list");
   const [selectedPartId,setSelectedPartId]=useState("");
   const [uploading,setUploading]=useState(false);
   const [showPartModal,setShowPartModal]=useState(false);
@@ -3756,6 +3757,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
         return;
       }
       if(d.type==="new"){
+        setPartPage("list");
         setSelectedPartId("");
         setPartForm({...emptyPartForm,partNo:nextPartNo()});
         setShowPartModal(true);
@@ -3765,6 +3767,15 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     window.addEventListener("mrp:tab-action",onTabAction);
     return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
   },[load,nextPartNo]);
+  useEffect(()=>{
+    if(partPage==="detail"&&!selectedPartId) setPartPage("list");
+  },[partPage,selectedPartId]);
+  useEffect(()=>{
+    if(selectedPartId&&!parts.some(p=>p.id===selectedPartId)){
+      setSelectedPartId("");
+      setPartPage("list");
+    }
+  },[parts,selectedPartId]);
 
   const selectedPart=parts.find(p=>p.id===selectedPartId)||null;
   const selectedPartPriceHistory=selectedPart
@@ -3861,7 +3872,16 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
   }
 
   const fv=(k,v)=>setPartForm(f=>({...f,[k]:v}));
+  const openPartListPage=()=>setPartPage("list");
+  const openPartDetailPage=(part)=>{
+    if(!part||!part.id) return;
+    setSelectedPartId(part.id);
+    loadPartToForm(part);
+    setPartPage("detail");
+    window.scrollTo({top:0,behavior:"smooth"});
+  };
   const openCreatePartModal=()=>{
+    setPartPage("list");
     setSelectedPartId("");
     setPartForm({...emptyPartForm,partNo:nextPartNo()});
     setShowPartModal(true);
@@ -3938,6 +3958,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
       await addAuditLog(currentUser.id,"part",existing.id,"update",existing,payload,{module:"parts"});
       setParts(prev=>prev.map(x=>x.id===existing.id?{...x,...payload}:x));
       setSelectedPartId(existing.id);
+      setPartPage("detail");
       setShowPartModal(false);
       return;
     }
@@ -3951,6 +3972,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     const next=[{id,...payload,createdAt:new Date().toISOString()},...parts].sort((a,b)=>(a.partNo||"").localeCompare(b.partNo||"","tr"));
     setParts(next);
     setSelectedPartId(id);
+    setPartPage("detail");
     setShowPartModal(false);
   }
 
@@ -4084,6 +4106,8 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
             <button onClick={openCreatePartModal} style={{...btnSt("primary"),padding:"6px 10px",fontSize:11}}>+ Parca Ekle</button>
           </div>
         </div>
+        {partPage==="list"&&(
+          <>
         {filtersVisible&&<input style={{...inputSt,padding:"8px 10px",fontSize:12,marginBottom:8}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Parca no / musteri kodu / firma / ad / malzeme ara..."/>}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
           <div style={{fontSize:11,color:C.muted2,letterSpacing:.5,textTransform:"uppercase"}}>
@@ -4115,7 +4139,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
                 return (
                   <button
                     key={p.id}
-                    onClick={()=>{setSelectedPartId(p.id);loadPartToForm(p);}}
+                    onClick={()=>openPartDetailPage(p)}
                     style={{
                       width:"100%",
                       textAlign:"left",
@@ -4153,6 +4177,16 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
             </div>
           </div>
         </div>
+          </>
+        )}
+        {partPage==="detail"&&(
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 10px",border:`1px solid ${C.border}`,borderRadius:10,background:C.surface2}}>
+            <button onClick={openPartListPage} style={{...btnSt("ghost"),padding:"7px 11px",fontSize:12}}>&#8249; Listeye Don</button>
+            {selectedPart
+              ? <div style={{fontSize:12,color:C.muted2}}>Aktif parca: <strong style={{color:C.text}}>{selectedPart.partNo||"-"}</strong> {selectedPart.name?` · ${selectedPart.name}`:""}</div>
+              : <div style={{fontSize:12,color:C.muted2}}>Parca bulunamadi. Listeye donup tekrar secim yapin.</div>}
+          </div>
+        )}
       </div>
 
       {showPartModal&&(
@@ -4221,7 +4255,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
         </div>
       )}
 
-      {selectedPart&&(
+      {partPage==="detail"&&selectedPart&&(
         <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12}}>
             <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
               <div style={{fontWeight:700,color:C.text,marginBottom:10}}>Rota ve Operasyonlar</div>
