@@ -868,7 +868,7 @@ function isLikelyDimensionToken(token){
 function extractDimensionTokensFromText(text){
   const cleaned=String(text||"").replace(/\s+/g," ").trim();
   if(!cleaned) return [];
-  const regex=/(?:Ø|?|R|M)?\s*\d{1,4}(?:[.,]\d{1,3})?(?:\s*[xX]\s*\d{1,4}(?:[.,]\d{1,3})?)*(?:\s*(?:mm|°))?(?:\s*[±]\s*\d+(?:[.,]\d+)?)?/g;
+  const regex=/(?:Ø|R|M)?\s*\d{1,4}(?:[.,]\d{1,3})?(?:\s*[xX]\s*\d{1,4}(?:[.,]\d{1,3})?)*(?:\s*(?:mm|°))?(?:\s*[±]\s*\d+(?:[.,]\d+)?)?/g;
   const matches=cleaned.match(regex)||[];
   const uniq={};
   return matches
@@ -1527,7 +1527,7 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
                 <div><span style={labelSt}>Kullanýcý Adý</span><input style={inputSt} placeholder="kullanici_adi" value={form.username} onChange={f("username")} autoCapitalize="none" autoCorrect="off"/></div>
                 <div><span style={labelSt}>Þifre</span><input style={inputSt} placeholder="••••••" type="password" value={form.password} onChange={f("password")}/></div>
                 {mode==="register"&&<div><span style={labelSt}>Þifre Tekrar</span><input style={inputSt} placeholder="••••••" type="password" value={form.confirm} onChange={f("confirm")}/></div>}
-                <button onClick={mode==="login"?doLogin:doRegister} style={{...btnSt("primary"),width:"100%",padding:14,fontSize:15,opacity:loading?.7:1}} disabled={loading}>
+                <button onClick={mode==="login"?doLogin:doRegister} style={{...btnSt("primary"),width:"100%",padding:14,fontSize:15,opacity:loading?0.7:1}} disabled={loading}>
                   {loading?"...":mode==="login"?"Giriþ Yap":"Kayýt Ol"}
                 </button>
               </div>
@@ -1564,7 +1564,7 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
                   <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Bugün Doðru / Hatalý</div>
                   <div style={{fontSize:14,color:C.text,fontWeight:700,marginTop:2}}><span style={{color:C.green}}>{adminStats.todayCorrect}</span> / <span style={{color:C.red}}>{adminStats.todayWrong}</span></div>
                 </div>
-                <button onClick={loadAdminStats} disabled={adminStats.loading} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,alignSelf:"stretch",opacity:adminStats.loading?.7:1}}>
+                <button onClick={loadAdminStats} disabled={adminStats.loading} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,alignSelf:"stretch",opacity:adminStats.loading?0.7:1}}>
                   {adminStats.loading?"Yenileniyor...":"Yenile"}
                 </button>
               </div>
@@ -1577,7 +1577,7 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 <div><span style={labelSt}>Kullanýcý Adý</span><input style={inputSt} placeholder="yonetici_adi" value={form.username} onChange={f("username")} autoCapitalize="none" autoCorrect="off"/></div>
                 <div><span style={labelSt}>Þifre</span><input style={inputSt} placeholder="••••••" type="password" value={form.password} onChange={f("password")}/></div>
-                <button onClick={doLogin} style={{...btnSt("primary"),width:"100%",padding:14,fontSize:15,opacity:loading?.7:1}} disabled={loading}>{loading?"...":"Yönetici Olarak Giriþ Yap"}</button>
+                <button onClick={doLogin} style={{...btnSt("primary"),width:"100%",padding:14,fontSize:15,opacity:loading?0.7:1}} disabled={loading}>{loading?"...":"Yönetici Olarak Giriþ Yap"}</button>
                 <button onClick={()=>{setPortal("operator");setMode("register");setErr("");setOk("");}} style={{...btnSt("ghost"),width:"100%",padding:12,fontSize:13}}>Yeni hesap oluþtur</button>
               </div>
             </div>
@@ -4227,7 +4227,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
               <div style={{fontWeight:700,color:C.text,marginBottom:10}}>Rota ve Operasyonlar</div>
               <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr .8fr .8fr auto",gap:6}}>
                 <select style={{...inputSt,padding:"7px 9px",fontSize:12}} value={routingForm.operationTypeId} onChange={e=>setRoutingOperationType(e.target.value)}>
-                  {operationTypes.length===0&&<option value="">Ayarlar > Rota ve Operasyon Tipleri</option>}
+                  {operationTypes.length===0&&<option value="">Ayarlar / Rota ve Operasyon Tipleri</option>}
                   {operationTypes.map(op=><option key={op.id} value={op.id}>{op.icon||"??"} {op.code} - {op.name}</option>)}
                 </select>
                 <select style={{...inputSt,padding:"7px 9px",fontSize:12}} value={routingForm.machine} onChange={e=>setRoutingForm(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
