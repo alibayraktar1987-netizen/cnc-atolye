@@ -5822,22 +5822,6 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
             </div>
           )}
           <div style={salesListColumnStyle}>
-            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                <div style={{fontSize:12,color:C.muted2}}>Toplam Teklif: {filteredQuotes.length}</div>
-                <button onClick={()=>setQuoteSortDir(v=>v==="desc"?"asc":"desc")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Sirala: {quoteSortDir==="desc"?"Yeniden Eskiye":"Eskiden Yeniye"}</button>
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                <TableColumnEditor
-                  title="Teklif Tablosu"
-                  columns={quoteTableColumns}
-                  onToggle={toggleQuoteTableColumn}
-                  onMove={moveQuoteTableColumn}
-                  onReset={resetQuoteTableColumns}
-                />
-                <button onClick={openNewQuoteModal} style={{...btnSt("primary"),padding:"7px 12px",fontSize:12}}>Teklif Olustur</button>
-              </div>
-            </div>
             <div style={salesListTableCardStyle}>
               <div style={salesListTableScrollStyle}>
                 <table style={{width:"100%",minWidth:quoteTableMinWidth,borderCollapse:"collapse",fontSize:12}}>
@@ -5896,35 +5880,6 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
             </div>
           )}
           <div style={salesListColumnStyle}>
-            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                <div style={{fontSize:12,color:C.muted2}}>Toplam Siparis: {filteredOrders.length}</div>
-                <button onClick={()=>setOrderSortDir(v=>v==="desc"?"asc":"desc")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Sirala: {orderSortDir==="desc"?"Yeniden Eskiye":"Eskiden Yeniye"}</button>
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                <TableColumnEditor
-                  title="Siparis Tablosu"
-                  columns={orderTableColumns}
-                  onToggle={toggleOrderTableColumn}
-                  onMove={moveOrderTableColumn}
-                  onReset={resetOrderTableColumns}
-                />
-                <button onClick={()=>{
-                  setOrderForm({
-                    code:nextCode("SIP",salesOrders,/^SIP-(\d+)$/),
-                    customerId:"",
-                    dueDate:todayStr(),
-                    paymentTermDays:"30",
-                    priority:"normal",
-                    note:"",
-                    lines:[makeDraftLine()],
-                  });
-                  setQuoteEditId("");
-                  setShowQuoteModal(false);
-                  setShowOrderModal(true);
-                }} style={{...btnSt("primary"),padding:"7px 12px",fontSize:12}}>Siparis Olustur</button>
-              </div>
-            </div>
             <div style={salesListTableCardStyle}>
               <div style={salesListTableScrollStyle}>
                 <table style={{width:"100%",minWidth:orderTableMinWidth,borderCollapse:"collapse",fontSize:12}}>
@@ -12480,6 +12435,7 @@ function MRPDashboard({
   themeMode="light",
   onThemeToggle=()=>{},
   onLogout=()=>{},
+  onQuickAction=()=>{},
   roleLabel="Kullanici",
   layoutMode="desktop",
 }){
@@ -13058,7 +13014,7 @@ function MRPDashboard({
             </div>
             <button onClick={()=>setDashboardEditMode(v=>!v)} title="Yeni aksiyon" style={{border:`1px solid ${commandBarTone.heroChipBorder}`,background:commandBarTone.heroChipBg,color:commandBarTone.heroText,padding:"8px 10px",fontSize:14,minWidth:34,borderRadius:8,cursor:"pointer"}}>{dashboardEditMode?"×":"+"}</button>
             {quickActions.map(act=>(
-              <button key={act.id} title={act.label} style={{border:`1px solid ${commandBarTone.heroChipBorder}`,background:commandBarTone.heroChipBg,color:commandBarTone.heroText,padding:"7px 9px",fontSize:13,minWidth:34,borderRadius:8,cursor:"pointer"}}>
+              <button key={act.id} onClick={()=>onQuickAction(act.id)} title={act.label} style={{border:`1px solid ${commandBarTone.heroChipBorder}`,background:commandBarTone.heroChipBg,color:commandBarTone.heroText,padding:"7px 9px",fontSize:13,minWidth:34,borderRadius:8,cursor:"pointer"}}>
                 {act.icon}
               </button>
             ))}
@@ -16053,7 +16009,7 @@ function App() {
     if(tab==="tools") return <ToolStock currentUser={currentUser} machines={machines} filtersVisible={toolsFilterOpen}/>;
     if(tab==="orders") return <WorkOrders currentUser={currentUser} machines={machines} filtersVisible={ordersFilterOpen}/>;
     if(tab==="users") return <AdminUsers currentUser={currentUser} machines={machines} currentLogo={logoSrc} onLogoUpdate={updateLogo} menuCatalog={allTabs} menuVisibility={menuVisibility} onMenuVisibilityChange={setMenuVisibility}/>;
-    if(tab==="dashboard") return <MRPDashboard currentUser={currentUser} machines={machines} logoSrc={logoSrc} themeMode={themeMode} onThemeToggle={()=>updateTheme(themeMode==="dark"?"light":"dark")} onLogout={logout} roleLabel={currentRoleLabel} layoutMode={layoutMode}/>;
+    if(tab==="dashboard") return <MRPDashboard currentUser={currentUser} machines={machines} logoSrc={logoSrc} themeMode={themeMode} onThemeToggle={()=>updateTheme(themeMode==="dark"?"light":"dark")} onLogout={logout} onQuickAction={handleTopQuickAction} roleLabel={currentRoleLabel} layoutMode={layoutMode}/>;
     if(tab==="cncmonitor") return <CncMonitorWall currentUser={currentUser} machines={machines}/>;
     if(tab==="mrp") return <MRPRunModule currentUser={currentUser}/>;
     if(tab==="quotes") return <SalesManagement currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")} defaultView="quotes" filtersVisible={salesFilterOpen}/>;
