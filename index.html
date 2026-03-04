@@ -16762,14 +16762,20 @@ function App() {
                     : (tab===t.id?C.accent:C.text),
                   cursor:"pointer",
                   fontFamily:"inherit",
-                  justifyContent:iconOnly?"center":"space-between",
+                  justifyContent:iconOnly?"center":"flex-start",
+                  boxShadow:tab===t.id
+                    ? (sideTone
+                      ? "0 0 0 1px rgba(255,255,255,.18), 0 8px 18px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.18)"
+                      : `0 0 0 1px ${C.accent}55, 0 8px 16px ${C.accent}22`)
+                    : "none",
+                  filter:tab===t.id?"saturate(1.14) brightness(1.08)":"none",
+                  transition:"filter .16s ease, box-shadow .16s ease, transform .16s ease",
                 }}
               >
                 <span style={{display:"inline-flex",alignItems:"center",gap:10,minWidth:0,maxWidth:iconOnly?22:"100%"}}>
                   <span style={{width:22,display:"inline-flex",justifyContent:"center",alignItems:"center",color:sideTone?(tab===t.id?leftNavColors.activeText:leftNavColors.icon):(tab===t.id?C.accent:C.muted2)}}><NavIcon name={t.icon}/></span>
-                  {!iconOnly&&<span style={{fontSize:compact?12:13,fontWeight:tab===t.id?700:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.label}</span>}
+                  {!iconOnly&&<span style={{fontSize:compact?12:13,fontWeight:tab===t.id?800:500,color:tab===t.id?(sideTone?leftNavColors.activeText:C.accent):undefined,textShadow:tab===t.id?"0 0 10px rgba(255,255,255,.14)":"none",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.label}</span>}
                 </span>
-                {!iconOnly&&tab===t.id&&<span style={{fontSize:10,fontWeight:700,color:sideTone?leftNavColors.activeText:C.accent,letterSpacing:.4}}>AKTIF</span>}
               </button>
             ))}
           </div>
