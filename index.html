@@ -36,6 +36,22 @@ body{
   padding-bottom:env(safe-area-inset-bottom,0px);
   backdrop-filter:saturate(130%) blur(8px);
 }
+.mrp-view-slot{
+  min-height:100%;
+  height:100%;
+  display:flex;
+  flex-direction:column;
+}
+.mrp-view-slot-inner{
+  flex:1;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+}
+.mrp-view-slot-inner > *{
+  flex:1;
+  min-height:0;
+}
 </style>
 </head>
 <body>
@@ -2443,7 +2459,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,menuCatalog=[
   ];
 
   return (
-    <div style={{padding:0}}>
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,marginBottom:16}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
           <div>
@@ -2651,6 +2667,12 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,menuCatalog=[
 function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
+  const [assignmentPage,setAssignmentPage]=useState("list");
+  const [calendarMonth,setCalendarMonth]=useState(monthStr());
+  const [calendarScope,setCalendarScope]=useState(()=>{
+    const canManage=currentUser.role==="admin"||currentUser.role==="supervisor"||hasPermission(currentUser,"assign_tasks")||hasPermission(currentUser,"approve_users");
+    return canManage?"team":"me";
+  });
   const [tasks,setTasks]=useState([]);
   const [users,setUsers]=useState([]);
   const [orders,setOrders]=useState([]);
@@ -2663,6 +2685,8 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
     detail:"",
     priority:"medium",
     dueDate:addDays(todayStr(),1),
+    recurrenceMode:"none",
+    recurrenceUntil:addDays(todayStr(),30),
     machine:machines[0]||"",
     orderId:"",
   });
@@ -2680,6 +2704,36 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
+  const openTaskListPage=useCallback(()=>setAssignmentPage("list"),[]);
+  const openCalendarPage=useCallback(()=>setAssignmentPage("calendar"),[]);
+  const openCreateTaskPage=useCallback(()=>{
+    setAssignmentPage("create");
+    setForm(prev=>({
+      ...prev,
+      title:"",
+      detail:"",
+      priority:"medium",
+      dueDate:addDays(todayStr(),1),
+      recurrenceMode:"none",
+      recurrenceUntil:addDays(todayStr(),30),
+      orderId:"",
+    }));
+    window.scrollTo({top:0,behavior:"smooth"});
+  },[]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="assignments") return;
+      if(d.type==="refresh"){load();return;}
+      if(d.type==="calendar"){openCalendarPage();return;}
+      if(d.type==="new"){
+        if(!canAssign){alert("Gorev atama yetkiniz yok.");return;}
+        openCreateTaskPage();
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[canAssign,load,openCalendarPage,openCreateTaskPage]);
 
   const activeUsers=[...users]
     .filter(u=>u.status==="active")
@@ -2741,6 +2795,93 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
     ].join(" ").toLowerCase();
     return hay.includes(queryText);
   });
+  useEffect(()=>{
+    if(!canAssign&&calendarScope!=="me"){
+      setCalendarScope("me");
+    }
+  },[canAssign,calendarScope]);
+  const teamMemberIds=useMemo(()=>{
+    const relationKeys=["managerId","reportsTo","supervisorId","leadId","teamLeadId","leaderId","coordinatorId","parentUserId"];
+    const set=new Set();
+    activeUsers.forEach(u=>{
+      if(!u||!u.id||u.id===currentUser.id) return;
+      const linked=relationKeys.some(key=>String(u[key]||"").trim()===currentUser.id);
+      if(linked) set.add(u.id);
+    });
+    tasks.forEach(task=>{
+      if(!task) return;
+      if(task.assignedBy===currentUser.id&&task.assigneeId&&task.assigneeId!==currentUser.id){
+        set.add(task.assigneeId);
+      }
+    });
+    return Array.from(set);
+  },[activeUsers,currentUser.id,tasks]);
+  const effectiveCalendarScope=canAssign?calendarScope:"me";
+  const calendarVisibleTasks=useMemo(()=>{
+    const myId=currentUser.id;
+    const teamSet=new Set(teamMemberIds);
+    return sortedTasks.filter(task=>{
+      const assigneeId=String(task.assigneeId||"").trim();
+      if(!assigneeId) return false;
+      if(effectiveCalendarScope==="all") return true;
+      if(effectiveCalendarScope==="team") return assigneeId===myId||teamSet.has(assigneeId);
+      return assigneeId===myId;
+    });
+  },[currentUser.id,effectiveCalendarScope,sortedTasks,teamMemberIds]);
+  const calendarFilteredTasks=useMemo(()=>calendarVisibleTasks.filter(task=>{
+    if(filterStatus!=="all"&&task.status!==filterStatus) return false;
+    if(canAssign&&effectiveCalendarScope==="all"&&filterAssignee!=="all"&&task.assigneeId!==filterAssignee) return false;
+    if(!queryText) return true;
+    const hay=[
+      task.title||"",
+      task.detail||"",
+      task.assigneeName||"",
+      task.assignedByName||"",
+      task.machine||"",
+      task.orderCode||"",
+    ].join(" ").toLowerCase();
+    return hay.includes(queryText);
+  }),[calendarVisibleTasks,canAssign,effectiveCalendarScope,filterAssignee,filterStatus,queryText]);
+  const calendarTasksByDate=useMemo(()=>{
+    const priorityRank={high:0,medium:1,low:2};
+    const map={};
+    calendarFilteredTasks.forEach(task=>{
+      const due=String(task.dueDate||"").trim();
+      if(!due) return;
+      if(!map[due]) map[due]=[];
+      map[due].push(task);
+    });
+    Object.keys(map).forEach(key=>{
+      map[key].sort((a,b)=>{
+        const pa=priorityRank[a.priority]??1;
+        const pb=priorityRank[b.priority]??1;
+        if(pa!==pb) return pa-pb;
+        return String(a.title||"").localeCompare(String(b.title||""),"tr");
+      });
+    });
+    return map;
+  },[calendarFilteredTasks]);
+  const calendarNoDueTasks=useMemo(()=>calendarFilteredTasks.filter(task=>!String(task.dueDate||"").trim()),[calendarFilteredTasks]);
+  const calendarMonthSafe=/^\d{4}-\d{2}$/.test(String(calendarMonth||""))?String(calendarMonth):monthStr();
+  const calendarMonthStart=parseYmdLocal(`${calendarMonthSafe}-01`);
+  const monthYearLabel=new Intl.DateTimeFormat("tr-TR",{month:"long",year:"numeric"}).format(calendarMonthStart);
+  const calendarStartDay=(calendarMonthStart.getDay()+6)%7;
+  const calendarCells=useMemo(()=>{
+    const cells=[];
+    const startDate=new Date(calendarMonthStart.getFullYear(),calendarMonthStart.getMonth(),1-calendarStartDay);
+    for(let i=0;i<42;i++){
+      const cur=new Date(startDate.getFullYear(),startDate.getMonth(),startDate.getDate()+i);
+      cells.push({
+        ymd:ymdLocal(cur),
+        day:cur.getDate(),
+        inMonth:cur.getMonth()===calendarMonthStart.getMonth(),
+      });
+    }
+    return cells;
+  },[calendarMonthStart,calendarStartDay]);
+  const calendarScopeLabel=effectiveCalendarScope==="all"
+    ? "Tum Gorevler"
+    : (effectiveCalendarScope==="team"?"Ekip + Ben":"Sadece Bana Atanan");
 
   const myOpenCount=myTasks.filter(t=>!["done","cancelled"].includes(t.status||"")).length;
   const overdueCount=sortedTasks.filter(t=>{
@@ -2749,9 +2890,36 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
   }).length;
   const activeCount=sortedTasks.filter(t=>t.status==="in_progress").length;
   const doneCount=sortedTasks.filter(t=>t.status==="done").length;
+  const weekLabels=["Pzt","Sal","Car","Per","Cum","Cmt","Paz"];
 
   function setF(key,value){
     setForm(prev=>({...prev,[key]:value}));
+  }
+  function shiftCalendarMonth(diff){
+    const base=parseYmdLocal(`${calendarMonthSafe}-01`);
+    const next=new Date(base.getFullYear(),base.getMonth()+diff,1);
+    setCalendarMonth(monthStr(next));
+  }
+  function buildRecurrenceDates(startYmd,mode,untilYmd){
+    const first=String(startYmd||"").trim();
+    if(!first) return [""];
+    if(mode!=="weekly"&&mode!=="monthly") return [first];
+    const limitRaw=String(untilYmd||"").trim()||first;
+    if(limitRaw<first) return [];
+    const out=[];
+    let cur=parseYmdLocal(first);
+    const guardMax=120;
+    for(let i=0;i<guardMax;i++){
+      const curYmd=ymdLocal(cur);
+      if(curYmd>limitRaw) break;
+      out.push(curYmd);
+      if(mode==="weekly"){
+        cur=new Date(cur.getFullYear(),cur.getMonth(),cur.getDate()+7);
+      }else{
+        cur=new Date(cur.getFullYear(),cur.getMonth()+1,cur.getDate());
+      }
+    }
+    return out;
   }
 
   async function createTask(){
@@ -2761,48 +2929,82 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
     const assignee=activeUsers.find(u=>u.id===form.assigneeId);
     if(!assignee){alert("Secilen calisan aktif degil.");return;}
     const pickedOrder=openOrders.find(o=>o.id===form.orderId)||null;
+    const recurrenceMode=(form.recurrenceMode==="weekly"||form.recurrenceMode==="monthly")?form.recurrenceMode:"none";
+    const recurrenceUntil=String(form.recurrenceUntil||"").trim();
+    const baseDueDate=String(form.dueDate||"").trim();
+    if(recurrenceMode!=="none"){
+      if(!baseDueDate){alert("Tekrarli gorev icin termin zorunlu.");return;}
+      if(!recurrenceUntil){alert("Tekrar bitis tarihi zorunlu.");return;}
+      if(recurrenceUntil<baseDueDate){alert("Tekrar bitisi, termin tarihinden once olamaz.");return;}
+    }
+    const recurrenceDates=buildRecurrenceDates(baseDueDate,recurrenceMode,recurrenceUntil);
+    if(recurrenceDates.length===0){alert("Tekrar tarihleri olusturulamadi.");return;}
     const nowIso=new Date().toISOString();
-    const payload={
+    const recurrenceGroupId=recurrenceMode==="none"
+      ? ""
+      : `r_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`;
+    const payloadBase={
       assigneeId:assignee.id,
       assigneeName:assignee.fullName||assignee.username||assignee.id,
       title:form.title.trim(),
       detail:form.detail.trim(),
       priority:form.priority||"medium",
-      dueDate:form.dueDate||"",
       machine:form.machine||"",
       orderId:pickedOrder?.id||"",
       orderCode:pickedOrder?.code||"",
       status:"open",
       assignedBy:currentUser.id,
       assignedByName:currentUser.fullName||currentUser.id,
-      createdAt:nowIso,
-      updatedAt:nowIso,
     };
     setSaving(true);
-    const id=await window.DB.addDoc("employeeTasks",payload);
+    const createdRows=[];
+    let failedCount=0;
+    for(let idx=0;idx<recurrenceDates.length;idx++){
+      const dueDateVal=recurrenceDates[idx]||"";
+      const payload={
+        ...payloadBase,
+        dueDate:dueDateVal,
+        recurrenceMode,
+        recurrenceUntil:recurrenceMode==="none"?"":recurrenceUntil,
+        recurrenceGroupId,
+        recurrenceIndex:idx+1,
+        recurrenceCount:recurrenceDates.length,
+        createdAt:nowIso,
+        updatedAt:nowIso,
+      };
+      const id=await window.DB.addDoc("employeeTasks",payload);
+      if(!id){failedCount+=1;continue;}
+      createdRows.push({id,...payload});
+    }
     setSaving(false);
-    if(!id){alert("Gorev kaydi olusturulamadi.");return;}
-    setTasks(prev=>[{id,...payload},...prev]);
+    if(createdRows.length===0){alert("Gorev kaydi olusturulamadi.");return;}
+    setTasks(prev=>[...createdRows,...prev]);
     setForm(prev=>({
       ...prev,
       title:"",
       detail:"",
       priority:"medium",
       dueDate:addDays(todayStr(),1),
+      recurrenceMode:"none",
+      recurrenceUntil:addDays(todayStr(),30),
       orderId:"",
     }));
+    setAssignmentPage("list");
     try{
       await window.DB.addDoc("notifications",{
         type:"task",
         title:"Yeni Gorev",
-        message:`${payload.title} gorevi atandi.`,
-        severity:payload.priority==="high"?"high":"medium",
+        message:`${payloadBase.title} gorevi atandi${createdRows.length>1?` (${createdRows.length} tekrar)`:''}.`,
+        severity:payloadBase.priority==="high"?"high":"medium",
         status:"new",
-        targetUserId:payload.assigneeId,
-        sourceKey:id,
+        targetUserId:payloadBase.assigneeId,
+        sourceKey:createdRows[0]?.id||"",
         createdAt:nowIso,
       });
     }catch{}
+    if(failedCount>0){
+      alert(`${failedCount} tekrar kaydi olusturulamadi.`);
+    }
   }
 
   async function updateTaskStatus(task,nextStatus){
@@ -2827,37 +3029,281 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
     setTasks(prev=>prev.filter(row=>row.id!==task.id));
   }
 
+  const effectiveAssignmentPage=(!canAssign&&assignmentPage==="create")?"list":assignmentPage;
+  const recurrencePreviewCount=(()=>{
+    const mode=(form.recurrenceMode==="weekly"||form.recurrenceMode==="monthly")?form.recurrenceMode:"none";
+    if(mode==="none") return 1;
+    const baseDueDate=String(form.dueDate||"").trim();
+    const recurrenceUntil=String(form.recurrenceUntil||"").trim();
+    if(!baseDueDate||!recurrenceUntil||recurrenceUntil<baseDueDate) return 0;
+    return buildRecurrenceDates(baseDueDate,mode,recurrenceUntil).length;
+  })();
+
+  const taskListPanel=(
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+        <div style={{fontWeight:700,color:C.text,fontSize:14}}>Gorev Listesi</div>
+        {canAssign&&effectiveAssignmentPage==="list"&&(
+          <button onClick={openCreateTaskPage} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>+ Yeni Gorev</button>
+        )}
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end",marginBottom:10}}>
+        <div style={{minWidth:220,flex:"1 1 320px"}}>
+          <span style={labelSt}>Ara</span>
+          <input style={inputSt} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Gorev, calisan, tezgah, is emri..."/>
+        </div>
+        <div style={{minWidth:170,flex:"1 1 180px"}}>
+          <span style={labelSt}>Durum</span>
+          <select style={inputSt} value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
+            <option value="all">Tum Durumlar</option>
+            <option value="open">Acilanlar</option>
+            <option value="in_progress">Devam Edenler</option>
+            <option value="done">Tamamlananlar</option>
+            <option value="cancelled">Iptal Edilenler</option>
+          </select>
+        </div>
+        {canAssign&&(
+          <div style={{minWidth:200,flex:"1 1 220px"}}>
+            <span style={labelSt}>Calisan</span>
+            <select style={inputSt} value={filterAssignee} onChange={e=>setFilterAssignee(e.target.value)}>
+              <option value="all">Tum Calisanlar</option>
+              {activeUsers.map(u=><option key={u.id} value={u.id}>{u.fullName||u.id}</option>)}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {filteredTasks.length===0&&(
+        <div style={{padding:"26px 10px",textAlign:"center",fontSize:12,color:C.muted2,border:`1px dashed ${C.border}`,borderRadius:10}}>
+          Gosterilecek gorev bulunamadi.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {filteredTasks.length>0&&(
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {filteredTasks.map(task=>{
+            const sMeta=statusMeta(task.status||"open");
+            const pMeta=priorityMeta(task.priority||"medium");
+            const due=String(task.dueDate||"");
+            const isOverdue=due&&due<todayStr()&&!["done","cancelled"].includes(task.status||"");
+            const canAct=canAssign||task.assigneeId===currentUser.id;
+            const isRecurring=(task.recurrenceMode==="weekly"||task.recurrenceMode==="monthly")&&Number(task.recurrenceCount||0)>1;
+            const recurrenceLabel=task.recurrenceMode==="weekly"?"Haftalik":"Aylik";
+            return (
+              <div key={task.id} style={{border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px",background:C.surface}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+                  <div style={{minWidth:220,flex:1}}>
+                    <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                      <div style={{fontWeight:800,color:C.text,fontSize:14}}>{task.title||"-"}</div>
+                      <Badge label={sMeta.label} color={sMeta.color}/>
+                      <Badge label={pMeta.label} color={pMeta.color}/>
+                    </div>
+                    {task.detail&&<div style={{fontSize:12,color:C.text,marginTop:4,whiteSpace:"pre-wrap"}}>{task.detail}</div>}
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap",fontSize:11,color:C.muted2,marginTop:5}}>
+                      <span>Calisan: <strong>{task.assigneeName||task.assigneeId||"-"}</strong></span>
+                      {task.machine&&<span>Tezgah: <strong>{task.machine}</strong></span>}
+                      {task.orderCode&&<span>Is Emri: <strong>{task.orderCode}</strong></span>}
+                      {task.assignedByName&&<span>Atayan: <strong>{task.assignedByName}</strong></span>}
+                      {due&&<span style={{color:isOverdue?C.red:C.muted2}}>Termin: <strong>{due}</strong></span>}
+                      {isRecurring&&(
+                        <span>
+                          Tekrar: <strong>{recurrenceLabel}</strong>
+                          {task.recurrenceIndex&&task.recurrenceCount?` (${task.recurrenceIndex}/${task.recurrenceCount})`:""}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                    {canAct&&task.status==="open"&&<button onClick={()=>updateTaskStatus(task,"in_progress")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Basla</button>}
+                    {canAct&&["open","in_progress"].includes(task.status||"")&&<button onClick={()=>updateTaskStatus(task,"done")} style={{...btnSt("green"),padding:"6px 10px",fontSize:12}}>Tamamla</button>}
+                    {canAct&&task.status==="done"&&<button onClick={()=>updateTaskStatus(task,"open")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Yeniden Ac</button>}
+                    {canAssign&&task.status!=="cancelled"&&<button onClick={()=>updateTaskStatus(task,"cancelled")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Iptal</button>}
+                    {canAssign&&<button onClick={()=>deleteTask(task)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Sil</button>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+  const calendarPanel=(
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,fontWeight:700,color:C.text,fontSize:14}}>
+          <span style={{width:16,height:16,display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon name="planning" size={15}/></span>
+          Gorev Takvimi
+        </div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+          <button onClick={()=>shiftCalendarMonth(-1)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>&lt;</button>
+          <input style={{...inputSt,padding:"7px 9px",fontSize:12,minWidth:140}} type="month" value={calendarMonthSafe} onChange={e=>setCalendarMonth(e.target.value||monthStr())}/>
+          <button onClick={()=>shiftCalendarMonth(1)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>&gt;</button>
+          <button onClick={()=>setCalendarMonth(monthStr())} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Bu Ay</button>
+        </div>
+      </div>
+
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end",marginBottom:10}}>
+        <div style={{minWidth:220,flex:"1 1 320px"}}>
+          <span style={labelSt}>Ara</span>
+          <input style={inputSt} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Gorev, calisan, tezgah, is emri..."/>
+        </div>
+        <div style={{minWidth:170,flex:"1 1 180px"}}>
+          <span style={labelSt}>Durum</span>
+          <select style={inputSt} value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
+            <option value="all">Tum Durumlar</option>
+            <option value="open">Acilanlar</option>
+            <option value="in_progress">Devam Edenler</option>
+            <option value="done">Tamamlananlar</option>
+            <option value="cancelled">Iptal Edilenler</option>
+          </select>
+        </div>
+        {canAssign&&(
+          <div style={{minWidth:200,flex:"1 1 210px"}}>
+            <span style={labelSt}>Kapsam</span>
+            <select style={inputSt} value={effectiveCalendarScope} onChange={e=>setCalendarScope(e.target.value)}>
+              <option value="me">Sadece Bana Atanan</option>
+              <option value="team">Ekip + Ben ({teamMemberIds.length})</option>
+              <option value="all">Tum Gorevler</option>
+            </select>
+          </div>
+        )}
+        {canAssign&&effectiveCalendarScope==="all"&&(
+          <div style={{minWidth:200,flex:"1 1 220px"}}>
+            <span style={labelSt}>Calisan</span>
+            <select style={inputSt} value={filterAssignee} onChange={e=>setFilterAssignee(e.target.value)}>
+              <option value="all">Tum Calisanlar</option>
+              {activeUsers.map(u=><option key={u.id} value={u.id}>{u.fullName||u.id}</option>)}
+            </select>
+          </div>
+        )}
+      </div>
+
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+        <div style={{fontSize:13,fontWeight:700,color:C.text,textTransform:"capitalize"}}>{monthYearLabel}</div>
+        <div style={{fontSize:12,color:C.muted2}}>{calendarScopeLabel} - {calendarFilteredTasks.length} gorev</div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",gap:6,marginBottom:6}}>
+        {weekLabels.map(label=>(
+          <div key={label} style={{fontSize:11,fontWeight:700,letterSpacing:.4,textTransform:"uppercase",color:C.muted2,padding:"0 2px"}}>
+            {label}
+          </div>
+        ))}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",gap:6}}>
+        {calendarCells.map(cell=>{
+          const dayTasks=calendarTasksByDate[cell.ymd]||[];
+          const isToday=cell.ymd===todayStr();
+          const showAssignee=effectiveCalendarScope!=="me";
+          return (
+            <div key={cell.ymd} style={{minHeight:116,padding:7,borderRadius:10,border:`1px solid ${isToday?C.accent:C.border}`,background:cell.inMonth?C.surface:C.surface2,opacity:cell.inMonth?1:0.72,display:"flex",flexDirection:"column",gap:5}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div style={{fontSize:11,color:cell.inMonth?C.text:C.muted2,fontWeight:isToday?800:600}}>{cell.day}</div>
+                {dayTasks.length>0&&<div style={{fontSize:10,color:C.muted2}}>{dayTasks.length}</div>}
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                {dayTasks.slice(0,3).map(task=>{
+                  const st=statusMeta(task.status||"open");
+                  const who=task.assigneeName||task.assigneeId||"-";
+                  return (
+                    <div key={task.id} title={`${task.title||"-"}${showAssignee?` - ${who}`:""}`} style={{fontSize:10,lineHeight:1.25,borderRadius:6,padding:"4px 5px",background:st.color+"18",border:`1px solid ${st.color}40`,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                      {task.title||"-"}{showAssignee?` - ${who}`:""}
+                    </div>
+                  );
+                })}
+                {dayTasks.length>3&&<div style={{fontSize:10,color:C.muted2,paddingLeft:1}}>+{dayTasks.length-3} daha</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {calendarNoDueTasks.length>0&&(
+        <div style={{marginTop:10,padding:"9px 10px",borderRadius:10,border:`1px solid ${C.border}`,background:C.surface}}>
+          <div style={{fontSize:11,fontWeight:700,letterSpacing:.4,textTransform:"uppercase",color:C.muted2,marginBottom:6}}>Terminsiz Gorevler</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {calendarNoDueTasks.slice(0,8).map(task=>(
+              <span key={task.id} style={{fontSize:11,padding:"4px 7px",borderRadius:999,border:`1px solid ${C.border}`,color:C.text,background:C.card}}>
+                {task.title||"-"}{effectiveCalendarScope!=="me"?` - ${task.assigneeName||task.assigneeId||"-"}`:""}
+              </span>
+            ))}
+            {calendarNoDueTasks.length>8&&<span style={{fontSize:11,color:C.muted2,padding:"4px 2px"}}>+{calendarNoDueTasks.length-8} daha</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
 
   return (
-    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
+      <div style={{
+        background:C.card,
+        border:`1px solid ${C.border}`,
+        borderRadius:14,
+        padding:12,
+        ...(partPage==="list"
+          ? {flex:1,minHeight:0,display:"flex",flexDirection:"column",overflow:"hidden"}
+          : {}),
+      }}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
           <div>
             <div style={{fontSize:11,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Calisan Takibi</div>
-            <div style={{fontSize:18,fontWeight:800,color:C.text}}>Gorevlendirme Merkezi</div>
+            <div style={{fontSize:18,fontWeight:800,color:C.text}}>
+              {effectiveAssignmentPage==="create"
+                ? "Yeni Gorev Sayfasi"
+                : (effectiveAssignmentPage==="calendar"?"Gorev Takvimi":"Gorevlendirme Merkezi")}
+            </div>
           </div>
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
             <Badge label={`Benim Acik: ${myOpenCount}`} color={myOpenCount>0?C.warn:C.green}/>
             <Badge label={`Devam Eden: ${activeCount}`} color={activeCount>0?C.warn:C.muted2}/>
             <Badge label={`Geciken: ${overdueCount}`} color={overdueCount>0?C.red:C.green}/>
             <Badge label={`Tamamlanan: ${doneCount}`} color={C.green}/>
+            {canAssign&&effectiveAssignmentPage!=="create"&&(
+              <button onClick={openCreateTaskPage} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>+ Yeni Gorev</button>
+            )}
+            <button onClick={openCalendarPage} style={{...(effectiveAssignmentPage==="calendar"?btnSt("primary"):btnSt("ghost")),padding:"8px 12px",fontSize:12,display:"inline-flex",alignItems:"center",gap:6}}>
+              <span style={{width:14,height:14,display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon name="planning" size={13}/></span>
+              Takvim
+            </button>
+            {effectiveAssignmentPage!=="list"&&(
+              <button onClick={openTaskListPage} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Listeye Don</button>
+            )}
           </div>
         </div>
       </div>
 
-      {canAssign&&(
+      {canAssign&&effectiveAssignmentPage==="create"&&(
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
-          <div style={{fontWeight:700,color:C.text,fontSize:14,marginBottom:8}}>Yeni Gorev Ata</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+            <div style={{fontWeight:700,color:C.text,fontSize:14}}>Yeni Gorev Ata</div>
+            <button onClick={openTaskListPage} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
+          </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:8}}>
             <div><span style={labelSt}>Calisan</span><select style={inputSt} value={form.assigneeId} onChange={e=>setF("assigneeId",e.target.value)}>{activeUsers.map(u=><option key={u.id} value={u.id}>{u.fullName||u.id}</option>)}</select></div>
             <div><span style={labelSt}>Oncelik</span><select style={inputSt} value={form.priority} onChange={e=>setF("priority",e.target.value)}><option value="high">Yuksek</option><option value="medium">Normal</option><option value="low">Dusuk</option></select></div>
             <div><span style={labelSt}>Termin</span><input style={inputSt} type="date" value={form.dueDate} onChange={e=>setF("dueDate",e.target.value||"")}/></div>
+            <div><span style={labelSt}>Tekrar</span><select style={inputSt} value={form.recurrenceMode} onChange={e=>setF("recurrenceMode",e.target.value)}><option value="none">Tek Sefer</option><option value="weekly">Haftalik</option><option value="monthly">Aylik</option></select></div>
+            {form.recurrenceMode!=="none"&&(
+              <div><span style={labelSt}>Tekrar Bitis</span><input style={inputSt} type="date" min={form.dueDate||todayStr()} value={form.recurrenceUntil} onChange={e=>setF("recurrenceUntil",e.target.value||"")}/></div>
+            )}
             <div><span style={labelSt}>Tezgah</span><select style={inputSt} value={form.machine} onChange={e=>setF("machine",e.target.value)}><option value="">Seciniz</option>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
-            <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Is Emri (Opsiyonel)</span><select style={inputSt} value={form.orderId} onChange={e=>setF("orderId",e.target.value)}><option value="">Seciniz</option>{openOrders.map(o=><option key={o.id} value={o.id}>{o.code||"-"} · {o.name||"-"}</option>)}</select></div>
+            <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Is Emri (Opsiyonel)</span><select style={inputSt} value={form.orderId} onChange={e=>setF("orderId",e.target.value)}><option value="">Seciniz</option>{openOrders.map(o=><option key={o.id} value={o.id}>{o.code||"-"} - {o.name||"-"}</option>)}</select></div>
             <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Gorev Basligi</span><input style={inputSt} value={form.title} onChange={e=>setF("title",e.target.value)} placeholder="Orn: CNC-2 icin ilk parca ayari"/></div>
             <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Aciklama</span><textarea rows={3} style={{...inputSt,minHeight:76,resize:"vertical"}} value={form.detail} onChange={e=>setF("detail",e.target.value)} placeholder="Gorev detaylari..."/></div>
           </div>
+          {form.recurrenceMode!=="none"&&(
+            <div style={{marginTop:8,padding:"8px 10px",borderRadius:8,border:`1px solid ${C.border}`,fontSize:12,color:C.muted2,background:C.surface}}>
+              {recurrencePreviewCount>0
+                ? `${recurrencePreviewCount} adet gorev olusacak.`
+                : "Tekrar bitis tarihi termin tarihinden sonra olmali."}
+            </div>
+          )}
           <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}>
             <button onClick={createTask} disabled={saving} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,opacity:saving?0.7:1}}>
               {saving?"Kaydediliyor...":"Gorev Ata"}
@@ -2866,79 +3312,7 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
         </div>
       )}
 
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end",marginBottom:10}}>
-          <div style={{minWidth:220,flex:"1 1 320px"}}>
-            <span style={labelSt}>Ara</span>
-            <input style={inputSt} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Gorev, calisan, tezgah, is emri..."/>
-          </div>
-          <div style={{minWidth:170,flex:"1 1 180px"}}>
-            <span style={labelSt}>Durum</span>
-            <select style={inputSt} value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
-              <option value="all">Tum Durumlar</option>
-              <option value="open">Acilanlar</option>
-              <option value="in_progress">Devam Edenler</option>
-              <option value="done">Tamamlananlar</option>
-              <option value="cancelled">Iptal Edilenler</option>
-            </select>
-          </div>
-          {canAssign&&(
-            <div style={{minWidth:200,flex:"1 1 220px"}}>
-              <span style={labelSt}>Calisan</span>
-              <select style={inputSt} value={filterAssignee} onChange={e=>setFilterAssignee(e.target.value)}>
-                <option value="all">Tum Calisanlar</option>
-                {activeUsers.map(u=><option key={u.id} value={u.id}>{u.fullName||u.id}</option>)}
-              </select>
-            </div>
-          )}
-        </div>
-
-        {filteredTasks.length===0&&(
-          <div style={{padding:"26px 10px",textAlign:"center",fontSize:12,color:C.muted2,border:`1px dashed ${C.border}`,borderRadius:10}}>
-            Gosterilecek gorev bulunamadi.
-          </div>
-        )}
-
-        {filteredTasks.length>0&&(
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {filteredTasks.map(task=>{
-              const sMeta=statusMeta(task.status||"open");
-              const pMeta=priorityMeta(task.priority||"medium");
-              const due=String(task.dueDate||"");
-              const isOverdue=due&&due<todayStr()&&!["done","cancelled"].includes(task.status||"");
-              const canAct=canAssign||task.assigneeId===currentUser.id;
-              return (
-                <div key={task.id} style={{border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px",background:C.surface}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
-                    <div style={{minWidth:220,flex:1}}>
-                      <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-                        <div style={{fontWeight:800,color:C.text,fontSize:14}}>{task.title||"-"}</div>
-                        <Badge label={sMeta.label} color={sMeta.color}/>
-                        <Badge label={pMeta.label} color={pMeta.color}/>
-                      </div>
-                      {task.detail&&<div style={{fontSize:12,color:C.text,marginTop:4,whiteSpace:"pre-wrap"}}>{task.detail}</div>}
-                      <div style={{display:"flex",gap:6,flexWrap:"wrap",fontSize:11,color:C.muted2,marginTop:5}}>
-                        <span>Calisan: <strong>{task.assigneeName||task.assigneeId||"-"}</strong></span>
-                        {task.machine&&<span>Tezgah: <strong>{task.machine}</strong></span>}
-                        {task.orderCode&&<span>Is Emri: <strong>{task.orderCode}</strong></span>}
-                        {task.assignedByName&&<span>Atayan: <strong>{task.assignedByName}</strong></span>}
-                        {due&&<span style={{color:isOverdue?C.red:C.muted2}}>Termin: <strong>{due}</strong></span>}
-                      </div>
-                    </div>
-                    <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                      {canAct&&task.status==="open"&&<button onClick={()=>updateTaskStatus(task,"in_progress")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Basla</button>}
-                      {canAct&&["open","in_progress"].includes(task.status||"")&&<button onClick={()=>updateTaskStatus(task,"done")} style={{...btnSt("green"),padding:"6px 10px",fontSize:12}}>Tamamla</button>}
-                      {canAct&&task.status==="done"&&<button onClick={()=>updateTaskStatus(task,"open")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Yeniden Ac</button>}
-                      {canAssign&&task.status!=="cancelled"&&<button onClick={()=>updateTaskStatus(task,"cancelled")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Iptal</button>}
-                      {canAssign&&<button onClick={()=>deleteTask(task)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Sil</button>}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      {effectiveAssignmentPage==="calendar"?calendarPanel:taskListPanel}
     </div>
   );
 }
@@ -3098,7 +3472,7 @@ function ToolStock({currentUser,filtersVisible=true}) {
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
 
   return (
-    <div style={{padding:0}}>
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:8,flexWrap:"wrap"}}>
         <div style={{fontWeight:700,color:C.text}}>Takim Stogu</div>
         {isAdmin&&<button onClick={()=>{if(showForm){setShowForm(false);setEditId(null);resetForm();}else{resetForm();setEditId(null);setForm(p=>({...p,code:nextToolCode()}));setShowForm(true);}}} style={{...btnSt("primary"),padding:"8px 14px",fontSize:12}}>{showForm?"Kapat":"+ Yeni Ekle"}</button>}
@@ -3340,7 +3714,7 @@ function Customers({filtersVisible=true}) {
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
 
   return (
-    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
       {showCustomerModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.68)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:54,padding:14}} onClick={()=>setShowCustomerModal(false)}>
           <div style={{width:"100%",maxWidth:900,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0,maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
@@ -3590,7 +3964,7 @@ function MaterialLibrary({filtersVisible=true}) {
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
 
   return (
-    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
         <div style={{fontWeight:700,color:C.text}}>Malzeme Kutuphanesi</div>
         <div style={{display:"flex",gap:8}}>
@@ -3925,7 +4299,6 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     setSelectedPartId(part.id);
     loadPartToForm(part);
     setPartPage("detail");
-    window.scrollTo({top:0,behavior:"smooth"});
   };
   const openCreatePartModal=()=>{
     setPartPage("list");
@@ -4204,8 +4577,14 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
 
   return (
-    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
+      <div style={{
+        background:C.card,
+        border:`1px solid ${C.border}`,
+        borderRadius:14,
+        padding:12,
+        ...(partPage==="list"?{flex:1,minHeight:0,display:"flex",flexDirection:"column",overflow:"hidden"}:{}),
+      }}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8}}>
           <div style={{fontWeight:700,color:C.text}}>Parca Kutuphanesi</div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
@@ -4321,14 +4700,6 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
         </div>
           </>
         )}
-        {partPage==="detail"&&(
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 10px",border:`1px solid ${C.border}`,borderRadius:10,background:C.surface2}}>
-            <button onClick={openPartListPage} style={{...btnSt("ghost"),padding:"7px 11px",fontSize:12}}>&#8249; Listeye Don</button>
-            {selectedPart
-              ? <div style={{fontSize:12,color:C.muted2}}>Aktif parca: <strong style={{color:C.text}}>{selectedPart.partNo||"-"}</strong> {selectedPart.name?` · ${selectedPart.name}`:""}</div>
-              : <div style={{fontSize:12,color:C.muted2}}>Parca bulunamadi. Listeye donup tekrar secim yapin.</div>}
-          </div>
-        )}
       </div>
 
       {showPartModal&&(
@@ -4398,8 +4769,49 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
       )}
 
       {partPage==="detail"&&selectedPart&&(
-        <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12}}>
-            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div
+          style={{
+            position:"fixed",
+            inset:0,
+            background:"rgba(8,12,18,.36)",
+            backdropFilter:"blur(8px)",
+            WebkitBackdropFilter:"blur(8px)",
+            display:"flex",
+            alignItems:"center",
+            justifyContent:"center",
+            zIndex:53,
+            padding:14,
+          }}
+          onClick={openPartListPage}
+        >
+          <div
+            style={{
+              width:"100%",
+              maxWidth:1160,
+              maxHeight:"92vh",
+              overflowY:"auto",
+              background:C.card,
+              border:`1px solid ${C.border}`,
+              borderRadius:14,
+              padding:12,
+              boxShadow:"0 22px 50px rgba(0,0,0,.38)",
+            }}
+            onClick={e=>e.stopPropagation()}
+          >
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+              <div>
+                <div style={{fontWeight:800,color:C.text,fontSize:16}}>Parca Detay</div>
+                <div style={{fontSize:12,color:C.muted2,marginTop:2}}>
+                  <strong style={{color:C.text}}>{selectedPart.partNo||"-"}</strong> {selectedPart.name?` - ${selectedPart.name}`:""}
+                </div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <button onClick={()=>{openPartListPage();openEditPartModal(selectedPart);}} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Duzenle</button>
+                <button onClick={openPartListPage} style={{...btnSt("primary"),padding:"7px 10px",fontSize:12}}>Kapat</button>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12}}>
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
               <div style={{fontWeight:700,color:C.text,marginBottom:10}}>Rota ve Operasyonlar</div>
               <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr .8fr .8fr auto",gap:6}}>
                 <select style={{...inputSt,padding:"7px 9px",fontSize:12}} value={routingForm.operationTypeId} onChange={e=>setRoutingOperationType(e.target.value)}>
@@ -4469,6 +4881,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
                 </div>
               )}
             </div>
+          </div>
         </div>
       )}
     </div>
@@ -6391,7 +6804,7 @@ function SalesOrders({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders}) {
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
 
   return (
-    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <div style={{fontWeight:700,color:C.text}}>Siparis Formu</div>
@@ -16620,8 +17033,10 @@ function App() {
               </div>
             )}
             <div style={{padding:shellPadding,flex:1,minWidth:0,minHeight:0,overflowY:"auto",overscrollBehavior:"none"}}>
-              <div style={{minHeight:"100%",display:"flex",flexDirection:"column"}}>
-                {activeView}
+              <div className="mrp-view-slot">
+                <div className="mrp-view-slot-inner">
+                  {activeView}
+                </div>
               </div>
             </div>
           </div>
@@ -16636,8 +17051,10 @@ function App() {
             </div>
           )}
           <div style={{flex:1,minHeight:0,overflowY:"auto",overscrollBehavior:"none",paddingBottom:76}}>
-            <div style={{minHeight:"100%",display:"flex",flexDirection:"column"}}>
-              {activeView}
+            <div className="mrp-view-slot">
+              <div className="mrp-view-slot-inner">
+                {activeView}
+              </div>
             </div>
           </div>
           <div className="mrp-bottom-nav" style={{position:"fixed",left:0,right:0,bottom:0,background:`${C.surface}f0`,borderTop:`1px solid ${C.border}`,zIndex:24}}>
@@ -16674,3 +17091,4 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
 </body>
 </html>
+
