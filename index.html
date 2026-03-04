@@ -3713,6 +3713,8 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
   const [partStatusFilter,setPartStatusFilter]=useState("all");
   const [partDateFrom,setPartDateFrom]=useState("");
   const [partDateTo,setPartDateTo]=useState("");
+  const [partRowsPerPage,setPartRowsPerPage]=useState(10);
+  const [partListPageIdx,setPartListPageIdx]=useState(1);
   const [partPage,setPartPage]=useState("list");
   const [selectedPartId,setSelectedPartId]=useState("");
   const [uploading,setUploading]=useState(false);
@@ -3720,6 +3722,11 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
   const [partForm,setPartForm]=useState(emptyPartForm);
   const [bomForm,setBomForm]=useState({componentType:"raw_material",componentCode:"",componentName:"",qtyPer:"1",scrapPct:"0",cutLengthMm:"0",barDiameterMm:"0"});
   const [routingForm,setRoutingForm]=useState({operationTypeId:"",machine:machines[0]||"CNC-1",setupSec:"300",cycleSec:"60",ncProgram:"",tooling:""});
+  const partListPanelRef=useRef(null);
+  const {
+    height:partListPanelHeight,
+    isNarrow:partListPanelsStacked,
+  }=useViewportPanelMetrics(partListPanelRef,{minHeight:340,bottomGap:14,narrowWidth:1180});
 
   const load=useCallback(async()=>{
     const [p,m,opDoc]=await Promise.all([
@@ -3844,6 +3851,15 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     if(sortMode==="name_desc") return String(b.name||"").localeCompare(String(a.name||""),"tr");
     return String(a.partNo||"").localeCompare(String(b.partNo||""),"tr");
   });
+  const partTotalPages=Math.max(1,Math.ceil(filteredParts.length/Math.max(1,partRowsPerPage)));
+  useEffect(()=>{
+    setPartListPageIdx(1);
+  },[search,partStatusFilter,partDateFrom,partDateTo,sortMode,partRowsPerPage]);
+  useEffect(()=>{
+    setPartListPageIdx(prev=>Math.max(1,Math.min(prev,partTotalPages)));
+  },[partTotalPages]);
+  const partListStart=(partListPageIdx-1)*Math.max(1,partRowsPerPage);
+  const pagedParts=filteredParts.slice(partListStart,partListStart+Math.max(1,partRowsPerPage));
   const BAR_LENGTH_MM=3000;
   const normalized=s=>String(s||"").trim().toUpperCase();
   const findMaterialForBom=(code,name)=>{
@@ -3930,8 +3946,17 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
   const partSplitWrapStyle={
     display:"flex",
     gap:10,
-    alignItems:"stretch",
+    alignItems:partListPanelsStacked?"flex-start":"stretch",
     flexWrap:"wrap",
+    ...(partListPanelsStacked
+      ? {}
+      : {
+        height:partListPanelHeight,
+        maxHeight:partListPanelHeight,
+        flex:1,
+        minHeight:0,
+        overflow:"hidden",
+      }),
   };
   const partFilterPanelStyle={
     flex:"0 0 250px",
@@ -3944,6 +3969,15 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     display:"flex",
     flexDirection:"column",
     gap:10,
+    ...(partListPanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+        overflowY:"auto",
+        overscrollBehavior:"contain",
+        scrollbarGutter:"stable",
+      }),
   };
   const partListColumnStyle={
     flex:"1 1 760px",
@@ -3951,13 +3985,25 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     display:"flex",
     flexDirection:"column",
     gap:8,
+    ...(partListPanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+      }),
   };
   const partTableCardStyle={
     background:C.surface,
     border:`1px solid ${C.border}`,
     borderRadius:12,
     overflow:"hidden",
+    display:"flex",
+    flexDirection:"column",
+    ...(partListPanelsStacked?{}:{flex:1,minHeight:0}),
   };
+  const partTableScrollStyle=partListPanelsStacked
+    ? {overflowX:"auto"}
+    : {overflow:"auto",flex:1,minHeight:0,overscrollBehavior:"contain"};
 
   async function pickPartDocuments(e){
     const files=Array.from((e.target.files||[]));
@@ -4174,13 +4220,25 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
           <div style={{fontSize:11,color:C.muted2,letterSpacing:.5,textTransform:"uppercase"}}>
             Toplam {parts.length} parca - Filtrelenen {filteredParts.length}
           </div>
-          {selectedPart&&(
-            <div style={{fontSize:11,color:C.muted2}}>
-              Aktif parca: <strong style={{color:C.text}}>{selectedPart.partNo||"-"}</strong> {selectedPart.name?` - ${selectedPart.name}`:""}
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
+            {selectedPart&&(
+              <div style={{fontSize:11,color:C.muted2}}>
+                Aktif parca: <strong style={{color:C.text}}>{selectedPart.partNo||"-"}</strong> {selectedPart.name?` - ${selectedPart.name}`:""}
+              </div>
+            )}
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{fontSize:11,color:C.muted2}}>Satir</span>
+              <select style={{...inputSt,width:78,padding:"5px 6px",fontSize:12}} value={partRowsPerPage} onChange={e=>setPartRowsPerPage(Math.max(1,Number(e.target.value)||10))}>
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+              </select>
+              <button onClick={()=>setPartListPageIdx(p=>Math.max(1,p-1))} disabled={partListPageIdx<=1} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:12,opacity:partListPageIdx<=1?0.6:1}}>{"<"}</button>
+              <div style={{fontSize:11,color:C.muted2,minWidth:56,textAlign:"center"}}>{partListPageIdx}/{partTotalPages}</div>
+              <button onClick={()=>setPartListPageIdx(p=>Math.min(partTotalPages,p+1))} disabled={partListPageIdx>=partTotalPages} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:12,opacity:partListPageIdx>=partTotalPages?0.6:1}}>{">"}</button>
             </div>
-          )}
+          </div>
         </div>
-        <div style={partSplitWrapStyle}>
+        <div ref={partListPanelRef} style={partSplitWrapStyle}>
           {filtersVisible&&(
             <div style={partFilterPanelStyle}>
               <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Parcalar</div>
@@ -4202,9 +4260,9 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
           )}
           <div style={partListColumnStyle}>
             <div style={partTableCardStyle}>
-              <div style={{overflowX:"auto"}}>
+              <div style={partTableScrollStyle}>
                 <div style={{minWidth:980}}>
-                  <div style={{display:"grid",gridTemplateColumns:"1.1fr 1.7fr 1.2fr 1.1fr .8fr 1.1fr .9fr .7fr",gap:8,padding:"9px 10px",borderBottom:`1px solid ${C.border}`,background:C.card,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700}}>
+                  <div style={{display:"grid",gridTemplateColumns:"1.1fr 1.7fr 1.2fr 1.1fr .8fr 1.1fr .9fr .7fr",gap:8,padding:"9px 10px",borderBottom:`1px solid ${C.border}`,background:C.card,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700,position:"sticky",top:0,zIndex:2}}>
                     <div>Parca No</div>
                     <div>Parca Adi</div>
                     <div>Firma</div>
@@ -4214,7 +4272,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
                     <div style={{textAlign:"right"}}>Birim Maliyet</div>
                     <div style={{textAlign:"right"}}>Dosya</div>
                   </div>
-                  {filteredParts.map((p,idx)=>{
+                  {pagedParts.map((p,idx)=>{
                     const selected=selectedPartId===p.id;
                     const docsCount=(Array.isArray(p.documents)?p.documents.length:0)+(p.drawingFile?1:0);
                     const companyName=getPartCompanyName(p)||"-";
