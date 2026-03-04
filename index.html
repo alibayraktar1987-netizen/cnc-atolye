@@ -3710,6 +3710,9 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
   const [loading,setLoading]=useState(true);
   const [search,setSearch]=useState("");
   const [sortMode,setSortMode]=useState("partno_asc");
+  const [partStatusFilter,setPartStatusFilter]=useState("all");
+  const [partDateFrom,setPartDateFrom]=useState("");
+  const [partDateTo,setPartDateTo]=useState("");
   const [partPage,setPartPage]=useState("list");
   const [selectedPartId,setSelectedPartId]=useState("");
   const [uploading,setUploading]=useState(false);
@@ -3798,14 +3801,42 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     });
     return String(sorted[0]?.customerName||"").trim();
   };
+  const partStatusOptions=[
+    {id:"all",label:"Tum Parcalar"},
+    {id:"bom",label:"BOM Olan"},
+    {id:"routing",label:"Rota Olan"},
+    {id:"docs",label:"Dokuman Olan"},
+  ];
+  const partStatusCounts={
+    all:parts.length,
+    bom:parts.filter(p=>(p.bomLines||[]).length>0).length,
+    routing:parts.filter(p=>(p.routingOps||[]).length>0).length,
+    docs:parts.filter(p=>((p.documents||[]).length>0)||Boolean(p.drawingFile)).length,
+  };
+  const inPartRange=(ymd,from,to)=>{
+    if(!from&&!to) return true;
+    if(!ymd) return true;
+    if(from&&ymd<from) return false;
+    if(to&&ymd>to) return false;
+    return true;
+  };
   const filtered=parts.filter(p=>{
     const q=search.toLowerCase().trim();
-    if(!q) return true;
-    return (p.partNo||"").toLowerCase().includes(q)||
+    const searchOk=!q||(
+      (p.partNo||"").toLowerCase().includes(q)||
       (p.customerPartCode||"").toLowerCase().includes(q)||
       (p.name||"").toLowerCase().includes(q)||
       (p.material||"").toLowerCase().includes(q)||
-      getPartCompanyName(p).toLowerCase().includes(q);
+      getPartCompanyName(p).toLowerCase().includes(q)
+    );
+    if(!searchOk) return false;
+    const statusOk=partStatusFilter==="all"||
+      (partStatusFilter==="bom"&&(p.bomLines||[]).length>0)||
+      (partStatusFilter==="routing"&&(p.routingOps||[]).length>0)||
+      (partStatusFilter==="docs"&&(((p.documents||[]).length>0)||Boolean(p.drawingFile)));
+    if(!statusOk) return false;
+    const dateYmd=String(p.updatedAt||p.createdAt||"").slice(0,10);
+    return inPartRange(dateYmd,partDateFrom,partDateTo);
   });
   const filteredParts=[...filtered].sort((a,b)=>{
     if(sortMode==="partno_desc") return String(b.partNo||"").localeCompare(String(a.partNo||""),"tr");
@@ -3895,6 +3926,37 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
       setPartForm({...emptyPartForm,partNo:nextPartNo()});
     }
     setShowPartModal(true);
+  };
+  const partSplitWrapStyle={
+    display:"flex",
+    gap:10,
+    alignItems:"stretch",
+    flexWrap:"wrap",
+  };
+  const partFilterPanelStyle={
+    flex:"0 0 250px",
+    width:"100%",
+    maxWidth:280,
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    padding:12,
+    display:"flex",
+    flexDirection:"column",
+    gap:10,
+  };
+  const partListColumnStyle={
+    flex:"1 1 760px",
+    minWidth:0,
+    display:"flex",
+    flexDirection:"column",
+    gap:8,
+  };
+  const partTableCardStyle={
+    background:C.surface,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    overflow:"hidden",
   };
 
   async function pickPartDocuments(e){
@@ -4108,72 +4170,94 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
         </div>
         {partPage==="list"&&(
           <>
-        {filtersVisible&&<input style={{...inputSt,padding:"8px 10px",fontSize:12,marginBottom:8}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Parca no / musteri kodu / firma / ad / malzeme ara..."/>}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
           <div style={{fontSize:11,color:C.muted2,letterSpacing:.5,textTransform:"uppercase"}}>
-            Toplam {parts.length} parca · Filtrelenen {filteredParts.length}
+            Toplam {parts.length} parca - Filtrelenen {filteredParts.length}
           </div>
           {selectedPart&&(
             <div style={{fontSize:11,color:C.muted2}}>
-              Aktif parca: <strong style={{color:C.text}}>{selectedPart.partNo||"-"}</strong> {selectedPart.name?`· ${selectedPart.name}`:""}
+              Aktif parca: <strong style={{color:C.text}}>{selectedPart.partNo||"-"}</strong> {selectedPart.name?` - ${selectedPart.name}`:""}
             </div>
           )}
         </div>
-        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
-          <div style={{overflowX:"auto"}}>
-            <div style={{minWidth:980}}>
-              <div style={{display:"grid",gridTemplateColumns:"1.1fr 1.7fr 1.2fr 1.1fr .8fr 1.1fr .9fr .7fr",gap:8,padding:"9px 10px",borderBottom:`1px solid ${C.border}`,background:C.card,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700}}>
-                <div>Parca No</div>
-                <div>Parca Adi</div>
-                <div>Firma</div>
-                <div>Musteri Kodu</div>
-                <div>Rev</div>
-                <div>Malzeme</div>
-                <div style={{textAlign:"right"}}>Birim Maliyet</div>
-                <div style={{textAlign:"right"}}>Dosya</div>
-              </div>
-              {filteredParts.map((p,idx)=>{
-                const selected=selectedPartId===p.id;
-                const docsCount=(Array.isArray(p.documents)?p.documents.length:0)+(p.drawingFile?1:0);
-                const companyName=getPartCompanyName(p)||"-";
-                return (
-                  <button
-                    key={p.id}
-                    onClick={()=>openPartDetailPage(p)}
-                    style={{
-                      width:"100%",
-                      textAlign:"left",
-                      display:"grid",
-                      gridTemplateColumns:"1.1fr 1.7fr 1.2fr 1.1fr .8fr 1.1fr .9fr .7fr",
-                      gap:8,
-                      padding:"10px 10px",
-                      border:"none",
-                      borderBottom:`1px solid ${C.border}`,
-                      background:selected?C.accent+"1a":(idx%2===0?C.surface:C.card),
-                      color:C.text,
-                      cursor:"pointer",
-                      fontFamily:"inherit",
-                      alignItems:"center",
-                      boxShadow:selected?`inset 3px 0 0 ${C.accent}`:"none",
-                    }}
-                  >
-                    <div style={{fontSize:12,fontWeight:800,fontFamily:"monospace"}}>{p.partNo||"-"}</div>
-                    <div style={{minWidth:0}}>
-                      <div style={{fontSize:12,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name||"-"}</div>
-                      <div style={{fontSize:10,color:C.muted2,marginTop:2}}>
-                        Kurulum {safeNum(p.setupSec)} sn · Cevrim {safeNum(p.cycleSec)} sn
-                      </div>
-                    </div>
-                    <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{companyName}</div>
-                    <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.customerPartCode||"-"}</div>
-                    <div style={{fontSize:11,color:C.text,fontWeight:700}}>{p.revision||"A"}</div>
-                    <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.material||"-"}</div>
-                    <div style={{fontSize:11,color:C.text,fontWeight:700,textAlign:"right"}}>{safeNum(p.unitCost).toFixed(2)} TRY</div>
-                    <div style={{fontSize:11,color:C.muted2,textAlign:"right"}}>{docsCount}</div>
+        <div style={partSplitWrapStyle}>
+          {filtersVisible&&(
+            <div style={partFilterPanelStyle}>
+              <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Parcalar</div>
+              <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod, musteri, ad, malzeme ara"/>
+              <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Parca Durumu</div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {partStatusOptions.map(opt=>(
+                  <button key={opt.id} onClick={()=>setPartStatusFilter(opt.id)} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:partStatusFilter===opt.id?C.accent:C.border,color:partStatusFilter===opt.id?C.accent:C.text}}>
+                    <span>{opt.label}</span>
+                    <span style={{fontSize:11,color:C.muted2}}>{partStatusCounts[opt.id]||0}</span>
                   </button>
-                );
-              })}
-              {filteredParts.length===0&&<div style={{fontSize:12,color:C.muted2,padding:"12px 10px"}}>Parca bulunamadi.</div>}
+                ))}
+              </div>
+              <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Guncelleme Tarihi</div>
+              <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={partDateFrom} onChange={e=>setPartDateFrom(e.target.value||"")}/>
+              <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={partDateTo} onChange={e=>setPartDateTo(e.target.value||"")}/>
+              <button onClick={()=>{setPartDateFrom("");setPartDateTo("");setPartStatusFilter("all");setSearch("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
+            </div>
+          )}
+          <div style={partListColumnStyle}>
+            <div style={partTableCardStyle}>
+              <div style={{overflowX:"auto"}}>
+                <div style={{minWidth:980}}>
+                  <div style={{display:"grid",gridTemplateColumns:"1.1fr 1.7fr 1.2fr 1.1fr .8fr 1.1fr .9fr .7fr",gap:8,padding:"9px 10px",borderBottom:`1px solid ${C.border}`,background:C.card,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700}}>
+                    <div>Parca No</div>
+                    <div>Parca Adi</div>
+                    <div>Firma</div>
+                    <div>Musteri Kodu</div>
+                    <div>Rev</div>
+                    <div>Malzeme</div>
+                    <div style={{textAlign:"right"}}>Birim Maliyet</div>
+                    <div style={{textAlign:"right"}}>Dosya</div>
+                  </div>
+                  {filteredParts.map((p,idx)=>{
+                    const selected=selectedPartId===p.id;
+                    const docsCount=(Array.isArray(p.documents)?p.documents.length:0)+(p.drawingFile?1:0);
+                    const companyName=getPartCompanyName(p)||"-";
+                    return (
+                      <button
+                        key={p.id}
+                        onClick={()=>openPartDetailPage(p)}
+                        style={{
+                          width:"100%",
+                          textAlign:"left",
+                          display:"grid",
+                          gridTemplateColumns:"1.1fr 1.7fr 1.2fr 1.1fr .8fr 1.1fr .9fr .7fr",
+                          gap:8,
+                          padding:"10px 10px",
+                          border:"none",
+                          borderBottom:`1px solid ${C.border}`,
+                          background:selected?C.accent+"1a":(idx%2===0?C.surface:C.card),
+                          color:C.text,
+                          cursor:"pointer",
+                          fontFamily:"inherit",
+                          alignItems:"center",
+                          boxShadow:selected?`inset 3px 0 0 ${C.accent}`:"none",
+                        }}
+                      >
+                        <div style={{fontSize:12,fontWeight:800,fontFamily:"monospace"}}>{p.partNo||"-"}</div>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:12,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name||"-"}</div>
+                          <div style={{fontSize:10,color:C.muted2,marginTop:2}}>
+                            Kurulum {safeNum(p.setupSec)} sn - Cevrim {safeNum(p.cycleSec)} sn
+                          </div>
+                        </div>
+                        <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{companyName}</div>
+                        <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.customerPartCode||"-"}</div>
+                        <div style={{fontSize:11,color:C.text,fontWeight:700}}>{p.revision||"A"}</div>
+                        <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.material||"-"}</div>
+                        <div style={{fontSize:11,color:C.text,fontWeight:700,textAlign:"right"}}>{safeNum(p.unitCost).toFixed(2)} TRY</div>
+                        <div style={{fontSize:11,color:C.muted2,textAlign:"right"}}>{docsCount}</div>
+                      </button>
+                    );
+                  })}
+                  {filteredParts.length===0&&<div style={{fontSize:12,color:C.muted2,padding:"12px 10px"}}>Filtreye uygun parca bulunamadi.</div>}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -12980,15 +13064,15 @@ function MRPDashboard({
     {id:"name_asc",label:"Makine (A-Z)"},
   ];
   const viewChoices=[
-    {id:"cards",label:"Kartlar",icon:"?"},
-    {id:"compact",label:"Liste",icon:"?"},
-    {id:"table",label:"Tablo",icon:"?"},
+    {id:"cards",label:"Kartlar",icon:"\u25A6"},
+    {id:"compact",label:"Liste",icon:"\u2630"},
+    {id:"table",label:"Tablo",icon:"\u25A4"},
   ];
   const quickActions=[
-    {id:"notif",label:"Bildirimler",icon:"??"},
-    {id:"calendar",label:"Takvim",icon:"??"},
-    {id:"mail",label:"Mesajlar",icon:"?"},
-    {id:"settings",label:"Ayarlar",icon:"?"},
+    {id:"notif",label:"Bildirimler",icon:"\uD83D\uDD14"},
+    {id:"calendar",label:"Takvim",icon:"\uD83D\uDCC5"},
+    {id:"mail",label:"Mesajlar",icon:"\u2709"},
+    {id:"settings",label:"Ayarlar",icon:"\u2699"},
   ];
   const hasReportWidgets=dashboardWidgetRows.length>0;
   const showReportWidgetArea=hasReportWidgets||dashboardEditMode;
@@ -13027,7 +13111,7 @@ function MRPDashboard({
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",background:commandBarTone.heroBg}}>
           <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
             <div style={{width:40,height:40,borderRadius:10,background:"rgba(255,255,255,.16)",border:`1px solid ${commandBarTone.heroChipBorder}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
-              {logoSrc?<img src={logoSrc} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:17,color:commandBarTone.heroText}}>??</span>}
+              {logoSrc?<img src={logoSrc} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:17,color:commandBarTone.heroText}}>{"\uD83C\uDFED"}</span>}
             </div>
             <div style={{minWidth:0}}>
               <div style={{fontSize:11,color:commandBarTone.heroMuted,letterSpacing:.7,textTransform:"uppercase"}}>Canlı Üretim Panosu</div>
@@ -13043,7 +13127,7 @@ function MRPDashboard({
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <div style={{position:"relative",minWidth:isNarrow?190:250}}>
-              <span style={{position:"absolute",left:10,top:8,color:commandBarTone.heroMuted,fontSize:13}}>?</span>
+              <span style={{position:"absolute",left:10,top:8,color:commandBarTone.heroMuted,fontSize:13}}>{"\uD83D\uDD0D"}</span>
               <input value={machineQuery} onChange={e=>setMachineQuery(e.target.value)} placeholder="Kayitlarda ara..." style={{...inputSt,padding:"8px 10px 8px 30px",fontSize:12,minWidth:isNarrow?190:250,background:commandBarTone.heroFieldBg,borderColor:commandBarTone.heroFieldBorder,color:commandBarTone.heroText}}/>
             </div>
             <button onClick={()=>setDashboardEditMode(v=>!v)} title="Yeni aksiyon" style={{border:`1px solid ${commandBarTone.heroChipBorder}`,background:commandBarTone.heroChipBg,color:commandBarTone.heroText,padding:"8px 10px",fontSize:14,minWidth:34,borderRadius:8,cursor:"pointer"}}>{dashboardEditMode?"×":"+"}</button>
@@ -16222,15 +16306,15 @@ function App() {
     );
   };
   const topQuickActions=[
-    {id:"notif",label:"Bildirimler",icon:"??"},
-    {id:"calendar",label:"Takvim",icon:"??"},
-    {id:"mail",label:"Mesajlar",icon:"?"},
-    {id:"settings",label:"Ayarlar",icon:"?"},
+    {id:"notif",label:"Bildirimler",icon:"\uD83D\uDD14"},
+    {id:"calendar",label:"Takvim",icon:"\uD83D\uDCC5"},
+    {id:"mail",label:"Mesajlar",icon:"\u2709"},
+    {id:"settings",label:"Ayarlar",icon:"\u2699"},
   ];
   const topViewChoices=[
-    {id:"cards",label:"Kartlar",icon:"?"},
-    {id:"compact",label:"Liste",icon:"?"},
-    {id:"table",label:"Tablo",icon:"?"},
+    {id:"cards",label:"Kartlar",icon:"\u25A6"},
+    {id:"compact",label:"Liste",icon:"\u2630"},
+    {id:"table",label:"Tablo",icon:"\u25A4"},
   ];
   const appCommandBarTone=themeMode==="dark"
     ? {
@@ -16335,7 +16419,7 @@ function App() {
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",background:appCommandBarTone.heroBg}}>
         <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
           <div style={{width:40,height:40,borderRadius:10,background:"rgba(255,255,255,.16)",border:`1px solid ${appCommandBarTone.heroChipBorder}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
-            {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:17,color:appCommandBarTone.heroText}}>??</span>}
+            {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:17,color:appCommandBarTone.heroText}}>{"\uD83C\uDFED"}</span>}
           </div>
           <div style={{minWidth:0}}>
             <div style={{fontSize:11,color:appCommandBarTone.heroMuted,letterSpacing:.7,textTransform:"uppercase"}}>Canli Uretim Panosu</div>
@@ -16349,7 +16433,7 @@ function App() {
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
           <div style={{position:"relative",minWidth:isMobile?180:250}}>
-            <span style={{position:"absolute",left:10,top:8,color:appCommandBarTone.heroMuted,fontSize:13}}>?</span>
+            <span style={{position:"absolute",left:10,top:8,color:appCommandBarTone.heroMuted,fontSize:13}}>{"\uD83D\uDD0D"}</span>
             <input value={menuQuery} onChange={e=>setMenuQuery(e.target.value)} placeholder="Modul veya kayit ara..." style={{...inputSt,padding:"8px 10px 8px 30px",fontSize:12,minWidth:isMobile?180:250,background:appCommandBarTone.heroFieldBg,borderColor:appCommandBarTone.heroFieldBorder,color:appCommandBarTone.heroText}}/>
           </div>
           {isMobile&&(
