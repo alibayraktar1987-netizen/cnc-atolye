@@ -11365,8 +11365,8 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
         </div>
       </div>
       {selectedPlan&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:14}} onClick={()=>setSelectedPlan(null)}>
-          <div style={{width:"100%",maxWidth:520,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0}} onClick={e=>e.stopPropagation()}>
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:"clamp(18px,4vw,36px)"}} onClick={()=>setSelectedPlan(null)}>
+          <div style={{width:"100%",maxWidth:540,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"18px 18px 16px"}} onClick={e=>e.stopPropagation()}>
             <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>Plan Detayı</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,fontSize:13,color:C.muted2}}>
               <div><strong>Tarih:</strong> {(selectedPlanSegment?.startDate||selectedPlan.date||"-")}{(selectedPlanSegment?.endDate&&selectedPlanSegment.endDate!==(selectedPlanSegment.startDate||selectedPlan.date))?` - ${selectedPlanSegment.endDate}`:""}</div>
