@@ -1,0 +1,16853 @@
+﻿
+const { useState, useEffect, useCallback, useRef, useMemo } = React;
+
+// Â¦Â¦ CONSTANTS Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦
+const DEFAULT_MACHINES = ["CNC-1","CNC-2","CNC-3","CNC-4"];
+function normalizeMachineList(list,fallback=DEFAULT_MACHINES){
+  const src=Array.isArray(list)?list:[];
+  const used=new Set();
+  const cleaned=[];
+  src.forEach(item=>{
+    const v=String(item||"").trim();
+    if(!v) return;
+    const k=v.toLocaleLowerCase("tr");
+    if(used.has(k)) return;
+    used.add(k);
+    cleaned.push(v);
+  });
+  if(cleaned.length>0) return cleaned;
+  return [...(Array.isArray(fallback)&&fallback.length>0?fallback:DEFAULT_MACHINES)];
+}
+function machineNamesFromConnectors(rows){
+  return normalizeMachineList((Array.isArray(rows)?rows:[]).map(r=>r?.machineName||""),[]);
+}
+function sameMachineList(a,b){
+  const left=normalizeMachineList(a,[]);
+  const right=normalizeMachineList(b,[]);
+  if(left.length!==right.length) return false;
+  for(let i=0;i<left.length;i+=1){
+    if(left[i]!==right[i]) return false;
+  }
+  return true;
+}
+const SHIFTS = [
+  { id:"sabah", label:"Sabah", time:"06:00â€“14:00" },
+  { id:"ogleden", label:"Ã–ÄŸleden Sonra", time:"14:00â€“22:00" },
+  { id:"gece", label:"Gece", time:"22:00â€“06:00" },
+];
+function normalizeShiftToken(value){
+  return String(value||"")
+    .toLowerCase()
+    .replace(/[Ã§Ã‡]/g,"c")
+    .replace(/[ÄŸÄ]/g,"g")
+    .replace(/[Ä±Ä°]/g,"i")
+    .replace(/[Ã¶Ã–]/g,"o")
+    .replace(/[ÅŸÅ]/g,"s")
+    .replace(/[Ã¼Ãœ]/g,"u")
+    .replace(/[^a-z0-9]+/g,"_")
+    .replace(/^_+|_+$/g,"");
+}
+function shiftIdFromLabel(value,index=0){
+  const token=normalizeShiftToken(value);
+  return token||`shift_${index+1}`;
+}
+function uniqueShiftId(preferred,used,index=0){
+  const base=shiftIdFromLabel(preferred,index);
+  let id=base;
+  let seq=2;
+  while(used.has(id)){
+    id=`${base}_${seq}`;
+    seq+=1;
+  }
+  used.add(id);
+  return id;
+}
+function normalizeHm(value,fallback="00:00"){
+  const raw=String(value||"").trim();
+  const m=/^(\d{1,2}):(\d{2})$/.exec(raw);
+  if(!m) return fallback;
+  const hh=Number(m[1]);
+  const mm=Number(m[2]);
+  if(!Number.isFinite(hh)||!Number.isFinite(mm)||hh<0||hh>23||mm<0||mm>59) return fallback;
+  return `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
+}
+function parseShiftRangeText(value){
+  const clean=String(value||"").replace(/[â€“â€”]/g,"-");
+  const parts=clean.split("-");
+  const start=normalizeHm(parts[0],"00:00");
+  const end=normalizeHm(parts[1],start);
+  return {start,end};
+}
+const DEFAULT_SHIFT_WINDOWS=SHIFTS.map(shift=>{
+  const range=parseShiftRangeText(shift.time);
+  return {
+    id:shift.id,
+    label:shift.label,
+    start:range.start,
+    end:range.end,
+  };
+});
+const DEFAULT_KIOSK_SETTINGS = {
+  shiftWindows:DEFAULT_SHIFT_WINDOWS.map(row=>({...row})),
+  cycleDeviationNotificationEnabled:false,
+  cycleDeviationThresholdSec:20,
+};
+function normalizeKioskSettings(raw){
+  const src=(raw&&typeof raw==="object")?raw:{};
+  const inputList=Array.isArray(src.shiftWindows)?src.shiftWindows:(Array.isArray(src.shifts)?src.shifts:[]);
+  const baseRows=(inputList.length>0?inputList:DEFAULT_SHIFT_WINDOWS).filter(Boolean);
+  const usedShiftIds=new Set();
+  const shiftWindows=baseRows.map((rawRow,idx)=>{
+    const fallback=DEFAULT_SHIFT_WINDOWS[idx]||DEFAULT_SHIFT_WINDOWS[0]||{id:`shift_${idx+1}`,label:`Vardiya ${idx+1}`,start:"00:00",end:"00:00"};
+    const row=(rawRow&&typeof rawRow==="object")?rawRow:{};
+    const parsedRange=row.time?parseShiftRangeText(row.time):null;
+    const label=String(row.label||row.name||fallback.label||`Vardiya ${idx+1}`).trim()||`Vardiya ${idx+1}`;
+    const id=uniqueShiftId(String(row.id||label),usedShiftIds,idx);
+    const start=normalizeHm(row.start??parsedRange?.start,fallback.start);
+    const end=normalizeHm(row.end??parsedRange?.end,fallback.end);
+    return {
+      id,
+      label,
+      start,
+      end,
+    };
+  });
+  const fallbackUsed=new Set();
+  const safeShiftWindows=shiftWindows.length>0?shiftWindows:DEFAULT_SHIFT_WINDOWS.map((row,idx)=>({
+    id:uniqueShiftId(row.id||row.label,fallbackUsed,idx),
+    label:String(row.label||`Vardiya ${idx+1}`),
+    start:normalizeHm(row.start,"00:00"),
+    end:normalizeHm(row.end,"00:00"),
+  }));
+  const thresholdRaw=src.cycleDeviationThresholdSec??src.cycleDeviationThreshold;
+  return {
+    shiftWindows:safeShiftWindows,
+    cycleDeviationNotificationEnabled:Boolean(src.cycleDeviationNotificationEnabled??src.notifyCycleDeviation),
+    cycleDeviationThresholdSec:Math.max(1,Math.round(safeNum(thresholdRaw||DEFAULT_KIOSK_SETTINGS.cycleDeviationThresholdSec))),
+  };
+}
+function useShiftWindows(){
+  const [rows,setRows]=useState(DEFAULT_SHIFT_WINDOWS);
+  useEffect(()=>{
+    let disposed=false;
+    async function load(){
+      const doc=await window.DB.getDoc("config","kioskSettings");
+      if(disposed) return;
+      const cfg=normalizeKioskSettings(doc||{});
+      setRows((cfg.shiftWindows&&cfg.shiftWindows.length>0)?cfg.shiftWindows:DEFAULT_SHIFT_WINDOWS);
+    }
+    function onUpdated(e){
+      if(disposed) return;
+      const cfg=normalizeKioskSettings(e?.detail||{});
+      setRows((cfg.shiftWindows&&cfg.shiftWindows.length>0)?cfg.shiftWindows:DEFAULT_SHIFT_WINDOWS);
+    }
+    load();
+    if(typeof window!=="undefined"){
+      window.addEventListener("kiosk_settings_updated",onUpdated);
+    }
+    return ()=>{
+      disposed=true;
+      if(typeof window!=="undefined"){
+        window.removeEventListener("kiosk_settings_updated",onUpdated);
+      }
+    };
+  },[]);
+  return (rows&&rows.length>0)?rows:DEFAULT_SHIFT_WINDOWS;
+}
+function hmToMinute(value){
+  const hm=normalizeHm(value,"");
+  if(!hm) return null;
+  const parts=hm.split(":");
+  if(parts.length!==2) return null;
+  const hh=Number(parts[0]);
+  const mm=Number(parts[1]);
+  if(!Number.isFinite(hh)||!Number.isFinite(mm)) return null;
+  return (hh*60)+mm;
+}
+function resolveShiftIdByMinute(shiftWindows,minute){
+  const rows=(Array.isArray(shiftWindows)&&shiftWindows.length>0)?shiftWindows:DEFAULT_SHIFT_WINDOWS;
+  const fallbackId=rows[0]?.id||DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1";
+  if(!Number.isFinite(minute)) return fallbackId;
+  const m=Math.max(0,Math.min(1439,Math.floor(minute)));
+  for(const row of rows){
+    const start=hmToMinute(row.start);
+    const end=hmToMinute(row.end);
+    if(start===null||end===null) continue;
+    if(start===end) return row.id||fallbackId;
+    if(start<end){
+      if(m>=start&&m<end) return row.id||fallbackId;
+    }else{
+      if(m>=start||m<end) return row.id||fallbackId;
+    }
+  }
+  return fallbackId;
+}
+function minuteFromIsoLike(value){
+  if(typeof value!=="string"||!value) return null;
+  const m=/T(\d{2}):(\d{2})/.exec(value);
+  if(!m) return null;
+  return hmToMinute(`${m[1]}:${m[2]}`);
+}
+const EFFECTIVE_SECONDS = 72000;
+const LOGO_SRC = "./logo.png";
+const SESSION_TIMEOUT_MIN = 30;
+const USER_ROLES = [
+  { id:"admin", label:"Admin" },
+  { id:"sales", label:"Satis" },
+  { id:"planner", label:"Planlama" },
+  { id:"purchasing", label:"Satin Alma" },
+  { id:"supervisor", label:"Vardiya Sefi" },
+  { id:"operator", label:"Operator" },
+  { id:"quality", label:"Kalite" },
+  { id:"viewer", label:"Izleyici" },
+];
+const PERMISSIONS = [
+  { id:"data_entry", label:"Veri GiriÅŸi", icon:"??", desc:"Ãœretim verisi girebilir" },
+  { id:"view_reports", label:"Rapor GÃ¶rÃ¼ntÃ¼leme", icon:"??", desc:"TÃ¼m raporlarÄ± gÃ¶rebilir" },
+  { id:"manage_orders", label:"Ä°ÅŸ Emri OluÅŸturma", icon:"??", desc:"Ä°ÅŸ emri ekleyip dÃ¼zenleyebilir" },
+  { id:"assign_tasks", label:"Calisan Gorevlendirme", icon:"??", desc:"Calisanlara gorev atayabilir" },
+  { id:"approve_users", label:"KullanÄ±cÄ± Onaylama", icon:"??", desc:"KullanÄ±cÄ±larÄ± onaylayabilir" },
+  { id:"manage_sales", label:"Satis ve Teklif", icon:"??", desc:"Teklif ve siparis yonetebilir" },
+  { id:"manage_purchasing", label:"Satin Alma", icon:"??", desc:"Talep ve PO yonetebilir" },
+  { id:"manage_quality", label:"Kalite", icon:"??", desc:"Muayene ve FAI kayitlari girebilir" },
+  { id:"manage_downtime", label:"Durus Yonetimi", icon:"??", desc:"Durus nedeni ve kaydi girebilir" },
+  { id:"manage_notifications", label:"Bildirim Kurallari", icon:"??", desc:"Uyari kurallari duzenleyebilir" },
+];
+const ROLE_PERMISSION_DEFAULTS = {
+  admin: PERMISSIONS.map(p=>p.id),
+  sales:["manage_sales","view_reports"],
+  planner:["manage_orders","view_reports","manage_sales","assign_tasks"],
+  purchasing:["manage_purchasing","view_reports"],
+  supervisor:["data_entry","view_reports","manage_downtime","manage_notifications","assign_tasks"],
+  operator:["data_entry"],
+  quality:["manage_quality","view_reports"],
+  viewer:["view_reports"],
+};
+
+const THEME_PRESETS = {
+  light:{
+    bg:"#F4F7F8", bgAlt:"#FEFFFF",
+    surface:"#FEFFFF", surface2:"#F0F4F6", card:"#FEFFFF", border:"#D9E0E3",
+    accent:"#57BE90", accentDim:"#E4F4EE", brandTint:"#E8F6F8",
+    green:"#57BE90", greenDim:"#E4F4EE",
+    red:"#015249", redDim:"#DDEAE8",
+    warn:"#79C9D4", warnDim:"#E6F4F7",
+    purple:"#79C9D4",
+    text:"#015249", muted:"#5F8B91", muted2:"#A5A5AF",
+  },
+  dark:{
+    bg:"#16181C", bgAlt:"#1C2025",
+    surface:"#232830", surface2:"#1E232A", card:"#272D35", border:"#3A414C",
+    accent:"#8FA2B6", accentDim:"#2E3742", brandTint:"#303946",
+    green:"#7FA08F", greenDim:"#2F3B35",
+    red:"#C19397", redDim:"#413338",
+    warn:"#B7A483", warnDim:"#3E3930",
+    purple:"#9A92AE",
+    text:"#ECEFF3", muted:"#B9C0CA", muted2:"#8D95A1",
+  },
+};
+const C = { ...THEME_PRESETS.light };
+const CORPORATE_CHART_PALETTE = [
+  "#79C9D4",
+  "#57BE90",
+  "#015249",
+  "#A5A5AF",
+  "#66C4CF",
+  "#4AB587",
+  "#0C6B60",
+  "#B6BDC5",
+  "#8FD6DE",
+  "#6EC9A0",
+  "#2B7A73",
+  "#D9E0E6",
+];
+function applyThemeMode(mode){
+  const next=THEME_PRESETS[mode]||THEME_PRESETS.light;
+  Object.assign(C,next);
+}
+const ORDER_STATUS_OPTIONS = [
+  { id:"planned", label:"Planlandi", color:C.accent },
+  { id:"in_production", label:"Uretimde", color:C.green },
+  { id:"waiting", label:"Bekliyor", color:C.warn },
+  { id:"completed", label:"Tamamlandi", color:C.accent },
+  { id:"cancelled", label:"Iptal", color:C.red },
+  { id:"active", label:"Aktif (Legacy)", color:C.green },
+  { id:"passive", label:"Pasif", color:C.muted2 },
+  { id:"liquidation", label:"Tasfiye", color:C.red },
+  { id:"shipped", label:"Teslim/Sevk", color:C.warn },
+];
+const SALES_STATUS_OPTIONS = [
+  { id:"offer", label:"Teklif", color:C.muted2 },
+  { id:"approved", label:"Onaylandi", color:C.accent },
+  { id:"in_production", label:"Uretimde", color:C.green },
+  { id:"delivered", label:"Teslim Edildi", color:C.green },
+  { id:"new", label:"Yeni", color:C.accent },
+  { id:"waiting", label:"Beklemede", color:C.warn },
+  { id:"cancelled", label:"Iptal", color:C.red },
+  { id:"converted", label:"Donustu", color:C.green },
+];
+const PRIORITY_OPTIONS = [
+  { id:"acil", label:"Acil", color:C.red },
+  { id:"normal", label:"Normal", color:C.accent },
+  { id:"dusuk", label:"Dusuk", color:C.muted2 },
+];
+const TABLE_COLUMN_LAYOUT_STORAGE_PREFIX = "cnc_atolye_table_columns_v1";
+const SALES_QUOTE_LIST_COLUMNS = [
+  {id:"quote_no",label:"Teklif No",width:176},
+  {id:"customer",label:"Firma Adi",width:168},
+  {id:"valid_until",label:"Gecerlilik",width:128},
+  {id:"status",label:"Teklif Asamasi",width:146},
+  {id:"total",label:"Genel Toplam",width:150,align:"right"},
+  {id:"actions",label:"Islem",width:336,align:"right",required:true},
+];
+const SALES_ORDER_LIST_COLUMNS = [
+  {id:"order_no",label:"Siparis No",width:176},
+  {id:"customer",label:"Musteri",width:210},
+  {id:"due_date",label:"Termin",width:120},
+  {id:"status",label:"Durum",width:126},
+  {id:"remaining",label:"Kalan / Toplam",width:152,align:"right"},
+  {id:"document",label:"Belge",width:180},
+  {id:"actions",label:"Islem",width:420,align:"right",required:true},
+];
+const WORK_ORDER_LIST_COLUMNS = [
+  {id:"work_order",label:"Is Emri",width:232},
+  {id:"customer_part",label:"Musteri / Parca",width:228},
+  {id:"due",label:"Termin",width:124},
+  {id:"status_production",label:"Durum / Uretim",width:152},
+  {id:"actions",label:"Islem",width:352,align:"right",required:true},
+];
+const MACHINE_BRAND_OPTIONS = ["Fanuc","Siemens","Heidenhain","Generic"];
+const MACHINE_PROTOCOL_OPTIONS = {
+  Fanuc:["FOCAS2","MTConnect"],
+  Siemens:["OPC-UA"],
+  Heidenhain:["LSV2","OPC-UA"],
+  Generic:["MTConnect","MQTT"],
+};
+const MACHINE_DATA_POINTS = [
+  { id:"status", label:"Makina Durumu" },
+  { id:"program", label:"Aktif Program" },
+  { id:"spindleLoad", label:"Mil Yuku %" },
+  { id:"feedOverride", label:"Ilerleme Orani %" },
+  { id:"cycleElapsed", label:"Cevrim Suresi" },
+  { id:"partCounter", label:"Parca Sayaci" },
+  { id:"alarms", label:"Alarmlar" },
+  { id:"toolLife", label:"Takim Omru" },
+  { id:"operatorId", label:"Operator Kimligi" },
+];
+const MACHINE_DEFAULT_POINTS = MACHINE_DATA_POINTS.reduce((acc,p)=>{
+  acc[p.id]=true;
+  return acc;
+},{});
+const DEFAULT_QUOTE_TEMPLATE = {
+  companyName:"CNC Atolye",
+  companyAddress:"",
+  companyPhone:"",
+  companyEmail:"",
+  documentTitleQuote:"Proforma Teklif",
+  documentTitleOrder:"Siparis Onay Formu",
+  footerNote:"Bu teklif belirtilen sure boyunca gecerlidir.",
+  accentColor:"#57BE90",
+  showLogo:false,
+};
+const DEFAULT_SALES_CURRENCIES = {
+  defaultCurrency:"TRY",
+  list:[
+    {code:"TRY",label:"TL",symbol:"?",enabled:true,sortOrder:10},
+    {code:"EUR",label:"Euro",symbol:"â‚¬",enabled:true,sortOrder:20},
+    {code:"USD",label:"Dolar",symbol:"$",enabled:true,sortOrder:30},
+  ],
+};
+function normalizeSalesCurrencies(raw){
+  const allowed={TRY:true,EUR:true,USD:true};
+  const inputList=Array.isArray(raw?.list)?raw.list:[];
+  const merged=DEFAULT_SALES_CURRENCIES.list.map((base,idx)=>{
+    const row=inputList.find(x=>String(x?.code||"").toUpperCase()===base.code)||{};
+    return {
+      code:base.code,
+      label:String(row?.label||base.label).trim()||base.label,
+      symbol:String(row?.symbol||base.symbol).trim()||base.symbol,
+      enabled:typeof row?.enabled==="boolean"?row.enabled:base.enabled,
+      sortOrder:Math.max(1,safeNum(row?.sortOrder)||base.sortOrder||((idx+1)*10)),
+    };
+  }).filter(x=>allowed[x.code]);
+  const sorted=merged.sort((a,b)=>safeNum(a.sortOrder)-safeNum(b.sortOrder));
+  const anyEnabled=sorted.some(x=>x.enabled);
+  if(!anyEnabled&&sorted[0]) sorted[0]={...sorted[0],enabled:true};
+  const requested=String(raw?.defaultCurrency||DEFAULT_SALES_CURRENCIES.defaultCurrency).toUpperCase();
+  const activeCodes=sorted.filter(x=>x.enabled).map(x=>x.code);
+  const defaultCurrency=activeCodes.includes(requested)?requested:(activeCodes[0]||"TRY");
+  return {list:sorted,defaultCurrency};
+}
+const DEFAULT_SUPPLIER_GROUPS = {
+  list:[
+    {id:"malzeme",name:"Malzeme Satanlar",color:"#57BE90",sortOrder:10},
+    {id:"takim",name:"Takim Satanlar",color:"#015249",sortOrder:20},
+  ],
+};
+function normalizeSupplierGroups(raw){
+  const list=Array.isArray(raw?.list)?raw.list:[];
+  const src=list.length>0?list:DEFAULT_SUPPLIER_GROUPS.list;
+  const used=new Set();
+  const rows=src.map((row,idx)=>{
+    const fallback=DEFAULT_SUPPLIER_GROUPS.list[idx%DEFAULT_SUPPLIER_GROUPS.list.length]||DEFAULT_SUPPLIER_GROUPS.list[0];
+    const name=String(row?.name||fallback?.name||`Grup ${idx+1}`).trim()||`Grup ${idx+1}`;
+    const rawId=String(row?.id||normalizeShiftToken(name)||`grp_${idx+1}`).trim();
+    const baseId=normalizeShiftToken(rawId)||`grp_${idx+1}`;
+    let id=baseId;
+    let seq=2;
+    while(used.has(id)){
+      id=`${baseId}_${seq}`;
+      seq+=1;
+    }
+    used.add(id);
+    return {
+      id,
+      name,
+      color:normalizeHexColor(row?.color,fallback?.color||"#57BE90"),
+      sortOrder:Math.max(1,safeNum(row?.sortOrder)||((idx+1)*10)),
+    };
+  }).sort((a,b)=>{
+    const s=safeNum(a.sortOrder)-safeNum(b.sortOrder);
+    if(s!==0) return s;
+    return (a.name||"").localeCompare(b.name||"","tr");
+  });
+  return {list:rows.length>0?rows:DEFAULT_SUPPLIER_GROUPS.list.map((x,idx)=>({...x,sortOrder:(idx+1)*10}))};
+}
+const MENU_ALWAYS_VISIBLE_TAB_IDS = ["users"];
+function normalizeMenuVisibilityConfig(raw){
+  const src=(raw&&typeof raw==="object")?raw:{};
+  const input=Array.isArray(src.hiddenTabs)?src.hiddenTabs:(Array.isArray(src.hidden)?src.hidden:[]);
+  const seen=new Set();
+  const hiddenTabs=[];
+  input.forEach(item=>{
+    const id=String(item||"").trim();
+    if(!id||MENU_ALWAYS_VISIBLE_TAB_IDS.includes(id)||seen.has(id)) return;
+    seen.add(id);
+    hiddenTabs.push(id);
+  });
+  return {hiddenTabs};
+}
+const DEFAULT_ROUTING_OPERATION_TYPES = [
+  { id:"op10", code:"OP-10", name:"Kesim ve Hazirlik", icon:"??", color:"#57BE90", defaultSetupSec:300, defaultCycleSec:60, sortOrder:10 },
+  { id:"op20", code:"OP-20", name:"Kaba Isleme", icon:"??", color:"#79C9D4", defaultSetupSec:240, defaultCycleSec:90, sortOrder:20 },
+  { id:"op30", code:"OP-30", name:"Finis Isleme", icon:"??", color:"#015249", defaultSetupSec:180, defaultCycleSec:80, sortOrder:30 },
+  { id:"op40", code:"OP-40", name:"Delik Delme ve Klavuz", icon:"??", color:"#A5A5AF", defaultSetupSec:120, defaultCycleSec:45, sortOrder:40 },
+  { id:"op50", code:"OP-50", name:"Olcum ve Kontrol", icon:"??", color:"#4AB587", defaultSetupSec:90, defaultCycleSec:30, sortOrder:50 },
+];
+const OPERATION_ICON_OPTIONS = ["??","???","??","??","??","??","??","??","??","??"];
+const LEGACY_OPERATION_ICON_MAP = {
+  "?":"??",
+  "??":"??",
+};
+function normalizeHexColor(value,fallback="#57BE90"){
+  const raw=String(value||"").trim();
+  if(/^#?[0-9a-fA-F]{6}$/.test(raw)) return raw.startsWith("#")?raw:`#${raw}`;
+  return fallback;
+}
+function normalizeOperationIcon(icon,fallback){
+  const base=String(icon||"").trim();
+  const remapped=LEGACY_OPERATION_ICON_MAP[base]||base;
+  const pick=String(fallback||"??").trim()||"??";
+  if(OPERATION_ICON_OPTIONS.includes(remapped)) return remapped;
+  return OPERATION_ICON_OPTIONS.includes(pick)?pick:"??";
+}
+function normalizeRoutingOperationTypes(raw){
+  const list=Array.isArray(raw?.list)?raw.list:[];
+  const src=list.length>0?list:DEFAULT_ROUTING_OPERATION_TYPES;
+  return src.map((row,idx)=>{
+    const code=String(row?.code||`OP-${pad2((idx+1)*10)}`).trim().toUpperCase();
+    const name=String(row?.name||`Operasyon ${idx+1}`).trim()||`Operasyon ${idx+1}`;
+    const fallback=DEFAULT_ROUTING_OPERATION_TYPES[idx%DEFAULT_ROUTING_OPERATION_TYPES.length]||DEFAULT_ROUTING_OPERATION_TYPES[0];
+    return {
+      id:String(row?.id||`op_${Date.now().toString(36)}_${idx}`),
+      code,
+      name,
+      icon:normalizeOperationIcon(row?.icon,fallback?.icon||"??"),
+      color:normalizeHexColor(row?.color,fallback?.color||"#57BE90"),
+      defaultSetupSec:Math.max(0,safeNum(row?.defaultSetupSec)),
+      defaultCycleSec:Math.max(0,safeNum(row?.defaultCycleSec)),
+      sortOrder:Math.max(1,safeNum(row?.sortOrder)||((idx+1)*10)),
+    };
+  }).sort((a,b)=>{
+    const s=safeNum(a.sortOrder)-safeNum(b.sortOrder);
+    if(s!==0) return s;
+    return (a.code||"").localeCompare(b.code||"","tr");
+  });
+}
+function normalizeQuoteTemplate(raw){
+  const src=raw||{};
+  const pick=(k,d)=>typeof src[k]==="string"?src[k]:d;
+  const colorRaw=String(pick("accentColor",DEFAULT_QUOTE_TEMPLATE.accentColor)||"").trim();
+  const validColor=/^#?[0-9a-fA-F]{6}$/.test(colorRaw)?colorRaw.replace(/^([^#])/,"#$1"):DEFAULT_QUOTE_TEMPLATE.accentColor;
+  return {
+    companyName:pick("companyName",DEFAULT_QUOTE_TEMPLATE.companyName),
+    companyAddress:pick("companyAddress",DEFAULT_QUOTE_TEMPLATE.companyAddress),
+    companyPhone:pick("companyPhone",DEFAULT_QUOTE_TEMPLATE.companyPhone),
+    companyEmail:pick("companyEmail",DEFAULT_QUOTE_TEMPLATE.companyEmail),
+    documentTitleQuote:pick("documentTitleQuote",DEFAULT_QUOTE_TEMPLATE.documentTitleQuote),
+    documentTitleOrder:pick("documentTitleOrder",DEFAULT_QUOTE_TEMPLATE.documentTitleOrder),
+    footerNote:pick("footerNote",DEFAULT_QUOTE_TEMPLATE.footerNote),
+    accentColor:validColor,
+    showLogo:Boolean(src.showLogo),
+  };
+}
+function hexToRgb(hex,fallback={r:87,g:190,b:144}){
+  const clean=String(hex||"").replace("#","").trim();
+  if(!/^[0-9a-fA-F]{6}$/.test(clean)) return fallback;
+  return {
+    r:parseInt(clean.slice(0,2),16),
+    g:parseInt(clean.slice(2,4),16),
+    b:parseInt(clean.slice(4,6),16),
+  };
+}
+async function ensureExternalScript(src,checkFn){
+  try{
+    if(typeof checkFn==="function"&&checkFn()) return true;
+    if(!window.__scriptLoaders) window.__scriptLoaders={};
+    if(window.__scriptLoaders[src]) return window.__scriptLoaders[src];
+    window.__scriptLoaders[src]=new Promise((resolve,reject)=>{
+      const existing=document.querySelector(`script[data-src="${src}"]`);
+      if(existing){
+        existing.addEventListener("load",()=>resolve(true),{once:true});
+        existing.addEventListener("error",()=>reject(new Error("script load failed")),{once:true});
+        return;
+      }
+      const s=document.createElement("script");
+      s.src=src;
+      s.async=true;
+      s.dataset.src=src;
+      s.onload=()=>resolve(true);
+      s.onerror=()=>reject(new Error("script load failed"));
+      document.head.appendChild(s);
+    });
+    await window.__scriptLoaders[src];
+    return true;
+  }catch{
+    return false;
+  }
+}
+
+// Â¦Â¦ HELPERS Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦
+const pad2 = n => String(n).padStart(2,"0");
+const ymdLocal = (d=new Date()) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+const parseYmdLocal = s => {
+  const [y,m,d]=(s||"").split("-").map(Number);
+  if(!y||!m||!d) return new Date();
+  return new Date(y,m-1,d);
+};
+const todayStr = () => ymdLocal(new Date());
+const monthStr = (d=new Date()) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}`;
+function weekStart(d=new Date()) {
+  const x=new Date(d); const day=x.getDay();
+  x.setDate(x.getDate()-(day===0?6:day-1));
+  return ymdLocal(x);
+}
+function calcPerf(correct,wrong,partSec) {
+  if(!partSec||partSec<=0) return null;
+  const max=Math.floor(EFFECTIVE_SECONDS/partSec);
+  return {max, perf:max>0?Math.round(((correct+wrong)/max)*100):0};
+}
+function fmtSec(s) {
+  if(!s) return "";
+  const m=Math.floor(s/60),sec=s%60;
+  return m>0?(sec>0?m+"dk "+sec+"sn":m+"dk"):sec+"sn";
+}
+const moneyFmt = n => `${safeNum(n).toFixed(2)} TRY`;
+function hasPermission(user,perm) {
+  if(user.role==="admin") return true;
+  const rolePerms=ROLE_PERMISSION_DEFAULTS[user.role]||[];
+  return (user.permissions||[]).includes(perm)||rolePerms.includes(perm);
+}
+function isOpenOrderStatus(status) {
+  return !["completed","cancelled","passive","liquidation","shipped"].includes(status||"");
+}
+function safeNum(v) {
+  const n=Number(v);
+  return Number.isFinite(n)?n:0;
+}
+async function addAuditLog(actorId,entityType,entityId,action,beforeData,afterData,meta={}) {
+  try{
+    await window.DB.addDoc("auditLogs",{
+      actorId:actorId||"",
+      entityType:entityType||"",
+      entityId:entityId||"",
+      action:action||"",
+      before:beforeData||null,
+      after:afterData||null,
+      meta,
+      createdAt:new Date().toISOString(),
+    });
+  }catch{}
+}
+async function fileToBase64(file) {
+  return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
+}
+function getFileExt(name) {
+  return ((name||"").split(".").pop()||"").toLowerCase();
+}
+function isStepExtension(ext) {
+  return ext==="step"||ext==="stp";
+}
+function isImageFile(file) {
+  if(!file) return false;
+  const ext=getFileExt(file.name);
+  return Boolean(file.type&&file.type.startsWith("image/")) || ["jpg","jpeg","png","gif","webp","bmp","svg"].includes(ext);
+}
+function isPdfFile(file) {
+  if(!file) return false;
+  return file.type==="application/pdf" || getFileExt(file.name)==="pdf";
+}
+function isStepFile(file) {
+  if(!file) return false;
+  return isStepExtension(getFileExt(file.name));
+}
+function canFilePreview(file) {
+  if(!(file&&file.data)) return false;
+  return isImageFile(file) || isPdfFile(file) || isStepFile(file);
+}
+function getFileIcon(name) {
+  const ext=getFileExt(name);
+  if(["jpg","jpeg","png","gif","webp"].includes(ext)) return "???";
+  if(ext==="pdf") return "??";
+  if(["dxf","dwg"].includes(ext)) return "??";
+  if(isStepExtension(ext)) return "??";
+  return "??";
+}
+function formatBytes(b) {
+  if(b<1024) return b+" B";
+  if(b<1048576) return (b/1024).toFixed(1)+" KB";
+  return (b/1048576).toFixed(1)+" MB";
+}
+function dataUrlToUint8Array(dataUrl) {
+  const payload=(dataUrl||"").split(",")[1]||"";
+  const binary=atob(payload);
+  const bytes=new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+  return bytes;
+}
+function normalizeDimensionToken(token){
+  return String(token||"").replace(/\s+/g," ").trim().replace(/,+/g,",").replace(/\.+/g,".");
+}
+function isLikelyDimensionToken(token){
+  const raw=normalizeDimensionToken(token);
+  if(!raw) return false;
+  const compact=raw.replace(/\s+/g,"");
+  if(!/\d/.test(compact)) return false;
+  if(compact.length<2||compact.length>28) return false;
+  if(/^[0-9]+$/.test(compact)) return false;
+  const hasMarker=/[Ã˜?RÂ±Â°]|MM$/i.test(compact)||/M\d+/i.test(compact)||/\d+[.,]\d+/.test(compact)||/\d+[xX]\d+/.test(compact);
+  return hasMarker;
+}
+function extractDimensionTokensFromText(text){
+  const cleaned=String(text||"").replace(/\s+/g," ").trim();
+  if(!cleaned) return [];
+  const regex=/(?:Ã˜|R|M)?\s*\d{1,4}(?:[.,]\d{1,3})?(?:\s*[xX]\s*\d{1,4}(?:[.,]\d{1,3})?)*(?:\s*(?:mm|Â°))?(?:\s*[Â±]\s*\d+(?:[.,]\d+)?)?/g;
+  const matches=cleaned.match(regex)||[];
+  const uniq={};
+  return matches
+    .map(normalizeDimensionToken)
+    .filter(isLikelyDimensionToken)
+    .filter(token=>{
+      const key=token.toUpperCase();
+      if(uniq[key]) return false;
+      uniq[key]=true;
+      return true;
+    });
+}
+async function autoBalloonPdfDrawing(file,{pageNumber=1,maxItems=260}={}){
+  if(!(file&&file.data)) throw new Error("PDF dosyasi bulunamadi.");
+  const pdfLibSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+  const pdfWorkerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  const ok=await ensureExternalScript(pdfLibSrc,()=>Boolean(window.pdfjsLib&&window.pdfjsLib.getDocument));
+  if(!ok||!window.pdfjsLib||!window.pdfjsLib.getDocument) throw new Error("PDF motoru yuklenemedi.");
+  if(window.pdfjsLib.GlobalWorkerOptions) window.pdfjsLib.GlobalWorkerOptions.workerSrc=pdfWorkerSrc;
+  const bytes=dataUrlToUint8Array(file.data);
+  const task=window.pdfjsLib.getDocument({data:bytes});
+  const pdf=await task.promise;
+  const totalPages=Math.max(1,Number(pdf.numPages)||1);
+  const safePage=Math.min(totalPages,Math.max(1,Number(pageNumber)||1));
+  const page=await pdf.getPage(safePage);
+  const viewport=page.getViewport({scale:1});
+  const textContent=await page.getTextContent();
+  const rows=[];
+  (textContent.items||[]).forEach(item=>{
+    const rawText=String(item?.str||"").trim();
+    if(!rawText) return;
+    const tokens=extractDimensionTokensFromText(rawText);
+    if(tokens.length===0) return;
+    const tr=Array.isArray(item?.transform)?item.transform:[1,0,0,1,0,0];
+    const x=Math.max(0,safeNum(tr[4]));
+    const y=Math.max(0,safeNum(tr[5]));
+    const h=Math.max(7,Math.abs(safeNum(tr[3]))||safeNum(item?.height)||8);
+    const yTop=Math.max(0,viewport.height-y-h);
+    tokens.forEach(token=>{
+      rows.push({text:token,x,yTop,height:h});
+    });
+  });
+  const dedupe={};
+  const uniqueRows=[];
+  rows.forEach(row=>{
+    const key=`${row.text}|${Math.round(row.x)}|${Math.round(row.yTop)}`;
+    if(dedupe[key]) return;
+    dedupe[key]=true;
+    uniqueRows.push(row);
+  });
+  uniqueRows.sort((a,b)=>{
+    const dy=a.yTop-b.yTop;
+    if(Math.abs(dy)>6) return dy;
+    return a.x-b.x;
+  });
+    const limited=uniqueRows.slice(0,Math.max(1,Math.min(500,Number(maxItems)||260)));
+  const tokens=uniqueRows.map(row=>({
+    text:row.text,
+    page:safePage,
+    xPct:Math.max(0,Math.min(100,(row.x/Math.max(1,viewport.width))*100)),
+    yPct:Math.max(0,Math.min(100,(row.yTop/Math.max(1,viewport.height))*100)),
+  }));
+  const balloons=limited.map((row,idx)=>({
+    no:idx+1,
+    text:row.text,
+    page:safePage,
+    xPct:Math.max(0,Math.min(100,(row.x/Math.max(1,viewport.width))*100)),
+    yPct:Math.max(0,Math.min(100,(row.yTop/Math.max(1,viewport.height))*100)),
+  }));
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.max(1,Math.round(viewport.width));
+  canvas.height=Math.max(1,Math.round(viewport.height));
+  const ctx=canvas.getContext("2d");
+  await page.render({canvasContext:ctx,viewport}).promise;
+  return {
+    page:safePage,
+    pageCount:totalPages,
+    pageWidth:viewport.width,
+    pageHeight:viewport.height,
+    previewDataUrl:canvas.toDataURL("image/png"),
+    tokens,
+    balloons,
+  };
+}
+function disposeThreeObject(root) {
+  if(!(root&&root.traverse)) return;
+  root.traverse(node=>{
+    if(node.geometry&&typeof node.geometry.dispose==="function") node.geometry.dispose();
+    const mats=node.material? (Array.isArray(node.material)?node.material:[node.material]) : [];
+    mats.forEach(mat=>{ if(mat&&typeof mat.dispose==="function") mat.dispose(); });
+  });
+}
+function buildStepMesh(resultMesh,THREE_NS) {
+  const positions=resultMesh?.attributes?.position?.array;
+  if(!(positions&&positions.length)) return null;
+  const geometry=new THREE_NS.BufferGeometry();
+  geometry.setAttribute("position",new THREE_NS.Float32BufferAttribute(positions,3));
+  const normals=resultMesh?.attributes?.normal?.array;
+  if(normals&&normals.length) {
+    geometry.setAttribute("normal",new THREE_NS.Float32BufferAttribute(normals,3));
+  } else {
+    geometry.computeVertexNormals();
+  }
+  if(resultMesh?.index?.array?.length) {
+    geometry.setIndex(new THREE_NS.BufferAttribute(Uint32Array.from(resultMesh.index.array),1));
+  }
+  const color=Array.isArray(resultMesh?.color)
+    ? new THREE_NS.Color(resultMesh.color[0],resultMesh.color[1],resultMesh.color[2])
+    : new THREE_NS.Color(0x5b8def);
+  const material=new THREE_NS.MeshStandardMaterial({color,metalness:0.18,roughness:0.68,side:THREE_NS.DoubleSide});
+  const mesh=new THREE_NS.Mesh(geometry,material);
+  mesh.name=resultMesh?.name||"STEP Mesh";
+  return mesh;
+}
+function StepFileViewer({file}) {
+  const hostRef=useRef(null);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState("");
+
+  useEffect(()=>{
+    const host=hostRef.current;
+    let renderer=null;
+    let controls=null;
+    let scene=null;
+    let raf=0;
+    let disposed=false;
+    let rootGroup=null;
+    function cleanup() {
+      disposed=true;
+      if(raf) cancelAnimationFrame(raf);
+      window.removeEventListener("resize",resize);
+      if(controls&&typeof controls.dispose==="function") controls.dispose();
+      if(scene) disposeThreeObject(scene);
+      if(renderer){
+        renderer.dispose();
+        if(renderer.domElement&&renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+      }
+      if(host) host.innerHTML="";
+    }
+    function resize() {
+      if(!(host&&renderer&&camera)) return;
+      const width=Math.max(320,host.clientWidth||760);
+      const height=Math.max(260,host.clientHeight||460);
+      renderer.setSize(width,height,false);
+      camera.aspect=width/height;
+      camera.updateProjectionMatrix();
+    }
+    let camera=null;
+    async function loadStepFile() {
+      setLoading(true);
+      setError("");
+      if(!host){ setLoading(false); return; }
+      host.innerHTML="";
+      if(!(window.THREE&&window.occtimportjs)){
+        setError("STEP goruntuleyici kutuphanesi yuklenemedi.");
+        setLoading(false);
+        return;
+      }
+      try{
+        const THREE_NS=window.THREE;
+        const occt=await window.occtimportjs();
+        if(disposed) return;
+
+        const result=occt.ReadStepFile(dataUrlToUint8Array(file.data),null);
+        if(!(result&&Array.isArray(result.meshes)&&result.meshes.length)){
+          throw new Error("STEP modeli okunamadi.");
+        }
+
+        scene=new THREE_NS.Scene();
+        scene.background=new THREE_NS.Color(C.surface||"#f4f5f7");
+
+        const ambientLight=new THREE_NS.AmbientLight(0xffffff,0.66);
+        const keyLight=new THREE_NS.DirectionalLight(0xffffff,0.75);
+        keyLight.position.set(1.4,1.2,2.4);
+        scene.add(ambientLight,keyLight);
+
+        rootGroup=new THREE_NS.Group();
+        result.meshes.forEach(meshData=>{
+          const mesh=buildStepMesh(meshData,THREE_NS);
+          if(mesh) rootGroup.add(mesh);
+        });
+        scene.add(rootGroup);
+
+        const bbox=new THREE_NS.Box3().setFromObject(rootGroup);
+        const sizeVec=new THREE_NS.Vector3();
+        const centerVec=new THREE_NS.Vector3();
+        bbox.getSize(sizeVec);
+        bbox.getCenter(centerVec);
+        rootGroup.position.sub(centerVec);
+        const maxDim=Math.max(sizeVec.x,sizeVec.y,sizeVec.z)||120;
+
+        camera=new THREE_NS.PerspectiveCamera(45,1,0.1,Math.max(5000,maxDim*25));
+        camera.up.set(0,0,1);
+        camera.position.set(maxDim*1.9,maxDim*1.6,maxDim*1.5);
+        camera.lookAt(new THREE_NS.Vector3(0,0,0));
+
+        const grid=new THREE_NS.GridHelper(Math.max(150,maxDim*2.2),12,0x808080,0xc4c4c4);
+        grid.rotation.x=Math.PI/2;
+        scene.add(grid);
+
+        renderer=new THREE_NS.WebGLRenderer({antialias:true,preserveDrawingBuffer:false});
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+        renderer.outputEncoding=THREE_NS.sRGBEncoding;
+        host.appendChild(renderer.domElement);
+
+        controls=new THREE_NS.OrbitControls(camera,renderer.domElement);
+        controls.enableDamping=true;
+        controls.dampingFactor=0.06;
+        controls.minDistance=Math.max(10,maxDim*0.3);
+        controls.maxDistance=Math.max(1000,maxDim*12);
+        controls.target.set(0,0,0);
+        controls.update();
+
+        resize();
+        window.addEventListener("resize",resize);
+        const renderFrame=()=>{
+          if(disposed) return;
+          controls.update();
+          renderer.render(scene,camera);
+          raf=requestAnimationFrame(renderFrame);
+        };
+        renderFrame();
+        setLoading(false);
+      }catch(err){
+        console.error(err);
+        setError("STEP dosyasi acilirken hata olustu.");
+        setLoading(false);
+      }
+    }
+    loadStepFile();
+    return cleanup;
+  },[file?.data,file?.name]);
+
+  return (
+    <div style={{position:"relative",width:"100%",height:Math.min(window.innerHeight*0.68,560),minHeight:320,border:`1px solid ${C.border}`,borderRadius:10,background:C.surface2,overflow:"hidden"}}>
+      <div ref={hostRef} style={{width:"100%",height:"100%"}}/>
+      {loading&&(
+        <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.2)",color:"#fff",fontWeight:700,fontSize:13}}>
+          STEP yukleniyor...
+        </div>
+      )}
+      {!loading&&error&&(
+        <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",padding:12,textAlign:"center",color:C.text,fontSize:13,background:C.surface}}>
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
+function hashPass(p) { return btoa(unescape(encodeURIComponent(p))); }
+function getOrderStatusMeta(status) {
+  return ORDER_STATUS_OPTIONS.find(s=>s.id===status) || ORDER_STATUS_OPTIONS.find(s=>s.id==="planned");
+}
+function getSalesStatusMeta(status) {
+  return SALES_STATUS_OPTIONS.find(s=>s.id===status) || SALES_STATUS_OPTIONS.find(s=>s.id==="new");
+}
+function addDays(baseYmd,days){
+  const d=parseYmdLocal(baseYmd||todayStr());
+  d.setDate(d.getDate()+Number(days||0));
+  return ymdLocal(d);
+}
+function dayDiff(fromYmd,toYmd){
+  const a=parseYmdLocal(fromYmd||todayStr());
+  const b=parseYmdLocal(toYmd||todayStr());
+  return Math.floor((b-a)/86400000);
+}
+function startOfWeekYmd(s){
+  const d=parseYmdLocal(s||todayStr());
+  const day=d.getDay()||7;
+  d.setDate(d.getDate()-(day-1));
+  return ymdLocal(d);
+}
+function csvEscape(value){
+  const raw=String(value??"");
+  if(/[",\n;]/.test(raw)) return `"${raw.replace(/"/g,'""')}"`;
+  return raw;
+}
+function downloadCsv(filename,columns,rows){
+  const sep=";";
+  const header=columns.map(c=>csvEscape(c.label)).join(sep);
+  const body=rows.map(r=>columns.map(c=>csvEscape(typeof c.value==="function"?c.value(r):(r[c.key]??""))).join(sep)).join("\n");
+  const blob=new Blob([`\uFEFF${header}\n${body}`],{type:"text/csv;charset=utf-8;"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;
+  a.download=filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+function normalizeTableColumnDefs(defs){
+  const src=Array.isArray(defs)?defs:[];
+  const seen=new Set();
+  return src.map((row,idx)=>{
+    const id=String(row?.id||`col_${idx}`).trim();
+    if(!id||seen.has(id)) return null;
+    seen.add(id);
+    return {
+      id,
+      label:String(row?.label||id),
+      width:Math.max(84,safeNum(row?.width)||140),
+      align:row?.align==="right"?"right":"left",
+      required:Boolean(row?.required),
+      defaultVisible:row?.required?true:(row?.defaultVisible!==false),
+    };
+  }).filter(Boolean);
+}
+function normalizeTableColumnLayout(raw,defs){
+  const base=normalizeTableColumnDefs(defs);
+  const src=(raw&&typeof raw==="object")?raw:{};
+  const orderInput=Array.isArray(src.order)?src.order:[];
+  const visibleInput=(src.visible&&typeof src.visible==="object")?src.visible:{};
+  const byId={};
+  base.forEach(col=>{byId[col.id]=col;});
+  const order=[];
+  const seen=new Set();
+  orderInput.forEach(item=>{
+    const id=String(item||"").trim();
+    if(!id||seen.has(id)||!byId[id]) return;
+    seen.add(id);
+    order.push(id);
+  });
+  base.forEach(col=>{
+    if(!seen.has(col.id)) order.push(col.id);
+  });
+  return order.map((id,idx)=>{
+    const col=byId[id];
+    const hasVisible=Object.prototype.hasOwnProperty.call(visibleInput,id);
+    const visible=col.required?true:(hasVisible?Boolean(visibleInput[id]):col.defaultVisible);
+    return {...col,visible,order:idx};
+  });
+}
+function tableColumnLayoutPayload(columns){
+  const order=[];
+  const visible={};
+  (Array.isArray(columns)?columns:[]).forEach(col=>{
+    order.push(col.id);
+    if(!col.required) visible[col.id]=Boolean(col.visible);
+  });
+  return {order,visible};
+}
+function tableColumnStorageKey(scope){
+  return `${TABLE_COLUMN_LAYOUT_STORAGE_PREFIX}_${String(scope||"default").trim()||"default"}`;
+}
+function readTableColumnLayout(scope,defs){
+  const fallback=normalizeTableColumnLayout({},defs);
+  try{
+    const raw=window.localStorage.getItem(tableColumnStorageKey(scope));
+    if(!raw) return fallback;
+    const parsed=JSON.parse(raw);
+    return normalizeTableColumnLayout(parsed,defs);
+  }catch{
+    return fallback;
+  }
+}
+function writeTableColumnLayout(scope,columns){
+  try{
+    window.localStorage.setItem(tableColumnStorageKey(scope),JSON.stringify(tableColumnLayoutPayload(columns)));
+  }catch{}
+}
+function useTableColumnLayout(scope,defs){
+  const defsKey=useMemo(()=>normalizeTableColumnDefs(defs).map(col=>col.id).join("|"),[defs]);
+  const [columns,setColumns]=useState(()=>readTableColumnLayout(scope,defs));
+  useEffect(()=>{
+    setColumns(readTableColumnLayout(scope,defs));
+  },[scope,defsKey]);
+  useEffect(()=>{
+    writeTableColumnLayout(scope,columns);
+  },[scope,columns]);
+  const visibleColumns=useMemo(()=>columns.filter(col=>col.required||col.visible),[columns]);
+  const moveColumn=useCallback((id,dir)=>{
+    setColumns(prev=>{
+      const idx=prev.findIndex(col=>col.id===id);
+      if(idx<0) return prev;
+      const target=dir==="up"?idx-1:idx+1;
+      if(target<0||target>=prev.length) return prev;
+      const next=[...prev];
+      const [item]=next.splice(idx,1);
+      next.splice(target,0,item);
+      return next.map((col,i)=>({...col,order:i}));
+    });
+  },[]);
+  const toggleColumn=useCallback(id=>{
+    setColumns(prev=>prev.map(col=>{
+      if(col.id!==id) return col;
+      if(col.required) return col;
+      return {...col,visible:!col.visible};
+    }));
+  },[]);
+  const resetColumns=useCallback(()=>{
+    setColumns(normalizeTableColumnLayout({},defs));
+  },[defs]);
+  const tableMinWidth=useMemo(()=>{
+    const total=visibleColumns.reduce((sum,col)=>sum+Math.max(84,safeNum(col.width)||140),0);
+    return Math.max(520,total);
+  },[visibleColumns]);
+  return {columns,visibleColumns,tableMinWidth,moveColumn,toggleColumn,resetColumns};
+}
+function findScrollParent(node){
+  if(!node||typeof window==="undefined") return null;
+  let cur=node.parentElement;
+  while(cur&&cur!==document.body){
+    const style=window.getComputedStyle(cur);
+    const oy=String(style.overflowY||"").toLowerCase();
+    if(oy==="auto"||oy==="scroll") return cur;
+    cur=cur.parentElement;
+  }
+  return null;
+}
+function useViewportPanelMetrics(ref,{minHeight=320,bottomGap=14,narrowWidth=1180}={}){
+  const [state,setState]=useState({height:560,isNarrow:false});
+  useEffect(()=>{
+    let raf=0;
+    let scrollParent=null;
+    let resizeObserver=null;
+    let observedParent=null;
+    function schedule(){
+      if(raf) cancelAnimationFrame(raf);
+      raf=requestAnimationFrame(update);
+    }
+    function syncObservedParent(next){
+      if(!resizeObserver) return;
+      if(observedParent&&observedParent!==next){
+        try{resizeObserver.unobserve(observedParent);}catch{}
+        observedParent=null;
+      }
+      if(next&&observedParent!==next){
+        resizeObserver.observe(next);
+        observedParent=next;
+      }
+    }
+    function bindScrollParent(next){
+      if(scrollParent===next) return;
+      if(scrollParent) scrollParent.removeEventListener("scroll",schedule);
+      scrollParent=next;
+      if(scrollParent) scrollParent.addEventListener("scroll",schedule,{passive:true});
+      syncObservedParent(scrollParent);
+    }
+    function update(){
+      const node=ref&&ref.current?ref.current:null;
+      if(!node) return;
+      bindScrollParent(findScrollParent(node));
+      let height=minHeight;
+      if(scrollParent&&typeof scrollParent.getBoundingClientRect==="function"){
+        const nodeRect=node.getBoundingClientRect();
+        const parentRect=scrollParent.getBoundingClientRect();
+        const parentStyle=window.getComputedStyle(scrollParent);
+        const parentPadBottom=Math.max(0,safeNum(parseFloat(parentStyle.paddingBottom)));
+        const logicalTop=safeNum(nodeRect.top-parentRect.top)+safeNum(scrollParent.scrollTop);
+        const available=scrollParent.clientHeight-logicalTop-bottomGap-parentPadBottom;
+        height=Math.max(minHeight,Math.floor(Math.max(0,available)));
+      }else{
+        const top=Math.max(0,safeNum(node.getBoundingClientRect().top));
+        height=Math.max(minHeight,Math.floor(window.innerHeight-top-bottomGap));
+      }
+      const isNarrow=window.innerWidth<narrowWidth;
+      setState(prev=>{
+        if(prev.height===height&&prev.isNarrow===isNarrow) return prev;
+        return {height,isNarrow};
+      });
+    }
+    if(typeof ResizeObserver!=="undefined"){
+      resizeObserver=new ResizeObserver(()=>schedule());
+      if(ref&&ref.current) resizeObserver.observe(ref.current);
+    }
+    bindScrollParent(findScrollParent(ref&&ref.current?ref.current:null));
+    schedule();
+    window.addEventListener("resize",schedule);
+    return ()=>{
+      if(raf) cancelAnimationFrame(raf);
+      window.removeEventListener("resize",schedule);
+      if(scrollParent) scrollParent.removeEventListener("scroll",schedule);
+      if(resizeObserver) resizeObserver.disconnect();
+    };
+  },[ref,minHeight,bottomGap,narrowWidth]);
+  return state;
+}
+
+// Â¦Â¦ STYLE ATOMS Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦Â¦
+const labelSt={color:C.muted,fontSize:11,letterSpacing:.2,textTransform:"none",fontWeight:600,marginBottom:6,display:"block"};
+const inputSt={width:"100%",background:C.surface,border:`1px solid ${C.border}`,borderRadius:6,padding:"10px 12px",color:C.text,fontSize:14,outline:"none",boxSizing:"border-box",fontFamily:"inherit"};
+const chip=(active,color=C.accent)=>({padding:"8px 12px",borderRadius:6,border:`1px solid ${active?color:C.border}`,background:active?color:C.surface2,color:active?"#fff":C.text,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"});
+const btnSt=(v="primary")=>({border:`1px solid ${v==="primary"?C.accent:v==="danger"?C.red:v==="green"?C.green:C.border}`,borderRadius:6,padding:"10px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",transition:"opacity .15s",
+  ...(v==="primary"?{background:C.accent,color:"#fff"}:
+     v==="danger"?{background:C.red,color:"#fff"}:
+     v==="green"?{background:C.green,color:"#fff"}:
+     v==="ghost"?{background:C.surface,color:C.text}:
+     {background:C.surface2,color:C.text})});
+
+function TableColumnEditor({title="Sutun Duzenle",columns,onToggle,onMove,onReset}) {
+  const rows=Array.isArray(columns)?columns:[];
+  return (
+    <details style={{position:"relative"}}>
+      <summary style={{listStyle:"none",cursor:"pointer",userSelect:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:600,color:C.text,background:C.surface}}>
+        Sutun Duzenle
+      </summary>
+      <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",minWidth:270,maxWidth:320,padding:10,background:C.card,border:`1px solid ${C.border}`,borderRadius:10,boxShadow:"0 12px 32px rgba(15,23,42,.18)",zIndex:60}}>
+        <div style={{fontSize:11,color:C.muted2,letterSpacing:.5,textTransform:"uppercase"}}>{title}</div>
+        <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:6,maxHeight:250,overflowY:"auto"}}>
+          {rows.map((col,idx)=>(
+            <div key={col.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"5px 6px",border:`1px solid ${C.border}`,borderRadius:8,background:C.surface}}>
+              <label style={{display:"flex",alignItems:"center",gap:8,minWidth:0,flex:1,cursor:col.required?"default":"pointer"}}>
+                <input type="checkbox" checked={col.required?true:Boolean(col.visible)} disabled={col.required} onChange={()=>onToggle(col.id)}/>
+                <span style={{fontSize:12,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{col.label}</span>
+              </label>
+              <div style={{display:"flex",gap:4}}>
+                <button type="button" onClick={()=>onMove(col.id,"up")} disabled={idx===0} style={{...btnSt("ghost"),padding:"2px 7px",fontSize:11,opacity:idx===0?0.45:1}}>^</button>
+                <button type="button" onClick={()=>onMove(col.id,"down")} disabled={idx===rows.length-1} style={{...btnSt("ghost"),padding:"2px 7px",fontSize:11,opacity:idx===rows.length-1?0.45:1}}>v</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{marginTop:9,display:"flex",justifyContent:"flex-end"}}>
+          <button type="button" onClick={onReset} style={{...btnSt("ghost"),padding:"5px 10px",fontSize:11}}>Varsayilan</button>
+        </div>
+      </div>
+    </details>
+  );
+}
+function Badge({label:l,color=C.muted2}) {
+  return <span style={{background:color+"18",color,border:`1px solid ${color}40`,borderRadius:999,padding:"2px 8px",fontSize:10,fontWeight:700,letterSpacing:.3,textTransform:"uppercase"}}>{l}</span>;
+}
+function PerfBar({perf,small}) {
+  const col=perf>=85?C.green:perf>=60?C.warn:C.red;
+  return (
+    <div style={{marginTop:small?4:8}}>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:C.muted2,marginBottom:3}}>
+        <span>Performans</span><span style={{color:col,fontWeight:700}}>{perf}%</span>
+      </div>
+      <div style={{background:C.border,borderRadius:99,height:small?4:6,overflow:"hidden"}}>
+        <div style={{width:`${Math.min(perf,100)}%`,height:"100%",background:col,borderRadius:99,transition:"width .6s ease"}}/>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+//  AUTH SCREEN
+// ============================================================
+function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) {
+  const [portal,setPortal]=useState("operator");
+  const [mode,setMode]=useState("login");
+  const [form,setForm]=useState({username:"",password:"",confirm:"",fullName:""});
+  const [err,setErr]=useState(""); const [ok,setOk]=useState(""); const [loading,setLoading]=useState(false);
+  const [logoError,setLogoError]=useState(false);
+  const [adminStats,setAdminStats]=useState({loading:false,activeOrders:0,todayEntries:0,pendingUsers:0,activeOperators:0,todayCorrect:0,todayWrong:0,lastUpdated:""});
+  const f=k=>e=>setForm(p=>({...p,[k]:e.target.value}));
+
+  useEffect(()=>{
+    if(portal==="admin"&&mode!=="login") setMode("login");
+    setErr(""); setOk("");
+  },[portal,mode]);
+  useEffect(()=>{setLogoError(false);},[logoSrc]);
+
+  const loadAdminStats=useCallback(async()=>{
+    setAdminStats(s=>({...s,loading:true}));
+    const [users,orders,entries]=await Promise.all([
+      window.DB.getAll("users"),
+      window.DB.getAll("orders"),
+      window.DB.getAll("entries"),
+    ]);
+    const today=todayStr();
+    const todayRows=entries.filter(e=>e.date===today);
+    const now=new Date();
+    const hh=pad2(now.getHours());
+    const mm=pad2(now.getMinutes());
+    setAdminStats({
+      loading:false,
+      activeOrders:orders.filter(o=>isOpenOrderStatus(o.status)).length,
+      todayEntries:todayRows.length,
+      pendingUsers:users.filter(u=>u.status==="pending").length,
+      activeOperators:users.filter(u=>u.role==="operator"&&u.status==="active").length,
+      todayCorrect:todayRows.reduce((s,e)=>s+(Number(e.correct)||0),0),
+      todayWrong:todayRows.reduce((s,e)=>s+(Number(e.wrong)||0),0),
+      lastUpdated:`${hh}:${mm}`,
+    });
+  },[]);
+
+  useEffect(()=>{
+    if(portal!=="admin") return;
+    loadAdminStats();
+  },[portal,loadAdminStats]);
+
+  async function doLogin() {
+    setErr(""); setLoading(true);
+    const u = await window.DB.getDoc("users", form.username.toLowerCase());
+    if(!u){setErr("KullanÄ±cÄ± bulunamadÄ±.");setLoading(false);return;}
+    if(u.password!==hashPass(form.password)){setErr("Åifre hatalÄ±.");setLoading(false);return;}
+    if(u.status==="pending"){setErr("HesabÄ±nÄ±z onay bekliyor.");setLoading(false);return;}
+    if(u.status==="rejected"){setErr("HesabÄ±nÄ±z reddedildi.");setLoading(false);return;}
+    if(portal==="admin"&&u.role!=="admin"){setErr("Bu giriÅŸ ekranÄ± yalnÄ±zca yÃ¶netici hesaplarÄ± iÃ§indir.");setLoading(false);return;}
+    if(portal==="operator"&&u.role==="admin"){setErr("YÃ¶netici hesabÄ± ile YÃ¶netici GiriÅŸi ekranÄ±nÄ± kullanÄ±n.");setLoading(false);return;}
+    window.Session.set({username:u.id});
+    onLogin(u); setLoading(false);
+  }
+
+  async function doRegister() {
+    setErr(""); setOk("");
+    if(!form.username||!form.password||!form.fullName){setErr("TÃ¼m alanlar zorunlu.");return;}
+    if(form.password!==form.confirm){setErr("Åifreler eÅŸleÅŸmiyor.");return;}
+    if(form.password.length<8){setErr("Sifre en az 8 karakter olmali.");return;}
+    if(!/[A-Z]/.test(form.password)||!/[a-z]/.test(form.password)||!/[0-9]/.test(form.password)){setErr("Sifre buyuk-kucuk harf ve rakam icermeli.");return;}
+    setLoading(true);
+    const key=form.username.toLowerCase().trim();
+    const existing=await window.DB.getDoc("users",key);
+    if(existing){setErr("Bu kullanÄ±cÄ± adÄ± alÄ±nmÄ±ÅŸ.");setLoading(false);return;}
+    const allUsers=await window.DB.getAll("users");
+    const isFirst=allUsers.length===0;
+    const role=isFirst?"admin":"operator";
+    const saved=await window.DB.setDoc("users",key,{
+      username:key, fullName:form.fullName, password:hashPass(form.password),
+      role, status:isFirst?"active":"pending",
+      permissions:[...(ROLE_PERMISSION_DEFAULTS[role]||[])],
+      createdAt:new Date().toISOString(),
+      updatedAt:new Date().toISOString(),
+    });
+    if(!saved){setErr("Kullanici kaydi olusturulamadi. Veritabani yetkilerini (Firestore Rules) kontrol edin.");setLoading(false);return;}
+    setOk(isFirst?"Ä°lk kullanÄ±cÄ± â€º otomatik YÃ¶netici! GiriÅŸ yapabilirsiniz.":"KayÄ±t baÅŸarÄ±lÄ±! YÃ¶netici onayÄ±nÄ± bekleyin.");
+    setMode("login"); setForm({username:"",password:"",confirm:"",fullName:""}); setLoading(false);
+  }
+
+  return (
+    <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{width:"100%",maxWidth:portal==="admin"?980:380}}>
+        <div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}>
+          <button onClick={onThemeToggle} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:98}}>
+            {themeMode==="dark"?"Acik Tema":"Koyu Tema"}
+          </button>
+        </div>
+        <div style={{display:"flex",background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:4,margin:"0 auto 22px",maxWidth:420}}>
+          {[["operator","OperatÃ¶r GiriÅŸi"],["admin","YÃ¶netici GiriÅŸi"]].map(([id,lbl])=>(
+            <button key={id} onClick={()=>setPortal(id)} style={{flex:1,padding:"10px 0",border:"none",borderRadius:9,cursor:"pointer",background:portal===id?C.card:"transparent",color:portal===id?C.text:C.muted2,fontWeight:portal===id?700:500,fontSize:13,fontFamily:"inherit"}}>{lbl}</button>
+          ))}
+        </div>
+
+        {portal==="operator"?(
+          <div style={{width:"100%",maxWidth:380,margin:"0 auto"}}>
+            <div style={{textAlign:"center",marginBottom:28}}>
+              <div style={{width:60,height:60,borderRadius:18,background:C.accent,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 10px",overflow:"hidden"}}>
+                {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:28}}>??</span>}
+              </div>
+              <div style={{fontWeight:800,fontSize:22,color:C.text,letterSpacing:-.5}}>CNC AtÃ¶lye</div>
+              <div style={{color:C.muted2,fontSize:13,marginTop:2}}>Ä°ÅŸ Takip Sistemi</div>
+            </div>
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:24}}>
+              <div style={{display:"flex",background:C.surface,borderRadius:10,padding:3,marginBottom:20}}>
+                {[["login","GiriÅŸ Yap"],["register","KayÄ±t Ol"]].map(([id,lbl])=>(
+                  <button key={id} onClick={()=>{setMode(id);setErr("");setOk("");}} style={{flex:1,padding:"9px 0",border:"none",borderRadius:8,cursor:"pointer",background:mode===id?C.card:"transparent",color:mode===id?C.text:C.muted2,fontWeight:mode===id?700:400,fontSize:13,fontFamily:"inherit"}}>{lbl}</button>
+                ))}
+              </div>
+              {err&&<div style={{background:C.redDim,border:`1px solid ${C.red}40`,borderRadius:10,padding:"10px 14px",color:C.red,fontSize:13,marginBottom:14}}>{err}</div>}
+              {ok&&<div style={{background:C.greenDim,border:`1px solid ${C.green}40`,borderRadius:10,padding:"10px 14px",color:C.green,fontSize:13,marginBottom:14}}>{ok}</div>}
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                {mode==="register"&&<div><span style={labelSt}>Ad Soyad</span><input style={inputSt} placeholder="AdÄ±nÄ±z SoyadÄ±nÄ±z" value={form.fullName} onChange={f("fullName")}/></div>}
+                <div><span style={labelSt}>KullanÄ±cÄ± AdÄ±</span><input style={inputSt} placeholder="kullanici_adi" value={form.username} onChange={f("username")} autoCapitalize="none" autoCorrect="off"/></div>
+                <div><span style={labelSt}>Åifre</span><input style={inputSt} placeholder="â€¢â€¢â€¢â€¢â€¢â€¢" type="password" value={form.password} onChange={f("password")}/></div>
+                {mode==="register"&&<div><span style={labelSt}>Åifre Tekrar</span><input style={inputSt} placeholder="â€¢â€¢â€¢â€¢â€¢â€¢" type="password" value={form.confirm} onChange={f("confirm")}/></div>}
+                <button onClick={mode==="login"?doLogin:doRegister} style={{...btnSt("primary"),width:"100%",padding:14,fontSize:15,opacity:loading?0.7:1}} disabled={loading}>
+                  {loading?"...":mode==="login"?"GiriÅŸ Yap":"KayÄ±t Ol"}
+                </button>
+              </div>
+            </div>
+            <div style={{textAlign:"center",color:C.muted,fontSize:11,marginTop:12}}>Ä°lk kayÄ±t otomatik YÃ¶netici olur.</div>
+          </div>
+        ):(
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16,alignItems:"stretch"}}>
+            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:16,padding:22}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:18}}>
+                <div style={{width:42,height:42,borderRadius:12,background:C.accent,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
+                  {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:18}}>??</span>}
+                </div>
+                <div>
+                  <div style={{fontWeight:800,fontSize:18,color:C.text,letterSpacing:-.3}}>YÃ¶netici Paneli</div>
+                  <div style={{fontSize:12,color:C.muted2}}>Gosterge paneli erisimi</div>
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10}}>
+                {[
+                  ["Aktif Ä°ÅŸ Emirleri",adminStats.activeOrders,C.accent],
+                  ["BugÃ¼n GiriÅŸ",adminStats.todayEntries,C.green],
+                  ["Onay Bekleyen",adminStats.pendingUsers,C.warn],
+                  ["Aktif OperatÃ¶r",adminStats.activeOperators,C.muted2],
+                ].map(([title,value,color])=>(
+                  <div key={title} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+                    <div style={{fontSize:11,color:C.muted2,marginBottom:6,textTransform:"uppercase",letterSpacing:.7}}>{title}</div>
+                    <div style={{fontSize:22,color,marginBottom:2,fontWeight:800,fontFamily:"monospace"}}>{value}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{display:"flex",gap:10,marginTop:10}}>
+                <div style={{flex:1,background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}>
+                  <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>BugÃ¼n DoÄŸru / HatalÄ±</div>
+                  <div style={{fontSize:14,color:C.text,fontWeight:700,marginTop:2}}><span style={{color:C.green}}>{adminStats.todayCorrect}</span> / <span style={{color:C.red}}>{adminStats.todayWrong}</span></div>
+                </div>
+                <button onClick={loadAdminStats} disabled={adminStats.loading} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,alignSelf:"stretch",opacity:adminStats.loading?0.7:1}}>
+                  {adminStats.loading?"Yenileniyor...":"Yenile"}
+                </button>
+              </div>
+            </div>
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:22}}>
+              <div style={{fontWeight:700,fontSize:18,color:C.text,marginBottom:4}}>YÃ¶netici GiriÅŸi</div>
+              <div style={{fontSize:12,color:C.muted2,marginBottom:16}}>Sadece yÃ¶netici hesaplarÄ±yla giriÅŸ yapÄ±labilir. {adminStats.lastUpdated?`Son gÃ¼ncelleme: ${adminStats.lastUpdated}`:""}</div>
+              {err&&<div style={{background:C.redDim,border:`1px solid ${C.red}40`,borderRadius:10,padding:"10px 14px",color:C.red,fontSize:13,marginBottom:14}}>{err}</div>}
+              {ok&&<div style={{background:C.greenDim,border:`1px solid ${C.green}40`,borderRadius:10,padding:"10px 14px",color:C.green,fontSize:13,marginBottom:14}}>{ok}</div>}
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                <div><span style={labelSt}>KullanÄ±cÄ± AdÄ±</span><input style={inputSt} placeholder="yonetici_adi" value={form.username} onChange={f("username")} autoCapitalize="none" autoCorrect="off"/></div>
+                <div><span style={labelSt}>Åifre</span><input style={inputSt} placeholder="â€¢â€¢â€¢â€¢â€¢â€¢" type="password" value={form.password} onChange={f("password")}/></div>
+                <button onClick={doLogin} style={{...btnSt("primary"),width:"100%",padding:14,fontSize:15,opacity:loading?0.7:1}} disabled={loading}>{loading?"...":"YÃ¶netici Olarak GiriÅŸ Yap"}</button>
+                <button onClick={()=>{setPortal("operator");setMode("register");setErr("");setOk("");}} style={{...btnSt("ghost"),width:"100%",padding:12,fontSize:13}}>Yeni hesap oluÅŸtur</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function NavIcon({name,size=18}) {
+  const st={width:size,height:size,display:"block"};
+  const p={fill:"none",stroke:"currentColor",strokeWidth:"1.9",strokeLinecap:"round",strokeLinejoin:"round"};
+  if(name==="giris") return (
+    <svg viewBox="0 0 24 24" style={st}><path {...p} d="M8 4h8l4 4v12H8z"/><path {...p} d="M16 4v4h4"/><path {...p} d="M10 13h6M10 17h4"/></svg>
+  );
+  if(name==="planning") return (
+    <svg viewBox="0 0 24 24" style={st}><rect {...p} x="3" y="5" width="18" height="16" rx="2"/><path {...p} d="M16 3v4M8 3v4M3 10h18"/></svg>
+  );
+  if(name==="dashboard") return (
+    <svg viewBox="0 0 24 24" style={st}><path {...p} d="M4 13h6v7H4zM14 4h6v16h-6zM4 4h6v5H4z"/></svg>
+  );
+  if(name==="mps") return (
+    <svg viewBox="0 0 24 24" style={st}><path {...p} d="M4 6h16M4 12h16M4 18h10"/><circle {...p} cx="18" cy="18" r="2.2"/></svg>
+  );
+  if(name==="mrp") return (
+    <svg viewBox="0 0 24 24" style={st}><path {...p} d="M4 20V8l8-4 8 4v12z"/><path {...p} d="M8 13h8M8 17h5"/></svg>
+  );
+  if(name==="purchase") return (
+    <svg viewBox="0 0 24 24" style={st}><path {...p} d="M4 7h16l-1.4 10H5.4z"/><path {...p} d="M9 7V5a3 3 0 0 1 6 0v2"/></svg>
+  );
+  if(name==="quotes") return (
+    <svg viewBox="0 0 24 24" style={st}><path {...p} d="M5 4h14v16H5z"/><path {...p} d="M8 9h8M8 13h8M8 17h5"/><path {...p} d="M9 4v3M15 4v3"/></svg>
+  );
+  if(name==="downtime") return (
+    <svg viewBox="0 0 24 24" style={st}><circle {...p} cx="12" cy="12" r="8"/><path {...p} d="M12 8v5l3 2"/></svg>
+  );
+  if(name==="notifications") return (
+    <svg viewBox="0 0 24 24" style={st}><path {...p} d="M6 16h12l-1-2v-3a5 5 0 0 0-10 0v3z"/><path {...p} d="M10 18a2 2 0 0 0 4 0"/></svg>
+  );
+  if(name==="quality") return (
+    <svg viewBox="0 0 24 24" style={st}><path {...p} d="M12 3l8 4v5c0 5-3.3 8-8 9-4.7-1-8-4-8-9V7z"/><path {...p} d="M9 12l2 2 4-4"/></svg>
+  );
+  if(name==="cost") return (
+    <svg viewBox="0 0 24 24" style={st}><circle {...p} cx="12" cy="12" r="8"/><path {...p} d="M12 7v10M8.5 9.5c0-1.1 1.3-2 3.5-2s3.5.9 3.5 2-1.3 2-3.5 2-3.5.9-3.5 2 1.3 2 3.5 2 3.5-.9 3.5-2"/></svg>
+  );
+  if(name==="integration") return (
+    <svg viewBox="0 0 24 24" style={st}><path {...p} d="M8 8h8M8 16h8"/><circle {...p} cx="6" cy="8" r="2"/><circle {...p} cx="18" cy="8" r="2"/><circle {...p} cx="6" cy="16" r="2"/><circle {...p} cx="18" cy="16" r="2"/><path {...p} d="M8 8l8 8"/></svg>
+  );
+  if(name==="customers") return (
+    <svg viewBox="0 0 24 24" style={st}><rect {...p} x="3" y="3" width="18" height="18" rx="2"/><path {...p} d="M8 21V8h8v13M10 12h4M10 16h4"/></svg>
+  );
+  if(name==="parts") return (
+    <svg viewBox="0 0 24 24" style={st}><path {...p} d="M4 8l8-4 8 4-8 4z"/><path {...p} d="M4 8v8l8 4 8-4V8"/></svg>
+  );
+  if(name==="materials") return (
+    <svg viewBox="0 0 24 24" style={st}><path {...p} d="M4 6h16M4 12h16M4 18h10"/><circle {...p} cx="18" cy="18" r="2"/></svg>
+  );
+  if(name==="rapor") return (
+    <svg viewBox="0 0 24 24" style={st}><path {...p} d="M4 20V9M10 20V4M16 20v-7M22 20H2"/></svg>
+  );
+  if(name==="tools") return (
+    <svg viewBox="0 0 24 24" style={st}><path {...p} d="M14 7a4 4 0 0 0-5.4 5.4L3 18l3 3 5.6-5.6A4 4 0 0 0 17 10z"/><path {...p} d="M14 7l3-3 3 3-3 3"/></svg>
+  );
+  if(name==="orders") return (
+    <svg viewBox="0 0 24 24" style={st}><rect {...p} x="5" y="3" width="14" height="18" rx="2"/><path {...p} d="M8 8h8M8 12h8M8 16h5"/></svg>
+  );
+  if(name==="sales") return (
+    <svg viewBox="0 0 24 24" style={st}><path {...p} d="M4 7h16M4 12h10M4 17h8"/><circle {...p} cx="18" cy="17" r="3"/></svg>
+  );
+  if(name==="users") return (
+    <svg viewBox="0 0 24 24" style={st}><circle {...p} cx="12" cy="8" r="3.2"/><path {...p} d="M5 20a7 7 0 0 1 14 0"/></svg>
+  );
+  if(name==="machines") return (
+    <svg viewBox="0 0 24 24" style={st}><rect {...p} x="3" y="5" width="18" height="12" rx="2"/><path {...p} d="M7 17v2m10-2v2M6 9h12M8 13h2m4 0h2"/></svg>
+  );
+  if(name==="monitor") return (
+    <svg viewBox="0 0 24 24" style={st}><rect {...p} x="3" y="4" width="18" height="13" rx="2"/><path {...p} d="M8 20h8M12 17v3"/><path {...p} d="M7 12l2-2 2 1 3-3 3 2"/></svg>
+  );
+  if(name==="tasks") return (
+    <svg viewBox="0 0 24 24" style={st}><rect {...p} x="4" y="3" width="16" height="18" rx="2"/><path {...p} d="M8 8h8M8 12h8M8 16h5"/><path {...p} d="M4 8l2 2 3-3"/></svg>
+  );
+  return null;
+}
+
+function resolveOperatorBaseUrl(){
+  if(typeof window==="undefined") return "";
+  return `${window.location.origin}${window.location.pathname}`;
+}
+
+function buildOperatorScreenUrl(baseUrl,machine,station){
+  const fallback=resolveOperatorBaseUrl();
+  const raw=(baseUrl||fallback||"").trim()||fallback;
+  try{
+    const u=new URL(raw,typeof window!=="undefined"?window.location.href:undefined);
+    u.searchParams.set("tab","giris");
+    if(machine) u.searchParams.set("machine",machine);
+    if(station) u.searchParams.set("station",station);
+    return u.toString();
+  }catch{
+    const joiner=raw.includes("?")?"&":"?";
+    const parts=["tab=giris"];
+    if(machine) parts.push(`machine=${encodeURIComponent(machine)}`);
+    if(station) parts.push(`station=${encodeURIComponent(station)}`);
+    return `${raw}${joiner}${parts.join("&")}`;
+  }
+}
+
+function detectLockedMachineFromUrl(){
+  if(typeof window==="undefined") return "";
+  const params=new URLSearchParams(window.location.search||"");
+  const qpMachine=(params.get("machine")||"").trim();
+  if(qpMachine.toLowerCase()==="all"){
+    try{window.localStorage.removeItem("operator_locked_machine");}catch{}
+    return "";
+  }
+  return qpMachine||"";
+}
+
+function OperatorUrlSettings({machines}) {
+  const [baseUrl,setBaseUrl]=useState(resolveOperatorBaseUrl());
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [copiedLabel,setCopiedLabel]=useState("");
+
+  useEffect(()=>{
+    let disposed=false;
+    async function loadConfig(){
+      const doc=await window.DB.getDoc("config","operatorScreenUrl");
+      if(disposed) return;
+      if(doc&&typeof doc.baseUrl==="string"&&doc.baseUrl.trim()){
+        setBaseUrl(doc.baseUrl.trim());
+      }else{
+        setBaseUrl(resolveOperatorBaseUrl());
+      }
+      setLoading(false);
+    }
+    loadConfig();
+    return ()=>{disposed=true;};
+  },[]);
+
+  async function saveBaseUrl(){
+    const clean=(baseUrl||"").trim();
+    if(!clean){alert("Temel URL bos olamaz.");return;}
+    setSaving(true);
+    const ok=await window.DB.setDoc("config","operatorScreenUrl",{
+      baseUrl:clean,
+      updatedAt:new Date().toISOString(),
+    });
+    setSaving(false);
+    if(!ok){alert("URL ayari kaydedilemedi.");return;}
+    setBaseUrl(clean);
+    alert("Operator URL ayari kaydedildi.");
+  }
+
+  function resetBaseUrl(){
+    setBaseUrl(resolveOperatorBaseUrl());
+  }
+
+  async function copyText(label,text){
+    try{
+      if(navigator.clipboard&&window.isSecureContext){
+        await navigator.clipboard.writeText(text);
+      }else{
+        const ta=document.createElement("textarea");
+        ta.value=text;
+        ta.setAttribute("readonly","");
+        ta.style.position="absolute";
+        ta.style.left="-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      setCopiedLabel(label);
+      setTimeout(()=>setCopiedLabel(""),1200);
+    }catch{
+      alert("Kopyalama basarisiz.");
+    }
+  }
+
+  const machineRows=(machines||[]).map(machine=>({
+    machine,
+    station:machine,
+    url:buildOperatorScreenUrl(baseUrl,machine,machine),
+  }));
+  const allUrl=buildOperatorScreenUrl(baseUrl,"all","");
+  const helperText=loading?"Yukleniyor...":(copiedLabel?`${copiedLabel} URL kopyalandi.`:"Her tezgah icin ozel operator linki olusturulur.");
+
+  return (
+    <div style={{marginBottom:18}}>
+      <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Operator Ekrani Ozel URL</div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:8,alignItems:"end",marginBottom:10}}>
+          <div>
+            <span style={labelSt}>Temel URL</span>
+            <input style={inputSt} value={baseUrl} onChange={e=>setBaseUrl(e.target.value)} placeholder="http://localhost:5173/"/>
+          </div>
+          <button onClick={saveBaseUrl} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,whiteSpace:"nowrap"}} disabled={saving||loading}>{saving?"Kaydediliyor...":"URL Kaydet"}</button>
+          <button onClick={resetBaseUrl} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,whiteSpace:"nowrap"}} disabled={saving||loading}>Varsayilan</button>
+        </div>
+        <div style={{fontSize:11,color:C.muted2,marginBottom:10}}>{helperText}</div>
+
+        <div style={{display:"grid",gap:8}}>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:13,color:C.text}}>Tum Tezgahlar (kilit yok)</div>
+                <div style={{fontSize:12,color:C.muted2,marginTop:2,wordBreak:"break-all"}}>{allUrl}</div>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>copyText("Tum Tezgahlar",allUrl)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kopyala</button>
+                <a href={allUrl} target="_blank" rel="noreferrer" style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,textDecoration:"none",display:"inline-flex",alignItems:"center"}}>Ac</a>
+              </div>
+            </div>
+          </div>
+
+          {machineRows.map(row=>(
+            <div key={row.machine} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <div style={{minWidth:180,flex:1}}>
+                  <div style={{fontWeight:700,fontSize:13,color:C.text}}>{row.machine}</div>
+                  <div style={{fontSize:12,color:C.muted2,marginTop:2,wordBreak:"break-all"}}>{row.url}</div>
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={()=>copyText(row.machine,row.url)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kopyala</button>
+                  <a href={row.url} target="_blank" rel="noreferrer" style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,textDecoration:"none",display:"inline-flex",alignItems:"center"}}>Ac</a>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function KioskProductionSettings({currentUser}) {
+  const [config,setConfig]=useState(DEFAULT_KIOSK_SETTINGS);
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+
+  const load=useCallback(async()=>{
+    const doc=await window.DB.getDoc("config","kioskSettings");
+    setConfig(normalizeKioskSettings(doc||{}));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  function setShiftValue(shiftId,key,value){
+    setConfig(prev=>({
+      ...prev,
+      shiftWindows:(prev.shiftWindows||[]).map(row=>row.id===shiftId?{...row,[key]:value}:row),
+    }));
+  }
+  function addShiftWindow(){
+    setConfig(prev=>{
+      const list=[...(prev.shiftWindows||[])];
+      const nextIdx=list.length+1;
+      const label=`Vardiya ${nextIdx}`;
+      const used=new Set(list.map(row=>String(row.id||"")).filter(Boolean));
+      const id=uniqueShiftId(label,used,nextIdx-1);
+      list.push({id,label,start:"00:00",end:"00:00"});
+      return {...prev,shiftWindows:list};
+    });
+  }
+  function removeShiftWindow(shiftId){
+    setConfig(prev=>{
+      const list=[...(prev.shiftWindows||[])];
+      if(list.length<=1){
+        alert("En az 1 vardiya tanimli olmali.");
+        return prev;
+      }
+      return {...prev,shiftWindows:list.filter(row=>row.id!==shiftId)};
+    });
+  }
+  function setThreshold(value){
+    setConfig(prev=>({...prev,cycleDeviationThresholdSec:value}));
+  }
+  function setNotifyEnabled(value){
+    setConfig(prev=>({...prev,cycleDeviationNotificationEnabled:Boolean(value)}));
+  }
+  async function saveConfig(){
+    const normalized=normalizeKioskSettings(config||{});
+    const payload={
+      ...normalized,
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser?.id||"",
+    };
+    setSaving(true);
+    const ok=await window.DB.setDoc("config","kioskSettings",payload);
+    setSaving(false);
+    if(!ok){alert("Kiosk ayarlari kaydedilemedi.");return;}
+    setConfig(normalized);
+    try{
+      window.dispatchEvent(new CustomEvent("kiosk_settings_updated",{detail:normalized}));
+    }catch{}
+    alert("Kiosk ayarlari kaydedildi.");
+  }
+
+  return (
+    <div style={{marginBottom:18}}>
+      <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Kiosk Vardiya ve Cevrim Ayarlari</div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+        <div style={{fontSize:12,color:C.muted2,marginBottom:10}}>Vardiya otomasyonu kiosk ekraninda bu saat araliklarina gore calisir.</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+          <div style={{fontSize:11,color:C.muted2}}>Vardiya sayisi ve adlari buradan ayarlanir.</div>
+          <button onClick={addShiftWindow} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>+ Vardiya Ekle</button>
+        </div>
+        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 120px 120px 74px",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700}}>
+            <div>Vardiya Adi</div><div>Baslangic</div><div>Bitis</div><div/>
+          </div>
+          {(config.shiftWindows||[]).map(row=>(
+            <div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 120px 120px 74px",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
+              <input value={row.label||""} onChange={e=>setShiftValue(row.id,"label",e.target.value)} placeholder="Vardiya adi" style={{...inputSt,padding:"6px 8px",fontSize:12}}/>
+              <input type="time" value={normalizeHm(row.start,"00:00")} onChange={e=>setShiftValue(row.id,"start",e.target.value)} style={{...inputSt,padding:"6px 8px",fontSize:12}}/>
+              <input type="time" value={normalizeHm(row.end,"00:00")} onChange={e=>setShiftValue(row.id,"end",e.target.value)} style={{...inputSt,padding:"6px 8px",fontSize:12}}/>
+              <button onClick={()=>removeShiftWindow(row.id)} style={{...btnSt("danger"),padding:"6px 8px",fontSize:11,opacity:(config.shiftWindows||[]).length<=1?0.5:1}} disabled={(config.shiftWindows||[]).length<=1}>Sil</button>
+            </div>
+          ))}
+        </div>
+
+        <div style={{marginTop:12,padding:10,border:`1px solid ${C.border}`,borderRadius:10,background:C.surface}}>
+          <label style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:12,color:C.text,cursor:"pointer"}}>
+            <input type="checkbox" checked={Boolean(config.cycleDeviationNotificationEnabled)} onChange={e=>setNotifyEnabled(e.target.checked)}/>
+            Planlanan cevrim ile anlik cevrim arasinda sapma olursa bildirim olustur
+          </label>
+          <div style={{display:"grid",gridTemplateColumns:"160px 1fr",gap:8,marginTop:8,alignItems:"center"}}>
+            <span style={{fontSize:12,color:C.muted2}}>Sapma esigi (sn)</span>
+            <input
+              type="number"
+              min="1"
+              value={config.cycleDeviationThresholdSec}
+              onChange={e=>setThreshold(e.target.value)}
+              disabled={!config.cycleDeviationNotificationEnabled}
+              style={{...inputSt,padding:"7px 8px",fontSize:12,maxWidth:220,opacity:config.cycleDeviationNotificationEnabled?1:0.55}}
+            />
+          </div>
+        </div>
+
+        <div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}>
+          <button onClick={saveConfig} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={loading||saving}>{saving?"Kaydediliyor...":"Kiosk Ayarini Kaydet"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RoutingOperationTypeSettings({currentUser}) {
+  const [rows,setRows]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [editId,setEditId]=useState("");
+  const [form,setForm]=useState({
+    code:"",
+    name:"",
+    icon:DEFAULT_ROUTING_OPERATION_TYPES[0]?.icon||"??",
+    color:DEFAULT_ROUTING_OPERATION_TYPES[0]?.color||"#57BE90",
+    defaultSetupSec:"0",
+    defaultCycleSec:"0",
+  });
+
+  const load=useCallback(async()=>{
+    const doc=await window.DB.getDoc("config","routingOperationTypes");
+    setRows(normalizeRoutingOperationTypes(doc||{}));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  function resetForm(){
+    setEditId("");
+    setForm({
+      code:"",
+      name:"",
+      icon:DEFAULT_ROUTING_OPERATION_TYPES[0]?.icon||"??",
+      color:DEFAULT_ROUTING_OPERATION_TYPES[0]?.color||"#57BE90",
+      defaultSetupSec:"0",
+      defaultCycleSec:"0",
+    });
+  }
+  function startEdit(row){
+    setEditId(row.id);
+    setForm({
+      code:row.code||"",
+      name:row.name||"",
+      icon:row.icon||"??",
+      color:normalizeHexColor(row.color),
+      defaultSetupSec:String(Math.max(0,safeNum(row.defaultSetupSec))),
+      defaultCycleSec:String(Math.max(0,safeNum(row.defaultCycleSec))),
+    });
+  }
+
+  async function persist(list){
+    const normalized=normalizeRoutingOperationTypes({list:list.map((r,idx)=>({...r,sortOrder:(idx+1)*10}))});
+    setSaving(true);
+    const ok=await window.DB.setDoc("config","routingOperationTypes",{
+      list:normalized,
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser?.id||"",
+    });
+    setSaving(false);
+    if(!ok){alert("Rota operasyon tipleri kaydedilemedi.");return false;}
+    setRows(normalized);
+    return true;
+  }
+
+  async function saveForm(){
+    const code=String(form.code||"").trim().toUpperCase();
+    const name=String(form.name||"").trim();
+    if(!code||!name){alert("Kod ve ad zorunlu.");return;}
+    const icon=String(form.icon||"??").trim()||"??";
+    const color=normalizeHexColor(form.color);
+    const setup=Math.max(0,safeNum(form.defaultSetupSec));
+    const cycle=Math.max(0,safeNum(form.defaultCycleSec));
+    const duplicate=rows.find(r=>r.code===code&&r.id!==editId);
+    if(duplicate){alert("Ayni kodda operasyon tipi var.");return;}
+    let next=[...rows];
+    if(editId){
+      next=next.map(r=>r.id===editId?{...r,code,name,icon,color,defaultSetupSec:setup,defaultCycleSec:cycle}:r);
+    }else{
+      next.push({
+        id:`op_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`,
+        code,
+        name,
+        icon,
+        color,
+        defaultSetupSec:setup,
+        defaultCycleSec:cycle,
+        sortOrder:(next.length+1)*10,
+      });
+    }
+    const ok=await persist(next);
+    if(ok) resetForm();
+  }
+
+  async function removeRow(id){
+    const row=rows.find(r=>r.id===id);
+    if(!row) return;
+    if(!confirm(`${row.code} silinsin mi?`)) return;
+    await persist(rows.filter(r=>r.id!==id));
+    if(editId===id) resetForm();
+  }
+
+  async function moveRow(id,dir){
+    const idx=rows.findIndex(r=>r.id===id);
+    if(idx<0) return;
+    const target=idx+dir;
+    if(target<0||target>=rows.length) return;
+    const next=[...rows];
+    const temp=next[idx];
+    next[idx]=next[target];
+    next[target]=temp;
+    await persist(next);
+  }
+
+  return (
+    <div style={{marginBottom:18}}>
+      <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Rota ve Operasyon Tipleri</div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1.3fr .8fr .8fr .7fr .7fr auto auto",gap:8,alignItems:"end",marginBottom:10}}>
+          <div><span style={labelSt}>Kod *</span><input style={inputSt} value={form.code} onChange={e=>setForm(f=>({...f,code:e.target.value}))} placeholder="OP-10"/></div>
+          <div><span style={labelSt}>Operasyon Adi *</span><input style={inputSt} value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Kaba Isleme"/></div>
+          <div>
+            <span style={labelSt}>Ikon</span>
+            <select style={inputSt} value={form.icon} onChange={e=>setForm(f=>({...f,icon:e.target.value}))}>
+              {OPERATION_ICON_OPTIONS.map(ic=><option key={ic} value={ic}>{ic}</option>)}
+            </select>
+          </div>
+          <div>
+            <span style={labelSt}>Renk</span>
+            <div style={{display:"flex",gap:6,alignItems:"center"}}>
+              <input style={{...inputSt,padding:0,width:40,height:36,flex:"0 0 auto"}} type="color" value={normalizeHexColor(form.color)} onChange={e=>setForm(f=>({...f,color:e.target.value}))}/>
+              <input style={{...inputSt,padding:"9px 8px",fontSize:12}} value={form.color} onChange={e=>setForm(f=>({...f,color:e.target.value}))} placeholder="#57BE90"/>
+            </div>
+          </div>
+          <div><span style={labelSt}>Vars. Kurulum(sn)</span><input style={inputSt} type="number" min="0" value={form.defaultSetupSec} onChange={e=>setForm(f=>({...f,defaultSetupSec:e.target.value}))}/></div>
+          <div><span style={labelSt}>Vars. Cevrim(sn)</span><input style={inputSt} type="number" min="0" value={form.defaultCycleSec} onChange={e=>setForm(f=>({...f,defaultCycleSec:e.target.value}))}/></div>
+          <button onClick={saveForm} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,whiteSpace:"nowrap"}} disabled={saving||loading}>{editId?"Guncelle":"Ekle"}</button>
+          <button onClick={resetForm} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,whiteSpace:"nowrap"}} disabled={saving||loading}>Temizle</button>
+        </div>
+        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:".5fr .9fr 1.4fr .6fr .8fr .7fr .7fr 1fr",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700}}>
+            <div>Sira</div><div>Kod</div><div>Ad</div><div>Ikon</div><div>Renk</div><div>Kurulum</div><div>Cevrim</div><div style={{textAlign:"right"}}>Aksiyon</div>
+          </div>
+          {loading&&<div style={{padding:"10px 12px",fontSize:12,color:C.muted2}}>Yukleniyor...</div>}
+          {!loading&&rows.map((row,idx)=>(
+            <div key={row.id} style={{display:"grid",gridTemplateColumns:".5fr .9fr 1.4fr .6fr .8fr .7fr .7fr 1fr",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,alignItems:"center",fontSize:12,color:C.text}}>
+              <div>{idx+1}</div>
+              <div style={{fontFamily:"monospace",fontWeight:700}}>{row.code}</div>
+              <div style={{minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{row.name}</div>
+              <div style={{fontSize:15}}>{row.icon||"??"}</div>
+              <div style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,color:C.muted2}}>
+                <span style={{width:11,height:11,borderRadius:3,background:normalizeHexColor(row.color),display:"inline-block",border:`1px solid ${C.border}`}}/>
+                {normalizeHexColor(row.color)}
+              </div>
+              <div>{safeNum(row.defaultSetupSec)}</div>
+              <div>{safeNum(row.defaultCycleSec)}</div>
+              <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                <button onClick={()=>moveRow(row.id,-1)} style={{...btnSt("ghost"),padding:"4px 7px",fontSize:11}} disabled={saving||idx===0}>^</button>
+                <button onClick={()=>moveRow(row.id,1)} style={{...btnSt("ghost"),padding:"4px 7px",fontSize:11}} disabled={saving||idx===rows.length-1}>v</button>
+                <button onClick={()=>startEdit(row)} style={{...btnSt("ghost"),padding:"4px 7px",fontSize:11}} disabled={saving}>Duzenle</button>
+                <button onClick={()=>removeRow(row.id)} style={{...btnSt("danger"),padding:"4px 7px",fontSize:11}} disabled={saving}>Sil</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SalesCurrencySettings({currentUser}) {
+  const [config,setConfig]=useState(()=>normalizeSalesCurrencies({}));
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+
+  const load=useCallback(async()=>{
+    const doc=await window.DB.getDoc("config","salesCurrencies");
+    setConfig(normalizeSalesCurrencies(doc||{}));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  function toggleEnabled(code){
+    setConfig(prev=>{
+      const enabledCount=prev.list.filter(x=>x.enabled).length;
+      return {
+        ...prev,
+        list:prev.list.map(row=>{
+          if(row.code!==code) return row;
+          if(row.enabled&&enabledCount<=1) return row;
+          return {...row,enabled:!row.enabled};
+        }),
+      };
+    });
+  }
+
+  function setDefaultCurrency(code){
+    setConfig(prev=>({...prev,defaultCurrency:code}));
+  }
+
+  async function saveConfig(){
+    const normalized=normalizeSalesCurrencies(config||{});
+    const payload={
+      ...normalized,
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser?.id||"",
+    };
+    setSaving(true);
+    const ok=await window.DB.setDoc("config","salesCurrencies",payload);
+    setSaving(false);
+    if(!ok){alert("Para birimi ayarlari kaydedilemedi.");return;}
+    setConfig(normalized);
+    alert("Para birimi ayarlari kaydedildi.");
+  }
+
+  const activeCodes=config.list.filter(x=>x.enabled).map(x=>x.code);
+  return (
+    <div style={{marginBottom:18}}>
+      <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Teklif Para Birimleri</div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+        <div style={{fontSize:12,color:C.muted2,marginBottom:10}}>Teklif ekraninda gorunecek para birimlerini yonetin (TL, Euro, Dolar).</div>
+        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr .8fr .8fr .8fr",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700}}>
+            <div>Para Birimi</div><div>Sembol</div><div>Aktif</div><div>Varsayilan</div>
+          </div>
+          {loading&&<div style={{padding:"10px 12px",fontSize:12,color:C.muted2}}>Yukleniyor...</div>}
+          {!loading&&config.list.map(row=>(
+            <div key={row.code} style={{display:"grid",gridTemplateColumns:"1fr .8fr .8fr .8fr",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,alignItems:"center",fontSize:12,color:C.text}}>
+              <div style={{fontWeight:700}}>{row.code} Â· {row.label}</div>
+              <div>{row.symbol||"-"}</div>
+              <div>
+                <button onClick={()=>toggleEnabled(row.code)} style={{...(row.enabled?btnSt("green"):btnSt("ghost")),padding:"4px 8px",fontSize:11}}>
+                  {row.enabled?"Aktif":"Pasif"}
+                </button>
+              </div>
+              <div>
+                <button
+                  onClick={()=>setDefaultCurrency(row.code)}
+                  disabled={!row.enabled}
+                  style={{...(config.defaultCurrency===row.code?btnSt("primary"):btnSt("ghost")),padding:"4px 8px",fontSize:11,opacity:row.enabled?1:0.45}}
+                >
+                  {config.defaultCurrency===row.code?"Varsayilan":"Yap"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10,gap:8,flexWrap:"wrap"}}>
+          <div style={{fontSize:11,color:C.muted2}}>Aktif: {activeCodes.join(", ")||"-"} Â· Varsayilan: {config.defaultCurrency||"-"}</div>
+          <button onClick={saveConfig} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={saving||loading}>{saving?"Kaydediliyor...":"Kaydet"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SupplierGroupSettings({currentUser}) {
+  const [rows,setRows]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [newName,setNewName]=useState("");
+  const [newColor,setNewColor]=useState("#57BE90");
+
+  const load=useCallback(async()=>{
+    const doc=await window.DB.getDoc("config","supplierGroups");
+    const normalized=normalizeSupplierGroups(doc||{});
+    setRows(normalized.list||[]);
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  function updateRow(id,key,value){
+    setRows(prev=>prev.map(row=>row.id===id?{...row,[key]:value}:row));
+  }
+  function moveRow(id,dir){
+    setRows(prev=>{
+      const idx=prev.findIndex(x=>x.id===id);
+      if(idx<0) return prev;
+      const target=idx+dir;
+      if(target<0||target>=prev.length) return prev;
+      const copy=[...prev];
+      const [picked]=copy.splice(idx,1);
+      copy.splice(target,0,picked);
+      return copy.map((row,i)=>({...row,sortOrder:(i+1)*10}));
+    });
+  }
+  function removeRow(id){
+    setRows(prev=>{
+      if(prev.length<=1){
+        alert("En az 1 tedarikci grubu tanimli olmali.");
+        return prev;
+      }
+      return prev.filter(x=>x.id!==id).map((row,i)=>({...row,sortOrder:(i+1)*10}));
+    });
+  }
+  function addRow(){
+    const name=String(newName||"").trim();
+    if(!name){alert("Grup adi girin.");return;}
+    setRows(prev=>{
+      const used=new Set(prev.map(x=>x.id));
+      const base=normalizeShiftToken(name)||`grp_${prev.length+1}`;
+      let id=base;
+      let seq=2;
+      while(used.has(id)){
+        id=`${base}_${seq}`;
+        seq+=1;
+      }
+      return [...prev,{id,name,color:normalizeHexColor(newColor,"#57BE90"),sortOrder:(prev.length+1)*10}];
+    });
+    setNewName("");
+  }
+  async function save(){
+    const normalized=normalizeSupplierGroups({list:rows.map((row,idx)=>({
+      ...row,
+      name:String(row.name||"").trim()||`Grup ${idx+1}`,
+      color:normalizeHexColor(row.color,"#57BE90"),
+      sortOrder:(idx+1)*10,
+    }))});
+    setSaving(true);
+    const ok=await window.DB.setDoc("config","supplierGroups",{
+      ...normalized,
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser?.id||"",
+    });
+    setSaving(false);
+    if(!ok){alert("Tedarikci gruplari kaydedilemedi.");return;}
+    setRows(normalized.list||[]);
+    alert("Tedarikci gruplari kaydedildi.");
+  }
+
+  return (
+    <div style={{marginBottom:18}}>
+      <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Tedarikci Grup Ayarlari</div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+        <div style={{fontSize:12,color:C.muted2,marginBottom:10}}>Satin alma modulu icin grup tanimlari (ornek: malzeme, takim).</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 140px auto",gap:8,marginBottom:10}}>
+          <input style={inputSt} value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Yeni grup adi"/>
+          <input style={{...inputSt,padding:0,height:38}} type="color" value={normalizeHexColor(newColor,"#57BE90")} onChange={e=>setNewColor(e.target.value)}/>
+          <button onClick={addRow} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>+ Ekle</button>
+        </div>
+        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 140px 180px",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700}}>
+            <div>Grup Adi</div><div>Renk</div><div/>
+          </div>
+          {loading&&<div style={{padding:"10px 12px",fontSize:12,color:C.muted2}}>Yukleniyor...</div>}
+          {!loading&&rows.map((row,idx)=>(
+            <div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 140px 180px",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
+              <input style={{...inputSt,padding:"7px 8px",fontSize:12}} value={row.name||""} onChange={e=>updateRow(row.id,"name",e.target.value)} placeholder="Grup adi"/>
+              <div style={{display:"grid",gridTemplateColumns:"40px 1fr",gap:6}}>
+                <input style={{...inputSt,padding:0,height:34}} type="color" value={normalizeHexColor(row.color,"#57BE90")} onChange={e=>updateRow(row.id,"color",e.target.value)}/>
+                <input style={{...inputSt,padding:"7px 8px",fontSize:12}} value={row.color||"#57BE90"} onChange={e=>updateRow(row.id,"color",e.target.value)} placeholder="#57BE90"/>
+              </div>
+              <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                <button onClick={()=>moveRow(row.id,-1)} style={{...btnSt("ghost"),padding:"4px 7px",fontSize:11}} disabled={saving||idx===0}>^</button>
+                <button onClick={()=>moveRow(row.id,1)} style={{...btnSt("ghost"),padding:"4px 7px",fontSize:11}} disabled={saving||idx===rows.length-1}>v</button>
+                <button onClick={()=>removeRow(row.id)} style={{...btnSt("danger"),padding:"4px 7px",fontSize:11}} disabled={saving}>Sil</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}>
+          <button onClick={save} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={saving||loading}>{saving?"Kaydediliyor...":"Gruplari Kaydet"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+//  ADMIN USERS
+// ============================================================
+function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,menuCatalog=[],menuVisibility,onMenuVisibilityChange}) {
+  const [users,setUsers]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [expanded,setExpanded]=useState(null);
+  const [settingsView,setSettingsView]=useState("genel");
+  const [logoLoading,setLogoLoading]=useState(false);
+  const [quoteTemplate,setQuoteTemplate]=useState(DEFAULT_QUOTE_TEMPLATE);
+  const [templateSaving,setTemplateSaving]=useState(false);
+  const [menuConfig,setMenuConfig]=useState(()=>normalizeMenuVisibilityConfig(menuVisibility||{}));
+  const [menuSaving,setMenuSaving]=useState(false);
+  const logoInputRef=useRef(null);
+
+  const load=useCallback(async()=>{
+    const [u,templateDoc]=await Promise.all([
+      window.DB.getAll("users"),
+      window.DB.getDoc("config","quoteTemplate"),
+    ]);
+    setUsers(u);
+    setQuoteTemplate(normalizeQuoteTemplate(templateDoc||{}));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    setMenuConfig(normalizeMenuVisibilityConfig(menuVisibility||{}));
+  },[menuVisibility]);
+
+  async function update(id,patch) {
+    await window.DB.updateDoc("users",id,patch);
+    setUsers(u=>u.map(x=>x.id===id?{...x,...patch}:x));
+  }
+  async function togglePerm(id,permId) {
+    const u=users.find(x=>x.id===id);
+    const perms=[...(u.permissions||[])];
+    const idx=perms.indexOf(permId);
+    if(idx>=0) perms.splice(idx,1); else perms.push(permId);
+    await update(id,{permissions:perms});
+  }
+  async function changeRole(user,newRole){
+    const patch={
+      role:newRole,
+      permissions:[...(ROLE_PERMISSION_DEFAULTS[newRole]||[])],
+      updatedAt:new Date().toISOString(),
+    };
+    await update(user.id,patch);
+  }
+  const roleLabel=roleId=>(USER_ROLES.find(r=>r.id===roleId)||{label:roleId||"-"}).label;
+
+  const list=[...users].sort((a,b)=>{const o={pending:0,active:1,rejected:2};return(o[a.status]??3)-(o[b.status]??3);});
+  const pendingCount=list.filter(u=>u.status==="pending").length;
+  const activeCount=list.filter(u=>u.status==="active").length;
+  const blockedCount=list.filter(u=>u.status==="rejected").length;
+
+  async function pickLogo(e){
+    const file=e.target.files&&e.target.files[0];
+    if(!file) return;
+    if(!file.type.startsWith("image/")){alert("Lutfen bir gorsel dosyasi secin."); return;}
+    if(file.size>2*1024*1024){alert("Logo en fazla 2MB olabilir."); return;}
+    setLogoLoading(true);
+    const data=await fileToBase64(file);
+    await onLogoUpdate(data);
+    setLogoLoading(false);
+    e.target.value="";
+  }
+  function setTemplateField(key,value){
+    setQuoteTemplate(prev=>({...prev,[key]:value}));
+  }
+  async function saveQuoteTemplate(){
+    setTemplateSaving(true);
+    const normalized=normalizeQuoteTemplate(quoteTemplate);
+    const payload={
+      ...normalized,
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser.id,
+    };
+    const ok=await window.DB.setDoc("config","quoteTemplate",payload);
+    setTemplateSaving(false);
+    if(!ok){alert("Sablon kaydedilemedi.");return;}
+    setQuoteTemplate(normalized);
+    alert("Sablon kaydedildi.");
+  }
+  function resetQuoteTemplate(){
+    setQuoteTemplate({...DEFAULT_QUOTE_TEMPLATE});
+  }
+  function toggleMenuVisibility(tabId){
+    const id=String(tabId||"").trim();
+    if(!id||MENU_ALWAYS_VISIBLE_TAB_IDS.includes(id)) return;
+    setMenuConfig(prev=>{
+      const hiddenSet=new Set((prev&&Array.isArray(prev.hiddenTabs))?prev.hiddenTabs:[]);
+      if(hiddenSet.has(id)) hiddenSet.delete(id);
+      else hiddenSet.add(id);
+      return normalizeMenuVisibilityConfig({hiddenTabs:Array.from(hiddenSet)});
+    });
+  }
+  function resetMenuVisibility(){
+    setMenuConfig(normalizeMenuVisibilityConfig({}));
+  }
+  async function saveMenuVisibility(){
+    const normalized=normalizeMenuVisibilityConfig(menuConfig||{});
+    const payload={
+      ...normalized,
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser?.id||"",
+    };
+    setMenuSaving(true);
+    const ok=await window.DB.setDoc("config","menuVisibility",payload);
+    setMenuSaving(false);
+    if(!ok){alert("Menu gorunurlugu kaydedilemedi.");return;}
+    setMenuConfig(normalized);
+    if(typeof onMenuVisibilityChange==="function") onMenuVisibilityChange(normalized);
+    if(typeof window!=="undefined"){
+      window.dispatchEvent(new CustomEvent("menu_visibility_updated",{detail:normalized}));
+    }
+    alert("Menu gorunurlugu kaydedildi.");
+  }
+  const menuRows=useMemo(()=>{
+    const map={};
+    (Array.isArray(menuCatalog)?menuCatalog:[]).forEach(tab=>{
+      if(!tab||!tab.id) return;
+      if(map[tab.id]) return;
+      map[tab.id]={
+        id:String(tab.id),
+        label:String(tab.label||tab.id),
+        group:String(tab.group||"Diger"),
+      };
+    });
+    const rows=Object.values(map);
+    const groupOrder=["Planlama","Operasyon","Tedarik ve Stok","Analiz ve Yonetim","Sistem"];
+    rows.sort((a,b)=>{
+      const ai=groupOrder.indexOf(a.group);
+      const bi=groupOrder.indexOf(b.group);
+      if(ai!==bi){
+        if(ai<0) return 1;
+        if(bi<0) return -1;
+        return ai-bi;
+      }
+      return (a.label||"").localeCompare(b.label||"","tr");
+    });
+    return rows;
+  },[menuCatalog]);
+  const hiddenMenuSet=useMemo(()=>new Set((menuConfig&&Array.isArray(menuConfig.hiddenTabs))?menuConfig.hiddenTabs:[]),[menuConfig]);
+  const menuVisibleCount=menuRows.filter(row=>MENU_ALWAYS_VISIBLE_TAB_IDS.includes(row.id)||!hiddenMenuSet.has(row.id)).length;
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>YÃ¼kleniyor...</div>;
+
+  const settingsTabs=[
+    {id:"genel",label:"Genel",desc:"Logo, uygulama gorunumu ve menu ayarlari"},
+    {id:"ticari",label:"Ticari",desc:"Teklif sablonu ve para birimi"},
+    {id:"uretim",label:"Uretim",desc:"Operator, kiosk ve rota ayarlari"},
+    {id:"tedarik",label:"Tedarik",desc:"Tedarikci grup ayarlari"},
+    {id:"kullanicilar",label:"Kullanicilar",desc:"Yetki, rol ve hesap onaylari"},
+  ];
+
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,marginBottom:16}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+          <div>
+            <div style={{fontWeight:700,fontSize:15,color:C.text}}>Ayarlar Merkezi</div>
+            <div style={{fontSize:12,color:C.muted2,marginTop:2}}>Tum sistem ayarlari basliklar altinda toplandi.</div>
+          </div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            <Badge label={`${list.length} Kullanici`} color={C.accent}/>
+            <Badge label={`${pendingCount} Bekleyen`} color={C.warn}/>
+            <Badge label={`${activeCount} Aktif`} color={C.green}/>
+            <Badge label={`${blockedCount} Askida`} color={C.red}/>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:12}}>
+          {settingsTabs.map(tab=>(
+            <button
+              key={tab.id}
+              onClick={()=>setSettingsView(tab.id)}
+              style={{
+                border:`1px solid ${settingsView===tab.id?C.accent:C.border}`,
+                background:settingsView===tab.id?C.accent+"18":C.surface,
+                color:settingsView===tab.id?C.accent:C.text,
+                borderRadius:10,
+                padding:"10px 12px",
+                minWidth:180,
+                textAlign:"left",
+                cursor:"pointer",
+              }}
+            >
+              <div style={{fontWeight:700,fontSize:13,lineHeight:1.2}}>{tab.label}</div>
+              <div style={{fontSize:11,color:settingsView===tab.id?C.accent:C.muted2,marginTop:3}}>{tab.desc}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {settingsView==="genel"&&(
+        <div style={{marginBottom:18}}>
+          <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Genel Ayarlar Â· Logo</div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+              <div style={{width:56,height:56,borderRadius:12,background:C.surface,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
+                <img src={currentLogo||LOGO_SRC} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+              </div>
+              <div style={{fontSize:12,color:C.muted2}}>Giris sayfasi ve uygulama basliginda kullanilir.</div>
+            </div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <button onClick={()=>logoInputRef.current?.click()} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={logoLoading}>{logoLoading?"Yukleniyor...":"Logo Yukle"}</button>
+              <button onClick={()=>onLogoUpdate("")} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}} disabled={logoLoading}>Varsayilana Don</button>
+              <input ref={logoInputRef} type="file" accept="image/*" style={{display:"none"}} onChange={pickLogo}/>
+            </div>
+          </div>
+          <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,margin:"14px 0 8px"}}>Genel Ayarlar Â· Menu Gorunurlugu</div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+            <div style={{fontSize:12,color:C.muted2,marginBottom:10}}>Yan menude hangi modullerin gorunecegini buradan yonetin.</div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+              <div style={{fontSize:11,color:C.muted2}}>Gorunen modul: {menuVisibleCount}/{menuRows.length}</div>
+              <div style={{fontSize:11,color:C.muted2}}>Ayarlar ve Guvenlik menusu her zaman acik kalir.</div>
+            </div>
+            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700}}>
+                <div>Modul</div><div>Durum</div>
+              </div>
+              {menuRows.length===0&&<div style={{padding:"10px 12px",fontSize:12,color:C.muted2}}>Modul listesi bulunamadi.</div>}
+              {menuRows.map(row=>{
+                const forced=MENU_ALWAYS_VISIBLE_TAB_IDS.includes(row.id);
+                const hidden=hiddenMenuSet.has(row.id);
+                const visible=forced||!hidden;
+                return (
+                  <div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr auto",gap:8,padding:"9px 10px",borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
+                    <div>
+                      <div style={{fontSize:12,fontWeight:700,color:C.text}}>{row.label}</div>
+                      <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{row.group} Â· {row.id}</div>
+                    </div>
+                    <button
+                      onClick={()=>toggleMenuVisibility(row.id)}
+                      disabled={menuSaving||forced}
+                      style={{...(visible?btnSt("green"):btnSt("ghost")),padding:"5px 10px",fontSize:11,opacity:forced?0.6:1}}
+                    >
+                      {forced?"Zorunlu":(visible?"Goster":"Gizli")}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10,flexWrap:"wrap"}}>
+              <button onClick={resetMenuVisibility} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}} disabled={menuSaving}>Tumunu Goster</button>
+              <button onClick={saveMenuVisibility} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={menuSaving}>{menuSaving?"Kaydediliyor...":"Menu Ayarlarini Kaydet"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {settingsView==="ticari"&&(
+        <>
+          <div style={{marginBottom:18}}>
+            <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Ticari Ayarlar Â· Teklif PDF Sablonu</div>
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:8}}>
+                <div><span style={labelSt}>Sirket Adi</span><input style={inputSt} value={quoteTemplate.companyName} onChange={e=>setTemplateField("companyName",e.target.value)} placeholder="Firma adi"/></div>
+                <div><span style={labelSt}>Renk</span><div style={{display:"flex",gap:8}}><input style={{...inputSt,padding:0,width:48,height:36}} type="color" value={normalizeQuoteTemplate(quoteTemplate).accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)}/><input style={{...inputSt,flex:1}} value={quoteTemplate.accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)} placeholder="#57BE90"/></div></div>
+                <div><span style={labelSt}>Adres</span><input style={inputSt} value={quoteTemplate.companyAddress} onChange={e=>setTemplateField("companyAddress",e.target.value)} placeholder="Adres"/></div>
+                <div><span style={labelSt}>Telefon</span><input style={inputSt} value={quoteTemplate.companyPhone} onChange={e=>setTemplateField("companyPhone",e.target.value)} placeholder="+90 ..."/></div>
+                <div><span style={labelSt}>E-Posta</span><input style={inputSt} value={quoteTemplate.companyEmail} onChange={e=>setTemplateField("companyEmail",e.target.value)} placeholder="mail@firma.com"/></div>
+                <div style={{display:"flex",alignItems:"flex-end"}}>
+                  <label style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:12,color:C.text,cursor:"pointer"}}>
+                    <input type="checkbox" checked={Boolean(quoteTemplate.showLogo)} onChange={e=>setTemplateField("showLogo",e.target.checked)}/>
+                    Logo kullan
+                  </label>
+                </div>
+                <div><span style={labelSt}>Teklif Basligi</span><input style={inputSt} value={quoteTemplate.documentTitleQuote} onChange={e=>setTemplateField("documentTitleQuote",e.target.value)} placeholder="Proforma Teklif"/></div>
+                <div><span style={labelSt}>Siparis Basligi</span><input style={inputSt} value={quoteTemplate.documentTitleOrder} onChange={e=>setTemplateField("documentTitleOrder",e.target.value)} placeholder="Siparis Onay Formu"/></div>
+                <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Alt Not</span><textarea rows={2} style={{...inputSt,minHeight:64,resize:"vertical"}} value={quoteTemplate.footerNote} onChange={e=>setTemplateField("footerNote",e.target.value)} placeholder="PDF altinda gorunecek not"/></div>
+              </div>
+              <div style={{marginTop:10,padding:10,border:`1px solid ${C.border}`,borderRadius:10,background:C.surface}}>
+                <div style={{height:6,borderRadius:99,background:normalizeQuoteTemplate(quoteTemplate).accentColor,marginBottom:8}}/>
+                <div style={{fontWeight:700,color:C.text}}>{quoteTemplate.documentTitleQuote||DEFAULT_QUOTE_TEMPLATE.documentTitleQuote}</div>
+                <div style={{fontSize:12,color:C.muted2,marginTop:2}}>
+                  {(quoteTemplate.companyName||DEFAULT_QUOTE_TEMPLATE.companyName)}{quoteTemplate.companyPhone?` Â· ${quoteTemplate.companyPhone}`:""}{quoteTemplate.companyEmail?` Â· ${quoteTemplate.companyEmail}`:""}
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8,marginTop:10}}>
+                <button onClick={saveQuoteTemplate} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={templateSaving}>{templateSaving?"Kaydediliyor...":"Sablonu Kaydet"}</button>
+                <button onClick={resetQuoteTemplate} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}} disabled={templateSaving}>Varsayilan</button>
+              </div>
+            </div>
+          </div>
+          <SalesCurrencySettings currentUser={currentUser}/>
+        </>
+      )}
+
+      {settingsView==="uretim"&&(
+        <>
+          <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Uretim Ayarlari</div>
+          <OperatorUrlSettings machines={machines}/>
+          <KioskProductionSettings currentUser={currentUser}/>
+          <RoutingOperationTypeSettings currentUser={currentUser}/>
+        </>
+      )}
+      {settingsView==="tedarik"&&(
+        <>
+          <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Tedarik Ayarlari</div>
+          <SupplierGroupSettings currentUser={currentUser}/>
+        </>
+      )}
+
+      {settingsView==="kullanicilar"&&(
+        <>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:12}}>
+            <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>Kullanici Yonetimi Â· {list.length} kullanici</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              <Badge label={`Bekleyen ${pendingCount}`} color={C.warn}/>
+              <Badge label={`Aktif ${activeCount}`} color={C.green}/>
+              <Badge label={`Askida ${blockedCount}`} color={C.red}/>
+            </div>
+          </div>
+          {list.map(u=>(
+            <div key={u.id} style={{background:C.card,border:`1px solid ${u.status==="pending"?C.warn+"60":C.border}`,borderRadius:14,padding:"14px 16px",marginBottom:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                <div><div style={{fontWeight:700,fontSize:14}}>{u.fullName}</div><div style={{color:C.muted2,fontSize:12,marginTop:1}}>@{u.username||u.id}</div></div>
+                <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                  <Badge label={u.role==="admin"?"YÃ¶netici":roleLabel(u.role)} color={u.role==="admin"?C.accent:C.muted2}/>
+                  <Badge label={u.status==="active"?"Aktif":u.status==="pending"?"Bekliyor":"AskÄ±da"} color={u.status==="active"?C.green:u.status==="pending"?C.warn:C.red}/>
+                </div>
+              </div>
+              {u.id!==currentUser.id&&(
+                <>
+                  <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:8}}>
+                    {u.status==="pending"&&<><button onClick={()=>update(u.id,{status:"active"})} style={{...btnSt("green"),padding:"7px 13px",fontSize:12}}>? Onayla</button><button onClick={()=>update(u.id,{status:"rejected"})} style={{...btnSt("danger"),padding:"7px 13px",fontSize:12}}>? Reddet</button></>}
+                    {u.status==="active"&&<>
+                      <select value={u.role||"operator"} onChange={e=>changeRole(u,e.target.value)} style={{...inputSt,padding:"7px 10px",fontSize:12,maxWidth:190}}>
+                        {USER_ROLES.map(r=><option key={r.id} value={r.id}>{r.label}</option>)}
+                      </select>
+                      <button onClick={()=>update(u.id,{status:"rejected"})} style={{...btnSt("danger"),padding:"7px 13px",fontSize:12}}>AskÄ±ya Al</button>
+                    </>}
+                    {u.status==="rejected"&&<button onClick={()=>update(u.id,{status:"active"})} style={{...btnSt("green"),padding:"7px 13px",fontSize:12}}>AktifleÅŸtir</button>}
+                    {u.role!=="admin"&&<button onClick={()=>setExpanded(expanded===u.id?null:u.id)} style={{...btnSt("ghost"),padding:"7px 13px",fontSize:12}}>{expanded===u.id?"^ Gizle":"?? Yetkiler"}</button>}
+                  </div>
+                  {expanded===u.id&&u.role!=="admin"&&(
+                    <div style={{background:C.surface,borderRadius:10,padding:12,border:`1px solid ${C.border}`}}>
+                      <div style={{color:C.muted2,fontSize:11,letterSpacing:.8,textTransform:"uppercase",marginBottom:10,fontWeight:600}}>KullanÄ±cÄ± Yetkileri</div>
+                      {PERMISSIONS.map(p=>{
+                        const active=(u.permissions||[]).includes(p.id);
+                        return (
+                          <div key={p.id} onClick={()=>togglePerm(u.id,p.id)} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:9,marginBottom:6,cursor:"pointer",background:active?C.accent+"12":C.card,border:`1px solid ${active?C.accent+"40":C.border}`}}>
+                            <div style={{fontSize:18}}>{p.icon}</div>
+                            <div style={{flex:1}}><div style={{fontWeight:600,fontSize:13,color:active?C.accent:C.text}}>{p.label}</div><div style={{fontSize:11,color:C.muted2,marginTop:1}}>{p.desc}</div></div>
+                            <div style={{width:20,height:20,borderRadius:5,border:`2px solid ${active?C.accent:C.border}`,background:active?C.accent:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{active&&<span style={{color:"#fff",fontSize:12,fontWeight:800}}>?</span>}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+              {u.id===currentUser.id&&<div style={{color:C.muted,fontSize:11}}>Bu sizin hesabÄ±nÄ±z</div>}
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [assignmentPage,setAssignmentPage]=useState("list");
+  const [calendarMonth,setCalendarMonth]=useState(monthStr());
+  const [calendarScope,setCalendarScope]=useState(()=>{
+    const canManage=currentUser.role==="admin"||currentUser.role==="supervisor"||hasPermission(currentUser,"assign_tasks")||hasPermission(currentUser,"approve_users");
+    return canManage?"team":"me";
+  });
+  const [tasks,setTasks]=useState([]);
+  const [users,setUsers]=useState([]);
+  const [orders,setOrders]=useState([]);
+  const [query,setQuery]=useState("");
+  const [filterStatus,setFilterStatus]=useState("all");
+  const [filterAssignee,setFilterAssignee]=useState("all");
+  const [form,setForm]=useState({
+    assigneeId:"",
+    title:"",
+    detail:"",
+    priority:"medium",
+    dueDate:addDays(todayStr(),1),
+    recurrenceMode:"none",
+    recurrenceUntil:addDays(todayStr(),30),
+    machine:machines[0]||"",
+    orderId:"",
+  });
+  const canAssign=hasPermission(currentUser,"assign_tasks")||currentUser.role==="admin"||hasPermission(currentUser,"approve_users");
+
+  const load=useCallback(async()=>{
+    const [taskRows,userRows,orderRows]=await Promise.all([
+      window.DB.getAll("employeeTasks"),
+      window.DB.getAll("users"),
+      window.DB.getAll("orders"),
+    ]);
+    setTasks(taskRows);
+    setUsers(userRows);
+    setOrders(orderRows);
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  const openTaskListPage=useCallback(()=>setAssignmentPage("list"),[]);
+  const openCalendarPage=useCallback(()=>setAssignmentPage("calendar"),[]);
+  const openCreateTaskPage=useCallback(()=>{
+    setAssignmentPage("create");
+    setForm(prev=>({
+      ...prev,
+      title:"",
+      detail:"",
+      priority:"medium",
+      dueDate:addDays(todayStr(),1),
+      recurrenceMode:"none",
+      recurrenceUntil:addDays(todayStr(),30),
+      orderId:"",
+    }));
+    window.scrollTo({top:0,behavior:"smooth"});
+  },[]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="assignments") return;
+      if(d.type==="refresh"){load();return;}
+      if(d.type==="calendar"){openCalendarPage();return;}
+      if(d.type==="new"){
+        if(!canAssign){alert("Gorev atama yetkiniz yok.");return;}
+        openCreateTaskPage();
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[canAssign,load,openCalendarPage,openCreateTaskPage]);
+
+  const activeUsers=[...users]
+    .filter(u=>u.status==="active")
+    .sort((a,b)=>String(a.fullName||a.id||"").localeCompare(String(b.fullName||b.id||""),"tr"));
+  const openOrders=[...orders]
+    .filter(o=>isOpenOrderStatus(o.status))
+    .sort((a,b)=>String(a.dueDate||"").localeCompare(String(b.dueDate||"")));
+
+  useEffect(()=>{
+    const fallbackAssignee=activeUsers[0]?.id||"";
+    const fallbackMachine=machines[0]||"";
+    setForm(prev=>{
+      const assigneeValid=prev.assigneeId&&activeUsers.some(u=>u.id===prev.assigneeId);
+      const machineValid=prev.machine&&machines.includes(prev.machine);
+      const nextAssignee=assigneeValid?prev.assigneeId:fallbackAssignee;
+      const nextMachine=machineValid?prev.machine:fallbackMachine;
+      if(nextAssignee===prev.assigneeId&&nextMachine===prev.machine) return prev;
+      return {...prev,assigneeId:nextAssignee,machine:nextMachine};
+    });
+  },[activeUsers,machines]);
+
+  const statusOrder={open:0,in_progress:1,done:2,cancelled:3};
+  const statusMeta=status=>{
+    if(status==="done") return {label:"Tamamlandi",color:C.green};
+    if(status==="in_progress") return {label:"Devam Ediyor",color:C.warn};
+    if(status==="cancelled") return {label:"Iptal",color:C.red};
+    return {label:"Acildi",color:C.accent};
+  };
+  const priorityMeta=priority=>{
+    if(priority==="high") return {label:"Yuksek",color:C.red};
+    if(priority==="low") return {label:"Dusuk",color:C.muted2};
+    return {label:"Normal",color:C.warn};
+  };
+
+  const sortedTasks=[...tasks].sort((a,b)=>{
+    const sa=statusOrder[a.status]??0;
+    const sb=statusOrder[b.status]??0;
+    if(sa!==sb) return sa-sb;
+    const da=String(a.dueDate||"9999-12-31");
+    const db=String(b.dueDate||"9999-12-31");
+    const d=da.localeCompare(db);
+    if(d!==0) return d;
+    return String(b.createdAt||"").localeCompare(String(a.createdAt||""));
+  });
+  const myTasks=sortedTasks.filter(t=>t.assigneeId===currentUser.id);
+  const visibleTasks=canAssign?sortedTasks:myTasks;
+  const queryText=String(query||"").trim().toLowerCase();
+  const filteredTasks=visibleTasks.filter(task=>{
+    if(filterStatus!=="all"&&task.status!==filterStatus) return false;
+    if(canAssign&&filterAssignee!=="all"&&task.assigneeId!==filterAssignee) return false;
+    if(!queryText) return true;
+    const hay=[
+      task.title||"",
+      task.detail||"",
+      task.assigneeName||"",
+      task.assignedByName||"",
+      task.machine||"",
+      task.orderCode||"",
+    ].join(" ").toLowerCase();
+    return hay.includes(queryText);
+  });
+  useEffect(()=>{
+    if(!canAssign&&calendarScope!=="me"){
+      setCalendarScope("me");
+    }
+  },[canAssign,calendarScope]);
+  const teamMemberIds=useMemo(()=>{
+    const relationKeys=["managerId","reportsTo","supervisorId","leadId","teamLeadId","leaderId","coordinatorId","parentUserId"];
+    const set=new Set();
+    activeUsers.forEach(u=>{
+      if(!u||!u.id||u.id===currentUser.id) return;
+      const linked=relationKeys.some(key=>String(u[key]||"").trim()===currentUser.id);
+      if(linked) set.add(u.id);
+    });
+    tasks.forEach(task=>{
+      if(!task) return;
+      if(task.assignedBy===currentUser.id&&task.assigneeId&&task.assigneeId!==currentUser.id){
+        set.add(task.assigneeId);
+      }
+    });
+    return Array.from(set);
+  },[activeUsers,currentUser.id,tasks]);
+  const effectiveCalendarScope=canAssign?calendarScope:"me";
+  const calendarVisibleTasks=useMemo(()=>{
+    const myId=currentUser.id;
+    const teamSet=new Set(teamMemberIds);
+    return sortedTasks.filter(task=>{
+      const assigneeId=String(task.assigneeId||"").trim();
+      if(!assigneeId) return false;
+      if(effectiveCalendarScope==="all") return true;
+      if(effectiveCalendarScope==="team") return assigneeId===myId||teamSet.has(assigneeId);
+      return assigneeId===myId;
+    });
+  },[currentUser.id,effectiveCalendarScope,sortedTasks,teamMemberIds]);
+  const calendarFilteredTasks=useMemo(()=>calendarVisibleTasks.filter(task=>{
+    if(filterStatus!=="all"&&task.status!==filterStatus) return false;
+    if(canAssign&&effectiveCalendarScope==="all"&&filterAssignee!=="all"&&task.assigneeId!==filterAssignee) return false;
+    if(!queryText) return true;
+    const hay=[
+      task.title||"",
+      task.detail||"",
+      task.assigneeName||"",
+      task.assignedByName||"",
+      task.machine||"",
+      task.orderCode||"",
+    ].join(" ").toLowerCase();
+    return hay.includes(queryText);
+  }),[calendarVisibleTasks,canAssign,effectiveCalendarScope,filterAssignee,filterStatus,queryText]);
+  const calendarTasksByDate=useMemo(()=>{
+    const priorityRank={high:0,medium:1,low:2};
+    const map={};
+    calendarFilteredTasks.forEach(task=>{
+      const due=String(task.dueDate||"").trim();
+      if(!due) return;
+      if(!map[due]) map[due]=[];
+      map[due].push(task);
+    });
+    Object.keys(map).forEach(key=>{
+      map[key].sort((a,b)=>{
+        const pa=priorityRank[a.priority]??1;
+        const pb=priorityRank[b.priority]??1;
+        if(pa!==pb) return pa-pb;
+        return String(a.title||"").localeCompare(String(b.title||""),"tr");
+      });
+    });
+    return map;
+  },[calendarFilteredTasks]);
+  const calendarNoDueTasks=useMemo(()=>calendarFilteredTasks.filter(task=>!String(task.dueDate||"").trim()),[calendarFilteredTasks]);
+  const calendarMonthSafe=/^\d{4}-\d{2}$/.test(String(calendarMonth||""))?String(calendarMonth):monthStr();
+  const calendarMonthStart=parseYmdLocal(`${calendarMonthSafe}-01`);
+  const monthYearLabel=new Intl.DateTimeFormat("tr-TR",{month:"long",year:"numeric"}).format(calendarMonthStart);
+  const calendarStartDay=(calendarMonthStart.getDay()+6)%7;
+  const calendarCells=useMemo(()=>{
+    const cells=[];
+    const startDate=new Date(calendarMonthStart.getFullYear(),calendarMonthStart.getMonth(),1-calendarStartDay);
+    for(let i=0;i<42;i++){
+      const cur=new Date(startDate.getFullYear(),startDate.getMonth(),startDate.getDate()+i);
+      cells.push({
+        ymd:ymdLocal(cur),
+        day:cur.getDate(),
+        inMonth:cur.getMonth()===calendarMonthStart.getMonth(),
+      });
+    }
+    return cells;
+  },[calendarMonthStart,calendarStartDay]);
+  const calendarScopeLabel=effectiveCalendarScope==="all"
+    ? "Tum Gorevler"
+    : (effectiveCalendarScope==="team"?"Ekip + Ben":"Sadece Bana Atanan");
+
+  const myOpenCount=myTasks.filter(t=>!["done","cancelled"].includes(t.status||"")).length;
+  const overdueCount=sortedTasks.filter(t=>{
+    if(["done","cancelled"].includes(t.status||"")) return false;
+    return String(t.dueDate||"")!==""&&String(t.dueDate)<todayStr();
+  }).length;
+  const activeCount=sortedTasks.filter(t=>t.status==="in_progress").length;
+  const doneCount=sortedTasks.filter(t=>t.status==="done").length;
+  const weekLabels=["Pzt","Sal","Car","Per","Cum","Cmt","Paz"];
+
+  function setF(key,value){
+    setForm(prev=>({...prev,[key]:value}));
+  }
+  function shiftCalendarMonth(diff){
+    const base=parseYmdLocal(`${calendarMonthSafe}-01`);
+    const next=new Date(base.getFullYear(),base.getMonth()+diff,1);
+    setCalendarMonth(monthStr(next));
+  }
+  function buildRecurrenceDates(startYmd,mode,untilYmd){
+    const first=String(startYmd||"").trim();
+    if(!first) return [""];
+    if(mode!=="weekly"&&mode!=="monthly") return [first];
+    const limitRaw=String(untilYmd||"").trim()||first;
+    if(limitRaw<first) return [];
+    const out=[];
+    let cur=parseYmdLocal(first);
+    const guardMax=120;
+    for(let i=0;i<guardMax;i++){
+      const curYmd=ymdLocal(cur);
+      if(curYmd>limitRaw) break;
+      out.push(curYmd);
+      if(mode==="weekly"){
+        cur=new Date(cur.getFullYear(),cur.getMonth(),cur.getDate()+7);
+      }else{
+        cur=new Date(cur.getFullYear(),cur.getMonth()+1,cur.getDate());
+      }
+    }
+    return out;
+  }
+
+  async function createTask(){
+    if(!canAssign){alert("Gorev atama yetkiniz yok.");return;}
+    if(!form.assigneeId){alert("Calisan secin.");return;}
+    if(!form.title.trim()){alert("Gorev basligi zorunlu.");return;}
+    const assignee=activeUsers.find(u=>u.id===form.assigneeId);
+    if(!assignee){alert("Secilen calisan aktif degil.");return;}
+    const pickedOrder=openOrders.find(o=>o.id===form.orderId)||null;
+    const recurrenceMode=(form.recurrenceMode==="weekly"||form.recurrenceMode==="monthly")?form.recurrenceMode:"none";
+    const recurrenceUntil=String(form.recurrenceUntil||"").trim();
+    const baseDueDate=String(form.dueDate||"").trim();
+    if(recurrenceMode!=="none"){
+      if(!baseDueDate){alert("Tekrarli gorev icin termin zorunlu.");return;}
+      if(!recurrenceUntil){alert("Tekrar bitis tarihi zorunlu.");return;}
+      if(recurrenceUntil<baseDueDate){alert("Tekrar bitisi, termin tarihinden once olamaz.");return;}
+    }
+    const recurrenceDates=buildRecurrenceDates(baseDueDate,recurrenceMode,recurrenceUntil);
+    if(recurrenceDates.length===0){alert("Tekrar tarihleri olusturulamadi.");return;}
+    const nowIso=new Date().toISOString();
+    const recurrenceGroupId=recurrenceMode==="none"
+      ? ""
+      : `r_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`;
+    const payloadBase={
+      assigneeId:assignee.id,
+      assigneeName:assignee.fullName||assignee.username||assignee.id,
+      title:form.title.trim(),
+      detail:form.detail.trim(),
+      priority:form.priority||"medium",
+      machine:form.machine||"",
+      orderId:pickedOrder?.id||"",
+      orderCode:pickedOrder?.code||"",
+      status:"open",
+      assignedBy:currentUser.id,
+      assignedByName:currentUser.fullName||currentUser.id,
+    };
+    setSaving(true);
+    const createdRows=[];
+    let failedCount=0;
+    for(let idx=0;idx<recurrenceDates.length;idx++){
+      const dueDateVal=recurrenceDates[idx]||"";
+      const payload={
+        ...payloadBase,
+        dueDate:dueDateVal,
+        recurrenceMode,
+        recurrenceUntil:recurrenceMode==="none"?"":recurrenceUntil,
+        recurrenceGroupId,
+        recurrenceIndex:idx+1,
+        recurrenceCount:recurrenceDates.length,
+        createdAt:nowIso,
+        updatedAt:nowIso,
+      };
+      const id=await window.DB.addDoc("employeeTasks",payload);
+      if(!id){failedCount+=1;continue;}
+      createdRows.push({id,...payload});
+    }
+    setSaving(false);
+    if(createdRows.length===0){alert("Gorev kaydi olusturulamadi.");return;}
+    setTasks(prev=>[...createdRows,...prev]);
+    setForm(prev=>({
+      ...prev,
+      title:"",
+      detail:"",
+      priority:"medium",
+      dueDate:addDays(todayStr(),1),
+      recurrenceMode:"none",
+      recurrenceUntil:addDays(todayStr(),30),
+      orderId:"",
+    }));
+    setAssignmentPage("list");
+    try{
+      await window.DB.addDoc("notifications",{
+        type:"task",
+        title:"Yeni Gorev",
+        message:`${payloadBase.title} gorevi atandi${createdRows.length>1?` (${createdRows.length} tekrar)`:''}.`,
+        severity:payloadBase.priority==="high"?"high":"medium",
+        status:"new",
+        targetUserId:payloadBase.assigneeId,
+        sourceKey:createdRows[0]?.id||"",
+        createdAt:nowIso,
+      });
+    }catch{}
+    if(failedCount>0){
+      alert(`${failedCount} tekrar kaydi olusturulamadi.`);
+    }
+  }
+
+  async function updateTaskStatus(task,nextStatus){
+    const canAct=canAssign||task.assigneeId===currentUser.id;
+    if(!canAct) return;
+    const nowIso=new Date().toISOString();
+    const patch={
+      status:nextStatus,
+      updatedAt:nowIso,
+      ...(nextStatus==="done"?{completedAt:nowIso,completedBy:currentUser.id}:{})
+    };
+    const ok=await window.DB.updateDoc("employeeTasks",task.id,patch);
+    if(!ok){alert("Gorev durumu guncellenemedi.");return;}
+    setTasks(prev=>prev.map(row=>row.id===task.id?{...row,...patch}:row));
+  }
+
+  async function deleteTask(task){
+    if(!canAssign){alert("Bu islem icin yetkiniz yok.");return;}
+    if(!confirm(`Gorev silinsin mi? (${task.title||"-"})`)) return;
+    const ok=await window.DB.deleteDoc("employeeTasks",task.id);
+    if(!ok){alert("Gorev silinemedi.");return;}
+    setTasks(prev=>prev.filter(row=>row.id!==task.id));
+  }
+
+  const effectiveAssignmentPage=(!canAssign&&assignmentPage==="create")?"list":assignmentPage;
+  const recurrencePreviewCount=(()=>{
+    const mode=(form.recurrenceMode==="weekly"||form.recurrenceMode==="monthly")?form.recurrenceMode:"none";
+    if(mode==="none") return 1;
+    const baseDueDate=String(form.dueDate||"").trim();
+    const recurrenceUntil=String(form.recurrenceUntil||"").trim();
+    if(!baseDueDate||!recurrenceUntil||recurrenceUntil<baseDueDate) return 0;
+    return buildRecurrenceDates(baseDueDate,mode,recurrenceUntil).length;
+  })();
+
+  const taskListPanel=(
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+        <div style={{fontWeight:700,color:C.text,fontSize:14}}>Gorev Listesi</div>
+        {canAssign&&effectiveAssignmentPage==="list"&&(
+          <button onClick={openCreateTaskPage} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>+ Yeni Gorev</button>
+        )}
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end",marginBottom:10}}>
+        <div style={{minWidth:220,flex:"1 1 320px"}}>
+          <span style={labelSt}>Ara</span>
+          <input style={inputSt} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Gorev, calisan, tezgah, is emri..."/>
+        </div>
+        <div style={{minWidth:170,flex:"1 1 180px"}}>
+          <span style={labelSt}>Durum</span>
+          <select style={inputSt} value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
+            <option value="all">Tum Durumlar</option>
+            <option value="open">Acilanlar</option>
+            <option value="in_progress">Devam Edenler</option>
+            <option value="done">Tamamlananlar</option>
+            <option value="cancelled">Iptal Edilenler</option>
+          </select>
+        </div>
+        {canAssign&&(
+          <div style={{minWidth:200,flex:"1 1 220px"}}>
+            <span style={labelSt}>Calisan</span>
+            <select style={inputSt} value={filterAssignee} onChange={e=>setFilterAssignee(e.target.value)}>
+              <option value="all">Tum Calisanlar</option>
+              {activeUsers.map(u=><option key={u.id} value={u.id}>{u.fullName||u.id}</option>)}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {filteredTasks.length===0&&(
+        <div style={{padding:"26px 10px",textAlign:"center",fontSize:12,color:C.muted2,border:`1px dashed ${C.border}`,borderRadius:10}}>
+          Gosterilecek gorev bulunamadi.
+        </div>
+      )}
+
+      {filteredTasks.length>0&&(
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {filteredTasks.map(task=>{
+            const sMeta=statusMeta(task.status||"open");
+            const pMeta=priorityMeta(task.priority||"medium");
+            const due=String(task.dueDate||"");
+            const isOverdue=due&&due<todayStr()&&!["done","cancelled"].includes(task.status||"");
+            const canAct=canAssign||task.assigneeId===currentUser.id;
+            const isRecurring=(task.recurrenceMode==="weekly"||task.recurrenceMode==="monthly")&&Number(task.recurrenceCount||0)>1;
+            const recurrenceLabel=task.recurrenceMode==="weekly"?"Haftalik":"Aylik";
+            return (
+              <div key={task.id} style={{border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px",background:C.surface}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+                  <div style={{minWidth:220,flex:1}}>
+                    <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                      <div style={{fontWeight:800,color:C.text,fontSize:14}}>{task.title||"-"}</div>
+                      <Badge label={sMeta.label} color={sMeta.color}/>
+                      <Badge label={pMeta.label} color={pMeta.color}/>
+                    </div>
+                    {task.detail&&<div style={{fontSize:12,color:C.text,marginTop:4,whiteSpace:"pre-wrap"}}>{task.detail}</div>}
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap",fontSize:11,color:C.muted2,marginTop:5}}>
+                      <span>Calisan: <strong>{task.assigneeName||task.assigneeId||"-"}</strong></span>
+                      {task.machine&&<span>Tezgah: <strong>{task.machine}</strong></span>}
+                      {task.orderCode&&<span>Is Emri: <strong>{task.orderCode}</strong></span>}
+                      {task.assignedByName&&<span>Atayan: <strong>{task.assignedByName}</strong></span>}
+                      {due&&<span style={{color:isOverdue?C.red:C.muted2}}>Termin: <strong>{due}</strong></span>}
+                      {isRecurring&&(
+                        <span>
+                          Tekrar: <strong>{recurrenceLabel}</strong>
+                          {task.recurrenceIndex&&task.recurrenceCount?` (${task.recurrenceIndex}/${task.recurrenceCount})`:""}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                    {canAct&&task.status==="open"&&<button onClick={()=>updateTaskStatus(task,"in_progress")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Basla</button>}
+                    {canAct&&["open","in_progress"].includes(task.status||"")&&<button onClick={()=>updateTaskStatus(task,"done")} style={{...btnSt("green"),padding:"6px 10px",fontSize:12}}>Tamamla</button>}
+                    {canAct&&task.status==="done"&&<button onClick={()=>updateTaskStatus(task,"open")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Yeniden Ac</button>}
+                    {canAssign&&task.status!=="cancelled"&&<button onClick={()=>updateTaskStatus(task,"cancelled")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Iptal</button>}
+                    {canAssign&&<button onClick={()=>deleteTask(task)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Sil</button>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+  const calendarPanel=(
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,fontWeight:700,color:C.text,fontSize:14}}>
+          <span style={{width:16,height:16,display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon name="planning" size={15}/></span>
+          Gorev Takvimi
+        </div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+          <button onClick={()=>shiftCalendarMonth(-1)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>&lt;</button>
+          <input style={{...inputSt,padding:"7px 9px",fontSize:12,minWidth:140}} type="month" value={calendarMonthSafe} onChange={e=>setCalendarMonth(e.target.value||monthStr())}/>
+          <button onClick={()=>shiftCalendarMonth(1)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>&gt;</button>
+          <button onClick={()=>setCalendarMonth(monthStr())} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Bu Ay</button>
+        </div>
+      </div>
+
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end",marginBottom:10}}>
+        <div style={{minWidth:220,flex:"1 1 320px"}}>
+          <span style={labelSt}>Ara</span>
+          <input style={inputSt} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Gorev, calisan, tezgah, is emri..."/>
+        </div>
+        <div style={{minWidth:170,flex:"1 1 180px"}}>
+          <span style={labelSt}>Durum</span>
+          <select style={inputSt} value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
+            <option value="all">Tum Durumlar</option>
+            <option value="open">Acilanlar</option>
+            <option value="in_progress">Devam Edenler</option>
+            <option value="done">Tamamlananlar</option>
+            <option value="cancelled">Iptal Edilenler</option>
+          </select>
+        </div>
+        {canAssign&&(
+          <div style={{minWidth:200,flex:"1 1 210px"}}>
+            <span style={labelSt}>Kapsam</span>
+            <select style={inputSt} value={effectiveCalendarScope} onChange={e=>setCalendarScope(e.target.value)}>
+              <option value="me">Sadece Bana Atanan</option>
+              <option value="team">Ekip + Ben ({teamMemberIds.length})</option>
+              <option value="all">Tum Gorevler</option>
+            </select>
+          </div>
+        )}
+        {canAssign&&effectiveCalendarScope==="all"&&(
+          <div style={{minWidth:200,flex:"1 1 220px"}}>
+            <span style={labelSt}>Calisan</span>
+            <select style={inputSt} value={filterAssignee} onChange={e=>setFilterAssignee(e.target.value)}>
+              <option value="all">Tum Calisanlar</option>
+              {activeUsers.map(u=><option key={u.id} value={u.id}>{u.fullName||u.id}</option>)}
+            </select>
+          </div>
+        )}
+      </div>
+
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+        <div style={{fontSize:13,fontWeight:700,color:C.text,textTransform:"capitalize"}}>{monthYearLabel}</div>
+        <div style={{fontSize:12,color:C.muted2}}>{calendarScopeLabel} - {calendarFilteredTasks.length} gorev</div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",gap:6,marginBottom:6}}>
+        {weekLabels.map(label=>(
+          <div key={label} style={{fontSize:11,fontWeight:700,letterSpacing:.4,textTransform:"uppercase",color:C.muted2,padding:"0 2px"}}>
+            {label}
+          </div>
+        ))}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",gap:6}}>
+        {calendarCells.map(cell=>{
+          const dayTasks=calendarTasksByDate[cell.ymd]||[];
+          const isToday=cell.ymd===todayStr();
+          const showAssignee=effectiveCalendarScope!=="me";
+          return (
+            <div key={cell.ymd} style={{minHeight:116,padding:7,borderRadius:10,border:`1px solid ${isToday?C.accent:C.border}`,background:cell.inMonth?C.surface:C.surface2,opacity:cell.inMonth?1:0.72,display:"flex",flexDirection:"column",gap:5}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div style={{fontSize:11,color:cell.inMonth?C.text:C.muted2,fontWeight:isToday?800:600}}>{cell.day}</div>
+                {dayTasks.length>0&&<div style={{fontSize:10,color:C.muted2}}>{dayTasks.length}</div>}
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                {dayTasks.slice(0,3).map(task=>{
+                  const st=statusMeta(task.status||"open");
+                  const who=task.assigneeName||task.assigneeId||"-";
+                  return (
+                    <div key={task.id} title={`${task.title||"-"}${showAssignee?` - ${who}`:""}`} style={{fontSize:10,lineHeight:1.25,borderRadius:6,padding:"4px 5px",background:st.color+"18",border:`1px solid ${st.color}40`,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                      {task.title||"-"}{showAssignee?` - ${who}`:""}
+                    </div>
+                  );
+                })}
+                {dayTasks.length>3&&<div style={{fontSize:10,color:C.muted2,paddingLeft:1}}>+{dayTasks.length-3} daha</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {calendarNoDueTasks.length>0&&(
+        <div style={{marginTop:10,padding:"9px 10px",borderRadius:10,border:`1px solid ${C.border}`,background:C.surface}}>
+          <div style={{fontSize:11,fontWeight:700,letterSpacing:.4,textTransform:"uppercase",color:C.muted2,marginBottom:6}}>Terminsiz Gorevler</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {calendarNoDueTasks.slice(0,8).map(task=>(
+              <span key={task.id} style={{fontSize:11,padding:"4px 7px",borderRadius:999,border:`1px solid ${C.border}`,color:C.text,background:C.card}}>
+                {task.title||"-"}{effectiveCalendarScope!=="me"?` - ${task.assigneeName||task.assigneeId||"-"}`:""}
+              </span>
+            ))}
+            {calendarNoDueTasks.length>8&&<span style={{fontSize:11,color:C.muted2,padding:"4px 2px"}}>+{calendarNoDueTasks.length-8} daha</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
+      <div style={{
+        background:C.card,
+        border:`1px solid ${C.border}`,
+        borderRadius:14,
+        padding:12,
+        ...(partPage==="list"
+          ? {flex:1,minHeight:0,display:"flex",flexDirection:"column",overflow:"hidden"}
+          : {}),
+      }}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <div>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Calisan Takibi</div>
+            <div style={{fontSize:18,fontWeight:800,color:C.text}}>
+              {effectiveAssignmentPage==="create"
+                ? "Yeni Gorev Sayfasi"
+                : (effectiveAssignmentPage==="calendar"?"Gorev Takvimi":"Gorevlendirme Merkezi")}
+            </div>
+          </div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            <Badge label={`Benim Acik: ${myOpenCount}`} color={myOpenCount>0?C.warn:C.green}/>
+            <Badge label={`Devam Eden: ${activeCount}`} color={activeCount>0?C.warn:C.muted2}/>
+            <Badge label={`Geciken: ${overdueCount}`} color={overdueCount>0?C.red:C.green}/>
+            <Badge label={`Tamamlanan: ${doneCount}`} color={C.green}/>
+            {canAssign&&effectiveAssignmentPage!=="create"&&(
+              <button onClick={openCreateTaskPage} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>+ Yeni Gorev</button>
+            )}
+            <button onClick={openCalendarPage} style={{...(effectiveAssignmentPage==="calendar"?btnSt("primary"):btnSt("ghost")),padding:"8px 12px",fontSize:12,display:"inline-flex",alignItems:"center",gap:6}}>
+              <span style={{width:14,height:14,display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon name="planning" size={13}/></span>
+              Takvim
+            </button>
+            {effectiveAssignmentPage!=="list"&&(
+              <button onClick={openTaskListPage} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Listeye Don</button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {canAssign&&effectiveAssignmentPage==="create"&&(
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+            <div style={{fontWeight:700,color:C.text,fontSize:14}}>Yeni Gorev Ata</div>
+            <button onClick={openTaskListPage} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:8}}>
+            <div><span style={labelSt}>Calisan</span><select style={inputSt} value={form.assigneeId} onChange={e=>setF("assigneeId",e.target.value)}>{activeUsers.map(u=><option key={u.id} value={u.id}>{u.fullName||u.id}</option>)}</select></div>
+            <div><span style={labelSt}>Oncelik</span><select style={inputSt} value={form.priority} onChange={e=>setF("priority",e.target.value)}><option value="high">Yuksek</option><option value="medium">Normal</option><option value="low">Dusuk</option></select></div>
+            <div><span style={labelSt}>Termin</span><input style={inputSt} type="date" value={form.dueDate} onChange={e=>setF("dueDate",e.target.value||"")}/></div>
+            <div><span style={labelSt}>Tekrar</span><select style={inputSt} value={form.recurrenceMode} onChange={e=>setF("recurrenceMode",e.target.value)}><option value="none">Tek Sefer</option><option value="weekly">Haftalik</option><option value="monthly">Aylik</option></select></div>
+            {form.recurrenceMode!=="none"&&(
+              <div><span style={labelSt}>Tekrar Bitis</span><input style={inputSt} type="date" min={form.dueDate||todayStr()} value={form.recurrenceUntil} onChange={e=>setF("recurrenceUntil",e.target.value||"")}/></div>
+            )}
+            <div><span style={labelSt}>Tezgah</span><select style={inputSt} value={form.machine} onChange={e=>setF("machine",e.target.value)}><option value="">Seciniz</option>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+            <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Is Emri (Opsiyonel)</span><select style={inputSt} value={form.orderId} onChange={e=>setF("orderId",e.target.value)}><option value="">Seciniz</option>{openOrders.map(o=><option key={o.id} value={o.id}>{o.code||"-"} - {o.name||"-"}</option>)}</select></div>
+            <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Gorev Basligi</span><input style={inputSt} value={form.title} onChange={e=>setF("title",e.target.value)} placeholder="Orn: CNC-2 icin ilk parca ayari"/></div>
+            <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Aciklama</span><textarea rows={3} style={{...inputSt,minHeight:76,resize:"vertical"}} value={form.detail} onChange={e=>setF("detail",e.target.value)} placeholder="Gorev detaylari..."/></div>
+          </div>
+          {form.recurrenceMode!=="none"&&(
+            <div style={{marginTop:8,padding:"8px 10px",borderRadius:8,border:`1px solid ${C.border}`,fontSize:12,color:C.muted2,background:C.surface}}>
+              {recurrencePreviewCount>0
+                ? `${recurrencePreviewCount} adet gorev olusacak.`
+                : "Tekrar bitis tarihi termin tarihinden sonra olmali."}
+            </div>
+          )}
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}>
+            <button onClick={createTask} disabled={saving} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,opacity:saving?0.7:1}}>
+              {saving?"Kaydediliyor...":"Gorev Ata"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {effectiveAssignmentPage==="calendar"?calendarPanel:taskListPanel}
+    </div>
+  );
+}
+
+function ToolStock({currentUser,filtersVisible=true}) {
+  const isAdmin=currentUser.role==="admin";
+  const TOOL_CATEGORY_OPTIONS=["Freze","Matkap","Rayba","KÄ±lavuz","Torna","Insert","Tutucu","Olcu Takimi","Diger"];
+  const [tools,setTools]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [search,setSearch]=useState("");
+  const [showForm,setShowForm]=useState(false);
+  const [editId,setEditId]=useState(null);
+  const [form,setForm]=useState({code:"",name:"",category:"",qty:"",minQty:"",location:"",geometry:"",toolMaterial:"",expectedLife:"",notes:""});
+  const [orders,setOrders]=useState([]);
+  const [movements,setMovements]=useState([]);
+  const [moveOpenId,setMoveOpenId]=useState(null);
+  const [moveForm,setMoveForm]=useState({type:"out",qty:"",orderId:"",note:""});
+  const [sortMode,setSortMode]=useState("name_asc");
+
+  const load=useCallback(async()=>{
+    const [rows,ords,mvs]=await Promise.all([
+      window.DB.getAll("toolStock"),
+      window.DB.getAll("orders"),
+      window.DB.getAll("toolMovements"),
+    ]);
+    setTools(rows.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    setOrders(ords.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setMovements(mvs.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  const resetForm=()=>setForm({code:"",name:"",category:"",qty:"",minQty:"",location:"",geometry:"",toolMaterial:"",expectedLife:"",notes:""});
+  const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const nextToolCode=useCallback((list=tools)=>{
+    const nums=list.map(t=>{
+      const m=String(t.code||"").toUpperCase().match(/^TKM-(\d+)$/);
+      return m?Number(m[1]):null;
+    }).filter(n=>n!==null);
+    const next=(nums.length?Math.max(...nums):0)+1;
+    return `TKM-${String(next).padStart(3,"0")}`;
+  },[tools]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="tools") return;
+      if(d.type==="refresh"){load(); return;}
+      if(d.type==="sort"){
+        if(["name_asc","name_desc","stock_desc","stock_asc"].includes(d.sortMode)){
+          setSortMode(d.sortMode);
+        }
+        return;
+      }
+      if(d.type==="new"&&isAdmin){
+        resetForm();
+        setEditId(null);
+        setForm(p=>({...p,code:nextToolCode()}));
+        setShowForm(true);
+        window.scrollTo({top:0,behavior:"smooth"});
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[isAdmin,load,nextToolCode]);
+
+  async function saveTool(){
+    if(!form.name.trim()){alert("Takim adi zorunlu.");return;}
+    const payload={
+      code:(form.code.trim()||nextToolCode()).toUpperCase(),
+      name:form.name.trim(),
+      category:form.category.trim(),
+      qty:Number(form.qty)||0,
+      minQty:Number(form.minQty)||0,
+      location:form.location.trim(),
+      geometry:form.geometry.trim(),
+      toolMaterial:form.toolMaterial.trim(),
+      expectedLife:Math.max(0,Number(form.expectedLife)||0),
+      notes:form.notes.trim(),
+      updatedAt:new Date().toISOString(),
+    };
+    if(editId){
+      const ok=await window.DB.updateDoc("toolStock",editId,payload);
+      if(ok){
+        setTools(t=>t.map(x=>x.id===editId?{...x,...payload}:x));
+        setShowForm(false); setEditId(null); resetForm();
+      }
+      return;
+    }
+    const id=`tool_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`;
+    const ok=await window.DB.setDoc("toolStock",id,payload);
+    if(ok){
+      setTools(t=>[...t,{id,...payload}].sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+      setShowForm(false); resetForm();
+    }
+  }
+
+  async function removeTool(id,name){
+    if(!confirm(`"${name}" takimini silmek istiyor musunuz?`)) return;
+    const ok=await window.DB.deleteDoc("toolStock",id);
+    if(ok) setTools(t=>t.filter(x=>x.id!==id));
+  }
+  function openMovement(toolId,type){
+    setMoveOpenId(toolId);
+    setMoveForm({type,qty:"",orderId:"",note:""});
+  }
+  async function saveMovement(tool){
+    const qty=Math.max(0,Number(moveForm.qty)||0);
+    if(!qty){alert("Miktar girin.");return;}
+    const currentQty=Number(tool.qty)||0;
+    if(moveForm.type==="out"&&qty>currentQty){alert("Stok yetersiz.");return;}
+    const nextQty=moveForm.type==="in"?(currentQty+qty):(currentQty-qty);
+    const pickedOrder=orders.find(o=>o.id===moveForm.orderId);
+    const stockOk=await window.DB.updateDoc("toolStock",tool.id,{qty:nextQty,updatedAt:new Date().toISOString()});
+    if(!stockOk){alert("Stok guncellenemedi.");return;}
+    const movePayload={
+      toolId:tool.id,
+      toolCode:tool.code||"",
+      toolName:tool.name||"",
+      type:moveForm.type,
+      qty,
+      orderId:pickedOrder?.id||"",
+      orderCode:pickedOrder?.code||"",
+      orderName:pickedOrder?.name||"",
+      note:moveForm.note.trim(),
+      createdAt:new Date().toISOString(),
+      userId:currentUser.id,
+      userName:currentUser.fullName||currentUser.id,
+      balanceAfter:nextQty,
+    };
+    await window.DB.addDoc("toolMovements",movePayload);
+    setTools(t=>t.map(x=>x.id===tool.id?{...x,qty:nextQty,updatedAt:new Date().toISOString()}:x));
+    setMovements(m=>[{...movePayload,id:`temp_${Date.now()}`},...m]);
+    setMoveOpenId(null);
+    setMoveForm({type:"out",qty:"",orderId:"",note:""});
+  }
+
+  const filtered=tools.filter(t=>{
+    const q=search.toLowerCase().trim();
+    if(!q) return true;
+    return (t.name||"").toLowerCase().includes(q)||
+      (t.code||"").toLowerCase().includes(q)||
+      (t.category||"").toLowerCase().includes(q)||
+      (t.location||"").toLowerCase().includes(q);
+  });
+  const sortedTools=[...filtered].sort((a,b)=>{
+    if(sortMode==="name_desc") return String(b.name||"").localeCompare(String(a.name||""),"tr");
+    if(sortMode==="stock_desc") return (Number(b.qty)||0)-(Number(a.qty)||0);
+    if(sortMode==="stock_asc") return (Number(a.qty)||0)-(Number(b.qty)||0);
+    return String(a.name||"").localeCompare(String(b.name||""),"tr");
+  });
+  const lowCount=tools.filter(t=>(Number(t.qty)||0)<=Math.max(Number(t.minQty)||0,0)).length;
+  const stockedTools=[...tools].filter(t=>(Number(t.qty)||0)>0).sort((a,b)=>(Number(b.qty)||0)-(Number(a.qty)||0));
+  const categoryOptions=(form.category&& !TOOL_CATEGORY_OPTIONS.includes(form.category))
+    ? [...TOOL_CATEGORY_OPTIONS,form.category]
+    : TOOL_CATEGORY_OPTIONS;
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:8,flexWrap:"wrap"}}>
+        <div style={{fontWeight:700,color:C.text}}>Takim Stogu</div>
+        {isAdmin&&<button onClick={()=>{if(showForm){setShowForm(false);setEditId(null);resetForm();}else{resetForm();setEditId(null);setForm(p=>({...p,code:nextToolCode()}));setShowForm(true);}}} style={{...btnSt("primary"),padding:"8px 14px",fontSize:12}}>{showForm?"Kapat":"+ Yeni Ekle"}</button>}
+      </div>
+
+      {showForm&&isAdmin&&(
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,marginBottom:12}}>
+          <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:14}}>{editId?"Takim Duzenle":"Yeni Takim"}</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <div><span style={labelSt}>Kod</span><input style={inputSt} value={form.code} onChange={e=>fv("code",e.target.value)} placeholder="TKM-001"/></div>
+            <div><span style={labelSt}>Takim Adi *</span><input style={inputSt} value={form.name} onChange={e=>fv("name",e.target.value)} placeholder="12mm Parmak Freze"/></div>
+            <div>
+              <span style={labelSt}>Kategori</span>
+              <select style={inputSt} value={form.category} onChange={e=>fv("category",e.target.value)}>
+                <option value="">Kategori secin...</option>
+                {categoryOptions.map(c=><option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div><span style={labelSt}>Stok Adedi</span><input style={inputSt} type="number" min="0" value={form.qty} onChange={e=>fv("qty",e.target.value)} placeholder="0"/></div>
+            <div><span style={labelSt}>Minimum Adet</span><input style={inputSt} type="number" min="0" value={form.minQty} onChange={e=>fv("minQty",e.target.value)} placeholder="0"/></div>
+            <div><span style={labelSt}>Konum</span><input style={inputSt} value={form.location} onChange={e=>fv("location",e.target.value)} placeholder="Raf A2"/></div>
+            <div><span style={labelSt}>Geometri</span><input style={inputSt} value={form.geometry} onChange={e=>fv("geometry",e.target.value)} placeholder="D12 L75"/></div>
+            <div><span style={labelSt}>Takim Malzemesi</span><input style={inputSt} value={form.toolMaterial} onChange={e=>fv("toolMaterial",e.target.value)} placeholder="Carbide / HSS"/></div>
+            <div><span style={labelSt}>Beklenen Omur (cevrim)</span><input style={inputSt} type="number" min="0" value={form.expectedLife} onChange={e=>fv("expectedLife",e.target.value)} placeholder="1200"/></div>
+            <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Not</span><textarea style={{...inputSt,resize:"vertical",minHeight:70}} value={form.notes} onChange={e=>fv("notes",e.target.value)} placeholder="Aciklama..."/></div>
+            <div style={{gridColumn:"1 / -1",display:"flex",gap:8}}>
+              <button onClick={saveTool} style={{...btnSt("primary"),padding:"10px 14px"}}>Kaydet</button>
+              <button onClick={()=>{setShowForm(false);setEditId(null);resetForm();}} style={{...btnSt("ghost"),padding:"10px 14px"}}>Iptal</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",marginBottom:12}}>
+        <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Stokdaki Urunler ({stockedTools.length})</div>
+        {stockedTools.length===0?<div style={{fontSize:12,color:C.muted}}>Stokta takim yok</div>:(
+          <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+            {stockedTools.map(t=><span key={t.id} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px",fontSize:11,color:C.muted2}}>{t.code||"-"} Â· {t.name||"-"} Â· <span style={{color:C.text,fontWeight:700}}>{Number(t.qty)||0}</span></span>)}
+          </div>
+        )}
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:8,flexWrap:"wrap"}}>
+        <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>Takim Stogu Â· {tools.length} kayit Â· {lowCount} kritik stok</div>
+      </div>
+      {filtersVisible&&(
+        <div style={{marginBottom:12}}>
+          <input style={{...inputSt,padding:"9px 12px",fontSize:13}} placeholder="Takim adi, kod, kategori veya konum ara..." value={search} onChange={e=>setSearch(e.target.value)}/>
+        </div>
+      )}
+      {sortedTools.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"30px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Sonuc yok</div>}
+      {sortedTools.map(t=>{
+        const qty=Number(t.qty)||0;
+        const min=Math.max(Number(t.minQty)||0,0);
+        const critical=qty<=min;
+        return (
+          <div key={t.id} style={{background:C.card,border:`1px solid ${critical?C.red+"66":C.border}`,borderRadius:14,padding:"12px 14px",marginBottom:9}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,marginBottom:8}}>
+              <div>
+                <div style={{fontSize:14,fontWeight:700,color:C.text}}>{t.name||"-"}</div>
+                <div style={{fontSize:12,color:C.muted2,marginTop:2}}>{t.code?`${t.code} Â· `:""}{t.category||"Kategori yok"}</div>
+              </div>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                <Badge label={`Stok ${qty}`} color={critical?C.red:C.green}/>
+                <Badge label={`Min ${min}`} color={C.muted2}/>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:7,flexWrap:"wrap",fontSize:11,color:C.muted2,marginBottom:8}}>
+              {t.location&&<span style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"3px 8px"}}>Konum: {t.location}</span>}
+              {t.geometry&&<span style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"3px 8px"}}>Geo: {t.geometry}</span>}
+              {t.toolMaterial&&<span style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"3px 8px"}}>{t.toolMaterial}</span>}
+              {critical&&<span style={{background:C.redDim,border:`1px solid ${C.red}44`,borderRadius:8,padding:"3px 8px",color:C.red}}>Stok kritik</span>}
+            </div>
+            {t.notes&&<div style={{fontSize:12,color:C.muted2,marginBottom:8}}>{t.notes}</div>}
+            {isAdmin&&(
+              <div style={{display:"flex",gap:7}}>
+                <button onClick={()=>openMovement(t.id,"in")} style={{...btnSt("green"),padding:"6px 10px",fontSize:12}}>Stok Girisi</button>
+                <button onClick={()=>openMovement(t.id,"out")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Stok Cikisi</button>
+                <button onClick={()=>{setEditId(t.id);setForm({code:t.code||"",name:t.name||"",category:t.category||"",qty:String(qty),minQty:String(min),location:t.location||"",geometry:t.geometry||"",toolMaterial:t.toolMaterial||"",expectedLife:String(t.expectedLife??""),notes:t.notes||""});setShowForm(true);}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
+                <button onClick={()=>removeTool(t.id,t.name||"Takim")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
+              </div>
+            )}
+            {isAdmin&&moveOpenId===t.id&&(
+              <div style={{marginTop:10,padding:10,background:C.surface,border:`1px solid ${C.border}`,borderRadius:10}}>
+                <div style={{display:"grid",gridTemplateColumns:"120px 1fr",gap:8}}>
+                  <select style={{...inputSt,padding:"7px 10px",fontSize:12}} value={moveForm.type} onChange={e=>setMoveForm(f=>({...f,type:e.target.value}))}>
+                    <option value="in">Giris</option>
+                    <option value="out">Cikis</option>
+                  </select>
+                  <input style={{...inputSt,padding:"7px 10px",fontSize:12}} type="number" min="1" placeholder="Miktar" value={moveForm.qty} onChange={e=>setMoveForm(f=>({...f,qty:e.target.value}))}/>
+                  <select style={{...inputSt,padding:"7px 10px",fontSize:12,gridColumn:"1 / -1"}} value={moveForm.orderId} onChange={e=>setMoveForm(f=>({...f,orderId:e.target.value}))}>
+                    <option value="">Is emri sec (opsiyonel)</option>
+                    {orders.map(o=><option key={o.id} value={o.id}>{o.code} - {o.name}</option>)}
+                  </select>
+                  <input style={{...inputSt,padding:"7px 10px",fontSize:12,gridColumn:"1 / -1"}} placeholder="Not (opsiyonel)" value={moveForm.note} onChange={e=>setMoveForm(f=>({...f,note:e.target.value}))}/>
+                </div>
+                <div style={{display:"flex",gap:7,marginTop:8}}>
+                  <button onClick={()=>saveMovement(t)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}>Hareket Kaydet</button>
+                  <button onClick={()=>setMoveOpenId(null)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kapat</button>
+                </div>
+              </div>
+            )}
+            <div style={{marginTop:10}}>
+              <div style={{color:C.muted2,fontSize:10,letterSpacing:.7,textTransform:"uppercase",marginBottom:6}}>Son Hareketler</div>
+              {movements.filter(m=>m.toolId===t.id).slice(0,3).map((m,i)=>(
+                <div key={m.id||i} style={{display:"flex",justifyContent:"space-between",fontSize:11,color:C.muted2,marginBottom:4}}>
+                  <span>{m.type==="in"?"Giris":"Cikis"} Â· {m.qty} {m.orderCode?`Â· ${m.orderCode}`:""}</span>
+                  <span>{(m.createdAt||"").slice(0,10)}</span>
+                </div>
+              ))}
+              {movements.filter(m=>m.toolId===t.id).length===0&&<div style={{fontSize:11,color:C.muted}}>Hareket yok</div>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ============================================================
+//  CUSTOMERS
+// ============================================================
+function Customers({filtersVisible=true}) {
+  const emptyForm={name:"",code:"",contact:"",phone:"",email:"",notes:""};
+  const [customers,setCustomers]=useState([]);
+  const [form,setForm]=useState(emptyForm);
+  const [editId,setEditId]=useState(null);
+  const [showCustomerModal,setShowCustomerModal]=useState(false);
+  const [search,setSearch]=useState("");
+  const [sortMode,setSortMode]=useState("name_asc");
+  const [loading,setLoading]=useState(true);
+
+  const load=useCallback(async()=>{
+    const list=await window.DB.getAll("customers");
+    setCustomers(list.sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  function nextCustomerCode(list=customers){
+    const nums=list.map(c=>{
+      const m=(c.code||"").toUpperCase().match(/^FRM-(\d+)$/);
+      return m?Number(m[1]):null;
+    }).filter(n=>n!==null);
+    const next=(nums.length?Math.max(...nums):0)+1;
+    return `FRM-${String(next).padStart(3,"0")}`;
+  }
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="customers") return;
+      if(d.type==="refresh"){load(); return;}
+      if(d.type==="sort"){
+        if(["name_asc","name_desc","code_asc","code_desc"].includes(d.sortMode)){
+          setSortMode(d.sortMode);
+        }
+        return;
+      }
+      if(d.type==="new"){
+        setEditId(null);
+        setForm({...emptyForm,code:nextCustomerCode()});
+        setSearch("");
+        setShowCustomerModal(true);
+        window.scrollTo({top:0,behavior:"smooth"});
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[customers,load]);
+
+  const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const q=search.trim().toLowerCase();
+  const filtered=customers.filter(c=>
+    !q ||
+    (c.name||"").toLowerCase().includes(q) ||
+    (c.code||"").toLowerCase().includes(q) ||
+    (c.contact||"").toLowerCase().includes(q) ||
+    (c.phone||"").toLowerCase().includes(q)
+  );
+  const sortedCustomers=[...filtered].sort((a,b)=>{
+    if(sortMode==="name_desc") return String(b.name||"").localeCompare(String(a.name||""),"tr");
+    if(sortMode==="code_asc") return String(a.code||"").localeCompare(String(b.code||""),"tr");
+    if(sortMode==="code_desc") return String(b.code||"").localeCompare(String(a.code||""),"tr");
+    return String(a.name||"").localeCompare(String(b.name||""),"tr");
+  });
+
+  async function saveCustomer(){
+    if(!form.name.trim()){alert("Firma adÄ± zorunlu!");return;}
+    const autoCode=editId?(form.code||""):nextCustomerCode();
+    const data={
+      name:form.name.trim(),
+      code:autoCode,
+      contact:form.contact.trim(),
+      phone:form.phone.trim(),
+      email:form.email.trim(),
+      notes:form.notes.trim(),
+      updatedAt:new Date().toISOString(),
+    };
+    if(editId){
+      const ok=await window.DB.updateDoc("customers",editId,data);
+      if(!ok){alert("MÃ¼ÅŸteri gÃ¼ncellenemedi.");return;}
+      setCustomers(prev=>prev.map(x=>x.id===editId?{...x,...data}:x).sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
+      setEditId(null);
+      setForm({...emptyForm,code:nextCustomerCode()});
+      setShowCustomerModal(false);
+      return;
+    }
+    const id=await window.DB.addDoc("customers",data);
+    if(!id){alert("MÃ¼ÅŸteri kaydedilemedi.");return;}
+    const nextCustomers=[{id,...data},...customers];
+    setCustomers(nextCustomers.sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
+    setForm({...emptyForm,code:nextCustomerCode(nextCustomers)});
+    setShowCustomerModal(false);
+  }
+
+  function startEdit(c){
+    setEditId(c.id);
+    setForm({
+      name:c.name||"",
+      code:c.code||"",
+      contact:c.contact||"",
+      phone:c.phone||"",
+      email:c.email||"",
+      notes:c.notes||"",
+    });
+    setShowCustomerModal(true);
+  }
+
+  async function removeCustomer(c){
+    if(!confirm(`MÃ¼ÅŸteri silinsin mi? (${c.name})`)) return;
+    const ok=await window.DB.deleteDoc("customers",c.id);
+    if(!ok){alert("MÃ¼ÅŸteri silinemedi.");return;}
+    setCustomers(prev=>prev.filter(x=>x.id!==c.id));
+    if(editId===c.id){
+      setEditId(null);
+      setForm({...emptyForm,code:nextCustomerCode(customers.filter(x=>x.id!==c.id))});
+    }
+  }
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>YÃ¼kleniyor...</div>;
+
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
+      {showCustomerModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.68)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:54,padding:14}} onClick={()=>setShowCustomerModal(false)}>
+          <div style={{width:"100%",maxWidth:900,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0,maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8,flexWrap:"wrap"}}>
+              <div style={{fontWeight:700,color:C.text,fontSize:16}}>{editId?"MÃ¼ÅŸteri DÃ¼zenle":"Yeni MÃ¼ÅŸteri"}</div>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                {editId&&<Badge label="DÃ¼zenleme" color={C.warn}/>}
+                <button onClick={()=>setShowCustomerModal(false)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div><span style={labelSt}>Firma AdÄ± *</span><input style={inputSt} value={form.name} onChange={e=>fv("name",e.target.value)} placeholder="Firma adÄ±"/></div>
+              <div><span style={labelSt}>Firma Kodu (Otomatik)</span><input style={{...inputSt,background:C.surface,color:C.muted2}} value={editId?(form.code||"-"):nextCustomerCode()} readOnly/></div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginTop:8}}>
+              <div><span style={labelSt}>Yetkili</span><input style={inputSt} value={form.contact} onChange={e=>fv("contact",e.target.value)} placeholder="Ad Soyad"/></div>
+              <div><span style={labelSt}>Telefon</span><input style={inputSt} value={form.phone} onChange={e=>fv("phone",e.target.value)} placeholder="05xx xxx xx xx"/></div>
+              <div><span style={labelSt}>E-posta</span><input style={inputSt} value={form.email} onChange={e=>fv("email",e.target.value)} placeholder="mail@firma.com"/></div>
+            </div>
+            <div style={{marginTop:8}}><span style={labelSt}>Not</span><textarea rows={2} style={{...inputSt,minHeight:64,resize:"vertical"}} value={form.notes} onChange={e=>fv("notes",e.target.value)} placeholder="Opsiyonel not..."/></div>
+            <div style={{display:"flex",gap:8,marginTop:12,justifyContent:"flex-end"}}>
+              <button onClick={()=>{setEditId(null);setForm({...emptyForm,code:nextCustomerCode()});setShowCustomerModal(false);}} style={{...btnSt("ghost"),padding:"10px 14px"}}>Ä°ptal</button>
+              <button onClick={saveCustomer} style={{...btnSt("primary"),padding:"10px 14px"}}>{editId?"MÃ¼ÅŸteriyi GÃ¼ncelle":"MÃ¼ÅŸteri Kaydet"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <div style={{fontSize:12,color:C.muted2}}>KayÄ±tlÄ± Firma: {customers.length}</div>
+        {filtersVisible&&<input style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:220}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Firma adÄ±, kod veya yetkili ara..."/>}
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1.6fr 1fr 1fr auto",gap:10,padding:"10px 12px",fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700,background:C.surface,borderBottom:`1px solid ${C.border}`}}>
+          <div>Musteri</div>
+          <div>Iletisim</div>
+          <div>Kod</div>
+          <div style={{textAlign:"right"}}>Islem</div>
+        </div>
+        {sortedCustomers.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"22px 14px"}}>MÃ¼ÅŸteri bulunamadÄ±</div>}
+        {sortedCustomers.map(c=>(
+          <div key={c.id} style={{display:"grid",gridTemplateColumns:"1.6fr 1fr 1fr auto",gap:10,padding:"11px 12px",borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
+            <div style={{minWidth:0}}>
+              <div style={{fontWeight:700,color:C.text,fontSize:13,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.name}</div>
+              {c.notes&&<div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.notes}</div>}
+            </div>
+            <div style={{fontSize:12,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+              {c.contact||"-"} {c.phone?`Â· ${c.phone}`:""}
+            </div>
+            <div style={{fontSize:12,color:C.muted2}}>{c.code||"-"}</div>
+            <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+              <button onClick={()=>startEdit(c)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
+              <button onClick={()=>removeCustomer(c)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MaterialLibrary({filtersVisible=true}) {
+  const MATERIAL_TYPE_OPTIONS=[["raw","Hammadde"],["semi","Yari Mamul"],["consumable","Sarf"]];
+  const TRACKING_OPTIONS=[["none","Takip Yok"],["lot","Lot"],["serial","Seri No"]];
+  const VALUATION_OPTIONS=[["fifo","FIFO"],["lifo","LIFO"],["weighted","Ortalama"]];
+  const DEFAULT_MATERIALS = [
+    {name:"Demir",density:7.87},
+    {name:"SS 303",density:7.93},
+    {name:"SS 304",density:8.00},
+    {name:"SS 316/321",density:8.00},
+    {name:"SS 420",density:7.75},
+    {name:"SS 410/430",density:7.75},
+    {name:"AL 7075",density:2.81},
+    {name:"PirinÃ§",density:8.50},
+    {name:"Bronz",density:8.80},
+    {name:"BakÄ±r",density:8.96},
+    {name:"Titanyum",density:4.51},
+    {name:"50CrV4",density:7.85},
+    {name:"4340",density:7.85},
+    {name:"4140 - 42CrMo4",density:7.85},
+    {name:"C45",density:7.85},
+    {name:"45NiCrMo16",density:7.85},
+    {name:"41Cr4",density:7.85},
+    {name:"100Cr6",density:7.81},
+    {name:"POM ACETAL",density:1.41},
+    {name:"14NiCr14",density:7.85},
+    {name:"CK75",density:7.85},
+    {name:"CK45",density:7.85},
+    {name:"18NiCrMo5",density:7.85},
+    {name:"CK67",density:7.85},
+    {name:"8620",density:7.85},
+    {name:"OTOMAT - 1045",density:7.85},
+    {name:"OTOMAT - 1010 - C15",density:7.85},
+  ];
+  const [materials,setMaterials]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [showForm,setShowForm]=useState(false);
+  const [editId,setEditId]=useState(null);
+  const [search,setSearch]=useState("");
+  const [sortMode,setSortMode]=useState("name_asc");
+  const [seedChecked,setSeedChecked]=useState(false);
+  const [form,setForm]=useState({name:"",code:"",density:"",stock:"",type:"raw",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""});
+  const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const nextMaterialCode=useCallback((list=materials)=>{
+    const nums=list.map(m=>{
+      const mm=String(m.code||"").toUpperCase().match(/^(?:MLZ|M)-(\d+)$/);
+      return mm?Number(mm[1]):null;
+    }).filter(n=>n!==null);
+    const next=(nums.length?Math.max(...nums):0)+1;
+    return `MLZ-${String(next).padStart(3,"0")}`;
+  },[materials]);
+
+  const load=useCallback(async()=>{
+    const rows=await window.DB.getAll("materials");
+    setMaterials(rows.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    if(editId) return;
+    setForm(prev=>({...prev,code:nextMaterialCode()}));
+  },[editId,nextMaterialCode]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="materials") return;
+      if(d.type==="refresh"){load(); return;}
+      if(d.type==="sort"){
+        if(["name_asc","name_desc","stock_desc","stock_asc"].includes(d.sortMode)){
+          setSortMode(d.sortMode);
+        }
+        return;
+      }
+      if(d.type==="new"){
+        setEditId(null);
+        setShowForm(true);
+        setForm({name:"",code:nextMaterialCode(),density:"",stock:"",type:"raw",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""});
+        window.scrollTo({top:0,behavior:"smooth"});
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load,nextMaterialCode]);
+
+  async function saveMaterial(){
+    if(!form.name.trim()){alert("Malzeme adÄ± zorunlu.");return;}
+    const finalCode=editId?(form.code||nextMaterialCode()):nextMaterialCode();
+    const densityVal=Number(String(form.density).replace(",","."));
+    const payload={
+      name:form.name.trim(),
+      code:String(finalCode).toUpperCase(),
+      density:densityVal>0?densityVal:0,
+      stock:Math.max(0,Number(form.stock)||0),
+      type:form.type||"raw",
+      reorderPoint:Math.max(0,Number(form.reorderPoint)||0),
+      safetyStock:Math.max(0,Number(form.safetyStock)||0),
+      leadTimeDays:Math.max(0,Number(form.leadTimeDays)||0),
+      trackingMode:form.trackingMode||"lot",
+      valuationMethod:form.valuationMethod||"fifo",
+      note:form.note.trim(),
+      updatedAt:new Date().toISOString(),
+    };
+    if(editId){
+      const ok=await window.DB.updateDoc("materials",editId,payload);
+      if(!ok){alert("Malzeme gÃ¼ncellenemedi.");return;}
+      setMaterials(prev=>prev.map(x=>x.id===editId?{...x,...payload}:x).sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+      setEditId(null);
+      setShowForm(false);
+      setForm({name:"",code:nextMaterialCode(),density:"",stock:"",type:"raw",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""});
+      return;
+    }
+    const id=await window.DB.addDoc("materials",payload);
+    if(!id){alert("Malzeme kaydedilemedi.");return;}
+    const nextList=[{id,...payload,createdAt:new Date().toISOString()},...materials];
+    setMaterials(nextList.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    setShowForm(false);
+    setForm({name:"",code:nextMaterialCode(nextList),density:"",stock:"",type:"raw",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""});
+  }
+
+  async function removeMaterial(m){
+    if(!confirm(`"${m.name}" silinsin mi?`)) return;
+    const ok=await window.DB.deleteDoc("materials",m.id);
+    if(!ok){alert("Malzeme silinemedi.");return;}
+    setMaterials(prev=>prev.filter(x=>x.id!==m.id));
+    if(editId===m.id){
+      setEditId(null);
+      setForm({name:"",code:nextMaterialCode(materials.filter(x=>x.id!==m.id)),density:"",stock:"",type:"raw",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""});
+    }
+  }
+  async function seedDefaultMaterials(showMessage=true){
+    const existing=await window.DB.getAll("materials");
+    const exists=new Set(existing.map(x=>String(x.name||"").trim().toLowerCase()));
+    const work=[...existing];
+    let added=0;
+    for(const item of DEFAULT_MATERIALS){
+      const key=String(item.name||"").trim().toLowerCase();
+      if(!key||exists.has(key)) continue;
+      const payload={
+        name:item.name,
+        code:nextMaterialCode(work),
+        density:Number(item.density)||0,
+        stock:0,
+        type:"raw",
+        reorderPoint:0,
+        safetyStock:0,
+        leadTimeDays:5,
+        trackingMode:"lot",
+        valuationMethod:"fifo",
+        note:"",
+        updatedAt:new Date().toISOString(),
+        createdBy:"seed",
+      };
+      const id=await window.DB.addDoc("materials",payload);
+      if(id){
+        work.unshift({id,...payload,createdAt:new Date().toISOString()});
+        exists.add(key);
+        added++;
+      }
+    }
+    if(added===0){if(showMessage) alert("Listedeki malzemeler zaten ekli.");return;}
+    setMaterials(work.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    setForm(prev=>({...prev,code:nextMaterialCode(work)}));
+    if(showMessage) alert(`${added} malzeme eklendi.`);
+  }
+  useEffect(()=>{
+    if(loading||seedChecked) return;
+    setSeedChecked(true);
+    seedDefaultMaterials(false);
+  },[loading,seedChecked]);
+
+  const q=search.trim().toLowerCase();
+  const stockedMaterials=[...materials].filter(m=>(Number(m.stock)||0)>0).sort((a,b)=>(Number(b.stock)||0)-(Number(a.stock)||0));
+  const filtered=materials.filter(m=>{
+    if(!q) return true;
+    return (m.name||"").toLowerCase().includes(q)||
+      (m.code||"").toLowerCase().includes(q)||
+      (m.note||"").toLowerCase().includes(q);
+  });
+  const sortedMaterials=[...filtered].sort((a,b)=>{
+    if(sortMode==="name_desc") return String(b.name||"").localeCompare(String(a.name||""),"tr");
+    if(sortMode==="stock_desc") return safeNum(b.stock)-safeNum(a.stock);
+    if(sortMode==="stock_asc") return safeNum(a.stock)-safeNum(b.stock);
+    return String(a.name||"").localeCompare(String(b.name||""),"tr");
+  });
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <div style={{fontWeight:700,color:C.text}}>Malzeme Kutuphanesi</div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>{if(showForm){setShowForm(false);setEditId(null);setForm({name:"",code:nextMaterialCode(),density:"",stock:"",type:"raw",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""});}else{setEditId(null);setForm({name:"",code:nextMaterialCode(),density:"",stock:"",type:"raw",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""});setShowForm(true);}}} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>{showForm?"Kapat":"+ Yeni Ekle"}</button>
+        </div>
+      </div>
+
+      {showForm&&(
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>{editId?"Malzeme Duzenle":"Yeni Malzeme"}</div>
+          {editId&&<Badge label="Duzenleme" color={C.warn}/>}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <div><span style={labelSt}>Malzeme Adi *</span><input style={inputSt} value={form.name} onChange={e=>fv("name",e.target.value)} placeholder="AISI 304"/></div>
+          <div><span style={labelSt}>Kod (Otomatik)</span><input style={{...inputSt,background:C.surface,color:C.muted2}} value={form.code||nextMaterialCode()} readOnly/></div>
+          <div><span style={labelSt}>Ozgul Agirlik (g/cm3)</span><input style={inputSt} type="number" step="0.001" min="0" value={form.density} onChange={e=>fv("density",e.target.value)} placeholder="7.850"/></div>
+          <div><span style={labelSt}>Stok</span><input style={inputSt} type="number" min="0" value={form.stock} onChange={e=>fv("stock",e.target.value)} placeholder="0"/></div>
+          <div><span style={labelSt}>Tur</span><select style={inputSt} value={form.type||"raw"} onChange={e=>fv("type",e.target.value)}>{MATERIAL_TYPE_OPTIONS.map(([id,l])=><option key={id} value={id}>{l}</option>)}</select></div>
+          <div><span style={labelSt}>Lead-Time (gun)</span><input style={inputSt} type="number" min="0" value={form.leadTimeDays} onChange={e=>fv("leadTimeDays",e.target.value)} placeholder="5"/></div>
+          <div><span style={labelSt}>Yeniden Siparis Noktasi</span><input style={inputSt} type="number" min="0" value={form.reorderPoint} onChange={e=>fv("reorderPoint",e.target.value)} placeholder="0"/></div>
+          <div><span style={labelSt}>Guvenlik Stogu</span><input style={inputSt} type="number" min="0" value={form.safetyStock} onChange={e=>fv("safetyStock",e.target.value)} placeholder="0"/></div>
+          <div><span style={labelSt}>Izleme Tipi</span><select style={inputSt} value={form.trackingMode||"lot"} onChange={e=>fv("trackingMode",e.target.value)}>{TRACKING_OPTIONS.map(([id,l])=><option key={id} value={id}>{l}</option>)}</select></div>
+          <div><span style={labelSt}>Maliyetleme Yontemi</span><select style={inputSt} value={form.valuationMethod||"fifo"} onChange={e=>fv("valuationMethod",e.target.value)}>{VALUATION_OPTIONS.map(([id,l])=><option key={id} value={id}>{l}</option>)}</select></div>
+        </div>
+        <div style={{marginTop:8}}>
+          <span style={labelSt}>Not</span>
+          <textarea rows={2} style={{...inputSt,minHeight:64,resize:"vertical"}} value={form.note} onChange={e=>fv("note",e.target.value)} placeholder="Opsiyonel not..."/>
+        </div>
+        <div style={{display:"flex",gap:8,marginTop:10}}>
+          <button onClick={saveMaterial} style={{...btnSt("primary"),flex:1,padding:12}}>{editId?"Malzemeyi Guncelle":"Malzeme Kaydet"}</button>
+          <button onClick={()=>{setEditId(null);setShowForm(false);setForm({name:"",code:nextMaterialCode(),density:"",stock:"",type:"raw",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""});}} style={{...btnSt("ghost"),padding:"12px 14px"}}>Iptal</button>
+        </div>
+      </div>
+      )}
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}>
+        <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Stokdaki Urunler ({stockedMaterials.length})</div>
+        {stockedMaterials.length===0?<div style={{fontSize:12,color:C.muted}}>Stokta malzeme yok</div>:(
+          <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+            {stockedMaterials.map(m=><span key={m.id} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px",fontSize:11,color:C.muted2}}>{m.code||"-"} Â· {m.name||"-"} Â· <span style={{color:C.text,fontWeight:700}}>{Number(m.stock)||0}</span></span>)}
+          </div>
+        )}
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <div style={{fontSize:12,color:C.muted2}}>Malzemeler ({materials.length})</div>
+        {filtersVisible&&<input style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:220}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Malzeme adi veya kod ara..."/>}
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1.8fr 1.15fr 1fr auto",gap:10,padding:"10px 12px",fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700,background:C.surface,borderBottom:`1px solid ${C.border}`}}>
+          <div>Malzeme</div>
+          <div>Stok Politikasi</div>
+          <div>Tedarik</div>
+          <div style={{textAlign:"right"}}>Islem</div>
+        </div>
+        {sortedMaterials.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"22px 14px"}}>Malzeme bulunamadi</div>}
+        {sortedMaterials.map(m=>{
+          const stock=safeNum(m.stock);
+          const reorder=safeNum(m.reorderPoint);
+          const safety=safeNum(m.safetyStock);
+          const critical=stock<=Math.max(reorder,safety);
+          return (
+            <div key={m.id} style={{display:"grid",gridTemplateColumns:"1.8fr 1.15fr 1fr auto",gap:10,padding:"11px 12px",borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
+              <div style={{minWidth:0}}>
+                <div style={{fontWeight:700,color:C.text,fontSize:13,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.name||"-"}</div>
+                <div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                  {m.code||"-"}{Number(m.density)>0?` Â· ${Number(m.density).toFixed(3)} g/cm3`:""} Â· {m.type||"raw"} Â· {m.trackingMode||"lot"}
+                </div>
+                {m.note&&<div style={{fontSize:11,color:C.muted,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.note}</div>}
+              </div>
+              <div style={{fontSize:12,color:C.muted2}}>
+                <div>Stok: <span style={{color:C.text,fontWeight:700}}>{stock}</span></div>
+                <div>ROP: {reorder} Â· SS: {safety}</div>
+                {critical&&<div style={{color:C.red,fontSize:11,marginTop:2}}>Kritik stok</div>}
+              </div>
+              <div style={{fontSize:12,color:C.muted2}}>
+                <div>Lead: {safeNum(m.leadTimeDays)} gun</div>
+                <div>{String(m.valuationMethod||"fifo").toUpperCase()}</div>
+              </div>
+              <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                <button onClick={()=>{setEditId(m.id);setShowForm(true);setForm({name:m.name||"",code:m.code||"",density:String(m.density??""),stock:String(m.stock??""),type:m.type||"raw",reorderPoint:String(m.reorderPoint??0),safetyStock:String(m.safetyStock??0),leadTimeDays:String(m.leadTimeDays??5),trackingMode:m.trackingMode||"lot",valuationMethod:m.valuationMethod||"fifo",note:m.note||""});}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
+                <button onClick={()=>removeMaterial(m)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+//  PART & PRODUCT DEFINITIONS
+// ============================================================
+function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true}) {
+  const emptyPartForm={
+    partNo:"",
+    customerPartCode:"",
+    customerName:"",
+    name:"",
+    material:"",
+    revision:"A",
+    setupSec:"300",
+    cycleSec:"60",
+    qtyPerRaw:"1",
+    rawUnitCost:"0",
+    laborRateHour:"250",
+    machineRateHour:"600",
+    ncProgramVersion:"V1",
+    documents:[],
+    notes:"",
+  };
+  const [parts,setParts]=useState([]);
+  const [materials,setMaterials]=useState([]);
+  const [operationTypes,setOperationTypes]=useState(DEFAULT_ROUTING_OPERATION_TYPES);
+  const [loading,setLoading]=useState(true);
+  const [search,setSearch]=useState("");
+  const [sortMode,setSortMode]=useState("partno_asc");
+  const [partStatusFilter,setPartStatusFilter]=useState("all");
+  const [partDateFrom,setPartDateFrom]=useState("");
+  const [partDateTo,setPartDateTo]=useState("");
+  const [partRowsPerPage,setPartRowsPerPage]=useState(10);
+  const [partListPageIdx,setPartListPageIdx]=useState(1);
+  const [partPage,setPartPage]=useState("list");
+  const [selectedPartId,setSelectedPartId]=useState("");
+  const [uploading,setUploading]=useState(false);
+  const [showPartModal,setShowPartModal]=useState(false);
+  const [partForm,setPartForm]=useState(emptyPartForm);
+  const [bomForm,setBomForm]=useState({componentType:"raw_material",componentCode:"",componentName:"",qtyPer:"1",scrapPct:"0",cutLengthMm:"0",barDiameterMm:"0"});
+  const [routingForm,setRoutingForm]=useState({operationTypeId:"",machine:machines[0]||"CNC-1",setupSec:"300",cycleSec:"60",ncProgram:"",tooling:""});
+  const partListPanelRef=useRef(null);
+  const {
+    height:partListPanelHeight,
+    isNarrow:partListPanelsStacked,
+  }=useViewportPanelMetrics(partListPanelRef,{minHeight:340,bottomGap:14,narrowWidth:1180});
+
+  const load=useCallback(async()=>{
+    const [p,m,opDoc]=await Promise.all([
+      window.DB.getAll("parts"),
+      window.DB.getAll("materials"),
+      window.DB.getDoc("config","routingOperationTypes"),
+    ]);
+    setParts(p.sort((a,b)=>(a.partNo||"").localeCompare(b.partNo||"","tr")));
+    setMaterials(m.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    setOperationTypes(normalizeRoutingOperationTypes(opDoc||{}));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    if(operationTypes.length===0) return;
+    setRoutingForm(f=>{
+      if(f.operationTypeId&&operationTypes.some(x=>x.id===f.operationTypeId)) return f;
+      return {...f,operationTypeId:operationTypes[0].id};
+    });
+  },[operationTypes]);
+  const nextPartNo=useCallback((list=parts)=>{
+    const nums=list.map(p=>{
+      const m=String(p.partNo||"").toUpperCase().match(/^PRT-(\d+)$/);
+      return m?Number(m[1]):0;
+    }).filter(Boolean);
+    const next=(nums.length?Math.max(...nums):0)+1;
+    return `PRT-${String(next).padStart(4,"0")}`;
+  },[parts]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="parts") return;
+      if(d.type==="refresh"){load(); return;}
+      if(d.type==="sort"){
+        if(["partno_asc","partno_desc","name_asc","name_desc"].includes(d.sortMode)){
+          setSortMode(d.sortMode);
+        }
+        return;
+      }
+      if(d.type==="new"){
+        setPartPage("list");
+        setSelectedPartId("");
+        setPartForm({...emptyPartForm,partNo:nextPartNo()});
+        setShowPartModal(true);
+        window.scrollTo({top:0,behavior:"smooth"});
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load,nextPartNo]);
+  useEffect(()=>{
+    if(partPage==="detail"&&!selectedPartId) setPartPage("list");
+  },[partPage,selectedPartId]);
+  useEffect(()=>{
+    if(selectedPartId&&!parts.some(p=>p.id===selectedPartId)){
+      setSelectedPartId("");
+      setPartPage("list");
+    }
+  },[parts,selectedPartId]);
+
+  const selectedPart=parts.find(p=>p.id===selectedPartId)||null;
+  const selectedPartPriceHistory=selectedPart
+    ? [...(selectedPart.priceHistory||[])].sort((a,b)=>{
+        const da=String(a?.updatedAt||a?.date||a?.createdAt||"");
+        const db=String(b?.updatedAt||b?.date||b?.createdAt||"");
+        return db.localeCompare(da);
+      })
+    : [];
+  const getPartCompanyName=(part)=>{
+    const direct=String(part?.customerName||part?.companyName||"").trim();
+    if(direct) return direct;
+    const history=(Array.isArray(part?.priceHistory)?part.priceHistory:[])
+      .filter(r=>String(r?.customerName||"").trim());
+    if(history.length===0) return "";
+    const sorted=[...history].sort((a,b)=>{
+      const da=String(a?.updatedAt||a?.date||a?.createdAt||"");
+      const db=String(b?.updatedAt||b?.date||b?.createdAt||"");
+      return db.localeCompare(da);
+    });
+    return String(sorted[0]?.customerName||"").trim();
+  };
+  const partStatusOptions=[
+    {id:"all",label:"Tum Parcalar"},
+    {id:"bom",label:"BOM Olan"},
+    {id:"routing",label:"Rota Olan"},
+    {id:"docs",label:"Dokuman Olan"},
+  ];
+  const partStatusCounts={
+    all:parts.length,
+    bom:parts.filter(p=>(p.bomLines||[]).length>0).length,
+    routing:parts.filter(p=>(p.routingOps||[]).length>0).length,
+    docs:parts.filter(p=>((p.documents||[]).length>0)||Boolean(p.drawingFile)).length,
+  };
+  const inPartRange=(ymd,from,to)=>{
+    if(!from&&!to) return true;
+    if(!ymd) return true;
+    if(from&&ymd<from) return false;
+    if(to&&ymd>to) return false;
+    return true;
+  };
+  const filtered=parts.filter(p=>{
+    const q=search.toLowerCase().trim();
+    const searchOk=!q||(
+      (p.partNo||"").toLowerCase().includes(q)||
+      (p.customerPartCode||"").toLowerCase().includes(q)||
+      (p.name||"").toLowerCase().includes(q)||
+      (p.material||"").toLowerCase().includes(q)||
+      getPartCompanyName(p).toLowerCase().includes(q)
+    );
+    if(!searchOk) return false;
+    const statusOk=partStatusFilter==="all"||
+      (partStatusFilter==="bom"&&(p.bomLines||[]).length>0)||
+      (partStatusFilter==="routing"&&(p.routingOps||[]).length>0)||
+      (partStatusFilter==="docs"&&(((p.documents||[]).length>0)||Boolean(p.drawingFile)));
+    if(!statusOk) return false;
+    const dateYmd=String(p.updatedAt||p.createdAt||"").slice(0,10);
+    return inPartRange(dateYmd,partDateFrom,partDateTo);
+  });
+  const filteredParts=[...filtered].sort((a,b)=>{
+    if(sortMode==="partno_desc") return String(b.partNo||"").localeCompare(String(a.partNo||""),"tr");
+    if(sortMode==="name_asc") return String(a.name||"").localeCompare(String(b.name||""),"tr");
+    if(sortMode==="name_desc") return String(b.name||"").localeCompare(String(a.name||""),"tr");
+    return String(a.partNo||"").localeCompare(String(b.partNo||""),"tr");
+  });
+  const partTotalPages=Math.max(1,Math.ceil(filteredParts.length/Math.max(1,partRowsPerPage)));
+  useEffect(()=>{
+    setPartListPageIdx(1);
+  },[search,partStatusFilter,partDateFrom,partDateTo,sortMode,partRowsPerPage]);
+  useEffect(()=>{
+    setPartListPageIdx(prev=>Math.max(1,Math.min(prev,partTotalPages)));
+  },[partTotalPages]);
+  const partListStart=(partListPageIdx-1)*Math.max(1,partRowsPerPage);
+  const pagedParts=filteredParts.slice(partListStart,partListStart+Math.max(1,partRowsPerPage));
+  const BAR_LENGTH_MM=3000;
+  const normalized=s=>String(s||"").trim().toUpperCase();
+  const findMaterialForBom=(code,name)=>{
+    const codeKey=normalized(code);
+    const nameKey=normalized(name);
+    return materials.find(m=>{
+      const mCode=normalized(m.code);
+      const mName=normalized(m.name);
+      return (codeKey&& (mCode===codeKey||mName===codeKey)) || (nameKey&& (mCode===nameKey||mName===nameKey));
+    })||null;
+  };
+  const calcBarRequirement=({qtyPer,scrapPct,cutLengthMm,barDiameterMm,density})=>{
+    const qty=Math.max(0,safeNum(qtyPer));
+    const scrap=Math.max(0,Math.min(100,safeNum(scrapPct)));
+    const cutLen=Math.max(0,safeNum(cutLengthMm));
+    const diameter=Math.max(0,safeNum(barDiameterMm));
+    const rho=Math.max(0,safeNum(density));
+    const netRequiredMm=qty*cutLen;
+    const requiredWithScrapMm=netRequiredMm*(1+(scrap/100));
+    const barCount3m=requiredWithScrapMm>0?Math.ceil(requiredWithScrapMm/BAR_LENGTH_MM):0;
+    const areaMm2=diameter>0?(Math.PI*diameter*diameter)/4:0;
+    const netWeightKg=(areaMm2>0&&rho>0)?((areaMm2*requiredWithScrapMm*rho)/1000000):0;
+    const purchaseWeightKg=(areaMm2>0&&rho>0&&barCount3m>0)?((areaMm2*(barCount3m*BAR_LENGTH_MM)*rho)/1000000):0;
+    return {netRequiredMm,requiredWithScrapMm,barCount3m,netWeightKg,purchaseWeightKg,density:rho};
+  };
+  const bomMaterial=findMaterialForBom(bomForm.componentCode,bomForm.componentName);
+  const bomBarPreview=calcBarRequirement({
+    qtyPer:bomForm.qtyPer,
+    scrapPct:bomForm.scrapPct,
+    cutLengthMm:bomForm.cutLengthMm,
+    barDiameterMm:bomForm.barDiameterMm,
+    density:bomMaterial?.density,
+  });
+
+  const partCostCalc=(()=>{
+    const qtyRaw=Math.max(0,safeNum(partForm.qtyPerRaw));
+    const rawUnit=Math.max(0,safeNum(partForm.rawUnitCost));
+    const laborRate=Math.max(0,safeNum(partForm.laborRateHour));
+    const machineRate=Math.max(0,safeNum(partForm.machineRateHour));
+    const setupSec=Math.max(0,safeNum(partForm.setupSec));
+    const cycleSec=Math.max(0,safeNum(partForm.cycleSec));
+    const materialCost=qtyRaw*rawUnit;
+    const laborCost=((setupSec+cycleSec)/3600)*laborRate;
+    const machineCost=((setupSec+cycleSec)/3600)*machineRate;
+    const unitCost=materialCost+laborCost+machineCost;
+    return {materialCost,laborCost,machineCost,unitCost};
+  })();
+  const selectedOperationType=operationTypes.find(o=>o.id===routingForm.operationTypeId)||operationTypes[0]||null;
+  function setRoutingOperationType(operationTypeId){
+    const picked=operationTypes.find(o=>o.id===operationTypeId)||null;
+    setRoutingForm(f=>({
+      ...f,
+      operationTypeId,
+      setupSec:String(picked?.defaultSetupSec??f.setupSec),
+      cycleSec:String(picked?.defaultCycleSec??f.cycleSec),
+    }));
+  }
+
+  const fv=(k,v)=>setPartForm(f=>({...f,[k]:v}));
+  const openPartListPage=()=>setPartPage("list");
+  const openPartDetailPage=(part)=>{
+    if(!part||!part.id) return;
+    setSelectedPartId(part.id);
+    loadPartToForm(part);
+    setPartPage("detail");
+  };
+  const openCreatePartModal=()=>{
+    setPartPage("list");
+    setSelectedPartId("");
+    setPartForm({...emptyPartForm,partNo:nextPartNo()});
+    setShowPartModal(true);
+  };
+  const openEditPartModal=(part)=>{
+    if(part){
+      setSelectedPartId(part.id||"");
+      loadPartToForm(part);
+    }else{
+      setSelectedPartId("");
+      setPartForm({...emptyPartForm,partNo:nextPartNo()});
+    }
+    setShowPartModal(true);
+  };
+  const partSplitWrapStyle={
+    display:"flex",
+    gap:10,
+    alignItems:partListPanelsStacked?"flex-start":"stretch",
+    flexWrap:"wrap",
+    ...(partListPanelsStacked
+      ? {}
+      : {
+        height:partListPanelHeight,
+        maxHeight:partListPanelHeight,
+        flex:1,
+        minHeight:0,
+        overflow:"hidden",
+      }),
+  };
+  const partFilterPanelStyle={
+    flex:"0 0 250px",
+    width:"100%",
+    maxWidth:280,
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    padding:12,
+    display:"flex",
+    flexDirection:"column",
+    gap:10,
+    ...(partListPanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+        overflowY:"auto",
+        overscrollBehavior:"contain",
+        scrollbarGutter:"stable",
+      }),
+  };
+  const partListColumnStyle={
+    flex:"1 1 760px",
+    minWidth:0,
+    display:"flex",
+    flexDirection:"column",
+    gap:8,
+    ...(partListPanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+      }),
+  };
+  const partTableCardStyle={
+    background:C.surface,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    overflow:"hidden",
+    display:"flex",
+    flexDirection:"column",
+    ...(partListPanelsStacked?{}:{flex:1,minHeight:0}),
+  };
+  const partTableScrollStyle=partListPanelsStacked
+    ? {overflowX:"auto"}
+    : {overflow:"auto",flex:1,minHeight:0,overscrollBehavior:"contain"};
+
+  async function pickPartDocuments(e){
+    const files=Array.from((e.target.files||[]));
+    if(files.length===0) return;
+    const tooBig=files.find(file=>file.size>8*1024*1024);
+    if(tooBig){alert(`"${tooBig.name}" 8MB limitini asiyor.`);e.target.value="";return;}
+    setUploading(true);
+    try{
+      const docs=[];
+      for(const file of files){
+        const data=await fileToBase64(file);
+        docs.push({
+          id:`doc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`,
+          name:file.name,
+          size:file.size,
+          type:file.type||"",
+          data,
+          uploadedAt:new Date().toISOString(),
+        });
+      }
+      setPartForm(f=>({...f,documents:[...(f.documents||[]),...docs]}));
+    }finally{
+      setUploading(false);
+      e.target.value="";
+    }
+  }
+  const removePartDocument=(docId)=>setPartForm(f=>({...f,documents:(f.documents||[]).filter(d=>d.id!==docId)}));
+
+  async function savePart(){
+    if(!partForm.name.trim()){alert("Parca adi zorunlu.");return;}
+    const computedPartNo=(String(partForm.partNo||"").trim().toUpperCase()||nextPartNo());
+    const existing=parts.find(p=>(p.partNo||"").toUpperCase()===computedPartNo);
+    const payload={
+      partNo:computedPartNo,
+      customerPartCode:String(partForm.customerPartCode||"").trim().toUpperCase(),
+      customerName:String(partForm.customerName||"").trim(),
+      name:partForm.name.trim(),
+      material:partForm.material.trim(),
+      revision:(partForm.revision||"A").trim().toUpperCase(),
+      setupSec:Math.max(0,safeNum(partForm.setupSec)),
+      cycleSec:Math.max(0,safeNum(partForm.cycleSec)),
+      qtyPerRaw:Math.max(0,safeNum(partForm.qtyPerRaw)),
+      rawUnitCost:Math.max(0,safeNum(partForm.rawUnitCost)),
+      laborRateHour:Math.max(0,safeNum(partForm.laborRateHour)),
+      machineRateHour:Math.max(0,safeNum(partForm.machineRateHour)),
+      ncProgramVersion:(partForm.ncProgramVersion||"V1").trim().toUpperCase(),
+      unitCost:partCostCalc.unitCost,
+      costBreakdown:{materialCost:partCostCalc.materialCost,laborCost:partCostCalc.laborCost,machineCost:partCostCalc.machineCost},
+      documents:Array.isArray(partForm.documents)?partForm.documents:[],
+      notes:partForm.notes.trim(),
+      bomLines:Array.isArray(existing?.bomLines)?existing.bomLines:[],
+      routingOps:Array.isArray(existing?.routingOps)?existing.routingOps:[],
+      priceHistory:Array.isArray(existing?.priceHistory)?existing.priceHistory:[],
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser.id,
+    };
+    if(existing){
+      const ok=await window.DB.updateDoc("parts",existing.id,{...existing,...payload});
+      if(!ok){alert("Parca guncellenemedi.");return;}
+      await addAuditLog(currentUser.id,"part",existing.id,"update",existing,payload,{module:"parts"});
+      setParts(prev=>prev.map(x=>x.id===existing.id?{...x,...payload}:x));
+      setSelectedPartId(existing.id);
+      setPartPage("detail");
+      setShowPartModal(false);
+      return;
+    }
+    const id=await window.DB.addDoc("parts",payload);
+    if(!id){
+      const err=window.DB.getLastError?window.DB.getLastError():"";
+      alert(`Parca kaydedilemedi.${err?`\n${err}`:""}`);
+      return;
+    }
+    await addAuditLog(currentUser.id,"part",id,"create",null,payload,{module:"parts"});
+    const next=[{id,...payload,createdAt:new Date().toISOString()},...parts].sort((a,b)=>(a.partNo||"").localeCompare(b.partNo||"","tr"));
+    setParts(next);
+    setSelectedPartId(id);
+    setPartPage("detail");
+    setShowPartModal(false);
+  }
+
+  function loadPartToForm(p){
+    const docs=(Array.isArray(p.documents)&&p.documents.length>0)
+      ? p.documents
+      : (p.drawingFile?[{...p.drawingFile,id:`legacy_${p.id||Date.now()}`}]:[]);
+    setPartForm({
+      partNo:p.partNo||"",
+      customerPartCode:p.customerPartCode||"",
+      customerName:p.customerName||p.companyName||getPartCompanyName(p)||"",
+      name:p.name||"",
+      material:p.material||"",
+      revision:p.revision||"A",
+      setupSec:String(p.setupSec??300),
+      cycleSec:String(p.cycleSec??60),
+      qtyPerRaw:String(p.qtyPerRaw??1),
+      rawUnitCost:String(p.rawUnitCost??0),
+      laborRateHour:String(p.laborRateHour??250),
+      machineRateHour:String(p.machineRateHour??600),
+      ncProgramVersion:p.ncProgramVersion||"V1",
+      documents:docs,
+      notes:p.notes||"",
+    });
+  }
+
+  async function addBomLine(){
+    if(!selectedPart){alert("Once parca secin.");return;}
+    if(!bomForm.componentCode.trim()||safeNum(bomForm.qtyPer)<=0){alert("BOM satiri eksik.");return;}
+    const linkedMaterial=findMaterialForBom(bomForm.componentCode,bomForm.componentName);
+    const barStats=calcBarRequirement({
+      qtyPer:bomForm.qtyPer,
+      scrapPct:bomForm.scrapPct,
+      cutLengthMm:bomForm.cutLengthMm,
+      barDiameterMm:bomForm.barDiameterMm,
+      density:linkedMaterial?.density,
+    });
+    const line={
+      id:`bom_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`,
+      componentType:bomForm.componentType||"raw_material",
+      componentCode:bomForm.componentCode.trim().toUpperCase(),
+      componentName:bomForm.componentName.trim()||(linkedMaterial?.name||""),
+      qtyPer:Math.max(0,safeNum(bomForm.qtyPer)),
+      scrapPct:Math.max(0,Math.min(100,safeNum(bomForm.scrapPct))),
+      cutLengthMm:Math.max(0,safeNum(bomForm.cutLengthMm)),
+      barDiameterMm:Math.max(0,safeNum(bomForm.barDiameterMm)),
+      barLengthMm:BAR_LENGTH_MM,
+      materialId:linkedMaterial?.id||"",
+      materialDensity:Math.max(0,safeNum(linkedMaterial?.density)),
+      requiredLengthMm:barStats.requiredWithScrapMm,
+      barCount3m:barStats.barCount3m,
+      netWeightKg:barStats.netWeightKg,
+      purchaseWeightKg:barStats.purchaseWeightKg,
+    };
+    const nextLines=[...(selectedPart.bomLines||[]),line];
+    const ok=await window.DB.updateDoc("parts",selectedPart.id,{bomLines:nextLines,updatedAt:new Date().toISOString(),updatedBy:currentUser.id});
+    if(!ok){alert("BOM satiri eklenemedi.");return;}
+    setParts(prev=>prev.map(x=>x.id===selectedPart.id?{...x,bomLines:nextLines}:x));
+    setBomForm({componentType:"raw_material",componentCode:"",componentName:"",qtyPer:"1",scrapPct:"0",cutLengthMm:"0",barDiameterMm:"0"});
+  }
+  async function removeBomLine(lineId){
+    if(!selectedPart) return;
+    const next=(selectedPart.bomLines||[]).filter(x=>x.id!==lineId);
+    await window.DB.updateDoc("parts",selectedPart.id,{bomLines:next,updatedAt:new Date().toISOString(),updatedBy:currentUser.id});
+    setParts(prev=>prev.map(x=>x.id===selectedPart.id?{...x,bomLines:next}:x));
+  }
+
+  async function addRoutingOp(){
+    if(!selectedPart){alert("Once parca secin.");return;}
+    const pickedType=operationTypes.find(o=>o.id===routingForm.operationTypeId)||null;
+    if(!pickedType){alert("Operasyon tipi secin.");return;}
+    const op={
+      id:`op_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`,
+      operationTypeId:pickedType.id,
+      operationCode:pickedType.code||"",
+      operationName:pickedType.name||"",
+      operationIcon:pickedType.icon||"??",
+      operationColor:normalizeHexColor(pickedType.color),
+      operation:`${pickedType.code||""}${pickedType.name?` - ${pickedType.name}`:""}`.trim(),
+      machine:routingForm.machine||machines[0]||"CNC-1",
+      setupSec:Math.max(0,safeNum(routingForm.setupSec)),
+      cycleSec:Math.max(0,safeNum(routingForm.cycleSec)),
+      ncProgram:routingForm.ncProgram.trim(),
+      tooling:routingForm.tooling.trim(),
+    };
+    const next=[...(selectedPart.routingOps||[]),op];
+    const ok=await window.DB.updateDoc("parts",selectedPart.id,{routingOps:next,updatedAt:new Date().toISOString(),updatedBy:currentUser.id});
+    if(!ok){alert("Rota adimi eklenemedi.");return;}
+    setParts(prev=>prev.map(x=>x.id===selectedPart.id?{...x,routingOps:next}:x));
+    setRoutingForm({
+      operationTypeId:pickedType.id,
+      machine:routingForm.machine||machines[0]||"CNC-1",
+      setupSec:String(pickedType.defaultSetupSec??300),
+      cycleSec:String(pickedType.defaultCycleSec??60),
+      ncProgram:"",
+      tooling:"",
+    });
+  }
+  async function removeRoutingOp(opId){
+    if(!selectedPart) return;
+    const next=(selectedPart.routingOps||[]).filter(x=>x.id!==opId);
+    await window.DB.updateDoc("parts",selectedPart.id,{routingOps:next,updatedAt:new Date().toISOString(),updatedBy:currentUser.id});
+    setParts(prev=>prev.map(x=>x.id===selectedPart.id?{...x,routingOps:next}:x));
+  }
+  async function moveRoutingOp(opId,dir){
+    if(!selectedPart) return;
+    const rows=[...(selectedPart.routingOps||[])];
+    const idx=rows.findIndex(x=>x.id===opId);
+    if(idx<0) return;
+    const nextIdx=idx+dir;
+    if(nextIdx<0||nextIdx>=rows.length) return;
+    const next=[...rows];
+    const temp=next[idx];
+    next[idx]=next[nextIdx];
+    next[nextIdx]=temp;
+    const ok=await window.DB.updateDoc("parts",selectedPart.id,{routingOps:next,updatedAt:new Date().toISOString(),updatedBy:currentUser.id});
+    if(!ok){alert("Rota sirasi guncellenemedi.");return;}
+    setParts(prev=>prev.map(x=>x.id===selectedPart.id?{...x,routingOps:next}:x));
+  }
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
+      <div style={{
+        background:C.card,
+        border:`1px solid ${C.border}`,
+        borderRadius:14,
+        padding:12,
+        ...(partPage==="list"?{flex:1,minHeight:0,display:"flex",flexDirection:"column",overflow:"hidden"}:{}),
+      }}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8}}>
+          <div style={{fontWeight:700,color:C.text}}>Parca Kutuphanesi</div>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            {selectedPart&&<Badge label={`Secili: ${selectedPart.partNo}`} color={C.accent}/>}
+            {selectedPart&&<button onClick={()=>openEditPartModal(selectedPart)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11}}>Seciliyi Duzenle</button>}
+            <button onClick={openCreatePartModal} style={{...btnSt("primary"),padding:"6px 10px",fontSize:11}}>+ Parca Ekle</button>
+          </div>
+        </div>
+        {partPage==="list"&&(
+          <>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:.5,textTransform:"uppercase"}}>
+            Toplam {parts.length} parca - Filtrelenen {filteredParts.length}
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
+            {selectedPart&&(
+              <div style={{fontSize:11,color:C.muted2}}>
+                Aktif parca: <strong style={{color:C.text}}>{selectedPart.partNo||"-"}</strong> {selectedPart.name?` - ${selectedPart.name}`:""}
+              </div>
+            )}
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{fontSize:11,color:C.muted2}}>Satir</span>
+              <select style={{...inputSt,width:78,padding:"5px 6px",fontSize:12}} value={partRowsPerPage} onChange={e=>setPartRowsPerPage(Math.max(1,Number(e.target.value)||10))}>
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+              </select>
+              <button onClick={()=>setPartListPageIdx(p=>Math.max(1,p-1))} disabled={partListPageIdx<=1} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:12,opacity:partListPageIdx<=1?0.6:1}}>{"<"}</button>
+              <div style={{fontSize:11,color:C.muted2,minWidth:56,textAlign:"center"}}>{partListPageIdx}/{partTotalPages}</div>
+              <button onClick={()=>setPartListPageIdx(p=>Math.min(partTotalPages,p+1))} disabled={partListPageIdx>=partTotalPages} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:12,opacity:partListPageIdx>=partTotalPages?0.6:1}}>{">"}</button>
+            </div>
+          </div>
+        </div>
+        <div ref={partListPanelRef} style={partSplitWrapStyle}>
+          {filtersVisible&&(
+            <div style={partFilterPanelStyle}>
+              <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Parcalar</div>
+              <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod, musteri, ad, malzeme ara"/>
+              <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Parca Durumu</div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {partStatusOptions.map(opt=>(
+                  <button key={opt.id} onClick={()=>setPartStatusFilter(opt.id)} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:partStatusFilter===opt.id?C.accent:C.border,color:partStatusFilter===opt.id?C.accent:C.text}}>
+                    <span>{opt.label}</span>
+                    <span style={{fontSize:11,color:C.muted2}}>{partStatusCounts[opt.id]||0}</span>
+                  </button>
+                ))}
+              </div>
+              <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Guncelleme Tarihi</div>
+              <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={partDateFrom} onChange={e=>setPartDateFrom(e.target.value||"")}/>
+              <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={partDateTo} onChange={e=>setPartDateTo(e.target.value||"")}/>
+              <button onClick={()=>{setPartDateFrom("");setPartDateTo("");setPartStatusFilter("all");setSearch("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
+            </div>
+          )}
+          <div style={partListColumnStyle}>
+            <div style={partTableCardStyle}>
+              <div style={partTableScrollStyle}>
+                <div style={{minWidth:980}}>
+                  <div style={{display:"grid",gridTemplateColumns:"1.1fr 1.7fr 1.2fr 1.1fr .8fr 1.1fr .9fr .7fr",gap:8,padding:"9px 10px",borderBottom:`1px solid ${C.border}`,background:C.card,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700,position:"sticky",top:0,zIndex:2}}>
+                    <div>Parca No</div>
+                    <div>Parca Adi</div>
+                    <div>Firma</div>
+                    <div>Musteri Kodu</div>
+                    <div>Rev</div>
+                    <div>Malzeme</div>
+                    <div style={{textAlign:"right"}}>Birim Maliyet</div>
+                    <div style={{textAlign:"right"}}>Dosya</div>
+                  </div>
+                  {pagedParts.map((p,idx)=>{
+                    const selected=selectedPartId===p.id;
+                    const docsCount=(Array.isArray(p.documents)?p.documents.length:0)+(p.drawingFile?1:0);
+                    const companyName=getPartCompanyName(p)||"-";
+                    return (
+                      <button
+                        key={p.id}
+                        onClick={()=>openPartDetailPage(p)}
+                        style={{
+                          width:"100%",
+                          textAlign:"left",
+                          display:"grid",
+                          gridTemplateColumns:"1.1fr 1.7fr 1.2fr 1.1fr .8fr 1.1fr .9fr .7fr",
+                          gap:8,
+                          padding:"10px 10px",
+                          border:"none",
+                          borderBottom:`1px solid ${C.border}`,
+                          background:selected?C.accent+"1a":(idx%2===0?C.surface:C.card),
+                          color:C.text,
+                          cursor:"pointer",
+                          fontFamily:"inherit",
+                          alignItems:"center",
+                          boxShadow:selected?`inset 3px 0 0 ${C.accent}`:"none",
+                        }}
+                      >
+                        <div style={{fontSize:12,fontWeight:800,fontFamily:"monospace"}}>{p.partNo||"-"}</div>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:12,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name||"-"}</div>
+                          <div style={{fontSize:10,color:C.muted2,marginTop:2}}>
+                            Kurulum {safeNum(p.setupSec)} sn - Cevrim {safeNum(p.cycleSec)} sn
+                          </div>
+                        </div>
+                        <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{companyName}</div>
+                        <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.customerPartCode||"-"}</div>
+                        <div style={{fontSize:11,color:C.text,fontWeight:700}}>{p.revision||"A"}</div>
+                        <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.material||"-"}</div>
+                        <div style={{fontSize:11,color:C.text,fontWeight:700,textAlign:"right"}}>{safeNum(p.unitCost).toFixed(2)} TRY</div>
+                        <div style={{fontSize:11,color:C.muted2,textAlign:"right"}}>{docsCount}</div>
+                      </button>
+                    );
+                  })}
+                  {filteredParts.length===0&&<div style={{fontSize:12,color:C.muted2,padding:"12px 10px"}}>Filtreye uygun parca bulunamadi.</div>}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+          </>
+        )}
+      </div>
+
+      {showPartModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.68)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:54,padding:14}} onClick={()=>setShowPartModal(false)}>
+          <div style={{width:"100%",maxWidth:980,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0,maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8,flexWrap:"wrap"}}>
+              <div style={{fontWeight:700,color:C.text,fontSize:16}}>Parca Tanimi</div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                {selectedPart&&<Badge label={`Secili: ${selectedPart.partNo}`} color={C.accent}/>}
+                <button onClick={()=>setShowPartModal(false)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+              <div><span style={labelSt}>Parca No (Otomatik)</span><input style={{...inputSt,background:C.surface,color:C.muted2}} value={partForm.partNo||nextPartNo()} readOnly/></div>
+              <div><span style={labelSt}>Parca Musteri Kodu</span><input style={inputSt} value={partForm.customerPartCode} onChange={e=>fv("customerPartCode",e.target.value)} placeholder="MUS-PRC-001"/></div>
+              <div><span style={labelSt}>Parca Adi *</span><input style={inputSt} value={partForm.name} onChange={e=>fv("name",e.target.value)} placeholder="Govde"/></div>
+              <div><span style={labelSt}>Firma Adi</span><input style={inputSt} value={partForm.customerName} onChange={e=>fv("customerName",e.target.value)} placeholder="ABC Otomotiv"/></div>
+              <div><span style={labelSt}>Revizyon</span><input style={inputSt} value={partForm.revision} onChange={e=>fv("revision",e.target.value)}/></div>
+              <div>
+                <span style={labelSt}>Malzeme</span>
+                <select style={inputSt} value={partForm.material} onChange={e=>fv("material",e.target.value)}>
+                  <option value="">Secin...</option>
+                  {materials.map(m=><option key={m.id} value={m.name||""}>{m.code?`${m.code} - `:""}{m.name||""}</option>)}
+                </select>
+              </div>
+              <div><span style={labelSt}>Kurulum (sn)</span><input style={inputSt} type="number" min="0" value={partForm.setupSec} onChange={e=>fv("setupSec",e.target.value)}/></div>
+              <div><span style={labelSt}>Cevrim (sn)</span><input style={inputSt} type="number" min="0" value={partForm.cycleSec} onChange={e=>fv("cycleSec",e.target.value)}/></div>
+              <div><span style={labelSt}>Hammadde Miktar</span><input style={inputSt} type="number" min="0" value={partForm.qtyPerRaw} onChange={e=>fv("qtyPerRaw",e.target.value)}/></div>
+              <div><span style={labelSt}>Hammadde Birim Maliyet</span><input style={inputSt} type="number" min="0" value={partForm.rawUnitCost} onChange={e=>fv("rawUnitCost",e.target.value)}/></div>
+              <div><span style={labelSt}>NC Program Versiyon</span><input style={inputSt} value={partForm.ncProgramVersion} onChange={e=>fv("ncProgramVersion",e.target.value)} placeholder="V1"/></div>
+              <div><span style={labelSt}>Iscilik Saatlik</span><input style={inputSt} type="number" min="0" value={partForm.laborRateHour} onChange={e=>fv("laborRateHour",e.target.value)}/></div>
+              <div><span style={labelSt}>Tezgah Saatlik</span><input style={inputSt} type="number" min="0" value={partForm.machineRateHour} onChange={e=>fv("machineRateHour",e.target.value)}/></div>
+              <div>
+                <span style={labelSt}>Dosyalar</span>
+                <label style={{...inputSt,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
+                  <span style={{fontSize:12,color:C.muted2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{uploading?"Yukleniyor...":"Dosya sec (coklu)"}</span>
+                  <span style={{fontSize:11,color:C.accent}}>{(partForm.documents||[]).length} dosya</span>
+                  <input type="file" multiple style={{display:"none"}} onChange={pickPartDocuments}/>
+                </label>
+                <div style={{fontSize:11,color:C.muted2,marginTop:4}}>Istedigin kadar dosya ekleyebilirsin (STEP/PDF/Resim vb).</div>
+                {(partForm.documents||[]).length>0&&(
+                  <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:5,maxHeight:120,overflowY:"auto",paddingRight:4}}>
+                    {(partForm.documents||[]).map(doc=>(
+                      <div key={doc.id||doc.name} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 7px"}}>
+                        <div style={{fontSize:11,color:C.muted2,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                          {doc.name||"dosya"}{doc.size?` (${Math.max(1,Math.round((Number(doc.size)||0)/1024))} KB)`:""}
+                        </div>
+                        <button onClick={()=>removePartDocument(doc.id)} style={{...btnSt("danger"),padding:"3px 7px",fontSize:10}}>Sil</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div style={{marginTop:8}}>
+              <span style={labelSt}>Not</span>
+              <textarea rows={2} style={{...inputSt,minHeight:62,resize:"vertical"}} value={partForm.notes} onChange={e=>fv("notes",e.target.value)}/>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:10}}>
+              <div style={{fontSize:12,color:C.muted2}}>
+                Birim Maliyet = Malzeme {partCostCalc.materialCost.toFixed(2)} + Iscilik {partCostCalc.laborCost.toFixed(2)} + Tezgah {partCostCalc.machineCost.toFixed(2)} = <span style={{color:C.text,fontWeight:700}}>{partCostCalc.unitCost.toFixed(2)} TRY</span>
+              </div>
+              <button onClick={savePart} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Parca Kaydet/Guncelle</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {partPage==="detail"&&selectedPart&&(
+        <div
+          style={{
+            position:"fixed",
+            inset:0,
+            background:"rgba(8,12,18,.36)",
+            backdropFilter:"blur(8px)",
+            WebkitBackdropFilter:"blur(8px)",
+            display:"flex",
+            alignItems:"center",
+            justifyContent:"center",
+            zIndex:53,
+            padding:14,
+          }}
+          onClick={openPartListPage}
+        >
+          <div
+            style={{
+              width:"100%",
+              maxWidth:1160,
+              maxHeight:"92vh",
+              overflowY:"auto",
+              background:C.card,
+              border:`1px solid ${C.border}`,
+              borderRadius:14,
+              padding:12,
+              boxShadow:"0 22px 50px rgba(0,0,0,.38)",
+            }}
+            onClick={e=>e.stopPropagation()}
+          >
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+              <div>
+                <div style={{fontWeight:800,color:C.text,fontSize:16}}>Parca Detay</div>
+                <div style={{fontSize:12,color:C.muted2,marginTop:2}}>
+                  <strong style={{color:C.text}}>{selectedPart.partNo||"-"}</strong> {selectedPart.name?` - ${selectedPart.name}`:""}
+                </div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <button onClick={()=>{openPartListPage();openEditPartModal(selectedPart);}} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Duzenle</button>
+                <button onClick={openPartListPage} style={{...btnSt("primary"),padding:"7px 10px",fontSize:12}}>Kapat</button>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12}}>
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+              <div style={{fontWeight:700,color:C.text,marginBottom:10}}>Rota ve Operasyonlar</div>
+              <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr .8fr .8fr auto",gap:6}}>
+                <select style={{...inputSt,padding:"7px 9px",fontSize:12}} value={routingForm.operationTypeId} onChange={e=>setRoutingOperationType(e.target.value)}>
+                  {operationTypes.length===0&&<option value="">Ayarlar / Rota ve Operasyon Tipleri</option>}
+                  {operationTypes.map(op=><option key={op.id} value={op.id}>{op.icon||"??"} {op.code} - {op.name}</option>)}
+                </select>
+                <select style={{...inputSt,padding:"7px 9px",fontSize:12}} value={routingForm.machine} onChange={e=>setRoutingForm(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
+                <input style={{...inputSt,padding:"7px 9px",fontSize:12}} type="number" min="0" placeholder="Kurulum sn" value={routingForm.setupSec} onChange={e=>setRoutingForm(f=>({...f,setupSec:e.target.value}))}/>
+                <input style={{...inputSt,padding:"7px 9px",fontSize:12}} type="number" min="0" placeholder="Cevrim sn" value={routingForm.cycleSec} onChange={e=>setRoutingForm(f=>({...f,cycleSec:e.target.value}))}/>
+                <button onClick={addRoutingOp} style={{...btnSt("green"),padding:"7px 9px",fontSize:12}} disabled={operationTypes.length===0}>Ekle</button>
+              </div>
+              {selectedOperationType&&(
+                <div style={{fontSize:11,color:C.muted2,marginTop:6}}>
+                  Secili tip: <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"2px 8px",borderRadius:999,border:`1px solid ${normalizeHexColor(selectedOperationType.color)}66`,background:normalizeHexColor(selectedOperationType.color)+"22",color:normalizeHexColor(selectedOperationType.color),fontWeight:700}}>{selectedOperationType.icon||"??"} {selectedOperationType.code} - {selectedOperationType.name}</span> Â· Varsayilan Kurulum {safeNum(selectedOperationType.defaultSetupSec)}sn Â· Cevrim {safeNum(selectedOperationType.defaultCycleSec)}sn
+                </div>
+              )}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginTop:6}}>
+                <input style={{...inputSt,padding:"7px 9px",fontSize:12}} placeholder="NC Program (opsiyonel)" value={routingForm.ncProgram} onChange={e=>setRoutingForm(f=>({...f,ncProgram:e.target.value}))}/>
+                <input style={{...inputSt,padding:"7px 9px",fontSize:12}} placeholder="Takim Notu (opsiyonel)" value={routingForm.tooling} onChange={e=>setRoutingForm(f=>({...f,tooling:e.target.value}))}/>
+              </div>
+              {(selectedPart.routingOps||[]).map((op,idx,arr)=>(
+                <div key={op.id} style={{marginTop:8,padding:"8px 10px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                  <div style={{fontSize:12,color:C.muted2}}>
+                    <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"2px 8px",borderRadius:999,border:`1px solid ${normalizeHexColor(op.operationColor)}66`,background:normalizeHexColor(op.operationColor)+"22",color:normalizeHexColor(op.operationColor),fontWeight:700}}>
+                      {op.operationIcon||"??"} {op.operationCode?`${op.operationCode} - `:""}{op.operationName||op.operation||"-"}
+                    </span> Â· {op.machine} Â· Kurulum {safeNum(op.setupSec)}sn Â· Cevrim {safeNum(op.cycleSec)}sn {op.ncProgram?`Â· NC ${op.ncProgram}`:""}
+                  </div>
+                  <div style={{display:"flex",gap:6}}>
+                    <button onClick={()=>moveRoutingOp(op.id,-1)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}} disabled={idx===0}>^</button>
+                    <button onClick={()=>moveRoutingOp(op.id,1)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}} disabled={idx===arr.length-1}>v</button>
+                    <button onClick={()=>removeRoutingOp(op.id)} style={{...btnSt("danger"),padding:"5px 9px",fontSize:11}}>Sil</button>
+                  </div>
+                </div>
+              ))}
+              {(selectedPart.routingOps||[]).length===0&&<div style={{fontSize:12,color:C.muted2,marginTop:8}}>Rota adimi yok.</div>}
+            </div>
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+                <div style={{fontWeight:700,color:C.text}}>Fiyat Gecmisi</div>
+                <div style={{fontSize:11,color:C.muted2}}>Toplam Kayit: {selectedPartPriceHistory.length}</div>
+              </div>
+              {selectedPartPriceHistory.length===0&&<div style={{fontSize:12,color:C.muted2}}>Bu parca icin fiyat gecmisi yok.</div>}
+              {selectedPartPriceHistory.length>0&&(
+                <div style={{overflowX:"auto"}}>
+                  <div style={{minWidth:860,display:"flex",flexDirection:"column",gap:6}}>
+                    <div style={{display:"grid",gridTemplateColumns:"1.1fr 1fr 1fr .8fr .8fr .8fr .7fr",gap:6,fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.5,fontWeight:700,padding:"0 2px"}}>
+                      <div>Tarih</div>
+                      <div>Kaynak</div>
+                      <div>Musteri</div>
+                      <div style={{textAlign:"right"}}>Birim</div>
+                      <div style={{textAlign:"right"}}>Iskonto</div>
+                      <div style={{textAlign:"right"}}>Net Birim</div>
+                      <div style={{textAlign:"right"}}>Adet</div>
+                    </div>
+                    {selectedPartPriceHistory.slice(0,40).map((row,idx)=>(
+                      <div key={row.id||idx} style={{display:"grid",gridTemplateColumns:"1.1fr 1fr 1fr .8fr .8fr .8fr .7fr",gap:6,alignItems:"center",padding:"8px 10px",background:idx%2===0?C.surface:C.card,border:`1px solid ${C.border}`,borderRadius:10,fontSize:12,color:C.text}}>
+                        <div style={{color:C.muted2}}>{row.date||row.updatedAt||"-"}</div>
+                        <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{row.sourceCode||row.sourceType||"-"}</div>
+                        <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{row.customerName||"-"}</div>
+                        <div style={{textAlign:"right"}}>{safeNum(row.unitPrice).toFixed(2)} {row.currency||"TRY"}</div>
+                        <div style={{textAlign:"right"}}>%{safeNum(row.discountPct).toFixed(2)}</div>
+                        <div style={{textAlign:"right",fontWeight:700}}>{safeNum(row.netUnitPrice).toFixed(2)} {row.currency||"TRY"}</div>
+                        <div style={{textAlign:"right"}}>{safeNum(row.qty)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+//  SALES MANAGEMENT V2
+// ============================================================
+function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders,defaultView="orders",filtersVisible=true}) {
+  const makeQuickPartForm=(seed={})=>({
+    partNo:String(seed.partNo||"").trim().toUpperCase(),
+    name:String(seed.name||"").trim(),
+    material:String(seed.material||"").trim(),
+    revision:String(seed.revision||"A").trim().toUpperCase()||"A",
+    setupSec:String(seed.setupSec??300),
+    cycleSec:String(seed.cycleSec??60),
+    notes:String(seed.notes||""),
+  });
+  const [customers,setCustomers]=useState([]);
+  const [customerPrices,setCustomerPrices]=useState([]);
+  const [parts,setParts]=useState([]);
+  const [quotes,setQuotes]=useState([]);
+  const [salesOrders,setSalesOrders]=useState([]);
+  const [workOrders,setWorkOrders]=useState([]);
+  const [quoteTemplate,setQuoteTemplate]=useState(DEFAULT_QUOTE_TEMPLATE);
+  const [brandingLogo,setBrandingLogo]=useState("");
+  const [loading,setLoading]=useState(true);
+  const [view,setView]=useState(defaultView==="quotes"?"quotes":"orders");
+  const [search,setSearch]=useState("");
+  const [quoteStatusFilter,setQuoteStatusFilter]=useState("all");
+  const [orderStatusFilter,setOrderStatusFilter]=useState("all");
+  const [quoteDateFrom,setQuoteDateFrom]=useState("");
+  const [quoteDateTo,setQuoteDateTo]=useState("");
+  const [orderDateFrom,setOrderDateFrom]=useState("");
+  const [orderDateTo,setOrderDateTo]=useState("");
+  const [quoteSortDir,setQuoteSortDir]=useState("desc");
+  const [orderSortDir,setOrderSortDir]=useState("desc");
+  const {
+    columns:quoteTableColumns,
+    visibleColumns:visibleQuoteTableColumns,
+    tableMinWidth:quoteTableMinWidth,
+    moveColumn:moveQuoteTableColumn,
+    toggleColumn:toggleQuoteTableColumn,
+    resetColumns:resetQuoteTableColumns,
+  }=useTableColumnLayout("sales_management_quotes",SALES_QUOTE_LIST_COLUMNS);
+  const {
+    columns:orderTableColumns,
+    visibleColumns:visibleOrderTableColumns,
+    tableMinWidth:orderTableMinWidth,
+    moveColumn:moveOrderTableColumn,
+    toggleColumn:toggleOrderTableColumn,
+    resetColumns:resetOrderTableColumns,
+  }=useTableColumnLayout("sales_management_orders",SALES_ORDER_LIST_COLUMNS);
+  const salesListPanelRef=useRef(null);
+  const {
+    height:salesListPanelHeight,
+    isNarrow:salesListPanelsStacked,
+  }=useViewportPanelMetrics(salesListPanelRef,{minHeight:340,bottomGap:14,narrowWidth:1180});
+  const [customerEditId,setCustomerEditId]=useState("");
+  const [priceEditId,setPriceEditId]=useState("");
+  const [quoteEditId,setQuoteEditId]=useState("");
+  const [showQuoteModal,setShowQuoteModal]=useState(false);
+  const [showOrderModal,setShowOrderModal]=useState(false);
+  const [showCreatePartModal,setShowCreatePartModal]=useState(false);
+  const [createPartLineIdx,setCreatePartLineIdx]=useState(-1);
+  const [salesCurrencies,setSalesCurrencies]=useState(()=>normalizeSalesCurrencies({}));
+  const [customerForm,setCustomerForm]=useState({name:"",code:"",contact:"",phone:"",email:"",discountPct:"0"});
+  const [priceForm,setPriceForm]=useState({customerId:"",partNo:"",price:"",discountPct:"0",currency:"TRY"});
+  const [quickPartForm,setQuickPartForm]=useState(()=>makeQuickPartForm());
+  const makeDraftLine=()=>({partId:"",partNo:"",partName:"",revision:"A",customerPartCode:"",material:"",partSnapshot:null,qty:"1",unitPrice:"0",discountPct:"0",dueDate:todayStr(),partSec:"60",machine:(machines[0]||"CNC-1")});
+  const [quoteForm,setQuoteForm]=useState({
+    code:"",
+    customerId:"",
+    validUntil:todayStr(),
+    paymentTermDays:"30",
+    priority:"normal",
+    note:"",
+    lines:[makeDraftLine()],
+  });
+  const [orderForm,setOrderForm]=useState({
+    code:"",
+    customerId:"",
+    dueDate:todayStr(),
+    paymentTermDays:"30",
+    priority:"normal",
+    note:"",
+    lines:[makeDraftLine()],
+  });
+  const quoteCurrencies=(salesCurrencies.list||[]).filter(x=>x.enabled);
+  const defaultQuoteCurrency=(quoteCurrencies.find(x=>x.code===salesCurrencies.defaultCurrency)?.code)||quoteCurrencies[0]?.code||"TRY";
+  const currencyMetaMap={};
+  quoteCurrencies.forEach(row=>{currencyMetaMap[row.code]=row;});
+  function formatByCurrency(value,currencyCode){
+    const c=String(currencyCode||defaultQuoteCurrency||"TRY").toUpperCase();
+    const symbol=currencyMetaMap[c]?.symbol||"";
+    return `${safeNum(value).toFixed(2)} ${symbol?`${symbol} `:""}${c}`;
+  }
+
+  const nextCode=useCallback((prefix,list,regex)=>{
+    const nums=list.map(x=>{
+      const m=String(x.code||"").toUpperCase().match(regex);
+      return m?Number(m[1]):null;
+    }).filter(n=>n!==null);
+    const next=(nums.length?Math.max(...nums):0)+1;
+    return `${prefix}-${String(next).padStart(4,"0")}`;
+  },[]);
+
+  const load=useCallback(async()=>{
+    const [c,prices,pList,q,s,wo,templateDoc,brandingDoc,currencyDoc]=await Promise.all([
+      window.DB.getAll("customers"),
+      window.DB.getAll("customerPrices"),
+      window.DB.getAll("parts"),
+      window.DB.getAll("salesQuotes"),
+      window.DB.getAll("salesOrders"),
+      window.DB.getAll("orders"),
+      window.DB.getDoc("config","quoteTemplate"),
+      window.DB.getDoc("config","branding"),
+      window.DB.getDoc("config","salesCurrencies"),
+    ]);
+    const normalizedCurrencies=normalizeSalesCurrencies(currencyDoc||{});
+    const enabledCurrencyCodes=normalizedCurrencies.list.filter(x=>x.enabled).map(x=>x.code);
+    const fallbackCurrency=enabledCurrencyCodes.includes(normalizedCurrencies.defaultCurrency)
+      ? normalizedCurrencies.defaultCurrency
+      : (enabledCurrencyCodes[0]||"TRY");
+    setCustomers(c.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    setCustomerPrices(prices.sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||"")));
+    setParts(pList.sort((a,b)=>(a.partNo||"").localeCompare(b.partNo||"","tr")));
+    setQuotes(q.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setSalesOrders(s.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setWorkOrders(wo.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setQuoteTemplate(normalizeQuoteTemplate(templateDoc||{}));
+    setBrandingLogo(typeof brandingDoc?.logo==="string"?brandingDoc.logo:"");
+    setSalesCurrencies(normalizedCurrencies);
+    setQuoteForm(f=>({
+      ...f,
+      code:nextCode("TKL",q,/^TKL-(\d+)$/),
+    }));
+    setOrderForm(f=>({...f,code:nextCode("SIP",s,/^SIP-(\d+)$/)}));
+    setPriceForm(f=>({
+      ...f,
+      currency:enabledCurrencyCodes.includes(String(f.currency||"").toUpperCase())?String(f.currency||"").toUpperCase():fallbackCurrency,
+    }));
+    setLoading(false);
+  },[nextCode]);
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{setView(defaultView==="quotes"?"quotes":"orders");},[defaultView]);
+  useEffect(()=>{
+    const activeCodes=quoteCurrencies.map(x=>x.code);
+    if(activeCodes.length===0) return;
+    setPriceForm(f=>{
+      const current=String(f.currency||"").toUpperCase();
+      if(activeCodes.includes(current)) return f;
+      return {...f,currency:defaultQuoteCurrency};
+    });
+  },[defaultQuoteCurrency,quoteCurrencies.map(x=>x.code).join(",")]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="sales"&&d.tab!=="quotes") return;
+      if(d.type==="refresh"){load(); return;}
+      if(d.type==="sort"){
+        const nextDir=d.sortMode==="date_asc"?"asc":"desc";
+        if(d.tab==="quotes"){
+          setView("quotes");
+          setQuoteSortDir(nextDir);
+        } else {
+          setView("orders");
+          setOrderSortDir(nextDir);
+        }
+        return;
+      }
+      if(d.type==="new"){
+        if(d.tab==="quotes"){
+          setView("quotes");
+          setQuoteEditId("");
+          setQuoteForm({
+            code:nextCode("TKL",quotes,/^TKL-(\d+)$/),
+            customerId:"",
+            validUntil:todayStr(),
+            paymentTermDays:"30",
+            priority:"normal",
+            note:"",
+            lines:[makeDraftLine()],
+          });
+          setShowOrderModal(false);
+          setShowQuoteModal(true);
+        } else {
+          setView("orders");
+          setOrderForm({
+            code:nextCode("SIP",salesOrders,/^SIP-(\d+)$/),
+            customerId:"",
+            dueDate:todayStr(),
+            paymentTermDays:"30",
+            priority:"normal",
+            note:"",
+            lines:[makeDraftLine()],
+          });
+          setQuoteEditId("");
+          setShowQuoteModal(false);
+          setShowOrderModal(true);
+        }
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[defaultQuoteCurrency,load,machines,nextCode,quotes,salesOrders]);
+
+  const resetCustomerForm=()=>{ setCustomerEditId(""); setCustomerForm({name:"",code:"",contact:"",phone:"",email:"",discountPct:"0"}); };
+  const resetPriceForm=()=>{ setPriceEditId(""); setPriceForm({customerId:"",partNo:"",price:"",discountPct:"0",currency:defaultQuoteCurrency}); };
+  const activeCustomerEdit=customers.find(c=>c.id===customerEditId)||null;
+  const activePriceEdit=customerPrices.find(p=>p.id===priceEditId)||null;
+  const selectedCustomer=customers.find(c=>c.id===quoteForm.customerId)||null;
+  const customerStats=customers.map(c=>{
+    const rows=salesOrders.filter(s=>s.customerId===c.id);
+    const totalAmount=rows.reduce((sum,row)=>sum+safeNum(row.totalAmount),0);
+    const open=rows.filter(r=>!["delivered","cancelled"].includes(r.status||"")).length;
+    return {id:c.id,name:c.name,totalOrders:rows.length,totalAmount,open};
+  }).filter(x=>x.totalOrders>0).sort((a,b)=>b.totalAmount-a.totalAmount);
+
+  const lineTotal=line=>{
+    const qty=Math.max(0,safeNum(line.qty));
+    const price=Math.max(0,safeNum(line.unitPrice));
+    const disc=Math.max(0,Math.min(100,safeNum(line.discountPct)));
+    const gross=qty*price;
+    const discAmt=(gross*disc)/100;
+    return {gross,discAmt,net:gross-discAmt};
+  };
+  const orderTotals=orderForm.lines.reduce((acc,line)=>{
+    const t=lineTotal(line);
+    acc.gross+=t.gross; acc.discount+=t.discAmt; acc.net+=t.net;
+    return acc;
+  },{gross:0,discount:0,net:0});
+
+  const setQ=(k,v)=>setQuoteForm(f=>({...f,[k]:v}));
+  const setLine=(idx,k,v)=>setQuoteForm(f=>({...f,lines:f.lines.map((line,i)=>i===idx?{...line,[k]:v}:line)}));
+  const addLine=()=>setQuoteForm(f=>({...f,lines:[...f.lines,makeDraftLine()]}));
+  const removeLine=idx=>setQuoteForm(f=>({...f,lines:f.lines.filter((_,i)=>i!==idx)}));
+  const setO=(k,v)=>setOrderForm(f=>({...f,[k]:v}));
+  const setOrderLine=(idx,k,v)=>setOrderForm(f=>({...f,lines:f.lines.map((line,i)=>i===idx?{...line,[k]:v}:line)}));
+  const addOrderLine=()=>setOrderForm(f=>({...f,lines:[...f.lines,{...makeDraftLine(),dueDate:f.dueDate||todayStr()}]}));
+  const removeOrderLine=idx=>setOrderForm(f=>({...f,lines:f.lines.filter((_,i)=>i!==idx)}));
+
+  const normalizePartNo=partNo=>String(partNo||"").trim().toUpperCase();
+  function findPartByNo(partNo){
+    const key=normalizePartNo(partNo);
+    if(!key) return null;
+    return parts.find(p=>normalizePartNo(p.partNo)===key)||null;
+  }
+  function findPartById(partId){
+    const key=String(partId||"").trim();
+    if(!key) return null;
+    return parts.find(p=>String(p.id||"")===key)||null;
+  }
+  function resolvePartFromLine(line){
+    if(!line) return null;
+    return findPartById(line.partId)||findPartByNo(line.partNo)||null;
+  }
+  function makePartSnapshot(part){
+    if(!part) return null;
+    const routeOps=(Array.isArray(part.routingOps)?part.routingOps:[]).map(op=>({
+      id:op.id||"",
+      operationTypeId:op.operationTypeId||"",
+      operationCode:op.operationCode||"",
+      operationName:op.operationName||op.operation||"",
+      machine:op.machine||"",
+      setupSec:Math.max(0,safeNum(op.setupSec)),
+      cycleSec:Math.max(0,safeNum(op.cycleSec)),
+      ncProgram:op.ncProgram||"",
+      tooling:op.tooling||"",
+    }));
+    return {
+      partId:part.id||"",
+      partNo:normalizePartNo(part.partNo||""),
+      partName:String(part.name||"").trim(),
+      revision:String(part.revision||"A").trim().toUpperCase()||"A",
+      customerPartCode:String(part.customerPartCode||"").trim().toUpperCase(),
+      customerName:String(part.customerName||part.companyName||"").trim(),
+      material:String(part.material||"").trim(),
+      setupSec:Math.max(0,safeNum(part.setupSec)),
+      cycleSec:Math.max(1,safeNum(part.cycleSec)||60),
+      unitCost:Math.max(0,safeNum(part.unitCost)),
+      costBreakdown:{
+        materialCost:Math.max(0,safeNum(part.costBreakdown?.materialCost)),
+        laborCost:Math.max(0,safeNum(part.costBreakdown?.laborCost)),
+        machineCost:Math.max(0,safeNum(part.costBreakdown?.machineCost)),
+      },
+      ncProgramVersion:String(part.ncProgramVersion||"").trim().toUpperCase(),
+      routingOps:routeOps,
+      sourceUpdatedAt:part.updatedAt||part.createdAt||"",
+    };
+  }
+  function normalizeSalesLine(line,{dueDateFallback=todayStr()}={}){
+    const linkedPart=resolvePartFromLine(line);
+    const snapshot=makePartSnapshot(linkedPart)||((line&&line.partSnapshot&&typeof line.partSnapshot==="object")?line.partSnapshot:null);
+    return {
+      partId:String(line?.partId||snapshot?.partId||""),
+      partNo:String(line?.partNo||snapshot?.partNo||"").trim().toUpperCase(),
+      partName:String(line?.partName||snapshot?.partName||"").trim(),
+      revision:String(line?.revision||snapshot?.revision||"A").trim().toUpperCase()||"A",
+      customerPartCode:String(line?.customerPartCode||snapshot?.customerPartCode||"").trim().toUpperCase(),
+      material:String(line?.material||snapshot?.material||"").trim(),
+      partSnapshot:snapshot||null,
+      qty:Math.max(0,safeNum(line?.qty)),
+      unitPrice:Math.max(0,safeNum(line?.unitPrice)),
+      discountPct:Math.max(0,Math.min(100,safeNum(line?.discountPct))),
+      dueDate:line?.dueDate||dueDateFallback||todayStr(),
+      partSec:Math.max(1,safeNum(line?.partSec)||safeNum(snapshot?.cycleSec)||60),
+      machine:line?.machine||machines[0]||"CNC-1",
+    };
+  }
+  function applyPartToQuoteLine(idx,part){
+    if(!part) return;
+    const routeMachine=(part.routingOps||[])[0]?.machine||"";
+    const cycleFromPart=Math.max(1,safeNum(part.cycleSec)||0);
+    const snapshot=makePartSnapshot(part);
+    setQuoteForm(f=>({
+      ...f,
+      lines:f.lines.map((line,i)=>{
+        if(i!==idx) return line;
+        return {
+          ...line,
+          partId:part.id||line.partId||"",
+          partNo:normalizePartNo(part.partNo||line.partNo),
+          partName:String(part.name||line.partName||"").trim(),
+          revision:normalizePartNo(part.revision||line.revision||"A")||"A",
+          customerPartCode:String(part.customerPartCode||line.customerPartCode||"").trim().toUpperCase(),
+          material:String(part.material||line.material||"").trim(),
+          partSnapshot:snapshot||line.partSnapshot||null,
+          partSec:String(cycleFromPart||Math.max(1,safeNum(line.partSec)||60)),
+          machine:routeMachine||line.machine||machines[0]||"CNC-1",
+        };
+      }),
+    }));
+  }
+  function syncQuoteLineFromPartNo(idx,partNo){
+    const part=findPartByNo(partNo);
+    if(!part){
+      setQuoteForm(f=>({
+        ...f,
+        lines:f.lines.map((line,i)=>i!==idx?line:{...line,partId:"",partSnapshot:null}),
+      }));
+      return null;
+    }
+    applyPartToQuoteLine(idx,part);
+    return part;
+  }
+  function openCreatePartForQuoteLine(idx){
+    const line=quoteForm.lines[idx]||makeDraftLine();
+    setCreatePartLineIdx(idx);
+    setQuickPartForm(makeQuickPartForm({
+      partNo:line.partNo||"",
+      name:line.partName||"",
+      revision:line.revision||"A",
+      cycleSec:line.partSec||"60",
+    }));
+    setShowCreatePartModal(true);
+  }
+  async function saveQuickPartFromQuote(){
+    const idx=createPartLineIdx;
+    if(idx<0||idx>=quoteForm.lines.length){setShowCreatePartModal(false);setCreatePartLineIdx(-1);return;}
+    const partNo=normalizePartNo(quickPartForm.partNo);
+    const partName=String(quickPartForm.name||"").trim();
+    if(!partNo||!partName){alert("Parca no ve ad zorunlu.");return;}
+    const existing=findPartByNo(partNo);
+    if(existing){
+      applyPartToQuoteLine(idx,existing);
+      setShowCreatePartModal(false);
+      setCreatePartLineIdx(-1);
+      setQuickPartForm(makeQuickPartForm());
+      return;
+    }
+    const setupSec=Math.max(0,safeNum(quickPartForm.setupSec)||300);
+    const cycleSec=Math.max(1,safeNum(quickPartForm.cycleSec)||60);
+    const materialCost=0;
+    const laborCost=((setupSec+cycleSec)/3600)*250;
+    const machineCost=((setupSec+cycleSec)/3600)*600;
+    const payload={
+      partNo,
+      customerPartCode:"",
+      customerName:selectedCustomer?.name||"",
+      name:partName,
+      material:String(quickPartForm.material||"").trim(),
+      revision:normalizePartNo(quickPartForm.revision||"A")||"A",
+      setupSec,
+      cycleSec,
+      qtyPerRaw:1,
+      rawUnitCost:0,
+      laborRateHour:250,
+      machineRateHour:600,
+      ncProgramVersion:"V1",
+      unitCost:materialCost+laborCost+machineCost,
+      costBreakdown:{materialCost,laborCost,machineCost},
+      documents:[],
+      notes:String(quickPartForm.notes||"").trim(),
+      bomLines:[],
+      routingOps:[],
+      priceHistory:[],
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser.id,
+    };
+    const id=await window.DB.addDoc("parts",payload);
+    if(!id){
+      const err=window.DB.getLastError?window.DB.getLastError():"";
+      alert(`Parca kaydedilemedi.${err?`\n${err}`:""}`);
+      return;
+    }
+    await addAuditLog(currentUser.id,"part",id,"create_from_quote",null,payload,{module:"sales"});
+    const created={id,...payload,createdAt:new Date().toISOString()};
+    setParts(prev=>[created,...prev].sort((a,b)=>(a.partNo||"").localeCompare(b.partNo||"","tr")));
+    applyPartToQuoteLine(idx,created);
+    setShowCreatePartModal(false);
+    setCreatePartLineIdx(-1);
+    setQuickPartForm(makeQuickPartForm());
+  }
+  function closeCreatePartModal(){
+    setShowCreatePartModal(false);
+    setCreatePartLineIdx(-1);
+    setQuickPartForm(makeQuickPartForm());
+  }
+  function closeQuoteModal(){
+    setShowQuoteModal(false);
+    setQuoteEditId("");
+  }
+  function openNewQuoteModal(){
+    setQuoteEditId("");
+    setQuoteForm({
+      code:nextCode("TKL",quotes,/^TKL-(\d+)$/),
+      customerId:"",
+      validUntil:todayStr(),
+      paymentTermDays:"30",
+      priority:"normal",
+      note:"",
+      lines:[makeDraftLine()],
+    });
+    setShowOrderModal(false);
+    setShowQuoteModal(true);
+  }
+  function openEditQuoteModal(quote){
+    if(!quote) return;
+    setQuoteEditId(quote.id||"");
+    setQuoteForm({
+      code:String(quote.code||"").toUpperCase(),
+      customerId:quote.customerId||"",
+      validUntil:quote.validUntil||todayStr(),
+      paymentTermDays:String(Math.max(0,safeNum(quote.paymentTermDays??30))),
+      priority:quote.priority||"normal",
+      note:quote.note||"",
+      lines:(quote.lines&&quote.lines.length
+        ? quote.lines
+        : [makeDraftLine()]).map(l=>({
+          partId:String(l.partId||resolvePartFromLine(l)?.id||""),
+          partNo:String(l.partNo||"").trim().toUpperCase(),
+          partName:String(l.partName||"").trim(),
+          revision:String(l.revision||"A").trim().toUpperCase(),
+          customerPartCode:String(l.customerPartCode||l.partSnapshot?.customerPartCode||"").trim().toUpperCase(),
+          material:String(l.material||l.partSnapshot?.material||"").trim(),
+          partSnapshot:(l.partSnapshot&&typeof l.partSnapshot==="object")?l.partSnapshot:null,
+          qty:String(Math.max(0,safeNum(l.qty))),
+          unitPrice:String(Math.max(0,safeNum(l.unitPrice))),
+          discountPct:String(Math.max(0,Math.min(100,safeNum(l.discountPct)))),
+          dueDate:l.dueDate||todayStr(),
+          partSec:String(Math.max(1,safeNum(l.partSec)||safeNum(resolvePartFromLine(l)?.cycleSec)||60)),
+          machine:l.machine||machines[0]||"CNC-1",
+        })),
+    });
+    setShowOrderModal(false);
+    setShowQuoteModal(true);
+  }
+  async function syncPartPriceHistoryFromPriceList(priceRow,historyId){
+    const part=findPartByNo(priceRow?.partNo||"");
+    if(!part||!part.id) return;
+    const customer=customers.find(c=>c.id===priceRow.customerId)||null;
+    const existing=Array.isArray(part.priceHistory)?[...part.priceHistory]:[];
+    const unitPrice=Math.max(0,safeNum(priceRow.price));
+    const discountPct=Math.max(0,Math.min(100,safeNum(priceRow.discountPct)));
+    const netUnitPrice=Math.max(0,unitPrice*(1-(discountPct/100)));
+    const entry={
+      id:`pl_${historyId||Date.now().toString(36)}_${priceRow.customerId||"cust"}`,
+      sourceType:"price_list",
+      sourceId:historyId||"",
+      sourceCode:"MUSTERI-FIYAT-LISTESI",
+      customerId:priceRow.customerId||"",
+      customerName:customer?.name||"",
+      currency:String(priceRow.currency||defaultQuoteCurrency||"TRY").toUpperCase(),
+      unitPrice,
+      discountPct,
+      netUnitPrice,
+      qty:0,
+      date:todayStr(),
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser.id,
+    };
+    const idx=existing.findIndex(h=>h.id===entry.id);
+    if(idx>=0) existing[idx]={...existing[idx],...entry};
+    else existing.unshift(entry);
+    const nextHistory=existing.slice(0,250);
+    const ok=await window.DB.updateDoc("parts",part.id,{
+      priceHistory:nextHistory,
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser.id,
+    });
+    if(ok){
+      setParts(prev=>prev.map(p=>p.id===part.id?{...p,priceHistory:nextHistory}:p));
+    }
+  }
+
+  function applyOrderCustomerPrice(idx,partNo){
+    const priceRow=customerPrices.find(p=>p.customerId===orderForm.customerId&&String(p.partNo||"").trim().toLowerCase()===String(partNo||"").trim().toLowerCase());
+    if(!priceRow) return;
+    setOrderLine(idx,"unitPrice",String(priceRow.price||0));
+    setOrderLine(idx,"discountPct",String(priceRow.discountPct||0));
+  }
+  function syncOrderLineFromPartNo(idx,partNo){
+    const part=findPartByNo(partNo);
+    if(!part){
+      setOrderForm(f=>({
+        ...f,
+        lines:f.lines.map((line,i)=>i!==idx?line:{...line,partId:"",partSnapshot:null}),
+      }));
+      return null;
+    }
+    const routeMachine=(part.routingOps||[])[0]?.machine||"";
+    const cycleFromPart=Math.max(1,safeNum(part.cycleSec)||60);
+    const snapshot=makePartSnapshot(part);
+    setOrderForm(f=>({
+      ...f,
+      lines:f.lines.map((line,i)=>{
+        if(i!==idx) return line;
+        return {
+          ...line,
+          partId:part.id||line.partId||"",
+          partNo:normalizePartNo(part.partNo||line.partNo),
+          partName:String(part.name||line.partName||"").trim(),
+          revision:normalizePartNo(part.revision||line.revision||"A")||"A",
+          customerPartCode:String(part.customerPartCode||line.customerPartCode||"").trim().toUpperCase(),
+          material:String(part.material||line.material||"").trim(),
+          partSnapshot:snapshot||line.partSnapshot||null,
+          partSec:String(cycleFromPart||Math.max(1,safeNum(line.partSec)||60)),
+          machine:routeMachine||line.machine||machines[0]||"CNC-1",
+        };
+      }),
+    }));
+    return part;
+  }
+
+  async function saveCustomer(){
+    if(!customerForm.name.trim()){alert("Musteri adi zorunlu.");return;}
+    const payload={
+      name:customerForm.name.trim(),
+      code:(customerForm.code||`CUS-${Date.now().toString(36).toUpperCase()}`).toUpperCase(),
+      contact:customerForm.contact.trim(),
+      phone:customerForm.phone.trim(),
+      email:customerForm.email.trim(),
+      discountPct:Math.max(0,Math.min(100,safeNum(customerForm.discountPct))),
+      updatedAt:new Date().toISOString(),
+    };
+    if(customerEditId){
+      const ok=await window.DB.updateDoc("customers",customerEditId,payload);
+      if(!ok){alert("Musteri guncellenemedi.");return;}
+      const after={...(activeCustomerEdit||{}),...payload};
+      await addAuditLog(currentUser.id,"customer",customerEditId,"update",activeCustomerEdit,after,{module:"sales"});
+      setCustomers(prev=>prev.map(c=>c.id===customerEditId?{...c,...payload}:c).sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+      resetCustomerForm();
+      return;
+    }
+    const id=await window.DB.addDoc("customers",payload);
+    if(!id){alert("Musteri kaydedilemedi.");return;}
+    await addAuditLog(currentUser.id,"customer",id,"create",null,payload,{module:"sales"});
+    setCustomers(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev].sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    resetCustomerForm();
+  }
+
+  async function savePrice(){
+    if(!priceForm.customerId||!priceForm.partNo.trim()){alert("Musteri ve parca no zorunlu.");return;}
+    const normalizedPart=priceForm.partNo.trim().toUpperCase();
+    const pickedCurrency=quoteCurrencies.some(c=>c.code===String(priceForm.currency||"").toUpperCase())
+      ? String(priceForm.currency||"").toUpperCase()
+      : defaultQuoteCurrency;
+    const payload={
+      customerId:priceForm.customerId,
+      partNo:normalizedPart,
+      price:Math.max(0,safeNum(priceForm.price)),
+      discountPct:Math.max(0,Math.min(100,safeNum(priceForm.discountPct))),
+      currency:pickedCurrency,
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser.id,
+    };
+    const duplicate=customerPrices.find(p=>p.customerId===payload.customerId&&String(p.partNo||"").trim().toUpperCase()===normalizedPart);
+    const targetId=priceEditId||duplicate?.id||"";
+    if(targetId){
+      const ok=await window.DB.updateDoc("customerPrices",targetId,payload);
+      if(!ok){alert("Fiyat kaydi guncellenemedi.");return;}
+      setCustomerPrices(prev=>prev.map(p=>p.id===targetId?{...p,...payload}:p).sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||"")));
+      await syncPartPriceHistoryFromPriceList(payload,targetId);
+      resetPriceForm();
+      return;
+    }
+    const id=await window.DB.addDoc("customerPrices",payload);
+    if(!id){alert("Fiyat kaydi olusturulamadi.");return;}
+    setCustomerPrices(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev].sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||"")));
+    await syncPartPriceHistoryFromPriceList(payload,id);
+    resetPriceForm();
+  }
+
+  function startEditCustomer(c){
+    setCustomerEditId(c.id);
+    setCustomerForm({
+      name:c.name||"",
+      code:c.code||"",
+      contact:c.contact||"",
+      phone:c.phone||"",
+      email:c.email||"",
+      discountPct:String(safeNum(c.discountPct)),
+    });
+  }
+
+  function startEditPrice(p){
+    setPriceEditId(p.id);
+    const picked=String(p.currency||"").toUpperCase();
+    setPriceForm({
+      customerId:p.customerId||"",
+      partNo:p.partNo||"",
+      price:String(safeNum(p.price)),
+      discountPct:String(safeNum(p.discountPct)),
+      currency:quoteCurrencies.some(c=>c.code===picked)?picked:defaultQuoteCurrency,
+    });
+  }
+
+  async function saveQuote(){
+    if(!quoteForm.customerId){alert("Musteri secin.");return;}
+    if(!quoteForm.lines.length){alert("En az bir satir ekleyin.");return;}
+    if(quoteForm.lines.some(l=>!l.partNo||safeNum(l.qty)<=0)){alert("Satirlarda parca no ve miktar zorunlu.");return;}
+    const customer=customers.find(c=>c.id===quoteForm.customerId);
+    const normalizedLines=quoteForm.lines
+      .map(l=>normalizeSalesLine(l,{dueDateFallback:todayStr()}))
+      .map(l=>({...l,unitPrice:0,discountPct:0}));
+    const payload={
+      code:(quoteForm.code||nextCode("TKL",quotes,/^TKL-(\d+)$/)).toUpperCase(),
+      customerId:customer?.id||"",
+      customerName:customer?.name||"",
+      validUntil:quoteForm.validUntil||todayStr(),
+      paymentTermDays:Math.max(0,safeNum(quoteForm.paymentTermDays??30)),
+      priority:quoteForm.priority||"normal",
+      note:quoteForm.note.trim(),
+      lines:normalizedLines,
+      updatedAt:new Date().toISOString(),
+    };
+    if(quoteEditId){
+      const before=quotes.find(x=>x.id===quoteEditId)||null;
+      const patch={
+        ...payload,
+        status:before?.status||"offer",
+        createdBy:before?.createdBy||currentUser.id,
+      };
+      const ok=await window.DB.updateDoc("salesQuotes",quoteEditId,patch);
+      if(!ok){alert("Teklif guncellenemedi.");return;}
+      await addAuditLog(currentUser.id,"salesQuote",quoteEditId,"update",before,patch,{module:"sales"});
+      setQuotes(prev=>prev.map(x=>x.id===quoteEditId?{...x,...patch}:x));
+    }else{
+      const createPayload={...payload,status:"offer",createdBy:currentUser.id};
+      const id=await window.DB.addDoc("salesQuotes",createPayload);
+      if(!id){alert("Teklif kaydedilemedi.");return;}
+      await addAuditLog(currentUser.id,"salesQuote",id,"create",null,createPayload,{module:"sales"});
+      setQuotes(prev=>[{id,...createPayload,createdAt:new Date().toISOString()},...prev]);
+    }
+    const nextQuoteSeed=quoteEditId?quotes:[...quotes,{code:payload.code||quoteForm.code||""}];
+    setQuoteEditId("");
+    setQuoteForm({
+      code:nextCode("TKL",nextQuoteSeed,/^TKL-(\d+)$/),
+      customerId:"",
+      validUntil:todayStr(),
+      paymentTermDays:"30",
+      priority:"normal",
+      note:"",
+      lines:[makeDraftLine()],
+    });
+    setShowQuoteModal(false);
+    setView("quotes");
+  }
+
+  async function saveManualOrder(){
+    if(!orderForm.customerId){alert("Musteri secin.");return;}
+    if(!orderForm.lines.length){alert("En az bir satir ekleyin.");return;}
+    if(orderForm.lines.some(l=>!l.partNo||safeNum(l.qty)<=0)){alert("Satirlarda parca no ve miktar zorunlu.");return;}
+    const customer=customers.find(c=>c.id===orderForm.customerId);
+    const lines=orderForm.lines.map(l=>normalizeSalesLine(l,{dueDateFallback:orderForm.dueDate||todayStr()}));
+    const qtyTotal=lines.reduce((sum,l)=>sum+safeNum(l.qty),0);
+    const earliestDue=[...lines].sort((a,b)=>String(a.dueDate||"").localeCompare(String(b.dueDate||"")))[0]?.dueDate||orderForm.dueDate||todayStr();
+    const payload={
+      code:(orderForm.code||nextCode("SIP",salesOrders,/^SIP-(\d+)$/)).toUpperCase(),
+      customerId:customer?.id||"",
+      customerName:customer?.name||"",
+      sourceQuoteId:"",
+      sourceQuoteCode:"",
+      currency:defaultQuoteCurrency,
+      lines,
+      qty:qtyTotal,
+      dueDate:earliestDue,
+      paymentTermDays:Math.max(0,safeNum(orderForm.paymentTermDays??30)),
+      priority:orderForm.priority||"normal",
+      totalAmount:orderTotals.net,
+      deliveredQty:0,
+      deliveries:[],
+      status:"approved",
+      workOrderIds:[],
+      workOrderCodes:[],
+      note:orderForm.note.trim(),
+      createdBy:currentUser.id,
+      updatedAt:new Date().toISOString(),
+    };
+    const id=await window.DB.addDoc("salesOrders",payload);
+    if(!id){alert("Siparis kaydedilemedi.");return;}
+    await addAuditLog(currentUser.id,"salesOrder",id,"create_manual",null,payload,{module:"sales"});
+    setSalesOrders(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
+    setOrderForm({
+      code:nextCode("SIP",[...salesOrders,{id,...payload}],/^SIP-(\d+)$/),
+      customerId:"",
+      dueDate:todayStr(),
+      paymentTermDays:"30",
+      priority:"normal",
+      note:"",
+      lines:[makeDraftLine()],
+    });
+    setShowOrderModal(false);
+    setView("orders");
+  }
+
+  async function duplicateQuote(q){
+    const lines=(q.lines||[])
+      .map(l=>normalizeSalesLine(l,{dueDateFallback:todayStr()}))
+      .map(l=>({...l,unitPrice:0,discountPct:0}));
+    if(lines.length===0){alert("Kopyalanacak teklif satiri yok.");return;}
+    const payload={
+      code:nextCode("TKL",quotes,/^TKL-(\d+)$/),
+      customerId:q.customerId||"",
+      customerName:q.customerName||"",
+      validUntil:q.validUntil||todayStr(),
+      paymentTermDays:Math.max(0,safeNum(q.paymentTermDays??30)),
+      priority:q.priority||"normal",
+      note:(q.note||"").trim(),
+      lines,
+      status:"offer",
+      copiedFromQuoteId:q.id||"",
+      copiedFromQuoteCode:q.code||"",
+      updatedAt:new Date().toISOString(),
+      createdBy:currentUser.id,
+    };
+    const id=await window.DB.addDoc("salesQuotes",payload);
+    if(!id){alert("Teklif kopyalanamadi.");return;}
+    await addAuditLog(currentUser.id,"salesQuote",id,"copy",q,payload,{module:"sales"});
+    setQuotes(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
+    setView("quotes");
+  }
+
+  async function duplicateSalesOrder(o){
+    const lines=(o.lines||[]).map(l=>normalizeSalesLine(l,{dueDateFallback:o.dueDate||todayStr()}));
+    if(lines.length===0){alert("Kopyalanacak siparis satiri yok.");return;}
+    const qty=lines.reduce((sum,l)=>sum+safeNum(l.qty),0);
+    const gross=lines.reduce((sum,l)=>sum+(safeNum(l.qty)*safeNum(l.unitPrice)),0);
+    const discount=lines.reduce((sum,l)=>sum+((safeNum(l.qty)*safeNum(l.unitPrice))*safeNum(l.discountPct)/100),0);
+    const net=Math.max(0,gross-discount);
+    const payload={
+      code:nextCode("SIP",salesOrders,/^SIP-(\d+)$/),
+      customerId:o.customerId||"",
+      customerName:o.customerName||"",
+      sourceQuoteId:o.sourceQuoteId||"",
+      sourceQuoteCode:o.sourceQuoteCode||"",
+      currency:(o.currency&&quoteCurrencies.some(c=>c.code===String(o.currency).toUpperCase()))?String(o.currency).toUpperCase():defaultQuoteCurrency,
+      lines,
+      qty:qty>0?qty:Math.max(0,safeNum(o.qty)),
+      dueDate:o.dueDate||todayStr(),
+      paymentTermDays:Math.max(0,safeNum(o.paymentTermDays??30)),
+      priority:o.priority||"normal",
+      totalAmount:net,
+      deliveredQty:0,
+      deliveries:[],
+      status:"approved",
+      workOrderIds:[],
+      workOrderCodes:[],
+      copiedFromSalesOrderId:o.id||"",
+      copiedFromSalesOrderCode:o.code||"",
+      createdBy:currentUser.id,
+      updatedAt:new Date().toISOString(),
+    };
+    const id=await window.DB.addDoc("salesOrders",payload);
+    if(!id){alert("Siparis kopyalanamadi.");return;}
+    await addAuditLog(currentUser.id,"salesOrder",id,"copy",o,payload,{module:"sales"});
+    setSalesOrders(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
+    setView("orders");
+  }
+
+  async function setQuoteStatus(q,status){
+    if(q.status===status) return;
+    const patch={status,updatedAt:new Date().toISOString(),updatedBy:currentUser.id};
+    const ok=await window.DB.updateDoc("salesQuotes",q.id,patch);
+    if(!ok){alert("Teklif durumu guncellenemedi.");return;}
+    setQuotes(prev=>prev.map(x=>x.id===q.id?{...x,...patch}:x));
+  }
+
+  async function createWorkOrdersFromSalesOrder(order,{openAfter=true}={}){
+    if(!order){return {createdIds:[],createdCodes:[]};}
+    if(order.workOrderIds&&order.workOrderIds.length>0){
+      if(openAfter&&onOpenWorkOrders) onOpenWorkOrders();
+      return {createdIds:[...order.workOrderIds],createdCodes:[...(order.workOrderCodes||[])],existing:true};
+    }
+    if(!order.lines||order.lines.length===0){return {createdIds:[],createdCodes:[]};}
+    const createdIds=[];
+    const createdCodes=[];
+    let seed=[...workOrders];
+    const normalizedOrderLines=(order.lines||[]).map(l=>normalizeSalesLine(l,{dueDateFallback:order.dueDate||todayStr()}));
+    for(const line of normalizedOrderLines){
+      const code=nextCode("IE",seed,/^IE-(\d+)$/);
+      const lineSnapshot=(line.partSnapshot&&typeof line.partSnapshot==="object")
+        ? line.partSnapshot
+        : makePartSnapshot(resolvePartFromLine(line));
+      const woPayload={
+        code,
+        name:line.partName||line.partNo||order.code,
+        customerId:order.customerId||"",
+        customerName:order.customerName||"",
+        material:line.material||order.material||"",
+        partId:line.partId||lineSnapshot?.partId||"",
+        partNo:line.partNo||"",
+        revision:line.revision||"",
+        customerPartCode:line.customerPartCode||lineSnapshot?.customerPartCode||"",
+        partSnapshot:lineSnapshot||null,
+        qty:Math.max(0,safeNum(line.qty)),
+        dueDate:line.dueDate||order.dueDate||"",
+        priority:order.priority||"normal",
+        partSec:Math.max(1,safeNum(line.partSec)||60),
+        machines:[line.machine||machines[0]||"CNC-1"],
+        notes:`Siparis ${order.code} otomatik olusturma`,
+        files:[],
+        status:"planned",
+        sourceType:"sales_auto",
+        sourceSalesOrderId:order.id,
+        sourceSalesOrderCode:order.code||"",
+        dependencies:[],
+        createdBy:currentUser.id,
+        updatedAt:new Date().toISOString(),
+      };
+      const id=await window.DB.addDoc("orders",woPayload);
+      if(!id) continue;
+      seed=[{id,...woPayload,createdAt:new Date().toISOString()},...seed];
+      createdIds.push(id);
+      createdCodes.push(code);
+      await addAuditLog(currentUser.id,"workOrder",id,"create_from_sales_order",null,woPayload,{orderId:order.id,module:"sales"});
+    }
+    if(createdIds.length===0){return {createdIds:[],createdCodes:[]};}
+    const patch={workOrderIds:createdIds,workOrderCodes:createdCodes,status:"in_production",updatedAt:new Date().toISOString(),updatedBy:currentUser.id};
+    await window.DB.updateDoc("salesOrders",order.id,patch);
+    setSalesOrders(prev=>prev.map(x=>x.id===order.id?{...x,...patch}:x));
+    setWorkOrders(seed);
+    if(openAfter&&onOpenWorkOrders) onOpenWorkOrders();
+    return {createdIds,createdCodes,existing:false};
+  }
+
+  async function convertQuoteToOrder(q){
+    if(!q.lines||q.lines.length===0){alert("Teklif satiri yok.");return;}
+    if((q.status||"")!=="approved"){alert("Siparise donusum icin teklif once onaylanmali.");return;}
+    const existing=salesOrders.find(s=>s.sourceQuoteId===q.id);
+    if(existing){alert(`Bu teklif zaten siparise donustu: ${existing.code}`);return;}
+    const orderCode=nextCode("SIP",salesOrders,/^SIP-(\d+)$/);
+    const normalizedQuoteLines=(q.lines||[]).map(l=>normalizeSalesLine(l,{dueDateFallback:todayStr()}));
+    const qtyTotal=normalizedQuoteLines.reduce((sum,l)=>sum+safeNum(l.qty),0);
+    const dueDate=[...normalizedQuoteLines].sort((a,b)=>String(a.dueDate||"").localeCompare(String(b.dueDate||"")))[0]?.dueDate||todayStr();
+    const payload={
+      code:orderCode,
+      customerId:q.customerId||"",
+      customerName:q.customerName||"",
+      sourceQuoteId:q.id,
+      sourceQuoteCode:q.code||"",
+      currency:(q.currency&&quoteCurrencies.some(c=>c.code===String(q.currency).toUpperCase()))?String(q.currency).toUpperCase():defaultQuoteCurrency,
+      lines:normalizedQuoteLines,
+      qty:qtyTotal,
+      dueDate,
+      paymentTermDays:Math.max(0,safeNum(q.paymentTermDays??30)),
+      priority:q.priority||"normal",
+      totalAmount:safeNum(q.totalAmount),
+      deliveredQty:0,
+      deliveries:[],
+      status:"approved",
+      createdBy:currentUser.id,
+      updatedAt:new Date().toISOString(),
+    };
+    const id=await window.DB.addDoc("salesOrders",payload);
+    if(!id){alert("Siparis olusturulamadi.");return;}
+    await window.DB.updateDoc("salesQuotes",q.id,{status:"converted",orderId:id,orderCode:orderCode,updatedAt:new Date().toISOString()});
+    await addAuditLog(currentUser.id,"salesOrder",id,"create_from_quote",{quoteId:q.id},{...payload,id},{module:"sales"});
+    const createdOrder={id,...payload,createdAt:new Date().toISOString()};
+    setSalesOrders(prev=>[createdOrder,...prev]);
+    setQuotes(prev=>prev.map(x=>x.id===q.id?{...x,status:"converted",orderId:id,orderCode}:x));
+    const woResult=await createWorkOrdersFromSalesOrder(createdOrder,{openAfter:false});
+    if(!woResult.createdIds.length){
+      alert("Siparis olustu ancak otomatik is emri olusturulamadi. Siparis kartindan tekrar deneyebilirsiniz.");
+    }
+    setView("orders");
+  }
+
+  async function exportSalesPdf(docType,doc){
+    const loaded=await ensureExternalScript(
+      "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
+      ()=>Boolean(window.jspdf&&window.jspdf.jsPDF)
+    );
+    if(!loaded||!window.jspdf||!window.jspdf.jsPDF){alert("PDF motoru yuklenemedi.");return;}
+    try{
+      const {jsPDF}=window.jspdf;
+      const pdf=new jsPDF({unit:"pt",format:"a4"});
+      const pageW=pdf.internal.pageSize.getWidth();
+      const pageH=pdf.internal.pageSize.getHeight();
+      const margin=34;
+      const contentW=pageW-(margin*2);
+      const template=normalizeQuoteTemplate(quoteTemplate||{});
+      const accent=hexToRgb(template.accentColor);
+      const isQuote=docType==="quote";
+      const titleBase=isQuote?template.documentTitleQuote:template.documentTitleOrder;
+      const title=`${titleBase} - ${doc.code||""}`;
+      const docCurrency=String(doc.currency||defaultQuoteCurrency||"TRY").toUpperCase();
+      const rows=(doc.lines||[]).map(r=>{
+        const qty=safeNum(r.qty);
+        const unit=safeNum(r.unitPrice);
+        const disc=safeNum(r.discountPct);
+        const total=qty*unit*(1-disc/100);
+        return {
+          partNo:r.partNo||"",
+          partName:r.partName||"",
+          qty,
+          unit,
+          disc,
+          total,
+          dueDate:r.dueDate||"",
+        };
+      });
+
+      pdf.setFillColor(accent.r,accent.g,accent.b);
+      pdf.rect(0,0,pageW,78,"F");
+
+      let titleX=margin;
+      if(template.showLogo&&brandingLogo&&String(brandingLogo).startsWith("data:image/")){
+        try{
+          pdf.addImage(brandingLogo,"PNG",margin,17,44,44);
+          titleX+=54;
+        }catch{}
+      }
+
+      pdf.setTextColor(255,255,255);
+      pdf.setFont("helvetica","bold");
+      pdf.setFontSize(16);
+      pdf.text(title,titleX,36);
+      pdf.setFont("helvetica","normal");
+      pdf.setFontSize(10);
+      const companyLine=[template.companyName,template.companyPhone,template.companyEmail].filter(Boolean).join(" Â· ");
+      if(companyLine) pdf.text(companyLine,titleX,54);
+
+      pdf.setTextColor(32,32,32);
+      let y=98;
+      const leftMeta=[
+        `Musteri: ${doc.customerName||"-"}`,
+        `Belge No: ${doc.code||"-"}`,
+        isQuote?`Gecerlilik: ${doc.validUntil||"-"}`:`Termin: ${doc.dueDate||"-"}`,
+      ];
+      if(template.companyAddress) leftMeta.push(`Adres: ${template.companyAddress}`);
+      leftMeta.forEach(line=>{
+        const lines=pdf.splitTextToSize(line,contentW);
+        pdf.text(lines,margin,y);
+        y+=lines.length*12;
+      });
+
+      y+=8;
+      const columns=isQuote
+        ? [
+          {label:"Parca No",key:"partNo",width:110,align:"left"},
+          {label:"Aciklama",key:"partName",width:250,align:"left"},
+          {label:"Adet",key:"qty",width:70,align:"right"},
+          {label:"Termin",key:"dueDate",width:90,align:"left"},
+        ]
+        : [
+          {label:"Parca No",key:"partNo",width:72,align:"left"},
+          {label:"Aciklama",key:"partName",width:146,align:"left"},
+          {label:"Adet",key:"qty",width:44,align:"right"},
+          {label:"Birim",key:"unit",width:58,align:"right"},
+          {label:"Isk.%",key:"disc",width:44,align:"right"},
+          {label:"Tutar",key:"total",width:66,align:"right"},
+          {label:"Termin",key:"dueDate",width:75,align:"left"},
+        ];
+      const tableW=columns.reduce((sum,c)=>sum+c.width,0);
+      const headerH=22;
+
+      const drawHeader=(rowY)=>{
+        pdf.setFillColor(238,244,252);
+        pdf.rect(margin,rowY,tableW,headerH,"F");
+        pdf.setDrawColor(208,214,223);
+        pdf.rect(margin,rowY,tableW,headerH);
+        let x=margin;
+        pdf.setFont("helvetica","bold");
+        pdf.setFontSize(9);
+        pdf.setTextColor(35,35,35);
+        columns.forEach(col=>{
+          pdf.text(col.label,x+4,rowY+14);
+          x+=col.width;
+        });
+      };
+
+      drawHeader(y);
+      y+=headerH;
+      pdf.setFont("helvetica","normal");
+      pdf.setFontSize(9);
+
+      rows.forEach(row=>{
+        const descCol=columns.find(c=>c.key==="partName");
+        const descWidth=(descCol?descCol.width:146)-8;
+        const descLines=pdf.splitTextToSize(String(row.partName||"-"),Math.max(40,descWidth));
+        const rowH=Math.max(18,descLines.length*11+4);
+        if(y+rowH>pageH-118){
+          pdf.addPage();
+          y=margin;
+          drawHeader(y);
+          y+=headerH;
+          pdf.setFont("helvetica","normal");
+          pdf.setFontSize(9);
+        }
+        let x=margin;
+        columns.forEach(col=>{
+          pdf.setDrawColor(223,228,234);
+          pdf.rect(x,y,col.width,rowH);
+          const raw=row[col.key];
+          let text="";
+          if(col.key==="qty") text=String(safeNum(raw));
+          else if(["unit","disc","total"].includes(col.key)) text=safeNum(raw).toFixed(2);
+          else text=String(raw||"-");
+          if(col.key==="partName"){
+            pdf.text(descLines,x+4,y+11);
+          }else if(col.align==="right"){
+            pdf.text(text,x+col.width-4,y+11,{align:"right"});
+          }else{
+            pdf.text(text,x+4,y+11);
+          }
+          x+=col.width;
+        });
+        y+=rowH;
+      });
+
+      y+=10;
+      if(!isQuote){
+        const calcGross=rows.reduce((sum,r)=>sum+(safeNum(r.qty)*safeNum(r.unit)),0);
+        const calcNet=rows.reduce((sum,r)=>sum+safeNum(r.total),0);
+        const grossRaw=safeNum(doc.grossAmount);
+        const discountRaw=safeNum(doc.discountAmount);
+        const netRaw=safeNum(doc.totalAmount);
+        const gross=grossRaw>0?grossRaw:calcGross;
+        const net=netRaw>0?netRaw:calcNet;
+        const discount=discountRaw>0?discountRaw:Math.max(0,gross-net);
+        const totals=[
+          ["Brut",gross.toFixed(2)],
+          ["Iskonto",discount.toFixed(2)],
+          ["Net",net.toFixed(2)],
+        ];
+        const boxW=172;
+        const boxX=margin+tableW-boxW;
+        totals.forEach((line,idx)=>{
+          const rowY=y+(idx*16);
+          pdf.setDrawColor(223,228,234);
+          pdf.rect(boxX,rowY,boxW,16);
+          pdf.setFont("helvetica",idx===2?"bold":"normal");
+          pdf.text(line[0],boxX+6,rowY+11);
+          pdf.text(`${line[1]} ${docCurrency}`,boxX+boxW-6,rowY+11,{align:"right"});
+        });
+        y+=totals.length*16+12;
+      }
+      const noteText=doc.note?`Not: ${doc.note}`:"";
+      if(noteText){
+        const lines=pdf.splitTextToSize(noteText,tableW);
+        if(y+lines.length*12>pageH-70){pdf.addPage();y=margin;}
+        pdf.setFont("helvetica","normal");
+        pdf.setTextColor(72,72,72);
+        pdf.text(lines,margin,y);
+        y+=lines.length*12+6;
+      }
+      if(template.footerNote){
+        const lines=pdf.splitTextToSize(template.footerNote,tableW);
+        if(y+lines.length*12>pageH-44){pdf.addPage();y=margin;}
+        pdf.setFont("helvetica","italic");
+        pdf.setTextColor(96,96,96);
+        pdf.text(lines,margin,y);
+      }
+
+      const codeSafe=String(doc.code||Date.now()).replace(/[^a-zA-Z0-9_-]/g,"_");
+      const prefix=isQuote?"teklif":"siparis";
+      pdf.save(`${prefix}-${codeSafe}.pdf`);
+    }catch{
+      alert("PDF olusturulamadi.");
+    }
+  }
+
+  function printQuote(q){
+    exportSalesPdf("quote",q);
+  }
+  function printOrder(o){
+    exportSalesPdf("order",o);
+  }
+  function resolveOrderNetAmount(order){
+    const direct=Math.max(0,safeNum(order?.totalAmount));
+    if(direct>0) return direct;
+    return (order?.lines||[]).reduce((sum,line)=>{
+      const qty=Math.max(0,safeNum(line?.qty));
+      const unit=Math.max(0,safeNum(line?.unitPrice));
+      const disc=Math.max(0,Math.min(100,safeNum(line?.discountPct)));
+      return sum+(qty*unit*(1-(disc/100)));
+    },0);
+  }
+  function estimateDeliveryAmount(order,deliveryQty){
+    const qty=Math.max(0,safeNum(deliveryQty));
+    if(qty<=0) return 0;
+    const orderTotal=Math.max(0,resolveOrderNetAmount(order));
+    if(orderTotal<=0) return 0;
+    const totalQty=Math.max(0,safeNum(order?.qty));
+    if(totalQty>0) return orderTotal*(qty/totalQty);
+    return orderTotal;
+  }
+
+  async function addDelivery(order){
+    const qtyInput=prompt("Teslim edilecek miktar:");
+    if(qtyInput===null) return;
+    const qty=Math.max(0,safeNum(qtyInput));
+    if(!qty){alert("Gecerli miktar girin.");return;}
+    const note=prompt("Teslim notu (opsiyonel):")||"";
+    const deliveryDate=todayStr();
+    const deliveryId=`DLV-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2,6).toUpperCase()}`;
+    const deliveryRow={id:deliveryId,date:deliveryDate,qty,note,createdBy:currentUser.id};
+    const deliveries=[...(order.deliveries||[]),deliveryRow];
+    const deliveredQty=safeNum(order.deliveredQty)+qty;
+    const totalQty=safeNum(order.qty);
+    const status=deliveredQty>=totalQty&&totalQty>0?"delivered":"in_production";
+    const patch={deliveries,deliveredQty,status,updatedAt:new Date().toISOString(),updatedBy:currentUser.id};
+    const ok=await window.DB.updateDoc("salesOrders",order.id,patch);
+    if(!ok){alert("Teslim kaydi eklenemedi.");return;}
+    await addAuditLog(currentUser.id,"salesOrder",order.id,"delivery_add",order,{...order,...patch},{module:"sales"});
+    const paymentTermDays=Math.max(0,safeNum(order.paymentTermDays??30));
+    const amount=Math.max(0,estimateDeliveryAmount(order,qty));
+    if(amount>0){
+      const dueDate=addDays(deliveryDate,paymentTermDays);
+      const financePayload={
+        flow:"tahsilat",
+        status:"planned",
+        dueDate,
+        amount,
+        currency:String(order.currency||defaultQuoteCurrency||"TRY").toUpperCase(),
+        paymentTermDays,
+        eventDate:deliveryDate,
+        qty,
+        sourceType:"sales_delivery",
+        sourceId:deliveryId,
+        sourceRefId:order.id||"",
+        sourceCode:order.code||"",
+        orderId:order.id||"",
+        orderCode:order.code||"",
+        customerId:order.customerId||"",
+        customerName:order.customerName||"",
+        note:note.trim(),
+        createdBy:currentUser.id,
+        updatedAt:new Date().toISOString(),
+      };
+      const fid=await window.DB.addDoc("financeLedger",financePayload);
+      if(!fid){
+        alert("Teslim kaydi alindi ancak finans tahsilat satiri olusturulamadi.");
+      }
+    }
+    setSalesOrders(prev=>prev.map(x=>x.id===order.id?{...x,...patch}:x));
+  }
+
+  async function setOrderStatus(order,status){
+    if((order.status||"")===status) return;
+    const patch={status,updatedAt:new Date().toISOString(),updatedBy:currentUser.id};
+    const ok=await window.DB.updateDoc("salesOrders",order.id,patch);
+    if(!ok){alert("Siparis durumu guncellenemedi.");return;}
+    await addAuditLog(currentUser.id,"salesOrder",order.id,"status_update",order,{...order,...patch},{module:"sales"});
+    setSalesOrders(prev=>prev.map(x=>x.id===order.id?{...x,...patch}:x));
+  }
+
+  async function markExternalDoc(order,type){
+    const now=new Date().toISOString();
+    const suffix=String(Date.now()).slice(-6);
+    const patch=type==="dispatch"
+      ? {dispatchRef:`IRS-${suffix}`,dispatchAt:now,shipmentStatus:"prepared",integrationStatus:"pending_external",updatedAt:now,updatedBy:currentUser.id}
+      : {invoiceRef:`FTR-${suffix}`,invoiceAt:now,billingStatus:"prepared",integrationStatus:"pending_external",updatedAt:now,updatedBy:currentUser.id};
+    const ok=await window.DB.updateDoc("salesOrders",order.id,patch);
+    if(!ok){alert("Belge kaydi olusturulamadi.");return;}
+    await addAuditLog(currentUser.id,"salesOrder",order.id,type==="dispatch"?"dispatch_prepare":"invoice_prepare",order,{...order,...patch},{module:"sales"});
+    setSalesOrders(prev=>prev.map(x=>x.id===order.id?{...x,...patch}:x));
+  }
+
+  async function convertOrderToWorkOrders(order){
+    if(!order.lines||order.lines.length===0){alert("Siparis satiri bulunamadi.");return;}
+    const result=await createWorkOrdersFromSalesOrder(order,{openAfter:true});
+    if(result.existing){
+      alert("Bu siparise ait is emirleri zaten mevcut. Is emri sayfasi acildi.");
+      return;
+    }
+    if(!result.createdIds.length){alert("Is emri olusturulamadi.");}
+  }
+
+  const toYmd=value=>{
+    const raw=String(value||"").trim();
+    if(!raw) return "";
+    if(/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    if(/^\d{4}-\d{2}-\d{2}T/.test(raw)) return raw.slice(0,10);
+    const d=new Date(raw);
+    if(Number.isNaN(d.getTime())) return "";
+    return ymdLocal(d);
+  };
+  const inRange=(ymd,from,to)=>{
+    if(from&&(!ymd||ymd<from)) return false;
+    if(to&&(!ymd||ymd>to)) return false;
+    return true;
+  };
+
+  const q=search.trim().toLowerCase();
+  const quoteFilterRows=quotes.filter(x=>{
+    const textOk=!q||(x.code||"").toLowerCase().includes(q)||(x.customerName||"").toLowerCase().includes(q)||(x.status||"").toLowerCase().includes(q);
+    const statusOk=quoteStatusFilter==="all"||(x.status||"")===quoteStatusFilter;
+    const dateYmd=toYmd(x.validUntil)||toYmd(x.createdAt)||toYmd(x.updatedAt);
+    const dateOk=inRange(dateYmd,quoteDateFrom,quoteDateTo);
+    return textOk&&statusOk&&dateOk;
+  });
+  const orderFilterRows=salesOrders.filter(x=>{
+    const textOk=!q||(x.code||"").toLowerCase().includes(q)||(x.customerName||"").toLowerCase().includes(q)||(x.status||"").toLowerCase().includes(q);
+    const statusOk=orderStatusFilter==="all"||(x.status||"")===orderStatusFilter;
+    const dateYmd=toYmd(x.dueDate)||toYmd(x.createdAt)||toYmd(x.updatedAt);
+    const dateOk=inRange(dateYmd,orderDateFrom,orderDateTo);
+    return textOk&&statusOk&&dateOk;
+  });
+  const dateSortValue=row=>toYmd(row?.dueDate||row?.validUntil||row?.createdAt||row?.updatedAt)||"";
+  const filteredQuotes=[...quoteFilterRows].sort((a,b)=>{
+    const av=dateSortValue(a);
+    const bv=dateSortValue(b);
+    const cmp=av.localeCompare(bv);
+    return quoteSortDir==="asc"?cmp:-cmp;
+  });
+  const filteredOrders=[...orderFilterRows].sort((a,b)=>{
+    const av=dateSortValue(a);
+    const bv=dateSortValue(b);
+    const cmp=av.localeCompare(bv);
+    return orderSortDir==="asc"?cmp:-cmp;
+  });
+  const quoteStatusCounts={
+    all:quotes.length,
+    offer:quotes.filter(x=>(x.status||"")==="offer").length,
+    approved:quotes.filter(x=>(x.status||"")==="approved").length,
+    converted:quotes.filter(x=>(x.status||"")==="converted").length,
+    cancelled:quotes.filter(x=>(x.status||"")==="cancelled").length,
+  };
+  const orderStatusCounts={
+    all:salesOrders.length,
+    new:salesOrders.filter(x=>(x.status||"")==="new").length,
+    offer:salesOrders.filter(x=>(x.status||"")==="offer").length,
+    approved:salesOrders.filter(x=>(x.status||"")==="approved").length,
+    in_production:salesOrders.filter(x=>(x.status||"")==="in_production").length,
+    delivered:salesOrders.filter(x=>(x.status||"")==="delivered").length,
+    converted:salesOrders.filter(x=>(x.status||"")==="converted").length,
+    cancelled:salesOrders.filter(x=>(x.status||"")==="cancelled").length,
+  };
+  const quoteStatusOptions=[
+    {id:"all",label:"Tum Teklifler"},
+    {id:"offer",label:"Teklif"},
+    {id:"approved",label:"Onaylandi"},
+    {id:"converted",label:"Donustu"},
+    {id:"cancelled",label:"Iptal"},
+  ];
+  const statusLabel=s=>getSalesStatusMeta(s).label;
+  const statusColor=s=>getSalesStatusMeta(s).color;
+  const salesSplitWrapStyle={
+    display:"flex",
+    gap:10,
+    alignItems:salesListPanelsStacked?"flex-start":"stretch",
+    flexWrap:"wrap",
+    ...(salesListPanelsStacked
+      ? {}
+      : {
+        height:salesListPanelHeight,
+        maxHeight:salesListPanelHeight,
+        flex:1,
+        minHeight:0,
+        overflow:"hidden",
+      }),
+  };
+  const renderQuoteTableCell=(qr,quoteNet,col)=>{
+    if(col.id==="quote_no"){
+      return (
+        <td key={col.id} style={{padding:"10px 12px"}}>
+          <div style={{fontFamily:"monospace",fontWeight:700,color:C.text}}>{qr.code||"-"}</div>
+          <div style={{fontSize:11,color:C.muted2}}>Satir: {(qr.lines||[]).length}</div>
+        </td>
+      );
+    }
+    if(col.id==="customer"){
+      return <td key={col.id} style={{padding:"10px 12px",color:C.text,fontWeight:600}}>{qr.customerName||"-"}</td>;
+    }
+    if(col.id==="valid_until"){
+      return <td key={col.id} style={{padding:"10px 12px",color:C.muted2}}>{qr.validUntil||"-"}</td>;
+    }
+    if(col.id==="status"){
+      return <td key={col.id} style={{padding:"10px 12px"}}><Badge label={statusLabel(qr.status)} color={statusColor(qr.status)}/></td>;
+    }
+    if(col.id==="total"){
+      return <td key={col.id} style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:C.text}}>{formatByCurrency(quoteNet,qr.currency||defaultQuoteCurrency)}</td>;
+    }
+    if(col.id==="actions"){
+      return (
+        <td key={col.id} style={{padding:"10px 12px"}}>
+          <div style={{display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
+            <button onClick={()=>openEditQuoteModal(qr)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Duzenle</button>
+            <button onClick={()=>printQuote(qr)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>PDF</button>
+            <button onClick={()=>duplicateQuote(qr)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Kopyala</button>
+            <button onClick={()=>setQuoteStatus(qr,"approved")} style={{...btnSt("green"),padding:"5px 8px",fontSize:11,opacity:(qr.status||"")==="approved"?0.7:1}} disabled={(qr.status||"")==="approved"}>{(qr.status||"")==="approved"?"Onayli":"Onay"}</button>
+            <button onClick={()=>convertQuoteToOrder(qr)} disabled={(qr.status||"")!=="approved"} style={{...btnSt("primary"),padding:"5px 8px",fontSize:11,opacity:(qr.status||"")==="approved"?1:0.6,cursor:(qr.status||"")==="approved"?"pointer":"not-allowed"}}>Siparise Donustur</button>
+            <button onClick={()=>setQuoteStatus(qr,"cancelled")} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Iptal</button>
+          </div>
+        </td>
+      );
+    }
+    return null;
+  };
+  const renderSalesOrderTableCell=(o,remaining,col)=>{
+    if(col.id==="order_no"){
+      return (
+        <td key={col.id} style={{padding:"10px 12px"}}>
+          <div style={{fontFamily:"monospace",fontWeight:700,color:C.text}}>{o.code||"-"}</div>
+          {o.sourceQuoteCode&&<div style={{fontSize:11,color:C.muted2}}>Teklif: {o.sourceQuoteCode}</div>}
+        </td>
+      );
+    }
+    if(col.id==="customer"){
+      return (
+        <td key={col.id} style={{padding:"10px 12px"}}>
+          <div style={{fontWeight:600,color:C.text}}>{o.customerName||"-"}</div>
+          <div style={{fontSize:11,color:C.muted2}}>Adet: {safeNum(o.qty)} Â· Teslim: {safeNum(o.deliveredQty)}</div>
+          <div style={{fontSize:11,color:C.muted2}}>Vade: {Math.max(0,safeNum(o.paymentTermDays??30))} gun</div>
+          {(o.deliveries||[]).length>0&&<div style={{fontSize:11,color:C.muted2}}>Son: {(o.deliveries||[]).slice(-1)[0]?.date||"-"}</div>}
+        </td>
+      );
+    }
+    if(col.id==="due_date"){
+      return <td key={col.id} style={{padding:"10px 12px",color:C.muted2}}>{o.dueDate||"-"}</td>;
+    }
+    if(col.id==="status"){
+      return <td key={col.id} style={{padding:"10px 12px"}}><Badge label={statusLabel(o.status)} color={statusColor(o.status)}/></td>;
+    }
+    if(col.id==="remaining"){
+      return <td key={col.id} style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:C.text}}>{remaining} / {safeNum(o.qty)}</td>;
+    }
+    if(col.id==="document"){
+      return (
+        <td key={col.id} style={{padding:"10px 12px",color:C.muted2,fontSize:11}}>
+          {o.dispatchRef?`Irsaliye: ${o.dispatchRef}`:"-"}
+          {o.invoiceRef?` Â· Fatura: ${o.invoiceRef}`:""}
+        </td>
+      );
+    }
+    if(col.id==="actions"){
+      return (
+        <td key={col.id} style={{padding:"10px 12px"}}>
+          <div style={{display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
+            <button onClick={()=>printOrder(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>PDF</button>
+            <button onClick={()=>duplicateSalesOrder(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Kopyala</button>
+            <button onClick={()=>setOrderStatus(o,"in_production")} style={{...btnSt("primary"),padding:"5px 8px",fontSize:11,opacity:(o.status||"")==="in_production"?0.7:1}} disabled={(o.status||"")==="in_production"}>Uretimde</button>
+            <button onClick={()=>addDelivery(o)} style={{...btnSt("green"),padding:"5px 8px",fontSize:11}}>Kismi Teslim</button>
+            <button onClick={()=>convertOrderToWorkOrders(o)} style={{...(o.workOrderIds&&o.workOrderIds.length>0?btnSt("ghost"):btnSt("primary")),padding:"5px 8px",fontSize:11}}>
+              {(o.workOrderIds&&o.workOrderIds.length>0)?"Is Emirleri":"Is Emri"}
+            </button>
+            <button onClick={()=>markExternalDoc(o,"dispatch")} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Irsaliye</button>
+            <button onClick={()=>markExternalDoc(o,"invoice")} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Fatura</button>
+            <button onClick={()=>setOrderStatus(o,"cancelled")} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11,opacity:(o.status||"")==="cancelled"?0.7:1}} disabled={(o.status||"")==="cancelled"}>Iptal</button>
+          </div>
+        </td>
+      );
+    }
+    return null;
+  };
+  const filterPanelStyle={
+    flex:"0 0 250px",
+    width:"100%",
+    maxWidth:280,
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    padding:12,
+    display:"flex",
+    flexDirection:"column",
+    gap:10,
+    ...(salesListPanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+        overflowY:"auto",
+        overscrollBehavior:"contain",
+        scrollbarGutter:"stable",
+      }),
+  };
+  const salesListColumnStyle={
+    flex:"1 1 760px",
+    minWidth:0,
+    display:"flex",
+    flexDirection:"column",
+    gap:8,
+    ...(salesListPanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+      }),
+  };
+  const salesListTableCardStyle={
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    overflow:"hidden",
+    display:"flex",
+    flexDirection:"column",
+    ...(salesListPanelsStacked?{}:{flex:1,minHeight:0}),
+  };
+  const salesListTableScrollStyle=salesListPanelsStacked
+    ? {overflowX:"auto"}
+    : {overflow:"auto",flex:1,minHeight:0,overscrollBehavior:"contain"};
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
+      {view==="pricing"&&(
+        <>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+              <div style={{fontWeight:700,color:C.text}}>Musteri Karti</div>
+              {customerEditId&&<Badge label={`Duzenleniyor: ${activeCustomerEdit?.name||customerEditId}`} color={C.warn}/>}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div><span style={labelSt}>Musteri Adi *</span><input style={inputSt} value={customerForm.name} onChange={e=>setCustomerForm(f=>({...f,name:e.target.value}))}/></div>
+              <div><span style={labelSt}>Kod</span><input style={inputSt} value={customerForm.code} onChange={e=>setCustomerForm(f=>({...f,code:e.target.value}))}/></div>
+              <div><span style={labelSt}>Yetkili</span><input style={inputSt} value={customerForm.contact} onChange={e=>setCustomerForm(f=>({...f,contact:e.target.value}))}/></div>
+              <div><span style={labelSt}>Telefon</span><input style={inputSt} value={customerForm.phone} onChange={e=>setCustomerForm(f=>({...f,phone:e.target.value}))}/></div>
+              <div><span style={labelSt}>E-Posta</span><input style={inputSt} value={customerForm.email} onChange={e=>setCustomerForm(f=>({...f,email:e.target.value}))}/></div>
+              <div><span style={labelSt}>Varsayilan Iskonto %</span><input style={inputSt} type="number" min="0" max="100" value={customerForm.discountPct} onChange={e=>setCustomerForm(f=>({...f,discountPct:e.target.value}))}/></div>
+            </div>
+            <div style={{marginTop:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <div style={{fontSize:12,color:C.muted2}}>Kayitli musteri: {customers.length}</div>
+              <div style={{display:"flex",gap:8}}>
+                {customerEditId&&<button onClick={resetCustomerForm} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Vazgec</button>}
+                <button onClick={saveCustomer} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>{customerEditId?"Musteri Guncelle":"Musteri Kaydet"}</button>
+              </div>
+            </div>
+            {customers.slice(0,20).map(c=>(
+              <div key={c.id} style={{marginTop:8,padding:"8px 10px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <div style={{fontSize:12,color:C.text}}>
+                  <strong>{c.name||"-"}</strong> Â· {(c.code||"-")} Â· {c.contact||"-"} Â· Iskonto %{safeNum(c.discountPct).toFixed(2)}
+                </div>
+                <button onClick={()=>startEditCustomer(c)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11}}>Duzenle</button>
+              </div>
+            ))}
+          </div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+              <div style={{fontWeight:700,color:C.text}}>Musteri Bazli Fiyat Listesi</div>
+              {priceEditId&&<Badge label={`Satir Duzenleme: ${activePriceEdit?.partNo||priceEditId}`} color={C.warn}/>}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr 1fr 1fr 0.8fr",gap:8}}>
+              <div><span style={labelSt}>Musteri</span><select style={inputSt} value={priceForm.customerId} onChange={e=>setPriceForm(f=>({...f,customerId:e.target.value}))}><option value="">Secin</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+              <div><span style={labelSt}>Parca No</span><input style={inputSt} value={priceForm.partNo} onChange={e=>setPriceForm(f=>({...f,partNo:e.target.value}))}/></div>
+              <div><span style={labelSt}>Birim Fiyat</span><input style={inputSt} type="number" min="0" value={priceForm.price} onChange={e=>setPriceForm(f=>({...f,price:e.target.value}))}/></div>
+              <div><span style={labelSt}>Iskonto %</span><input style={inputSt} type="number" min="0" max="100" value={priceForm.discountPct} onChange={e=>setPriceForm(f=>({...f,discountPct:e.target.value}))}/></div>
+              <div><span style={labelSt}>Para</span><select style={inputSt} value={priceForm.currency} onChange={e=>setPriceForm(f=>({...f,currency:e.target.value}))}>{quoteCurrencies.map(cur=><option key={cur.code} value={cur.code}>{cur.code} Â· {cur.label}</option>)}</select></div>
+            </div>
+            <div style={{marginTop:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <div style={{fontSize:12,color:C.muted2}}>Kayitli fiyat satiri: {customerPrices.length}</div>
+              <div style={{display:"flex",gap:8}}>
+                {priceEditId&&<button onClick={resetPriceForm} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Vazgec</button>}
+                <button onClick={savePrice} style={{...btnSt("green"),padding:"8px 12px",fontSize:12}}>{priceEditId?"Fiyat Guncelle":"Fiyat Kaydet"}</button>
+              </div>
+            </div>
+            {customerPrices.slice(0,30).map(p=>{
+              const cust=customers.find(c=>c.id===p.customerId);
+              return (
+                <div key={p.id} style={{marginTop:8,padding:"8px 10px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <div style={{fontSize:12,color:C.muted2}}>{cust?.name||"-"} Â· {p.partNo} Â· {formatByCurrency(p.price,p.currency)} Â· Iskonto %{safeNum(p.discountPct)}</div>
+                  <button onClick={()=>startEditPrice(p)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11}}>Duzenle</button>
+                </div>
+              );
+            })}
+          </div>
+          {customerStats.length>0&&(
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+              <div style={{fontWeight:700,color:C.text,marginBottom:10}}>Musteri Siparis Istatistikleri</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8}}>
+                {customerStats.map(s=>(
+                  <div key={s.id} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px"}}>
+                    <div style={{fontWeight:700,color:C.text,fontSize:13}}>{s.name}</div>
+                    <div style={{fontSize:11,color:C.muted2,marginTop:2}}>Siparis: {s.totalOrders} Â· Acik: {s.open}</div>
+                    <div style={{fontSize:13,color:C.accent,marginTop:4,fontWeight:700}}>{safeNum(s.totalAmount).toFixed(2)} TRY</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {view==="quotes"&&(
+        <div ref={salesListPanelRef} style={salesSplitWrapStyle}>
+          {filtersVisible&&(
+            <div style={filterPanelStyle}>
+              <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Teklifler</div>
+              <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod, musteri, durum ara"/>
+              <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Teklif Asamasi</div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {quoteStatusOptions.map(opt=>(
+                  <button key={opt.id} onClick={()=>setQuoteStatusFilter(opt.id)} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:quoteStatusFilter===opt.id?C.accent:C.border,color:quoteStatusFilter===opt.id?C.accent:C.text}}>
+                    <span>{opt.label}</span>
+                    <span style={{fontSize:11,color:C.muted2}}>{quoteStatusCounts[opt.id]||0}</span>
+                  </button>
+                ))}
+              </div>
+              <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Gecerlilik Tarihi</div>
+              <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={quoteDateFrom} onChange={e=>setQuoteDateFrom(e.target.value||"")}/>
+              <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={quoteDateTo} onChange={e=>setQuoteDateTo(e.target.value||"")}/>
+              <button onClick={()=>{setQuoteDateFrom("");setQuoteDateTo("");setQuoteStatusFilter("all");setSearch("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
+            </div>
+          )}
+          <div style={salesListColumnStyle}>
+            <div style={salesListTableCardStyle}>
+              <div style={salesListTableScrollStyle}>
+                <table style={{width:"100%",minWidth:quoteTableMinWidth,borderCollapse:"collapse",fontSize:12}}>
+                  <thead>
+                    <tr style={{background:C.surface,color:C.muted2,textAlign:"left"}}>
+                      {visibleQuoteTableColumns.map(col=>(
+                        <th key={col.id} style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:col.align||"left",position:"sticky",top:0,zIndex:2,background:C.surface}}>{col.label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredQuotes.map(qr=>{
+                      const quoteNet=(qr.lines||[]).reduce((sum,line)=>sum+lineTotal(line).net,0);
+                      return (
+                        <tr key={qr.id} style={{borderBottom:`1px solid ${C.border}`}}>
+                          {visibleQuoteTableColumns.map(col=>renderQuoteTableCell(qr,quoteNet,col))}
+                        </tr>
+                      );
+                    })}
+                    {filteredQuotes.length===0&&(
+                      <tr>
+                        <td colSpan={Math.max(1,visibleQuoteTableColumns.length)} style={{padding:"26px 12px",textAlign:"center",color:C.muted2}}>Filtreye uygun teklif bulunamadi.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {view==="orders"&&(
+        <div ref={salesListPanelRef} style={salesSplitWrapStyle}>
+          {filtersVisible&&(
+            <div style={filterPanelStyle}>
+              <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Siparisler</div>
+              <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod, musteri, durum ara"/>
+              <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Siparis Durumu</div>
+              <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:260,overflowY:"auto"}}>
+                <button onClick={()=>setOrderStatusFilter("all")} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:orderStatusFilter==="all"?C.accent:C.border,color:orderStatusFilter==="all"?C.accent:C.text}}>
+                  <span>Tum Siparisler</span>
+                  <span style={{fontSize:11,color:C.muted2}}>{orderStatusCounts.all||0}</span>
+                </button>
+                {SALES_STATUS_OPTIONS.map(st=>(
+                  <button key={st.id} onClick={()=>setOrderStatusFilter(st.id)} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:orderStatusFilter===st.id?st.color:C.border,color:orderStatusFilter===st.id?st.color:C.text}}>
+                    <span>{st.label}</span>
+                    <span style={{fontSize:11,color:C.muted2}}>{orderStatusCounts[st.id]||0}</span>
+                  </button>
+                ))}
+              </div>
+              <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Termin Araligi</div>
+              <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={orderDateFrom} onChange={e=>setOrderDateFrom(e.target.value||"")}/>
+              <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={orderDateTo} onChange={e=>setOrderDateTo(e.target.value||"")}/>
+              <button onClick={()=>{setOrderDateFrom("");setOrderDateTo("");setOrderStatusFilter("all");setSearch("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
+            </div>
+          )}
+          <div style={salesListColumnStyle}>
+            <div style={salesListTableCardStyle}>
+              <div style={salesListTableScrollStyle}>
+                <table style={{width:"100%",minWidth:orderTableMinWidth,borderCollapse:"collapse",fontSize:12}}>
+                  <thead>
+                    <tr style={{background:C.surface,color:C.muted2,textAlign:"left"}}>
+                      {visibleOrderTableColumns.map(col=>(
+                        <th key={col.id} style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:col.align||"left",position:"sticky",top:0,zIndex:2,background:C.surface}}>{col.label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredOrders.map(o=>{
+                      const remaining=Math.max(0,safeNum(o.qty)-safeNum(o.deliveredQty));
+                      return (
+                        <tr key={o.id} style={{borderBottom:`1px solid ${C.border}`}}>
+                          {visibleOrderTableColumns.map(col=>renderSalesOrderTableCell(o,remaining,col))}
+                        </tr>
+                      );
+                    })}
+                    {filteredOrders.length===0&&(
+                      <tr>
+                        <td colSpan={Math.max(1,visibleOrderTableColumns.length)} style={{padding:"26px 12px",textAlign:"center",color:C.muted2}}>Filtreye uygun siparis bulunamadi.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showQuoteModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.62)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:55,padding:14}} onClick={closeQuoteModal}>
+          <div style={{width:"100%",maxWidth:1240,maxHeight:"92vh",overflow:"hidden",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
+            <div style={{padding:"12px 14px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+              <div>
+                <div style={{fontWeight:800,color:C.text,fontSize:16}}>{quoteEditId?"Teklif Duzenle":"Yeni Teklif"}</div>
+                <div style={{fontSize:12,color:C.muted2}}>{quoteEditId?"Teklif kaydini guncelleyebilirsiniz.":"Teklif bilgilerini ve satirlarini girin."}</div>
+              </div>
+              <button onClick={closeQuoteModal} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Kapat</button>
+            </div>
+            <div style={{padding:14,display:"flex",flexDirection:"column",gap:12,overflowY:"auto"}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
+                <div><span style={labelSt}>Teklif No</span><input style={inputSt} value={quoteForm.code} onChange={e=>setQ("code",e.target.value.toUpperCase())}/></div>
+                <div><span style={labelSt}>Musteri *</span><select style={inputSt} value={quoteForm.customerId} onChange={e=>setQ("customerId",e.target.value)}><option value="">Secin</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+                <div><span style={labelSt}>Gecerlilik</span><input style={inputSt} type="date" value={quoteForm.validUntil} onChange={e=>setQ("validUntil",e.target.value)}/></div>
+                <div><span style={labelSt}>Odeme Vadesi (Gun)</span><input style={inputSt} type="number" min="0" value={quoteForm.paymentTermDays} onChange={e=>setQ("paymentTermDays",e.target.value)}/></div>
+                <div><span style={labelSt}>Oncelik</span><select style={inputSt} value={quoteForm.priority} onChange={e=>setQ("priority",e.target.value)}><option value="urgent">Acil</option><option value="normal">Normal</option><option value="low">Dusuk</option></select></div>
+              </div>
+              <div><span style={labelSt}>Not</span><input style={inputSt} value={quoteForm.note} onChange={e=>setQ("note",e.target.value)} placeholder="Opsiyonel not"/></div>
+
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <div style={{fontWeight:700,color:C.text}}>Teklif Satirlari</div>
+                <button onClick={addLine} style={{...btnSt("primary"),padding:"7px 11px",fontSize:12}}>+ Satir Ekle</button>
+              </div>
+
+              <div style={{overflowX:"auto"}}>
+                <div style={{minWidth:940,display:"flex",flexDirection:"column",gap:7}}>
+                  <div style={{display:"grid",gridTemplateColumns:"140px 210px 72px 96px 140px 96px 140px 44px",gap:7,fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:".35px"}}>
+                    <div>Parca No</div><div>Parca Adi</div><div>Rev.</div><div>Adet</div><div>Termin</div><div>Cevrim sn</div><div>Kutuphane</div><div/>
+                  </div>
+                  {quoteForm.lines.map((line,idx)=>{
+                    const hasPart=Boolean(findPartByNo(line.partNo));
+                    return (
+                      <div key={idx} style={{display:"grid",gridTemplateColumns:"140px 210px 72px 96px 140px 96px 140px 44px",gap:7}}>
+                        <input style={inputSt} list="quote-part-catalog" value={line.partNo} onChange={e=>{const val=e.target.value;setLine(idx,"partNo",val);if(findPartByNo(val)){syncQuoteLineFromPartNo(idx,val);}}} onBlur={()=>{syncQuoteLineFromPartNo(idx,line.partNo);}} placeholder="P-NO"/>
+                        <input style={inputSt} value={line.partName} onChange={e=>setLine(idx,"partName",e.target.value)} placeholder="Parca adi"/>
+                        <input style={inputSt} value={line.revision} onChange={e=>setLine(idx,"revision",e.target.value.toUpperCase())} placeholder="A"/>
+                        <input style={inputSt} type="number" min="0" value={line.qty} onChange={e=>setLine(idx,"qty",e.target.value)}/>
+                        <input style={inputSt} type="date" value={line.dueDate||todayStr()} onChange={e=>setLine(idx,"dueDate",e.target.value)}/>
+                        <input style={inputSt} type="number" min="1" value={line.partSec} onChange={e=>setLine(idx,"partSec",e.target.value)}/>
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
+                          {String(line.partNo||"").trim()?(
+                            hasPart
+                              ? <span style={{fontSize:11,color:C.green,fontWeight:700}}>Bulundu</span>
+                              : <button onClick={()=>openCreatePartForQuoteLine(idx)} style={{...btnSt("ghost"),padding:"5px 7px",fontSize:11}}>+ Parca</button>
+                          ):<span style={{fontSize:11,color:C.muted2}}>-</span>}
+                        </div>
+                        <button onClick={()=>removeLine(idx)} style={{...btnSt("danger"),padding:0,fontSize:16,lineHeight:1}}>Ã—</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <datalist id="quote-part-catalog">
+                {parts.slice(0,1000).map(p=>(
+                  <option key={p.id||p.partNo} value={p.partNo}>{p.name||""}</option>
+                ))}
+              </datalist>
+            </div>
+            <div style={{padding:"12px 14px",borderTop:`1px solid ${C.border}`,display:"flex",justifyContent:"flex-end",gap:8}}>
+              <button onClick={closeQuoteModal} style={{...btnSt("ghost"),padding:"9px 13px",fontSize:12}}>Iptal</button>
+              <button onClick={saveQuote} style={{...btnSt("primary"),padding:"9px 13px",fontSize:12}}>{quoteEditId?"Teklifi Guncelle":"Teklifi Kaydet"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCreatePartModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.62)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:56,padding:14}} onClick={closeCreatePartModal}>
+          <div style={{width:"100%",maxWidth:760,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,display:"flex",flexDirection:"column",gap:10}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+              <div>
+                <div style={{fontWeight:800,color:C.text,fontSize:16}}>Yeni Parca Ekle</div>
+                <div style={{fontSize:12,color:C.muted2}}>Kayit tamamlaninca teklif satirina otomatik baglanir.</div>
+              </div>
+              <button onClick={closeCreatePartModal} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Kapat</button>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
+              <div><span style={labelSt}>Parca No *</span><input style={inputSt} value={quickPartForm.partNo} onChange={e=>setQuickPartForm(f=>({...f,partNo:e.target.value.toUpperCase()}))} placeholder="PRT-001"/></div>
+              <div><span style={labelSt}>Parca Adi *</span><input style={inputSt} value={quickPartForm.name} onChange={e=>setQuickPartForm(f=>({...f,name:e.target.value}))} placeholder="Parca adi"/></div>
+              <div><span style={labelSt}>Revizyon</span><input style={inputSt} value={quickPartForm.revision} onChange={e=>setQuickPartForm(f=>({...f,revision:e.target.value.toUpperCase()}))} placeholder="A"/></div>
+              <div><span style={labelSt}>Malzeme</span><input style={inputSt} value={quickPartForm.material} onChange={e=>setQuickPartForm(f=>({...f,material:e.target.value}))} placeholder="Opsiyonel"/></div>
+              <div><span style={labelSt}>Kurulum sn</span><input style={inputSt} type="number" min="0" value={quickPartForm.setupSec} onChange={e=>setQuickPartForm(f=>({...f,setupSec:e.target.value}))}/></div>
+              <div><span style={labelSt}>Cevrim sn</span><input style={inputSt} type="number" min="1" value={quickPartForm.cycleSec} onChange={e=>setQuickPartForm(f=>({...f,cycleSec:e.target.value}))}/></div>
+            </div>
+            <div><span style={labelSt}>Not</span><input style={inputSt} value={quickPartForm.notes} onChange={e=>setQuickPartForm(f=>({...f,notes:e.target.value}))} placeholder="Opsiyonel not"/></div>
+            <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+              <button onClick={closeCreatePartModal} style={{...btnSt("ghost"),padding:"9px 13px",fontSize:12}}>Iptal</button>
+              <button onClick={saveQuickPartFromQuote} style={{...btnSt("primary"),padding:"9px 13px",fontSize:12}}>Parcayi Kaydet</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showOrderModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.62)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:55,padding:14}} onClick={()=>setShowOrderModal(false)}>
+          <div style={{width:"100%",maxWidth:1240,maxHeight:"92vh",overflow:"hidden",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
+            <div style={{padding:"12px 14px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+              <div>
+                <div style={{fontWeight:800,color:C.text,fontSize:16}}>Yeni Siparis</div>
+                <div style={{fontSize:12,color:C.muted2}}>Siparis bilgilerini ve satirlarini girin.</div>
+              </div>
+              <button onClick={()=>setShowOrderModal(false)} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Kapat</button>
+            </div>
+            <div style={{padding:14,display:"flex",flexDirection:"column",gap:12,overflowY:"auto"}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
+                <div><span style={labelSt}>Siparis No</span><input style={inputSt} value={orderForm.code} onChange={e=>setO("code",e.target.value.toUpperCase())}/></div>
+                <div><span style={labelSt}>Musteri *</span><select style={inputSt} value={orderForm.customerId} onChange={e=>setO("customerId",e.target.value)}><option value="">Secin</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+                <div><span style={labelSt}>Termin</span><input style={inputSt} type="date" value={orderForm.dueDate} onChange={e=>setO("dueDate",e.target.value)}/></div>
+                <div><span style={labelSt}>Odeme Vadesi (Gun)</span><input style={inputSt} type="number" min="0" value={orderForm.paymentTermDays} onChange={e=>setO("paymentTermDays",e.target.value)}/></div>
+                <div><span style={labelSt}>Oncelik</span><select style={inputSt} value={orderForm.priority} onChange={e=>setO("priority",e.target.value)}><option value="urgent">Acil</option><option value="normal">Normal</option><option value="low">Dusuk</option></select></div>
+              </div>
+              <div><span style={labelSt}>Not</span><input style={inputSt} value={orderForm.note} onChange={e=>setO("note",e.target.value)} placeholder="Opsiyonel not"/></div>
+
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <div style={{fontWeight:700,color:C.text}}>Siparis Satirlari</div>
+                <button onClick={addOrderLine} style={{...btnSt("primary"),padding:"7px 11px",fontSize:12}}>+ Satir Ekle</button>
+              </div>
+
+              <div style={{overflowX:"auto"}}>
+                <div style={{minWidth:1110,display:"flex",flexDirection:"column",gap:7}}>
+                  <div style={{display:"grid",gridTemplateColumns:"120px 180px 72px 84px 94px 88px 132px 94px 104px 44px",gap:7,fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:".35px"}}>
+                    <div>Parca No</div><div>Parca Adi</div><div>Rev.</div><div>Adet</div><div>Birim</div><div>Iskonto %</div><div>Termin</div><div>Cevrim sn</div><div>Tutar</div><div/>
+                  </div>
+                  {orderForm.lines.map((line,idx)=>{
+                    const t=lineTotal(line);
+                    return (
+                      <div key={idx} style={{display:"grid",gridTemplateColumns:"120px 180px 72px 84px 94px 88px 132px 94px 104px 44px",gap:7}}>
+                        <input style={inputSt} value={line.partNo} onChange={e=>setOrderLine(idx,"partNo",e.target.value)} onBlur={()=>{const linked=syncOrderLineFromPartNo(idx,line.partNo);applyOrderCustomerPrice(idx,linked?.partNo||line.partNo);}} placeholder="P-NO"/>
+                        <input style={inputSt} value={line.partName} onChange={e=>setOrderLine(idx,"partName",e.target.value)} placeholder="Parca adi"/>
+                        <input style={inputSt} value={line.revision} onChange={e=>setOrderLine(idx,"revision",e.target.value.toUpperCase())} placeholder="A"/>
+                        <input style={inputSt} type="number" min="0" value={line.qty} onChange={e=>setOrderLine(idx,"qty",e.target.value)}/>
+                        <input style={inputSt} type="number" min="0" value={line.unitPrice} onChange={e=>setOrderLine(idx,"unitPrice",e.target.value)}/>
+                        <input style={inputSt} type="number" min="0" max="100" value={line.discountPct} onChange={e=>setOrderLine(idx,"discountPct",e.target.value)}/>
+                        <input style={inputSt} type="date" value={line.dueDate||orderForm.dueDate||todayStr()} onChange={e=>setOrderLine(idx,"dueDate",e.target.value)}/>
+                        <input style={inputSt} type="number" min="1" value={line.partSec} onChange={e=>setOrderLine(idx,"partSec",e.target.value)}/>
+                        <div style={{...inputSt,display:"flex",alignItems:"center",justifyContent:"flex-end",fontWeight:700,color:C.text}}>{safeNum(t.net).toFixed(2)}</div>
+                        <button onClick={()=>removeOrderLine(idx)} style={{...btnSt("danger"),padding:0,fontSize:16,lineHeight:1}}>Ã—</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Brut</div><div style={{fontWeight:800,color:C.text}}>{moneyFmt(orderTotals.gross)}</div></div>
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Iskonto</div><div style={{fontWeight:800,color:C.warn}}>{moneyFmt(orderTotals.discount)}</div></div>
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Net</div><div style={{fontWeight:800,color:C.accent}}>{moneyFmt(orderTotals.net)}</div></div>
+              </div>
+            </div>
+            <div style={{padding:"12px 14px",borderTop:`1px solid ${C.border}`,display:"flex",justifyContent:"flex-end",gap:8}}>
+              <button onClick={()=>setShowOrderModal(false)} style={{...btnSt("ghost"),padding:"9px 13px",fontSize:12}}>Iptal</button>
+              <button onClick={saveManualOrder} style={{...btnSt("primary"),padding:"9px 13px",fontSize:12}}>Siparisi Kaydet</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// ============================================
+//  SALES ORDERS
+// ============================================
+function SalesOrders({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders}) {
+  const [salesOrders,setSalesOrders]=useState([]);
+  const [workOrders,setWorkOrders]=useState([]);
+  const [customers,setCustomers]=useState([]);
+  const [materials,setMaterials]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [editId,setEditId]=useState(null);
+  const [search,setSearch]=useState("");
+  const emptyForm={code:"",name:"",customerId:"",material:"",qty:"",dueDate:todayStr(),partSec:"",machines:[],note:"",status:"new"};
+  const [form,setForm]=useState(emptyForm);
+
+  const nextSalesCode=useCallback((list=salesOrders)=>{
+    const nums=list.map(o=>{
+      const m=(o.code||"").toUpperCase().match(/^SP-(\d+)$/);
+      return m?Number(m[1]):null;
+    }).filter(n=>n!==null);
+    const next=(nums.length?Math.max(...nums):0)+1;
+    return `SP-${String(next).padStart(3,"0")}`;
+  },[salesOrders]);
+  const nextWorkOrderCode=useCallback((list=workOrders)=>{
+    const nums=list.map(o=>{
+      const m=(o.code||"").toUpperCase().match(/^IE-(\d+)$/);
+      return m?Number(m[1]):null;
+    }).filter(n=>n!==null);
+    const next=(nums.length?Math.max(...nums):0)+1;
+    return `IE-${String(next).padStart(3,"0")}`;
+  },[workOrders]);
+
+  const load=useCallback(async()=>{
+    const [s,o,c,m]=await Promise.all([window.DB.getAll("salesOrders"),window.DB.getAll("orders"),window.DB.getAll("customers"),window.DB.getAll("materials")]);
+    setSalesOrders(s.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setWorkOrders(o.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setCustomers(c.sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
+    setMaterials(m.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const toggleMachine=m=>fv("machines",form.machines.includes(m)?form.machines.filter(x=>x!==m):[...form.machines,m]);
+
+  async function saveSalesOrder() {
+    if(!form.name.trim()){alert("Siparis adi zorunlu.");return;}
+    const pickedCustomer=customers.find(c=>c.id===form.customerId);
+    const finalCode=editId?form.code:(form.code||nextSalesCode());
+    const data={
+      code:finalCode.toUpperCase(),
+      name:form.name.trim(),
+      customerId:pickedCustomer?.id||"",
+      customerName:pickedCustomer?.name||"",
+      material:form.material.trim(),
+      qty:Math.max(0,Number(form.qty)||0),
+      dueDate:form.dueDate||"",
+      partSec:Math.max(0,Number(form.partSec)||0),
+      machines:form.machines||[],
+      note:form.note.trim(),
+      status:form.status||"new",
+      updatedAt:new Date().toISOString(),
+      ...(editId?{}:{createdBy:currentUser.id}),
+    };
+    if(editId){
+      const ok=await window.DB.updateDoc("salesOrders",editId,data);
+      if(!ok){alert("Siparis guncellenemedi.");return;}
+      setSalesOrders(prev=>prev.map(x=>x.id===editId?{...x,...data}:x));
+    }else{
+      const id=await window.DB.addDoc("salesOrders",data);
+      if(!id){alert("Siparis kaydedilemedi.");return;}
+      setSalesOrders(prev=>[{id,...data,createdAt:new Date().toISOString()},...prev]);
+    }
+    setEditId(null);
+    setForm({...emptyForm,code:nextSalesCode()});
+  }
+
+  async function convertToWorkOrder(s) {
+    if((s.status||"")==="converted"&&s.workOrderId){alert("Bu siparis zaten is emrine donusturulmus.");return;}
+    if(!s.partSec||Number(s.partSec)<=0){alert("Donusum icin sipariste parca suresi girin.");return;}
+    if(!s.machines||s.machines.length===0){alert("Donusum icin sipariste en az bir tezgah secin.");return;}
+    const workCode=nextWorkOrderCode();
+    const workData={
+      code:workCode,
+      name:s.name||"",
+      customerId:s.customerId||"",
+      customerName:s.customerName||"",
+      material:s.material||"",
+      partSec:Number(s.partSec)||0,
+      machines:s.machines||[],
+      notes:[s.note?`Siparis Notu: ${s.note}`:"",s.qty?`Siparis Adedi: ${s.qty}`:"",s.dueDate?`Termin: ${s.dueDate}`:""].filter(Boolean).join(" | "),
+      files:[],
+      status:"planned",
+      sourceType:"sales_auto",
+      sourceSalesOrderId:s.id||"",
+      sourceSalesOrderCode:s.code||"",
+      dueDate:s.dueDate||"",
+      qty:Number(s.qty)||0,
+      priority:"normal",
+      createdBy:currentUser.id,
+      updatedAt:new Date().toISOString(),
+    };
+    const workId=await window.DB.addDoc("orders",workData);
+    if(!workId){alert("Is emri olusturulamadi.");return;}
+    const salesPatch={status:"converted",workOrderId:workId,workOrderCode:workCode,convertedAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+    const salesOk=await window.DB.updateDoc("salesOrders",s.id,salesPatch);
+    if(!salesOk){alert("Siparis isaretlenemedi; is emri olustu fakat siparis durumu guncellenemedi.");}
+    setWorkOrders(prev=>[{id:workId,...workData,createdAt:new Date().toISOString()},...prev]);
+    setSalesOrders(prev=>prev.map(x=>x.id===s.id?{...x,...salesPatch}:x));
+    if(onOpenWorkOrders) onOpenWorkOrders();
+  }
+
+  async function removeSalesOrder(s){
+    if(!confirm(`"${s.code||s.name||"Siparis"}" silinsin mi?`)) return;
+    const ok=await window.DB.deleteDoc("salesOrders",s.id);
+    if(!ok){alert("Siparis silinemedi.");return;}
+    setSalesOrders(prev=>prev.filter(x=>x.id!==s.id));
+    if(editId===s.id){
+      setEditId(null);
+      setForm({...emptyForm,code:nextSalesCode()});
+    }
+  }
+
+  const q=search.trim().toLowerCase();
+  const materialOptions=(form.material&& !materials.some(x=>x.name===form.material))
+    ? [...materials,{id:"__current__",name:form.material}]
+    : materials;
+  const filtered=salesOrders.filter(s=>{
+    if(!q) return true;
+    return (s.code||"").toLowerCase().includes(q)||
+      (s.name||"").toLowerCase().includes(q)||
+      (s.customerName||"").toLowerCase().includes(q)||
+      (s.material||"").toLowerCase().includes(q);
+  });
+
+  useEffect(()=>{
+    setForm(prev=>editId?prev:{...prev,code:nextSalesCode()});
+  },[editId,nextSalesCode]);
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={{fontWeight:700,color:C.text}}>Siparis Formu</div>
+          {editId&&<Badge label="Duzenleme" color={C.warn}/>}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <div><span style={labelSt}>Siparis Kodu</span><input style={{...inputSt,background:editId?C.surface:C.card,color:editId?C.text:C.accent,fontWeight:700}} value={form.code} readOnly={!editId} onChange={e=>fv("code",e.target.value.toUpperCase())}/></div>
+          <div><span style={labelSt}>Siparis Adi *</span><input style={inputSt} value={form.name} onChange={e=>fv("name",e.target.value)} placeholder="Parca / urun adi"/></div>
+          <div>
+            <span style={labelSt}>Musteri</span>
+            <select style={inputSt} value={form.customerId||""} onChange={e=>fv("customerId",e.target.value)}>
+              <option value="">Musteri secin</option>
+              {customers.map(c=><option key={c.id} value={c.id}>{c.name}{c.code?` (${c.code})`:""}</option>)}
+            </select>
+          </div>
+          <div>
+            <span style={labelSt}>Malzeme</span>
+            <select style={inputSt} value={form.material||""} onChange={e=>fv("material",e.target.value)}>
+              <option value="">Malzeme secin...</option>
+              {materialOptions.map(m=><option key={m.id||m.name} value={m.name||""}>{m.code?`${m.code} - `:""}{m.name||""}</option>)}
+            </select>
+          </div>
+          <div><span style={labelSt}>Siparis Adedi</span><input style={inputSt} type="number" min="0" value={form.qty} onChange={e=>fv("qty",e.target.value)} placeholder="0"/></div>
+          <div><span style={labelSt}>Termin</span><input style={inputSt} type="date" value={form.dueDate||""} onChange={e=>fv("dueDate",e.target.value||"")}/></div>
+          <div>
+            <span style={labelSt}>Parca Suresi (sn) *</span>
+            <input style={inputSt} type="number" min="1" value={form.partSec} onChange={e=>fv("partSec",e.target.value)} placeholder="Orn: 90"/>
+          </div>
+          <div>
+            <span style={labelSt}>Durum</span>
+            <select style={inputSt} value={form.status||"new"} onChange={e=>fv("status",e.target.value)}>
+              {SALES_STATUS_OPTIONS.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{marginTop:9}}>
+          <span style={labelSt}>Tezgah Atamasi *</span>
+          <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+            {machines.map(m=><button key={m} onClick={()=>toggleMachine(m)} style={chip(form.machines.includes(m))}>{m}</button>)}
+          </div>
+        </div>
+        <div style={{marginTop:9}}>
+          <span style={labelSt}>Not</span>
+          <textarea rows={2} style={{...inputSt,minHeight:64,resize:"vertical"}} value={form.note} onChange={e=>fv("note",e.target.value)} placeholder="Opsiyonel not..."/>
+        </div>
+        <div style={{display:"flex",gap:8,marginTop:10}}>
+          <button onClick={saveSalesOrder} style={{...btnSt("primary"),flex:1,padding:12}}>{editId?"Siparisi Guncelle":"Siparis Kaydet"}</button>
+          {editId&&<button onClick={()=>{setEditId(null);setForm({...emptyForm,code:nextSalesCode()});}} style={{...btnSt("ghost"),padding:"12px 14px"}}>Iptal</button>}
+        </div>
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <div style={{fontSize:12,color:C.muted2}}>Siparisler ({salesOrders.length})</div>
+        <input style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:220}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod, siparis veya musteri ara..."/>
+      </div>
+
+      {filtered.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"28px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Siparis bulunamadi</div>}
+      {filtered.map(s=>(
+        <div key={s.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"12px 14px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+            <div>
+              <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+                <span style={{fontWeight:800,fontFamily:"monospace",fontSize:14,color:C.text}}>{s.code||"-"}</span>
+                <Badge label={getSalesStatusMeta(s.status).label} color={getSalesStatusMeta(s.status).color}/>
+                {s.workOrderCode&&<Badge label={`IE: ${s.workOrderCode}`} color={C.green}/>}
+              </div>
+              <div style={{fontSize:13,color:C.text,marginTop:3}}>{s.name||"-"}</div>
+              <div style={{fontSize:11,color:C.muted2,marginTop:2}}>
+                {s.customerName?`${s.customerName} Â· `:""}
+                {s.material?`${s.material} Â· `:""}
+                {s.qty?`${s.qty} adet Â· `:""}
+                {s.dueDate?`Termin: ${s.dueDate}`:"Termin yok"}
+              </div>
+              <div style={{fontSize:11,color:C.muted,marginTop:1}}>
+                {s.partSec?`Parca: ${fmtSec(s.partSec)} Â· `:"Parca suresi yok Â· "}
+                {(s.machines||[]).join(", ")||"Tezgah secilmemis"}
+              </div>
+            </div>
+            <div style={{display:"flex",gap:7,flexWrap:"wrap",justifyContent:"flex-end"}}>
+              <button onClick={()=>{setEditId(s.id);setForm({code:s.code||"",name:s.name||"",customerId:s.customerId||"",material:s.material||"",qty:String(s.qty??""),dueDate:s.dueDate||todayStr(),partSec:String(s.partSec??""),machines:s.machines||[],note:s.note||"",status:s.status||"new"});}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
+              <button onClick={()=>convertToWorkOrder(s)} disabled={Boolean(s.workOrderId)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12,opacity:s.workOrderId?0.6:1,cursor:s.workOrderId?"not-allowed":"pointer"}}>{s.workOrderId?"Donusturuldu":"Is Emrine Donustur"}</button>
+              <button onClick={()=>removeSalesOrder(s)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
+            </div>
+          </div>
+          {s.note&&<div style={{marginTop:8,fontSize:12,color:C.muted2}}>{s.note}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+//  WORK ORDERS
+// ============================================================
+function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true}) {
+  const [orders,setOrders]=useState([]);
+  const [customers,setCustomers]=useState([]);
+  const [materials,setMaterials]=useState([]);
+  const [toolMovements,setToolMovements]=useState([]);
+  const [entries,setEntries]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [showForm,setShowForm]=useState(false);
+  const [editId,setEditId]=useState(null);
+  const [statusFilters,setStatusFilters]=useState([]);
+  const [search,setSearch]=useState("");
+  const [sortDir,setSortDir]=useState("desc");
+  const [dueDateFrom,setDueDateFrom]=useState("");
+  const [dueDateTo,setDueDateTo]=useState("");
+  const [viewOrder,setViewOrder]=useState(null);
+  const [viewOrderMoves,setViewOrderMoves]=useState([]);
+  const [previewFile,setPreviewFile]=useState(null);
+  const [uploading,setUploading]=useState(false);
+  const {
+    columns:workOrderTableColumns,
+    visibleColumns:visibleWorkOrderTableColumns,
+    tableMinWidth:workOrderTableMinWidth,
+    moveColumn:moveWorkOrderTableColumn,
+    toggleColumn:toggleWorkOrderTableColumn,
+    resetColumns:resetWorkOrderTableColumns,
+  }=useTableColumnLayout("work_orders_list",WORK_ORDER_LIST_COLUMNS);
+  const workListPanelRef=useRef(null);
+  const {
+    height:workListPanelHeight,
+    isNarrow:workListPanelsStacked,
+  }=useViewportPanelMetrics(workListPanelRef,{minHeight:340,bottomGap:14,narrowWidth:1180});
+  const fileRef=useRef();
+  const emptyForm={code:"",name:"",partId:"",partNo:"",revision:"A",customerPartCode:"",partSnapshot:null,customerId:"",material:"",qty:"1",dueDate:todayStr(),priority:"normal",dependencies:[],partSec:"",machines:[],notes:"",files:[],status:"planned",sourceType:"manual"};
+  const [form,setForm]=useState(emptyForm);
+  const nextOrderCode=useCallback((list=orders)=>{
+    const nums=list.map(o=>{
+      const m=(o.code||"").toUpperCase().match(/^IE-(\d+)$/);
+      return m?Number(m[1]):null;
+    }).filter(n=>n!==null);
+    const next=(nums.length?Math.max(...nums):0)+1;
+    return `IE-${String(next).padStart(3,"0")}`;
+  },[orders]);
+
+  const load=useCallback(async()=>{
+    const [o,m,c,ml,en]=await Promise.all([window.DB.getAll("orders"),window.DB.getAll("toolMovements"),window.DB.getAll("customers"),window.DB.getAll("materials"),window.DB.getAll("entries")]);
+    setOrders(o.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setToolMovements(m.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setCustomers(c.sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
+    setMaterials(ml.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    setEntries(en.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="orders") return;
+      if(d.type==="refresh"){load(); return;}
+      if(d.type==="sort"){
+        setSortDir(d.sortMode==="date_asc"?"asc":"desc");
+        return;
+      }
+      if(d.type==="new"){
+        setPreviewFile(null);
+        setViewOrder(null);
+        setEditId(null);
+        setForm({...emptyForm,code:nextOrderCode()});
+        setShowForm(true);
+        window.scrollTo({top:0,behavior:"smooth"});
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load,nextOrderCode]);
+  const entryToolChanges=entries
+    .filter(e=>(Number(e.machineToolQty??e.machineToolChange??0)>0)&&(e.jobCode||""))
+    .map(e=>({
+      id:`entry_${e.id||Math.random().toString(36).slice(2,7)}`,
+      orderId:"",
+      orderCode:e.jobCode||"",
+      toolCode:e.machineToolCode||"",
+      toolName:e.machineToolName||"TakÄ±m",
+      type:"change",
+      qty:Number(e.machineToolQty??e.machineToolChange??0)||0,
+      createdAt:e.createdAt||`${e.date||todayStr()}T00:00:00`,
+      userName:e.operatorName||e.operatorId||"",
+      note:[e.shift?`Vardiya: ${e.shift}`:"",e.machine?`Tezgah: ${e.machine}`:""].filter(Boolean).join(" Â· "),
+      date:e.date||"",
+    }));
+  useEffect(()=>{
+    if(!viewOrder){ setViewOrderMoves([]); return; }
+    const stockMoves=toolMovements.filter(m=>(m.orderId&&m.orderId===viewOrder.id)||(!m.orderId&&m.orderCode===viewOrder.code));
+    const entryMoves=entryToolChanges.filter(m=>m.orderCode===viewOrder.code);
+    setViewOrderMoves([...stockMoves,...entryMoves].sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+  },[viewOrder,toolMovements,entryToolChanges]);
+
+  const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const toggleMachine=m=>fv("machines",form.machines.includes(m)?form.machines.filter(x=>x!==m):[...form.machines,m]);
+  const canPreview=f=>canFilePreview(f);
+
+  async function handleFiles(fileList) {
+    setUploading(true);
+    const results=[];
+    for(const file of Array.from(fileList)){
+      const ext=getFileExt(file.name);
+      const limitMb=isStepExtension(ext)?30:5;
+      const limit=limitMb*1024*1024;
+      if(file.size>limit){alert(`${file.name} ${limitMb}MB'dan buyuk, atlandi.`);continue;}
+      const b64=await fileToBase64(file);
+      results.push({name:file.name,size:file.size,type:file.type,data:b64});
+    }
+    fv("files",[...form.files,...results]);
+    setUploading(false);
+  }
+
+  async function save() {
+    if(!form.name||!form.partSec){alert("ParÃ§a adÄ± ve sÃ¼re zorunlu!");return;}
+    if(form.machines.length===0){alert("En az bir tezgah seÃ§in!");return;}
+    const finalCode=editId?form.code:(form.code||nextOrderCode());
+    const pickedCustomer=customers.find(c=>c.id===form.customerId);
+    const editingOrder=editId?orders.find(x=>x.id===editId):null;
+    const data={
+      code:finalCode.toUpperCase(),
+      name:form.name,
+      partId:String(form.partId||editingOrder?.partId||""),
+      partNo:(form.partNo||"").trim().toUpperCase(),
+      revision:(form.revision||"A").trim().toUpperCase(),
+      customerPartCode:String(form.customerPartCode||editingOrder?.customerPartCode||"").trim().toUpperCase(),
+      partSnapshot:(form.partSnapshot&&typeof form.partSnapshot==="object")
+        ? form.partSnapshot
+        : ((editingOrder?.partSnapshot&&typeof editingOrder.partSnapshot==="object")?editingOrder.partSnapshot:null),
+      customerId:pickedCustomer?.id||"",
+      customerName:pickedCustomer?.name||"",
+      material:form.material,
+      qty:Math.max(0,safeNum(form.qty)||0),
+      dueDate:form.dueDate||"",
+      priority:form.priority||"normal",
+      dependencies:(form.dependencies||[]).filter(Boolean),
+      partSec:Number(form.partSec),
+      machines:form.machines,
+      notes:form.notes,
+      files:form.files,
+      sourceType:form.sourceType||"manual",
+      status:editId?(form.status||"planned"):"planned",
+      updatedAt:new Date().toISOString(),
+    };
+    if(editId){
+      await window.DB.updateDoc("orders",editId,data);
+      setOrders(o=>o.map(x=>x.id===editId?{...x,...data}:x));
+    } else {
+      const id=await window.DB.addDoc("orders",{...data,createdBy:currentUser.id});
+      if(id) setOrders(o=>[{id,...data,createdAt:new Date().toISOString()},...o]);
+    }
+    setShowForm(false); setForm(emptyForm); setEditId(null);
+  }
+
+  async function setOrderStatus(o,status) {
+    if(o.status===status) return;
+    await window.DB.updateDoc("orders",o.id,{status});
+    setOrders(orders=>orders.map(x=>x.id===o.id?{...x,status}:x));
+  }
+
+  async function duplicateWorkOrder(order){
+    if(!order){return;}
+    const newCode=nextOrderCode(orders);
+    const data={
+      code:newCode.toUpperCase(),
+      name:order.name||"",
+      partId:order.partId||"",
+      partNo:(order.partNo||"").trim().toUpperCase(),
+      revision:(order.revision||"A").trim().toUpperCase(),
+      customerPartCode:String(order.customerPartCode||"").trim().toUpperCase(),
+      partSnapshot:(order.partSnapshot&&typeof order.partSnapshot==="object")?order.partSnapshot:null,
+      customerId:order.customerId||"",
+      customerName:order.customerName||"",
+      material:order.material||"",
+      qty:Math.max(0,safeNum(order.qty)||0),
+      dueDate:order.dueDate||todayStr(),
+      priority:order.priority||"normal",
+      dependencies:[...(order.dependencies||[])],
+      partSec:Math.max(1,safeNum(order.partSec)||1),
+      machines:[...(order.machines||[])],
+      notes:[(order.notes||""),`Kopya: ${order.code||"-"}`].filter(Boolean).join(" Â· "),
+      files:[...(order.files||[])],
+      sourceType:order.sourceType||"manual",
+      status:"planned",
+      copiedFromOrderId:order.id||"",
+      copiedFromOrderCode:order.code||"",
+      updatedAt:new Date().toISOString(),
+    };
+    const id=await window.DB.addDoc("orders",{...data,createdBy:currentUser.id});
+    if(!id){alert("Is emri kopyalanamadi.");return;}
+    await addAuditLog(currentUser.id,"workOrder",id,"copy",order,data,{module:"orders"});
+    setOrders(prev=>[{id,...data,createdAt:new Date().toISOString()},...prev]);
+  }
+
+  const q=search.trim().toLowerCase();
+  const toYmd=value=>{
+    const raw=String(value||"").trim();
+    if(!raw) return "";
+    if(/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    if(/^\d{4}-\d{2}-\d{2}T/.test(raw)) return raw.slice(0,10);
+    const d=new Date(raw);
+    if(Number.isNaN(d.getTime())) return "";
+    return ymdLocal(d);
+  };
+  const inRange=(ymd,from,to)=>{
+    if(from&&(!ymd||ymd<from)) return false;
+    if(to&&(!ymd||ymd>to)) return false;
+    return true;
+  };
+  const usageCountByOrder={};
+  const productionByOrder={};
+  toolMovements.forEach(m=>{
+    const key=m.orderId||m.orderCode;
+    if(!key) return;
+    usageCountByOrder[key]=(usageCountByOrder[key]||0)+1;
+  });
+  entryToolChanges.forEach(m=>{
+    const key=m.orderCode;
+    if(!key) return;
+    usageCountByOrder[key]=(usageCountByOrder[key]||0)+1;
+  });
+  entries.forEach(e=>{
+    const key=e.jobCode||"";
+    if(!key) return;
+    if(!productionByOrder[key]) productionByOrder[key]={correct:0,wrong:0,total:0};
+    productionByOrder[key].correct+=(Number(e.correct)||0);
+    productionByOrder[key].wrong+=(Number(e.wrong)||0);
+    productionByOrder[key].total+=(Number(e.correct)||0)+(Number(e.wrong)||0);
+  });
+  const toggleStatusFilter=statusId=>{
+    setStatusFilters(prev=>prev.includes(statusId)?prev.filter(x=>x!==statusId):[...prev,statusId]);
+  };
+  const filteredOrders=[...orders.filter(o=>{
+    const statusOk=statusFilters.length===0 ? true : statusFilters.includes(o.status||"passive");
+    const textOk=!q || (o.code||"").toLowerCase().includes(q) || (o.name||"").toLowerCase().includes(q) || (o.material||"").toLowerCase().includes(q) || (o.customerName||"").toLowerCase().includes(q);
+    const dateYmd=toYmd(o.dueDate)||toYmd(o.createdAt)||toYmd(o.updatedAt);
+    const dateOk=inRange(dateYmd,dueDateFrom,dueDateTo);
+    return statusOk&&textOk&&dateOk;
+  })].sort((a,b)=>{
+    const aDate=toYmd(a.dueDate)||toYmd(a.createdAt)||toYmd(a.updatedAt)||"";
+    const bDate=toYmd(b.dueDate)||toYmd(b.createdAt)||toYmd(b.updatedAt)||"";
+    const cmp=aDate.localeCompare(bDate);
+    if(cmp!==0) return sortDir==="asc"?cmp:-cmp;
+    const aCreated=String(a.createdAt||"");
+    const bCreated=String(b.createdAt||"");
+    const createdCmp=aCreated.localeCompare(bCreated);
+    return sortDir==="asc"?createdCmp:-createdCmp;
+  });
+  const orderStatusCountMap={};
+  ORDER_STATUS_OPTIONS.forEach(st=>{
+    orderStatusCountMap[st.id]=orders.filter(o=>(o.status||"passive")===st.id).length;
+  });
+  const renderWorkOrderTableCell=(o,usage,produced,priorityLabel,col)=>{
+    if(col.id==="work_order"){
+      return (
+        <td key={col.id} style={{padding:"10px 12px",minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+            <span style={{fontWeight:800,fontSize:13,fontFamily:"monospace",color:C.text,whiteSpace:"nowrap"}}>{o.code}</span>
+            {(o.files||[]).length>0&&<Badge label={`${o.files.length} dosya`} color={C.purple}/>}
+          </div>
+          <div style={{fontSize:12,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.name||"-"}</div>
+          <div style={{fontSize:11,color:C.muted2,marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+            {o.sourceType==="sales_auto"?"Siparisten Otomatik":"Manuel"}{(o.dependencies||[]).length>0?` Â· ${o.dependencies.length} bagimlilik`:""}
+          </div>
+        </td>
+      );
+    }
+    if(col.id==="customer_part"){
+      return (
+        <td key={col.id} style={{padding:"10px 12px",fontSize:12,color:C.muted2,minWidth:0}}>
+          <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:C.text,fontWeight:600}}>{o.customerName||"-"}</div>
+          <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.partNo||"-"}{o.revision?` Rev.${o.revision}`:""}</div>
+          <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.material||"-"}</div>
+        </td>
+      );
+    }
+    if(col.id==="due"){
+      return (
+        <td key={col.id} style={{padding:"10px 12px",fontSize:12,color:C.muted2}}>
+          <div>{o.dueDate||"-"}</div>
+          <div>{safeNum(o.qty)} adet</div>
+          <div>{priorityLabel}</div>
+        </td>
+      );
+    }
+    if(col.id==="status_production"){
+      return (
+        <td key={col.id} style={{padding:"10px 12px",fontSize:12,color:C.muted2}}>
+          <div style={{marginBottom:4}}><Badge label={getOrderStatusMeta(o.status).label} color={getOrderStatusMeta(o.status).color}/></div>
+          <div>Uretim: {produced}</div>
+          <div>Takim: {usage}</div>
+        </td>
+      );
+    }
+    if(col.id==="actions"){
+      return (
+        <td key={col.id} style={{padding:"10px 12px"}}>
+          <div style={{display:"flex",gap:6,justifyContent:"flex-end",alignItems:"center",flexWrap:"wrap"}}>
+            <button onClick={()=>setViewOrder(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Goruntule</button>
+            <button onClick={()=>{setForm({code:o.code,name:o.name,partId:o.partId||"",partNo:o.partNo||"",revision:o.revision||"A",customerPartCode:o.customerPartCode||"",partSnapshot:(o.partSnapshot&&typeof o.partSnapshot==="object")?o.partSnapshot:null,customerId:o.customerId||"",material:o.material||"",qty:String(o.qty??"1"),dueDate:o.dueDate||todayStr(),priority:o.priority||"normal",dependencies:o.dependencies||[],partSec:o.partSec,machines:o.machines||[],notes:o.notes||"",files:o.files||[],status:o.status||"planned",sourceType:o.sourceType||"manual"});setEditId(o.id);setShowForm(true);}} style={{...btnSt(),padding:"5px 8px",fontSize:11}}>Duzenle</button>
+            <button onClick={()=>duplicateWorkOrder(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Kopyala</button>
+            <select style={{...inputSt,width:130,padding:"5px 8px",fontSize:11}} value={o.status||"passive"} onChange={e=>setOrderStatus(o,e.target.value)}>
+              {ORDER_STATUS_OPTIONS.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
+            </select>
+          </div>
+        </td>
+      );
+    }
+    return null;
+  };
+  const workSplitWrapStyle={
+    display:"flex",
+    gap:10,
+    alignItems:workListPanelsStacked?"flex-start":"stretch",
+    flexWrap:"wrap",
+    ...(workListPanelsStacked
+      ? {}
+      : {
+        height:workListPanelHeight,
+        maxHeight:workListPanelHeight,
+        flex:1,
+        minHeight:0,
+        overflow:"hidden",
+      }),
+  };
+  const workFilterPanelStyle={
+    flex:"0 0 250px",
+    width:"100%",
+    maxWidth:280,
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    padding:12,
+    display:"flex",
+    flexDirection:"column",
+    gap:10,
+    ...(workListPanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+        overflowY:"auto",
+        overscrollBehavior:"contain",
+        scrollbarGutter:"stable",
+      }),
+  };
+  const workListColumnStyle={
+    flex:"1 1 760px",
+    minWidth:0,
+    display:"flex",
+    flexDirection:"column",
+    gap:8,
+    ...(workListPanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+      }),
+  };
+  const workListTableCardStyle={
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    overflow:"hidden",
+    display:"flex",
+    flexDirection:"column",
+    ...(workListPanelsStacked?{}:{flex:1,minHeight:0}),
+  };
+  const workListTableScrollStyle=workListPanelsStacked
+    ? {overflowX:"auto"}
+    : {overflow:"auto",flex:1,minHeight:0,overscrollBehavior:"contain"};
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>YÃ¼kleniyor...</div>;
+  const materialOptions=(form.material&& !materials.some(x=>x.name===form.material))
+    ? [...materials,{id:"__current__",name:form.material}]
+    : materials;
+
+  if(viewOrder) return (
+    <div style={{padding:0}}>
+      <button onClick={()=>{setPreviewFile(null);setViewOrder(null);}} style={{...btnSt("ghost"),marginBottom:16,padding:"8px 14px",fontSize:13}}>â€¹ Geri</button>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0,marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+          <div><div style={{fontWeight:800,fontSize:18,fontFamily:"monospace",color:C.text}}>{viewOrder.code}</div><div style={{fontSize:15,fontWeight:600,marginTop:2,color:C.text}}>{viewOrder.name}</div></div>
+          <Badge label={getOrderStatusMeta(viewOrder.status).label} color={getOrderStatusMeta(viewOrder.status).color}/>
+        </div>
+        {[["Musteri",viewOrder.customerName],["Parca No",viewOrder.partNo],["Revizyon",viewOrder.revision],["Malzeme",viewOrder.material],["Miktar",safeNum(viewOrder.qty)>0?`${safeNum(viewOrder.qty)} adet`:""],["Termin",viewOrder.dueDate],["Oncelik",(PRIORITY_OPTIONS.find(p=>p.id===viewOrder.priority)||{}).label],["Kaynak",viewOrder.sourceType==="sales_auto"?"Siparisten Otomatik":"Manuel"],["Bagimliliklar",(viewOrder.dependencies||[]).join(", ")],["Parca Suresi",fmtSec(viewOrder.partSec)],["Maks Uretim/Gun",viewOrder.partSec?Math.floor(EFFECTIVE_SECONDS/viewOrder.partSec)+" adet":"-"],["Tezgahlar",(viewOrder.machines||[]).join(", ")],["Notlar",viewOrder.notes]].map(([l,v])=>v?(
+          <div key={l} style={{marginBottom:10}}><div style={{color:C.muted2,fontSize:11,letterSpacing:.8,textTransform:"uppercase",marginBottom:2}}>{l}</div><div style={{fontSize:14,color:C.text}}>{v}</div></div>
+        ):null)}
+        <div style={{marginBottom:2}}>
+          <div style={{color:C.muted2,fontSize:11,letterSpacing:.8,textTransform:"uppercase",marginBottom:2}}>Ãœretilen Adetler</div>
+          <div style={{fontSize:14,color:C.text}}>
+            Toplam: {(productionByOrder[viewOrder.code]?.total)||0} Â· DoÄŸru: {(productionByOrder[viewOrder.code]?.correct)||0} Â· HatalÄ±: {(productionByOrder[viewOrder.code]?.wrong)||0}
+          </div>
+        </div>
+      </div>
+      <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>TakÄ±m KullanÄ±mlarÄ± ({viewOrderMoves.length})</div>
+      {viewOrderMoves.length===0?(
+        <div style={{color:C.muted,fontSize:13,textAlign:"center",padding:20,background:C.card,borderRadius:12,border:`1px solid ${C.border}`,marginBottom:12}}>Bu iÅŸ emrine baÄŸlÄ± takÄ±m hareketi yok</div>
+      ):(
+        <div style={{marginBottom:12}}>
+          {viewOrderMoves.map((m,i)=>(
+            <div key={m.id||i} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",marginBottom:7,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+              <div>
+                <div style={{fontSize:13,color:C.text,fontWeight:700}}>{m.toolCode?`${m.toolCode} Â· `:""}{m.toolName||"TakÄ±m"}</div>
+                <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{(m.createdAt||"").slice(0,16).replace("T"," ")} {m.userName?`Â· ${m.userName}`:""} {m.note?`Â· ${m.note}`:""}</div>
+              </div>
+              <Badge label={`${m.type==="in"?"GiriÅŸ":(m.type==="out"?"Ã‡Ä±kÄ±ÅŸ":"Degisim")} ${m.qty}`} color={m.type==="in"?C.green:(m.type==="out"?C.red:C.warn)}/>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>Teknik Dosyalar ({(viewOrder.files||[]).length})</div>
+      {(viewOrder.files||[]).length===0?<div style={{color:C.muted,fontSize:13,textAlign:"center",padding:20,background:C.card,borderRadius:12,border:`1px solid ${C.border}`}}>Dosya yÃ¼klenmemiÅŸ</div>:
+        (viewOrder.files||[]).map((f,i)=>(
+          <div key={i} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",marginBottom:8,display:"flex",alignItems:"center",gap:12}}>
+            <div style={{fontSize:28,flexShrink:0}}>{getFileIcon(f.name)}</div>
+            <div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,fontSize:13,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:C.text}}>{f.name}</div><div style={{color:C.muted2,fontSize:11,marginTop:2}}>{formatBytes(f.size)}</div></div>
+            {f.data&&f.type&&f.type.startsWith("image/")&&<img src={f.data} alt={f.name} style={{width:48,height:48,objectFit:"cover",borderRadius:8,border:`1px solid ${C.border}`}}/>}
+            {canPreview(f)&&<button onClick={()=>setPreviewFile(f)} style={{...btnSt(),padding:"6px 10px",fontSize:12,flexShrink:0}}>GÃ¶rÃ¼ntÃ¼le</button>}
+            {f.data&&<a href={f.data} download={f.name} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,textDecoration:"none",flexShrink:0}}>?</a>}
+          </div>
+        ))
+      }
+      {previewFile&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.72)",zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:0}} onClick={()=>setPreviewFile(null)}>
+          <div style={{width:"100%",maxWidth:960,maxHeight:"88vh",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>
+              <div style={{fontSize:13,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{previewFile.name}</div>
+              <button onClick={()=>setPreviewFile(null)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kapat</button>
+            </div>
+            <div style={{padding:10,overflow:"auto",background:C.surface}}>
+              {isImageFile(previewFile)&&<img src={previewFile.data} alt={previewFile.name} style={{width:"100%",height:"auto",borderRadius:10,border:`1px solid ${C.border}`}}/>}
+              {isPdfFile(previewFile)&&<iframe title={previewFile.name} src={previewFile.data} style={{width:"100%",height:"70vh",border:`1px solid ${C.border}`,borderRadius:10,background:"#fff"}}/>}
+              {isStepFile(previewFile)&&<StepFileViewer file={previewFile}/>}
+              {!canFilePreview(previewFile)&&(
+                <div style={{padding:22,textAlign:"center",color:C.muted2,fontSize:13,border:`1px dashed ${C.border}`,borderRadius:10,background:C.card}}>
+                  Bu dosya turu icin onizleme yok. Dosyayi indirip harici uygulama ile acabilirsiniz.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  if(showForm) return (
+    <div style={{padding:0}}>
+      <button onClick={()=>{setShowForm(false);setForm(emptyForm);setEditId(null);}} style={{...btnSt("ghost"),marginBottom:16,padding:"8px 14px",fontSize:13}}>â€¹ Geri</button>
+      <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:16}}>{editId?"Ä°ÅŸ Emri DÃ¼zenle":"Yeni Ä°ÅŸ Emri"}</div>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div><span style={labelSt}>Ä°ÅŸ Emri Kodu *</span><input style={{...inputSt,background:editId?C.surface:C.card,color:editId?C.text:C.accent,fontWeight:700}} placeholder="IE-001" value={form.code} readOnly={!editId} onChange={e=>fv("code",e.target.value.toUpperCase())}/></div>
+        <div><span style={labelSt}>ParÃ§a AdÄ± *</span><input style={inputSt} placeholder="ParÃ§a adÄ±" value={form.name} onChange={e=>fv("name",e.target.value)}/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+          <div><span style={labelSt}>Parca No</span><input style={inputSt} placeholder="PRT-001" value={form.partNo||""} onChange={e=>fv("partNo",e.target.value)}/></div>
+          <div><span style={labelSt}>Revizyon</span><input style={inputSt} placeholder="A" value={form.revision||"A"} onChange={e=>fv("revision",e.target.value)}/></div>
+          <div><span style={labelSt}>Miktar</span><input style={inputSt} type="number" min="0" value={form.qty||"1"} onChange={e=>fv("qty",e.target.value)}/></div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+          <div><span style={labelSt}>Termin</span><input style={inputSt} type="date" value={form.dueDate||todayStr()} onChange={e=>fv("dueDate",e.target.value||todayStr())}/></div>
+          <div>
+            <span style={labelSt}>Oncelik</span>
+            <select style={inputSt} value={form.priority||"normal"} onChange={e=>fv("priority",e.target.value)}>
+              {PRIORITY_OPTIONS.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <span style={labelSt}>Kaynak</span>
+            <select style={inputSt} value={form.sourceType||"manual"} onChange={e=>fv("sourceType",e.target.value)}>
+              <option value="manual">Manuel</option>
+              <option value="sales_auto">Siparisten Otomatik</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <span style={labelSt}>MÃ¼ÅŸteri</span>
+          <select style={inputSt} value={form.customerId||""} onChange={e=>fv("customerId",e.target.value)}>
+            <option value="">MÃ¼ÅŸteri seÃ§in (opsiyonel)</option>
+            {customers.map(c=><option key={c.id} value={c.id}>{c.name}{c.code?` (${c.code})`:""}</option>)}
+          </select>
+        </div>
+        <div>
+          <span style={labelSt}>Malzeme</span>
+          <select style={inputSt} value={form.material||""} onChange={e=>fv("material",e.target.value)}>
+            <option value="">Malzeme secin...</option>
+            {materialOptions.map(m=><option key={m.id||m.name} value={m.name||""}>{m.code?`${m.code} - `:""}{m.name||""}</option>)}
+          </select>
+        </div>
+        <div>
+          <span style={labelSt}>ParÃ§a SÃ¼resi (saniye) *</span>
+          <input style={inputSt} type="number" min="1" placeholder="Ã–rn: 90" value={form.partSec} onChange={e=>fv("partSec",e.target.value)}/>
+          {form.partSec>0&&<div style={{color:C.muted2,fontSize:11,marginTop:5}}>â€º Maks: <span style={{color:C.accent,fontWeight:700}}>{Math.floor(EFFECTIVE_SECONDS/Number(form.partSec))} adet</span>/gÃ¼n ({fmtSec(Number(form.partSec))}/parÃ§a)</div>}
+        </div>
+        <div>
+          <span style={labelSt}>Tezgah AtamasÄ± *</span>
+          <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+            {machines.map(m=><button key={m} onClick={()=>toggleMachine(m)} style={chip(form.machines.includes(m))}>{m}</button>)}
+          </div>
+        </div>
+        <div>
+          <span style={labelSt}>Bagimli Is Emirleri</span>
+          <select multiple style={{...inputSt,minHeight:86}} value={form.dependencies||[]} onChange={e=>fv("dependencies",Array.from(e.target.selectedOptions).map(o=>o.value))}>
+            {orders.filter(o=>o.id!==editId).map(o=><option key={o.id} value={o.code||o.id}>{o.code} - {o.name}</option>)}
+          </select>
+          <div style={{fontSize:11,color:C.muted2,marginTop:5}}>Ctrl/Cmd ile birden fazla secim yapabilirsiniz.</div>
+        </div>
+        <div><span style={labelSt}>Notlar</span><textarea style={{...inputSt,resize:"vertical",minHeight:70}} placeholder="Notlar..." value={form.notes} onChange={e=>fv("notes",e.target.value)}/></div>
+        <div>
+          <span style={labelSt}>Teknik Dosyalar</span>
+          <div onClick={()=>fileRef.current?.click()} style={{border:`2px dashed ${C.border}`,borderRadius:12,padding:20,textAlign:"center",cursor:"pointer",background:C.surface}} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();handleFiles(e.dataTransfer.files);}}>
+            <div style={{fontSize:28,marginBottom:6}}>??</div>
+            <div style={{color:C.muted2,fontSize:13}}>{uploading?"YÃ¼kleniyor...":"Dosya seÃ§ veya sÃ¼rÃ¼kle bÄ±rak"}</div>
+            <div style={{color:C.muted,fontSize:11,marginTop:4}}>Resim, PDF, DXF, DWG Â· Maks 5MB/dosya</div>
+          </div>
+          <input ref={fileRef} type="file" multiple accept="image/*,.pdf,.dxf,.dwg,.step,.stp" style={{display:"none"}} onChange={e=>handleFiles(e.target.files)}/>
+          {form.files.map((f,i)=>(
+            <div key={i} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",marginTop:8,display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:20}}>{getFileIcon(f.name)}</span>
+              <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:C.text}}>{f.name}</div><div style={{fontSize:11,color:C.muted2}}>{formatBytes(f.size)}</div></div>
+              {f.data&&f.type&&f.type.startsWith("image/")&&<img src={f.data} alt="" style={{width:36,height:36,objectFit:"cover",borderRadius:6}}/>}
+              <button onClick={()=>fv("files",form.files.filter((_,idx)=>idx!==i))} style={{background:"transparent",border:"none",color:C.red,fontSize:18,cursor:"pointer"}}>Ã—</button>
+            </div>
+          ))}
+        </div>
+        <div style={{display:"flex",gap:8}}><button onClick={save} style={{...btnSt("primary"),flex:1,padding:13}}>?? Kaydet</button><button onClick={()=>{setShowForm(false);setForm(emptyForm);setEditId(null);}} style={{...btnSt("ghost"),padding:13}}>Ä°ptal</button></div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:10,minHeight:"100%"}}>
+      <div ref={workListPanelRef} style={workSplitWrapStyle}>
+        {filtersVisible&&(
+          <div style={workFilterPanelStyle}>
+            <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Is Emirleri</div>
+            <input style={{...inputSt,padding:"8px 10px",fontSize:12}} placeholder="Kod, parca, musteri ara..." value={search} onChange={e=>setSearch(e.target.value)}/>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Termin Araligi</div>
+            <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={dueDateFrom} onChange={e=>setDueDateFrom(e.target.value||"")}/>
+            <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={dueDateTo} onChange={e=>setDueDateTo(e.target.value||"")}/>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Durum</div>
+            <button onClick={()=>setStatusFilters([])} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:statusFilters.length===0?C.accent:C.border,color:statusFilters.length===0?C.accent:C.text}}>
+              <span>Tum Durumlar</span>
+              <span style={{fontSize:11,color:C.muted2}}>{orders.length}</span>
+            </button>
+            <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:260,overflowY:"auto"}}>
+              {ORDER_STATUS_OPTIONS.map(s=>(
+                <button key={s.id} onClick={()=>toggleStatusFilter(s.id)} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:statusFilters.includes(s.id)?s.color:C.border,color:statusFilters.includes(s.id)?s.color:C.text}}>
+                  <span>{s.label}</span>
+                  <span style={{fontSize:11,color:C.muted2}}>{orderStatusCountMap[s.id]||0}</span>
+                </button>
+              ))}
+            </div>
+            <button onClick={()=>{setStatusFilters([]);setDueDateFrom("");setDueDateTo("");setSearch("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
+          </div>
+        )}
+        <div style={workListColumnStyle}>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <div style={{fontSize:12,color:C.muted2}}>Gosterilen Kayit: {filteredOrders.length}</div>
+            <TableColumnEditor
+              title="Is Emri Tablosu"
+              columns={workOrderTableColumns}
+              onToggle={toggleWorkOrderTableColumn}
+              onMove={moveWorkOrderTableColumn}
+              onReset={resetWorkOrderTableColumns}
+            />
+          </div>
+          <div style={workListTableCardStyle}>
+            <div style={workListTableScrollStyle}>
+              <table style={{width:"100%",minWidth:workOrderTableMinWidth,borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{background:C.surface,color:C.muted2,textAlign:"left"}}>
+                    {visibleWorkOrderTableColumns.map(col=>(
+                      <th key={col.id} style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:col.align||"left",position:"sticky",top:0,zIndex:2,background:C.surface}}>{col.label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredOrders.map(o=>{
+                    const usage=safeNum(usageCountByOrder[o.id]||usageCountByOrder[o.code]);
+                    const produced=safeNum(productionByOrder[o.code]?.total);
+                    const priorityLabel=(PRIORITY_OPTIONS.find(p=>p.id===o.priority)||{}).label||"Normal";
+                    return (
+                      <tr key={o.id} style={{borderBottom:`1px solid ${C.border}`,opacity:(o.status==="passive"||o.status==="liquidation")?0.6:1}}>
+                        {visibleWorkOrderTableColumns.map(col=>renderWorkOrderTableCell(o,usage,produced,priorityLabel,col))}
+                      </tr>
+                    );
+                  })}
+                  {orders.length===0&&(
+                    <tr>
+                      <td colSpan={Math.max(1,visibleWorkOrderTableColumns.length)} style={{padding:"26px 12px",textAlign:"center",color:C.muted2}}>Henuz is emri yok.</td>
+                    </tr>
+                  )}
+                  {orders.length>0&&filteredOrders.length===0&&(
+                    <tr>
+                      <td colSpan={Math.max(1,visibleWorkOrderTableColumns.length)} style={{padding:"26px 12px",textAlign:"center",color:C.muted2}}>Filtreye uygun is emri bulunamadi.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+//  DATA ENTRY
+// ============================================================
+function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
+  const [orders,setOrders]=useState([]);
+  const [tools,setTools]=useState([]);
+  const [plans,setPlans]=useState([]);
+  const [telemetryRows,setTelemetryRows]=useState([]);
+  const [todayEntries,setTodayEntries]=useState([]);
+  const [saved,setSaved]=useState(false);
+  const [search,setSearch]=useState("");
+  const [showPicker,setShowPicker]=useState(false);
+  const [editId,setEditId]=useState(null);
+  const [lockedMachine,setLockedMachine]=useState("");
+  const [stationTag,setStationTag]=useState("");
+  const [showToolModal,setShowToolModal]=useState(false);
+  const [showShiftModal,setShowShiftModal]=useState(false);
+  const [shiftModalMode,setShiftModalMode]=useState("shiftEnd");
+  const [previewFile,setPreviewFile]=useState(null);
+  const [showOrderDataPanel,setShowOrderDataPanel]=useState(false);
+  const [toolDraft,setToolDraft]=useState({machineToolId:"",machineToolQty:"1"});
+  const [shiftDraft,setShiftDraft]=useState({correct:"",wrong:""});
+  const [kioskViewport,setKioskViewport]=useState(()=>({
+    w:(typeof window!=="undefined"&&window.innerWidth)?window.innerWidth:1920,
+    h:(typeof window!=="undefined"&&window.innerHeight)?window.innerHeight:1080,
+  }));
+  const [kioskSettings,setKioskSettings]=useState(DEFAULT_KIOSK_SETTINGS);
+  const cycleDeviationStateRef=useRef({});
+  const [form,setForm]=useState({
+    entryDate:todayStr(),
+    machine:machines[0]||"CNC-1",
+    shift:DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1",
+    selectedOrder:null,
+    correct:"",
+    wrong:"",
+    machineToolId:"",
+    machineToolQty:"1",
+  });
+
+  useEffect(()=>{
+    Promise.all([window.DB.getAll("orders"),window.DB.getAll("toolStock"),window.DB.getAll("plans"),window.DB.getAll("machineTelemetryMock")]).then(([o,t,p,tel])=>{
+      setOrders(o.filter(x=>isOpenOrderStatus(x.status)));
+      setTools(t);
+      setPlans(p||[]);
+      setTelemetryRows((tel||[]).sort((a,b)=>(b.collectedAtUtc||b.createdAt||"").localeCompare(a.collectedAtUtc||a.createdAt||"")));
+    });
+  },[]);
+
+  useEffect(()=>{
+    let timer=0;
+    let cancelled=false;
+    async function refreshTelemetry(){
+      const tel=await window.DB.getAll("machineTelemetryMock");
+      if(cancelled) return;
+      setTelemetryRows((tel||[]).sort((a,b)=>(b.collectedAtUtc||b.createdAt||"").localeCompare(a.collectedAtUtc||a.createdAt||"")));
+    }
+    refreshTelemetry();
+    timer=setInterval(refreshTelemetry,7000);
+    return ()=>{
+      cancelled=true;
+      clearInterval(timer);
+    };
+  },[]);
+  useEffect(()=>{
+    let disposed=false;
+    async function loadKioskSettings(){
+      const doc=await window.DB.getDoc("config","kioskSettings");
+      if(disposed) return;
+      setKioskSettings(normalizeKioskSettings(doc||{}));
+    }
+    function onKioskSettingsUpdated(e){
+      if(disposed) return;
+      setKioskSettings(normalizeKioskSettings(e?.detail||{}));
+    }
+    loadKioskSettings();
+    if(typeof window!=="undefined"){
+      window.addEventListener("kiosk_settings_updated",onKioskSettingsUpdated);
+    }
+    return ()=>{
+      disposed=true;
+      if(typeof window!=="undefined"){
+        window.removeEventListener("kiosk_settings_updated",onKioskSettingsUpdated);
+      }
+    };
+  },[]);
+  useEffect(()=>{
+    if(!kioskMode||!showPicker) return;
+    if(typeof document==="undefined") return;
+    const prev=document.body.style.overflow;
+    document.body.style.overflow="hidden";
+    return ()=>{ document.body.style.overflow=prev; };
+  },[kioskMode,showPicker]);
+  useEffect(()=>{
+    if(!kioskMode||!showPicker) return;
+    setShowPicker(false);
+    setSearch("");
+  },[kioskMode,showPicker]);
+  useEffect(()=>{
+    if(!kioskMode||typeof window==="undefined") return;
+    const onResize=()=>setKioskViewport({
+      w:window.innerWidth||1920,
+      h:window.innerHeight||1080,
+    });
+    onResize();
+    window.addEventListener("resize",onResize);
+    window.addEventListener("orientationchange",onResize);
+    return ()=>{
+      window.removeEventListener("resize",onResize);
+      window.removeEventListener("orientationchange",onResize);
+    };
+  },[kioskMode]);
+
+  useEffect(()=>{
+    if(typeof window==="undefined") return;
+    const params=new URLSearchParams(window.location.search||"");
+    const qpMachine=(params.get("machine")||"").trim();
+    const qpStation=(params.get("station")||params.get("screen")||"").trim();
+    if(!kioskMode){
+      setLockedMachine("");
+      setStationTag("");
+      return;
+    }
+    if(qpMachine.toLowerCase()==="all"){
+      setLockedMachine("");
+      setStationTag(qpStation||"");
+      return;
+    }
+    if(qpMachine){
+      setLockedMachine(qpMachine);
+      setStationTag(qpStation||qpMachine);
+      setForm(prev=>({...prev,machine:qpMachine,selectedOrder:null}));
+      return;
+    }
+    setLockedMachine("");
+    setStationTag(qpStation||"");
+  },[kioskMode,machines.join("|")]);
+
+  useEffect(()=>{
+    window.DB.getAll("entries").then(e=>setTodayEntries(e.filter(x=>x.date===form.entryDate&&x.operatorId===currentUser.id)));
+  },[currentUser.id,form.entryDate]);
+
+  const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const filtered=orders.filter(o=>o.code.toLowerCase().includes(search.toLowerCase())||o.name.toLowerCase().includes(search.toLowerCase()));
+  const toolOptions=[...tools].sort((a,b)=>(a.code||"").localeCompare(b.code||""));
+  const stockedTools=[...tools].filter(t=>safeNum(t.qty)>0).sort((a,b)=>{
+    const qd=safeNum(b.qty)-safeNum(a.qty);
+    if(qd!==0) return qd;
+    return (a.code||"").localeCompare(b.code||"","tr");
+  });
+  const addUsage=(map,id,qty)=>{
+    if(!id) return;
+    const q=Number(qty)||0;
+    if(q<=0) return;
+    map.set(id,(map.get(id)||0)+q);
+  };
+  const getUsageMap=entry=>{
+    const map=new Map();
+    if(!entry) return map;
+    addUsage(map,entry.machineToolId,entry.machineToolQty??entry.machineToolChange??0);
+    addUsage(map,entry.orderToolId,entry.orderToolQty??entry.orderToolChange??0);
+    return map;
+  };
+  const getDeltaMap=(prevEntry,nextEntry)=>{
+    const delta=new Map();
+    getUsageMap(prevEntry).forEach((qty,id)=>delta.set(id,(delta.get(id)||0)+qty));
+    getUsageMap(nextEntry).forEach((qty,id)=>delta.set(id,(delta.get(id)||0)-qty));
+    return delta;
+  };
+  const invertDeltaMap=delta=>{
+    const inv=new Map();
+    delta.forEach((d,id)=>inv.set(id,-d));
+    return inv;
+  };
+  async function applyToolStockDelta(delta){
+    const changes=[...delta.entries()].filter(([,d])=>d!==0);
+    if(changes.length===0) return true;
+    for(const [id,d] of changes){
+      const tool=tools.find(t=>t.id===id);
+      if(!tool){
+        alert("SeÃ§ili takÄ±m stokta bulunamadÄ±. LÃ¼tfen tekrar seÃ§in.");
+        return false;
+      }
+      const nextQty=(Number(tool.qty)||0)+d;
+      if(nextQty<0){
+        alert(`Yetersiz stok: ${tool.code||tool.name||"TakÄ±m"}`);
+        return false;
+      }
+    }
+    for(const [id,d] of changes){
+      const tool=tools.find(t=>t.id===id);
+      const nextQty=(Number(tool.qty)||0)+d;
+      const ok=await window.DB.updateDoc("toolStock",id,{qty:nextQty,updatedAt:new Date().toISOString()});
+      if(!ok){
+        alert("TakÄ±m stoÄŸu gÃ¼ncellenemedi.");
+        return false;
+      }
+    }
+    setTools(prev=>prev.map(t=>{
+      const d=delta.get(t.id)||0;
+      return d===0?t:{...t,qty:(Number(t.qty)||0)+d};
+    }));
+    return true;
+  }
+  const selectedDateObj=parseYmdLocal(form.entryDate);
+  const selectedDateLabel=new Intl.DateTimeFormat("tr-TR",{weekday:"long",day:"2-digit",month:"long",year:"numeric"}).format(selectedDateObj);
+  function getPlannedOrder(machine,date){
+    if(!machine||!date) return null;
+    const planned=plans.find(p=>p.machine===machine&&p.date===date);
+    if(!planned) return null;
+    const activeOrder=orders.find(o=>o.id===planned.orderId);
+    if(activeOrder) return activeOrder;
+    if(planned.orderCode||planned.orderName){
+      return {
+        id:planned.orderId||"",
+        code:planned.orderCode||"",
+        name:planned.orderName||"",
+        partSec:Number(planned.orderPartSec)||0,
+        material:"",
+      };
+    }
+    return null;
+  }
+  function selectMachine(machine){
+    if(lockedMachine) return;
+    const plannedOrder=getPlannedOrder(machine,form.entryDate);
+    setForm(p=>({...p,machine,selectedOrder:plannedOrder||null}));
+    setShowPicker(false);
+    setSearch("");
+  }
+  useEffect(()=>{
+    if(editId) return;
+    const plannedOrder=getPlannedOrder(form.machine,form.entryDate);
+    setForm(prev=>{
+      const prevKey=(prev.selectedOrder?.id||prev.selectedOrder?.code||"");
+      const nextKey=(plannedOrder?.id||plannedOrder?.code||"");
+      if(prevKey===nextKey) return prev;
+      return {...prev,selectedOrder:plannedOrder||null};
+    });
+  },[editId,form.machine,form.entryDate,plans,orders]);
+  const resetEntryForm=()=>setForm(p=>{
+    const nextMachine=p.machine||machines[0]||"CNC-1";
+    const nextDate=p.entryDate||todayStr();
+    const autoOrder=kioskMode?getPlannedOrder(nextMachine,nextDate):null;
+    return {
+      entryDate:nextDate,
+      machine:nextMachine,
+      shift:p.shift||(DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1"),
+      selectedOrder:autoOrder||null,
+      correct:"",
+      wrong:"",
+      machineToolId:"",
+      machineToolQty:"1",
+    };
+  });
+  function scheduleKioskReload(delayMs=450){
+    if(!kioskMode||typeof window==="undefined") return;
+    window.setTimeout(()=>window.location.reload(),Math.max(0,Number(delayMs)||0));
+  }
+
+  async function submitShiftEnd(correctValue,wrongValue) {
+    if(!form.selectedOrder){
+      alert(kioskMode?"Bu tezgah icin planlama kaydi yok. Planlama ekranindan is emri atayin.":"Ä°ÅŸ emri seÃ§in!");
+      return false;
+    }
+    if(correctValue===""||Number(correctValue)<0){alert("DoÄŸru adet zorunlu!");return false;}
+    const correctNum=Number(correctValue);
+    const wrongNum=Number(wrongValue)||0;
+    const prevEntry=editId?todayEntries.find(x=>x.id===editId):null;
+    const preservedMachineToolQty=editId?Math.max(0,Number(prevEntry?.machineToolQty??prevEntry?.machineToolChange??0)):0;
+    const d=parseYmdLocal(form.entryDate);
+    const entry={
+      date:ymdLocal(d), week:weekStart(d), month:monthStr(d),
+      machine:form.machine, shift:form.shift, shiftLabel:selectedShiftMeta.label||form.shift||"",
+      operatorId:currentUser.id, operatorName:currentUser.fullName,
+      jobCode:form.selectedOrder.code, jobName:form.selectedOrder.name,
+      partSec:Number(form.selectedOrder.partSec),
+      correct:correctNum, wrong:wrongNum,
+      machineToolId:editId?(prevEntry?.machineToolId||""):"",
+      machineToolCode:editId?(prevEntry?.machineToolCode||""):"",
+      machineToolName:editId?(prevEntry?.machineToolName||""):"",
+      machineToolQty:editId?preservedMachineToolQty:0,
+      machineToolChange:editId?preservedMachineToolQty:0,
+      entryType:"production",
+    };
+    const stockDelta=getDeltaMap(prevEntry,entry);
+    const stockOk=await applyToolStockDelta(stockDelta);
+    if(!stockOk) return false;
+    if(editId){
+      const ok=await window.DB.updateDoc("entries",editId,entry);
+      if(ok){
+        setTodayEntries(e=>e.map(x=>x.id===editId?{...x,...entry}:x));
+        setEditId(null);
+        setSaved(true); setTimeout(()=>setSaved(false),2000);
+        resetEntryForm();
+        setShiftDraft({correct:"",wrong:""});
+        scheduleKioskReload();
+        return true;
+      }else{
+        await applyToolStockDelta(invertDeltaMap(stockDelta));
+        return false;
+      }
+    }
+    const id=await window.DB.addDoc("entries",entry);
+    if(id){
+      setTodayEntries(e=>[{id,...entry},...e]);
+      setSaved(true); setTimeout(()=>setSaved(false),2000);
+      resetEntryForm();
+      setShiftDraft({correct:"",wrong:""});
+      scheduleKioskReload();
+      return true;
+    }else{
+      await applyToolStockDelta(invertDeltaMap(stockDelta));
+      return false;
+    }
+  }
+
+  function startEdit(entry){
+    const matched=orders.find(o=>o.code===entry.jobCode);
+    const selectedOrder=matched||{code:entry.jobCode,name:entry.jobName,partSec:entry.partSec};
+    setEditId(entry.id);
+    setShowPicker(false);
+    setForm({
+      entryDate:entry.date||todayStr(),
+      machine:entry.machine||machines[0]||"CNC-1",
+      shift:entry.shift||(DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1"),
+      selectedOrder,
+      correct:String(entry.correct??""),
+      wrong:String(entry.wrong??0),
+      machineToolId:entry.machineToolId||"",
+      machineToolQty:String(entry.machineToolQty??entry.machineToolChange??1),
+    });
+    setShiftDraft({
+      correct:String(entry.correct??""),
+      wrong:String(entry.wrong??0),
+    });
+  }
+
+  async function removeEntry(entry){
+    if(!confirm(`Bu girisi silmek istiyor musunuz? (${entry.jobCode})`)) return;
+    const stockDelta=getDeltaMap(entry,null);
+    const stockOk=await applyToolStockDelta(stockDelta);
+    if(!stockOk) return;
+    const ok=await window.DB.deleteDoc("entries",entry.id);
+    if(!ok){
+      await applyToolStockDelta(invertDeltaMap(stockDelta));
+      return;
+    }
+    setTodayEntries(e=>e.filter(x=>x.id!==entry.id));
+    if(editId===entry.id){
+      setEditId(null);
+      resetEntryForm();
+    }
+  }
+
+  function openToolChangeModal(){
+    setToolDraft({
+      machineToolId:form.machineToolId||"",
+      machineToolQty:String(form.machineToolQty||"1"),
+    });
+    setShowToolModal(true);
+  }
+
+  async function approveToolChange(){
+    const machineToolId=String(toolDraft.machineToolId||"");
+    if(!machineToolId){
+      setForm(p=>({...p,machineToolId:"",machineToolQty:"1"}));
+      setShowToolModal(false);
+      return;
+    }
+    if(!form.selectedOrder){
+      alert(kioskMode?"Bu tezgah icin planlama kaydi yok. Planlama ekranindan is emri atayin.":"Ä°ÅŸ emri seÃ§in!");
+      return;
+    }
+    const machineTool=tools.find(t=>t.id===machineToolId);
+    if(!machineTool){
+      alert("SeÃ§ili takÄ±m stokta bulunamadÄ±. LÃ¼tfen tekrar seÃ§in.");
+      return;
+    }
+    const machineToolQty=Math.max(1,Number(toolDraft.machineToolQty)||1);
+    const d=parseYmdLocal(form.entryDate||todayStr());
+    const entry={
+      date:ymdLocal(d), week:weekStart(d), month:monthStr(d),
+      machine:form.machine, shift:form.shift, shiftLabel:selectedShiftMeta.label||form.shift||"",
+      operatorId:currentUser.id, operatorName:currentUser.fullName,
+      jobCode:form.selectedOrder.code||"",
+      jobName:form.selectedOrder.name||"",
+      partSec:Number(form.selectedOrder.partSec)||0,
+      correct:0, wrong:0,
+      machineToolId:machineTool.id||"",
+      machineToolCode:machineTool.code||"",
+      machineToolName:machineTool.name||"",
+      machineToolQty,
+      machineToolChange:machineToolQty,
+      entryType:"tool_change",
+      note:"Takim degisimi",
+      createdAt:new Date().toISOString(),
+    };
+    const stockDelta=getDeltaMap(null,entry);
+    const stockOk=await applyToolStockDelta(stockDelta);
+    if(!stockOk) return;
+    const id=await window.DB.addDoc("entries",entry);
+    if(!id){
+      await applyToolStockDelta(invertDeltaMap(stockDelta));
+      alert("TakÄ±m deÄŸiÅŸimi kaydedilemedi.");
+      return;
+    }
+    setTodayEntries(e=>[{id,...entry},...e]);
+    setForm(p=>({
+      ...p,
+      machineToolId,
+      machineToolQty:String(machineToolQty),
+    }));
+    setShowToolModal(false);
+    if(kioskMode) scheduleKioskReload(250);
+  }
+
+  function openShiftEndModal(){
+    setShiftModalMode("shiftEnd");
+    setShiftDraft({
+      correct:String(shiftDraft.correct||form.correct||""),
+      wrong:String(shiftDraft.wrong||form.wrong||0),
+    });
+    setShowShiftModal(true);
+  }
+
+  function openRejectPartsModal(){
+    if(!form.selectedOrder){
+      alert(kioskMode?"Bu tezgah icin planlama kaydi yok. Planlama ekranindan is emri atayin.":"Ä°ÅŸ emri seÃ§in!");
+      return;
+    }
+    setShiftModalMode("rejectOnly");
+    setShiftDraft({
+      correct:"0",
+      wrong:String(shiftDraft.wrong||form.wrong||""),
+    });
+    setShowShiftModal(true);
+  }
+
+  function closeShiftModal(){
+    setShowShiftModal(false);
+    setShiftModalMode("shiftEnd");
+  }
+
+  async function approveShiftEnd(){
+    const correctValue=shiftModalMode==="rejectOnly"?"0":shiftDraft.correct;
+    const ok=await submitShiftEnd(correctValue,shiftDraft.wrong);
+    if(ok){
+      setShowShiftModal(false);
+      setShiftModalMode("shiftEnd");
+    }
+  }
+
+  const machineToolPicked=tools.find(t=>t.id===form.machineToolId);
+  const selectedOrderFiles=Array.isArray(form.selectedOrder?.files)?form.selectedOrder.files.filter(f=>f&&f.data):[];
+  const shiftWindowMap=useMemo(()=>{
+    const map={};
+    (kioskSettings.shiftWindows||[]).forEach(row=>{
+      const label=row.label||row.id||"";
+      const start=normalizeHm(row.start,"00:00");
+      const end=normalizeHm(row.end,start);
+      map[row.id]={label,time:`${start}-${end}`};
+    });
+    return map;
+  },[kioskSettings.shiftWindows]);
+  function downloadOrderFile(file){
+    if(!(file&&file.data)) return;
+    const a=document.createElement("a");
+    a.href=file.data;
+    a.download=file.name||"dokuman";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+  function openOrderFile(file){
+    if(!file) return;
+    if(canFilePreview(file)) setPreviewFile(file);
+    else downloadOrderFile(file);
+  }
+  const latestTelemetryByMachine={};
+  telemetryRows.forEach(r=>{
+    const keyRaw=(r.machineName||r.machine||r.machineCode||"").trim();
+    const key=keyRaw.toLowerCase();
+    if(!keyRaw) return;
+    if(!latestTelemetryByMachine[keyRaw]) latestTelemetryByMachine[keyRaw]=r;
+    if(!latestTelemetryByMachine[key]) latestTelemetryByMachine[key]=r;
+  });
+  const machineTelemetry=latestTelemetryByMachine[form.machine]||latestTelemetryByMachine[String(form.machine||"").toLowerCase()]||null;
+  const machineStatus=String(machineTelemetry?.status||"offline").toLowerCase();
+  function statusBucketOf(value){
+    const key=String(value||"offline").toLowerCase();
+    if(key==="running"||key==="live") return "running";
+    if(key==="setup"||key==="idle"||key==="waiting") return "waiting";
+    if(key==="alarm") return "alarm";
+    if(key==="stopped"||key==="down"||key==="offline") return "stopped";
+    return "stopped";
+  }
+  function telemetryTimeMs(row){
+    const raw=row?.collectedAtUtc||row?.createdAt||row?.machineLocalTime||"";
+    const ms=new Date(raw).getTime();
+    return Number.isFinite(ms)?ms:null;
+  }
+  const machineTelemetryRows=telemetryRows.filter(row=>{
+    const key=(row.machineName||row.machine||row.machineCode||"").trim().toLowerCase();
+    return key===String(form.machine||"").trim().toLowerCase();
+  });
+  const machineTelemetrySortedAsc=machineTelemetryRows
+    .map(row=>({...row,__ts:telemetryTimeMs(row)}))
+    .filter(row=>row.__ts!==null)
+    .sort((a,b)=>safeNum(a.__ts)-safeNum(b.__ts));
+  const machineTelemetryTs=telemetryTimeMs(machineTelemetry);
+  const currentDateKey=todayStr();
+  const selectedDateKey=form.entryDate||currentDateKey;
+  const dayStart=parseYmdLocal(selectedDateKey);
+  dayStart.setHours(0,0,0,0);
+  const dayStartMs=dayStart.getTime();
+  const dayEndMs=dayStartMs+(24*3600*1000);
+  const nowMs=Date.now();
+  const dayFillEndMs=selectedDateKey===currentDateKey?Math.min(dayEndMs,nowMs):dayEndMs;
+  let currentStatusElapsedSec=Math.max(0,Math.floor(safeNum(machineTelemetry?.statusDurationSec||machineTelemetry?.stateDurationSec||0)));
+  if(!(currentStatusElapsedSec>0)&&machineTelemetryTs!==null){
+    const latestBucket=statusBucketOf(machineTelemetry?.status);
+    let oldestSameTs=machineTelemetryTs;
+    for(let i=machineTelemetrySortedAsc.length-1;i>=0;i-=1){
+      const row=machineTelemetrySortedAsc[i];
+      if(row.__ts===null||row.__ts>machineTelemetryTs) continue;
+      if(statusBucketOf(row.status)!==latestBucket) break;
+      oldestSameTs=row.__ts;
+    }
+    currentStatusElapsedSec=Math.max(0,Math.floor((nowMs-oldestSameTs)/1000));
+  }
+  const machineLocalMinute=minuteFromIsoLike(machineTelemetry?.machineLocalTime||"");
+  const nowMinute=(()=>{
+    const now=new Date();
+    return (now.getHours()*60)+now.getMinutes();
+  })();
+  const activeMinute=machineLocalMinute===null?nowMinute:machineLocalMinute;
+  const autoShiftId=resolveShiftIdByMinute(kioskSettings.shiftWindows,activeMinute);
+  useEffect(()=>{
+    if(!kioskMode) return;
+    setForm(prev=>prev.shift===autoShiftId?prev:{...prev,shift:autoShiftId});
+  },[kioskMode,autoShiftId]);
+  const shiftOptions=(kioskSettings.shiftWindows&&kioskSettings.shiftWindows.length>0)?kioskSettings.shiftWindows:DEFAULT_SHIFT_WINDOWS;
+  useEffect(()=>{
+    const fallbackId=shiftOptions[0]?.id||DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1";
+    setForm(prev=>{
+      if(!prev.shift) return {...prev,shift:fallbackId};
+      if(shiftOptions.some(row=>row.id===prev.shift)) return prev;
+      return {...prev,shift:fallbackId};
+    });
+  },[shiftOptions]);
+  const fallbackShiftRow=shiftOptions.find(row=>row.id===form.shift)||shiftOptions[0]||DEFAULT_SHIFT_WINDOWS[0]||{id:"shift_1",label:"Vardiya",start:"00:00",end:"00:00"};
+  const selectedShiftMeta=shiftWindowMap[form.shift]||{
+    label:fallbackShiftRow.label||form.shift||"Vardiya",
+    time:`${normalizeHm(fallbackShiftRow.start,"00:00")}-${normalizeHm(fallbackShiftRow.end,normalizeHm(fallbackShiftRow.start,"00:00"))}`,
+  };
+  const statusMeta=(()=>{
+    if(machineStatus==="running") return {label:"Ã‡ALIÅIYOR",color:C.green,mode:"running"};
+    if(machineStatus==="setup") return {label:"AYARDA",color:C.warn,mode:"idle"};
+    if(machineStatus==="idle"||machineStatus==="waiting") return {label:"BEKLEMEDE",color:C.warn,mode:"idle"};
+    if(machineStatus==="stopped"||machineStatus==="down") return {label:"DURUYOR",color:C.red,mode:"stopped"};
+    if(machineStatus==="alarm") return {label:"ALARM",color:C.red,mode:"alarm"};
+    return {label:"Ã‡EVRÄ°MDIÅI",color:C.muted2,mode:"offline"};
+  })();
+  const topHeaderTheme=(()=>{
+    if(statusMeta.mode==="running"){
+      return {
+        gradient:"#3ca36b",
+        controlBg:"rgba(8,29,19,.22)",
+        controlSoftBg:"rgba(9,33,22,.18)",
+        controlText:"#f2fff7",
+        statusText:"rgba(236,255,247,.9)",
+      };
+    }
+    if(statusMeta.mode==="idle"){
+      return {
+        gradient:"#c57b29",
+        controlBg:"rgba(55,31,7,.24)",
+        controlSoftBg:"rgba(64,36,10,.2)",
+        controlText:"#fff8ef",
+        statusText:"rgba(255,245,226,.92)",
+      };
+    }
+    return {
+      gradient:"#ba4d4d",
+      controlBg:"rgba(55,10,10,.24)",
+      controlSoftBg:"rgba(62,12,12,.18)",
+      controlText:"#fff2f2",
+      statusText:"rgba(255,231,231,.92)",
+    };
+  })();
+  const opTheme=(()=>{
+    if(statusMeta.mode==="running"){
+      return {
+        shell:"#0d1218",
+        shellGradient:"#101a23",
+        panel:"#1d9944",
+        panelGradient:"#1f9f4c",
+        panelDark:"#177f38",
+        panelDarkGradient:"#177239",
+        panelSoft:"#21a94b",
+        panelSoftGradient:"#27aa57",
+        border:"rgba(255,255,255,.24)",
+        borderStrong:"rgba(255,255,255,.35)",
+        text:"#ecfff2",
+        textDim:"#cbf1d6",
+        textMuted:"#a6dfb8",
+        cardBg:"rgba(7,18,12,.34)",
+        cardBgSoft:"rgba(255,255,255,.14)",
+        inputBg:"rgba(9,28,17,.45)",
+        shadow:"0 18px 34px rgba(0,0,0,.35)",
+        danger:"#ffb1b1",
+        warn:"#ffe18f",
+      };
+    }
+    if(statusMeta.mode==="idle"){
+      return {
+        shell:"#161109",
+        shellGradient:"#22170d",
+        panel:"#b46b1a",
+        panelGradient:"#be741f",
+        panelDark:"#935713",
+        panelDarkGradient:"#915312",
+        panelSoft:"#c87d27",
+        panelSoftGradient:"#ce842f",
+        border:"rgba(255,255,255,.24)",
+        borderStrong:"rgba(255,255,255,.34)",
+        text:"#fff4e4",
+        textDim:"#ffe0b9",
+        textMuted:"#f7c98f",
+        cardBg:"rgba(35,20,6,.36)",
+        cardBgSoft:"rgba(255,255,255,.14)",
+        inputBg:"rgba(46,25,8,.42)",
+        shadow:"0 18px 34px rgba(0,0,0,.35)",
+        danger:"#ffd2ba",
+        warn:"#ffe18f",
+      };
+    }
+    return {
+      shell:"#1a1010",
+      shellGradient:"#241111",
+      panel:"#aa3030",
+      panelGradient:"#b63b3b",
+      panelDark:"#8d2525",
+      panelDarkGradient:"#8f2828",
+      panelSoft:"#bc3a3a",
+      panelSoftGradient:"#c34343",
+      border:"rgba(255,255,255,.24)",
+      borderStrong:"rgba(255,255,255,.34)",
+      text:"#ffecec",
+      textDim:"#ffcfcf",
+      textMuted:"#f5abab",
+      cardBg:"rgba(41,12,12,.34)",
+      cardBgSoft:"rgba(255,255,255,.14)",
+      inputBg:"rgba(44,13,13,.42)",
+      shadow:"0 18px 34px rgba(0,0,0,.35)",
+      danger:"#ffd4d4",
+      warn:"#ffd7a8",
+    };
+  })();
+  const isMachineLocked=Boolean(lockedMachine);
+  const orderDayEntries=form.selectedOrder
+    ? todayEntries.filter(e=>e.machine===form.machine&&e.jobCode===form.selectedOrder.code)
+    : [];
+  const producedQty=orderDayEntries.reduce((s,e)=>s+safeNum(e.correct),0);
+  const scrapQty=orderDayEntries.reduce((s,e)=>s+safeNum(e.wrong),0);
+  const selectedOrderQty=Math.max(0,safeNum(form.selectedOrder?.qty));
+  const remainingQty=selectedOrderQty>0?Math.max(0,selectedOrderQty-(producedQty+scrapQty)):0;
+  const qualityPct=(producedQty+scrapQty)>0?Math.round((producedQty/(producedQty+scrapQty))*100):100;
+  const progressPct=selectedOrderQty>0?Math.min(100,Math.round((producedQty/selectedOrderQty)*100)):0;
+  const recentMachineEntries=todayEntries
+    .filter(e=>e.machine===form.machine)
+    .sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||""))
+    .slice(0,3);
+  const entryRootStyle=kioskMode
+    ? {padding:10,display:"flex",flexDirection:"column",gap:10,width:"100%",height:"100dvh",minHeight:"100vh",overflow:"hidden",background:opTheme.shellGradient}
+    : {padding:0,display:"flex",flexDirection:"column",gap:12};
+  const shellStyle=kioskMode
+    ? {background:opTheme.shellGradient,borderRadius:18,border:`1px solid ${opTheme.borderStrong}`,padding:10,display:"flex",flexDirection:"column",flex:1,minHeight:0,overflow:"hidden",boxShadow:opTheme.shadow}
+    : {background:opTheme.shell,borderRadius:18,border:`1px solid ${C.border}`,padding:10};
+  const contentStackStyle=kioskMode
+    ? {marginTop:10,display:"flex",flexDirection:"column",gap:10,flex:1,minHeight:0,overflowY:"auto",paddingRight:2}
+    : {marginTop:10,display:"flex",flexDirection:"column",gap:10};
+  const opsPanelStyle=kioskMode
+    ? {background:opTheme.panelGradient||opTheme.panel,border:`1px solid ${opTheme.borderStrong}`,borderRadius:12,padding:"12px 10px",display:"flex",flexDirection:"column",flex:1,minHeight:0,boxShadow:"inset 0 1px 0 rgba(255,255,255,.12)"}
+    : {background:opTheme.panelGradient||opTheme.panel,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:"12px 10px"};
+  const opsGridStyle=kioskMode
+    ? {display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:10,flex:1,minHeight:0,alignItems:"stretch"}
+    : {display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:10};
+  const stockPanelStyle=kioskMode
+    ? {background:opTheme.panelSoftGradient||opTheme.panelSoft,border:`1px solid ${opTheme.borderStrong}`,borderRadius:12,padding:10,display:"flex",flexDirection:"column",flex:1,minHeight:0,boxShadow:"inset 0 1px 0 rgba(255,255,255,.12)"}
+    : {background:opTheme.panelSoftGradient||opTheme.panelSoft,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:10};
+  const stockGridStyle=kioskMode
+    ? {display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:10,flex:1,minHeight:0,alignItems:"stretch"}
+    : {display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:10};
+  const topInfoGridStyle=kioskMode
+    ? {background:opTheme.panelDarkGradient||opTheme.panelDark,border:`1px solid ${opTheme.borderStrong}`,borderRadius:12,padding:"11px 12px",display:"grid",gridTemplateColumns:"repeat(3,minmax(220px,1fr))",gap:8,alignItems:"center",boxShadow:"inset 0 1px 0 rgba(255,255,255,.14)"}
+    : {background:opTheme.panelDarkGradient||opTheme.panelDark,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:"10px 12px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8,alignItems:"center"};
+  const topControlStyle=kioskMode
+    ? {display:"flex",gap:6,justifyContent:"flex-end",alignItems:"center",flexWrap:"nowrap",gridColumn:"1 / -1",overflowX:"auto",paddingBottom:2}
+    : {display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"};
+  const infoPillStyle={background:opTheme.cardBgSoft,border:`1px solid ${opTheme.borderStrong}`,borderRadius:10,padding:"7px 10px",color:opTheme.text,fontSize:11,fontWeight:700};
+  const machineChipStyle=(active)=>({
+    ...chip(active,active?C.accent:C.muted2),
+    padding:"8px 12px",
+    fontSize:12,
+    borderColor:active?C.accent:opTheme.borderStrong,
+    color:active?"#fff":opTheme.text,
+    background:active?C.accent:opTheme.cardBgSoft,
+  });
+  const shiftButtonStyle=(active)=>({
+    ...btnSt(active?"primary":"ghost"),
+    padding:"8px 10px",
+    fontSize:11,
+    fontWeight:700,
+    borderColor:opTheme.borderStrong,
+    background:active?C.accent:opTheme.cardBgSoft,
+    color:active?"#fff":opTheme.text,
+  });
+  const sectionCardStyle=kioskMode
+    ? {background:opTheme.cardBg,border:`1px solid ${opTheme.borderStrong}`,borderRadius:10,padding:10,boxShadow:"inset 0 1px 0 rgba(255,255,255,.08)"}
+    : {background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:10};
+  const rowCardStyle={background:opTheme.cardBgSoft,border:`1px solid ${opTheme.borderStrong}`,borderRadius:8,padding:"6px 7px"};
+  const themedInputStyle={background:opTheme.inputBg,borderColor:opTheme.borderStrong,color:opTheme.text};
+  const statStripStyle={display:"grid",gridTemplateColumns:kioskMode?"repeat(4,minmax(0,1fr))":"repeat(auto-fit,minmax(140px,1fr))",gap:8};
+  function fmtDurationLong(totalSec){
+    const sec=Math.max(0,Math.floor(safeNum(totalSec)));
+    const h=Math.floor(sec/3600);
+    const m=Math.floor((sec%3600)/60);
+    const s=sec%60;
+    if(h>0) return `${h}h ${m}m ${s}s`;
+    if(m>0) return `${m}m ${s}s`;
+    return `${s}s`;
+  }
+  function fmtActiveShort(totalSec){
+    const sec=Math.max(0,Math.floor(safeNum(totalSec)));
+    const h=Math.floor(sec/3600);
+    const m=Math.floor((sec%3600)/60);
+    const s=sec%60;
+    if(h>0) return `${h}h ${m}m`;
+    if(m>0) return `${m}m ${s}s`;
+    return `${s}s`;
+  }
+  const cycleExpectedSec=Math.max(1,safeNum(form.selectedOrder?.partSec)||safeNum(machineTelemetry?.expectedCycleSec)||60);
+  const cycleCurrentSec=Math.max(0,safeNum(machineTelemetry?.currentCycleSec)||safeNum(machineTelemetry?.cycleSec)||cycleExpectedSec);
+  const cycleLastSec=Math.max(0,safeNum(recentMachineEntries[0]?.partSec)||cycleCurrentSec||cycleExpectedSec);
+  const cycleAvgSec=orderDayEntries.length
+    ? Math.max(1,Math.round(orderDayEntries.reduce((sum,e)=>sum+Math.max(1,safeNum(e.partSec)||cycleExpectedSec),0)/orderDayEntries.length))
+    : Math.max(1,Math.round((cycleCurrentSec+cycleExpectedSec)/2));
+  const cycleBestSec=orderDayEntries.length
+    ? Math.max(1,Math.min(...orderDayEntries.map(e=>Math.max(1,safeNum(e.partSec)||cycleExpectedSec))))
+    : cycleExpectedSec;
+  const cycleWorstSec=orderDayEntries.length
+    ? Math.max(1,Math.max(...orderDayEntries.map(e=>Math.max(1,safeNum(e.partSec)||cycleExpectedSec))))
+    : Math.max(cycleCurrentSec,cycleExpectedSec);
+  const selectedOrderCode=form.selectedOrder?.code||form.selectedOrder?.id||"";
+  const hasPlannedCycle=Boolean(form.selectedOrder?.partSec)||safeNum(machineTelemetry?.expectedCycleSec)>0;
+  const cycleDeviationSec=cycleCurrentSec-cycleExpectedSec;
+  const cycleDeviationAbsSec=Math.abs(cycleDeviationSec);
+  const cycleDeviationPct=cycleExpectedSec>0?((cycleDeviationSec/cycleExpectedSec)*100):0;
+  const cycleDeviationThresholdSec=Math.max(1,safeNum(kioskSettings.cycleDeviationThresholdSec)||DEFAULT_KIOSK_SETTINGS.cycleDeviationThresholdSec);
+  const cycleDeviationExceeded=cycleDeviationAbsSec>=cycleDeviationThresholdSec;
+  const expectedQty=selectedOrderQty>0?selectedOrderQty:(producedQty+remainingQty);
+  const behindQty=Math.max(0,expectedQty-producedQty);
+  const goalPct=selectedOrderQty>0?Math.max(0,Math.min(999,Math.round((producedQty/selectedOrderQty)*100))):0;
+  const utilizationPct=Math.max(0,Math.min(100,Math.round(safeNum(machineTelemetry?.utilizationPct)||safeNum(machineTelemetry?.utilization)||progressPct)));
+  const oeePct=Math.max(0,Math.min(100,Math.round(safeNum(machineTelemetry?.oeePct)||safeNum(machineTelemetry?.oee)||qualityPct)));
+  const allDowntimeSec=Math.max(0,safeNum(machineTelemetry?.allDowntimeSec)||safeNum(machineTelemetry?.downtimeSec));
+  const activeAlarmCount=Math.max(0,Math.round(safeNum(machineTelemetry?.activeAlarms)||safeNum(machineTelemetry?.alarmCount)));
+  const activeSec=Math.max(0,safeNum(machineTelemetry?.activeSec)||safeNum(machineTelemetry?.runtimeSec)||safeNum(machineTelemetry?.runSec));
+  const timelineRows=(()=>{
+    const inDay=machineTelemetrySortedAsc.filter(row=>safeNum(row.__ts)>=dayStartMs&&safeNum(row.__ts)<=dayFillEndMs);
+    const prev=[...machineTelemetrySortedAsc].reverse().find(row=>safeNum(row.__ts)<dayStartMs)||null;
+    return prev?[prev,...inDay]:inDay;
+  })();
+  const dailyStatusTotalsMs={running:0,waiting:0,stopped:0,alarm:0};
+  const hourlyStatusMs=Array.from({length:24},()=>({running:0,waiting:0,stopped:0,alarm:0,total:0}));
+  if(timelineRows.length>0){
+    for(let i=0;i<timelineRows.length;i+=1){
+      const row=timelineRows[i];
+      const rowStart=safeNum(row.__ts);
+      const nextStart=i<timelineRows.length-1?safeNum(timelineRows[i+1].__ts):dayFillEndMs;
+      const start=Math.max(dayStartMs,rowStart);
+      const end=Math.min(dayFillEndMs,nextStart);
+      if(end<=start) continue;
+      const bucket=statusBucketOf(row.status);
+      dailyStatusTotalsMs[bucket]+=end-start;
+      let cursor=start;
+      while(cursor<end){
+        const cursorDate=new Date(cursor);
+        const hourIndex=cursorDate.getHours();
+        const nextHourMs=new Date(cursorDate.getFullYear(),cursorDate.getMonth(),cursorDate.getDate(),hourIndex+1,0,0,0).getTime();
+        const segEnd=Math.min(end,nextHourMs);
+        const segMs=Math.max(0,segEnd-cursor);
+        if(segMs>0&&hourIndex>=0&&hourIndex<24){
+          hourlyStatusMs[hourIndex][bucket]+=segMs;
+          hourlyStatusMs[hourIndex].total+=segMs;
+        }
+        cursor=segEnd;
+      }
+    }
+  }
+  const runningTodaySec=Math.max(0,Math.round(dailyStatusTotalsMs.running/1000));
+  const waitingTodaySec=Math.max(0,Math.round(dailyStatusTotalsMs.waiting/1000));
+  const stoppedTodaySec=Math.max(0,Math.round(dailyStatusTotalsMs.stopped/1000));
+  const alarmTodaySec=Math.max(0,Math.round(dailyStatusTotalsMs.alarm/1000));
+  const downtimeDisplaySec=allDowntimeSec>0?allDowntimeSec:(stoppedTodaySec+alarmTodaySec);
+  const statusChartHasData=(runningTodaySec+waitingTodaySec+stoppedTodaySec+alarmTodaySec)>0;
+  const waitingExpectedSec=Math.max(60,Math.round(safeNum(machineTelemetry?.expectedSetupSec)||safeNum(machineTelemetry?.setupExpectedSec)||safeNum(form.selectedOrder?.partSnapshot?.setupSec)||safeNum(form.selectedOrder?.setupSec)||300));
+  const waitingElapsedSec=statusMeta.mode==="idle"?Math.max(0,currentStatusElapsedSec):0;
+  const waitingRemainingSec=Math.max(0,waitingExpectedSec-waitingElapsedSec);
+  const waitingProgressPct=Math.max(0,Math.min(100,Math.round((waitingElapsedSec/Math.max(1,waitingExpectedSec))*100)));
+  const waitingOverrunSec=Math.max(0,waitingElapsedSec-waitingExpectedSec);
+  const headerTimerLabel=statusMeta.mode==="idle"?"Bekleme":"Aktif";
+  const headerTimerValue=statusMeta.mode==="idle"?fmtActiveShort(waitingElapsedSec):fmtActiveShort(activeSec);
+  const hourlyStatusChart=hourlyStatusMs.map((row,idx)=>{
+    const base=3600000;
+    const runningPct=Math.max(0,Math.min(100,(safeNum(row.running)/base)*100));
+    const waitingPct=Math.max(0,Math.min(100,(safeNum(row.waiting)/base)*100));
+    const stoppedPct=Math.max(0,Math.min(100,(safeNum(row.stopped)/base)*100));
+    const alarmPct=Math.max(0,Math.min(100,(safeNum(row.alarm)/base)*100));
+    const totalPct=Math.max(0,Math.min(100,runningPct+waitingPct+stoppedPct+alarmPct));
+    return {
+      hour:idx,
+      runningPct,
+      waitingPct,
+      stoppedPct,
+      alarmPct,
+      totalPct,
+    };
+  });
+  const ringPct=expectedQty>0?Math.max(0,Math.min(100,Math.round((producedQty/expectedQty)*100))):0;
+  const ringSize=318;
+  const ringStroke=24;
+  const ringRadius=(ringSize-ringStroke)/2;
+  const ringCircumference=2*Math.PI*ringRadius;
+  const ringDash=(ringPct/100)*ringCircumference;
+  const partBars=recentMachineEntries.slice(0,6).reverse();
+  const maxPartBar=Math.max(1,...partBars.map(r=>safeNum(r.correct)));
+  const cycleRows=[
+    {label:"AnlÄ±k",value:cycleCurrentSec,color:"#b58ef4"},
+    {label:"Ort",value:cycleAvgSec,color:"#c7cfe0"},
+    {label:"Hedef",value:cycleExpectedSec,color:"#d4dce9"},
+    {label:"Son",value:cycleLastSec,color:"#d4dce9"},
+    {label:"Maks",value:cycleWorstSec,color:"#d4dce9"},
+    {label:"Min",value:cycleBestSec,color:"#d4dce9"},
+  ];
+  const cycleMax=Math.max(1,...cycleRows.map(r=>Math.max(1,safeNum(r.value))));
+  const kioskSummaryStats=[
+    {label:"Parca Sayisi",value:`${producedQty} Adet`},
+    {label:"Toplam Durus",value:fmtDurationLong(downtimeDisplaySec)},
+    {label:"Aktif Alarm",value:String(activeAlarmCount)},
+    {label:"Gunluk Calisma",value:fmtActiveShort(runningTodaySec)},
+    {label:"Gunluk Bekleme",value:fmtActiveShort(waitingTodaySec)},
+    {label:"Gunluk Uyari",value:fmtActiveShort(alarmTodaySec)},
+    {label:"Planlanan Cevrim",value:`${Math.round(cycleExpectedSec)}s`},
+    {label:"Anlik Cevrim",value:`${Math.round(cycleCurrentSec)}s`},
+    {label:"Sapma",value:`${cycleDeviationSec>=0?"+":""}${Math.round(cycleDeviationSec)}s`,tone:cycleDeviationExceeded?"#c95757":"#49566e"},
+    {label:"Hedef Orani",value:selectedOrderQty>0?`%${goalPct}`:"-"},
+    {label:"Kullanim",value:`%${utilizationPct}`},
+    {label:"OEE",value:`%${oeePct}`},
+  ];
+  useEffect(()=>{
+    if(!kioskMode) return;
+    if(!kioskSettings.cycleDeviationNotificationEnabled) return;
+    if(!hasPlannedCycle) return;
+    const machineKey=form.machine||"";
+    if(!machineKey) return;
+    const orderKey=selectedOrderCode||"GENEL";
+    const ruleKey=`${machineKey}::${orderKey}`;
+    if(machineStatus!=="running"||!cycleDeviationExceeded){
+      cycleDeviationStateRef.current[ruleKey]=false;
+      return;
+    }
+    if(cycleDeviationStateRef.current[ruleKey]) return;
+    cycleDeviationStateRef.current[ruleKey]=true;
+    const planSec=Math.round(cycleExpectedSec);
+    const actualSec=Math.round(cycleCurrentSec);
+    const diffSec=Math.round(cycleDeviationSec);
+    const diffLabel=diffSec>=0?`+${diffSec}`:String(diffSec);
+    window.DB.addDoc("notifications",{
+      type:"cycle_deviation",
+      severity:"medium",
+      title:"Kiosk Cevrim Sapmasi",
+      message:`${machineKey} ${orderKey} plan ${planSec}s / anlik ${actualSec}s (${diffLabel}s)`,
+      sourceKey:`kiosk_cycle:${machineKey}:${orderKey}:${todayStr()}`,
+      channels:["inapp"],
+      status:"new",
+      createdAt:new Date().toISOString(),
+      trigger:"kiosk_auto",
+      machine:machineKey,
+      orderCode:orderKey,
+      plannedSec:planSec,
+      actualSec:actualSec,
+      deviationSec:diffSec,
+      deviationPct:Number(cycleDeviationPct.toFixed(1)),
+    }).catch(()=>{});
+  },[kioskMode,kioskSettings.cycleDeviationNotificationEnabled,hasPlannedCycle,form.machine,selectedOrderCode,machineStatus,cycleDeviationExceeded,cycleExpectedSec,cycleCurrentSec,cycleDeviationSec,cycleDeviationPct]);
+  const actionBtnStyle={
+    border:"none",
+    background:"transparent",
+    color:"#4b5c74",
+    fontSize:20,
+    fontWeight:700,
+    height:76,
+    cursor:"pointer",
+    borderRight:"1px solid #d7dde6",
+    display:"flex",
+    alignItems:"center",
+    justifyContent:"center",
+    gap:10,
+  };
+  const kioskBaseWidth=1920;
+  const kioskBaseHeight=1080;
+  const kioskViewportWidth=kioskViewport.w||kioskBaseWidth;
+  const kioskViewportHeight=kioskViewport.h||kioskBaseHeight;
+  const kioskScale=Math.max(0.1,Math.min(kioskViewportWidth/kioskBaseWidth,kioskViewportHeight/kioskBaseHeight));
+  const kioskStageWidth=Math.max(320,Math.floor(kioskBaseWidth*kioskScale));
+  const kioskStageHeight=Math.max(180,Math.floor(kioskBaseHeight*kioskScale));
+
+  if(kioskMode){
+    return (
+      <div style={{width:"100vw",height:"100dvh",overflow:"hidden",background:"#0b0f14",display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <div style={{width:kioskStageWidth,height:kioskStageHeight,position:"relative",overflow:"hidden"}}>
+          <div style={{width:kioskBaseWidth,height:kioskBaseHeight,transform:`scale(${kioskScale})`,transformOrigin:"top left"}}>
+            <div style={{width:"100%",height:"100%",padding:12,display:"flex"}}>
+              <div style={{width:"100%",height:"100%",borderRadius:28,padding:12,background:"#111721",boxShadow:"0 30px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.15)"}}>
+                <div style={{background:"#edf1f6",borderRadius:14,overflow:"hidden",border:"1px solid #cdd5e0",height:"100%",display:"flex",flexDirection:"column"}}>
+            <div style={{background:topHeaderTheme.gradient,padding:"18px 22px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:12,alignItems:"center",color:"#e7fff2"}}>
+              <div>
+                <div style={{fontSize:40,fontWeight:800,lineHeight:1,letterSpacing:.4}}>{form.selectedOrder?.code||"PLAN YOK"}</div>
+                <div style={{fontSize:20,fontWeight:700,marginTop:6}}>Tezgah: {form.machine}</div>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:7,alignItems:"flex-start"}}>
+                <div style={{border:"1px solid rgba(255,255,255,.45)",background:topHeaderTheme.controlBg,color:topHeaderTheme.controlText,borderRadius:10,padding:"8px 12px",fontWeight:700,fontSize:14}}>
+                  {form.selectedOrder?`Planlanan Ä°ÅŸ Emri: ${form.selectedOrder.code}`:"Planlanan Ä°ÅŸ Emri Yok"}
+                </div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  <input type="date" max={todayStr()} value={form.entryDate} onChange={e=>fv("entryDate",e.target.value||todayStr())} style={{...inputSt,padding:"6px 8px",fontSize:12,minWidth:136,background:"rgba(255,255,255,.2)",borderColor:"rgba(255,255,255,.45)",color:"#f3fff8"}}/>
+                  <div style={{border:"1px solid rgba(255,255,255,.45)",background:topHeaderTheme.controlSoftBg,color:"#f6fffa",borderRadius:9,padding:"6px 9px",fontSize:11,fontWeight:700}}>
+                    Vardiya Otomatik: {selectedShiftMeta.label} ({selectedShiftMeta.time})
+                  </div>
+                  {!isMachineLocked&&(
+                    <select value={form.machine} onChange={e=>selectMachine(e.target.value)} style={{...inputSt,padding:"6px 8px",fontSize:12,minWidth:140,background:"rgba(255,255,255,.2)",borderColor:"rgba(255,255,255,.45)",color:"#f3fff8"}}>
+                      {machines.map(m=><option key={m} value={m}>{m}</option>)}
+                    </select>
+                  )}
+                </div>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",justifyContent:"center",gap:4}}>
+                <div style={{display:"flex",alignItems:"center",gap:9,fontSize:34,fontWeight:800,color:"#f4fff8"}}>
+                  <span style={{width:12,height:12,borderRadius:"50%",background:statusMeta.color,display:"inline-block"}}/>
+                  {headerTimerLabel} : {headerTimerValue}
+                </div>
+                <div style={{fontSize:15,fontWeight:700,color:topHeaderTheme.statusText}}>{statusMeta.label} Â· {selectedShiftMeta.label}</div>
+              </div>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",borderBottom:"1px solid #d5dde8",background:"#f7f9fc"}}>
+              {kioskSummaryStats.map((item,idx)=>(
+                <div key={item.label} style={{padding:"12px 10px",borderRight:idx===kioskSummaryStats.length-1?"none":"1px solid #d5dde8",textAlign:"center"}}>
+                  <div style={{fontSize:14,color:"#8594aa",fontWeight:700}}>{item.label}</div>
+                  <div style={{fontSize:37,color:item.tone||"#49566e",fontWeight:800,marginTop:2}}>{item.value}</div>
+                </div>
+              ))}
+            </div>
+            {statusMeta.mode==="idle"&&(
+              <div style={{padding:"14px 16px",background:"#edf2f8",borderBottom:"1px solid #d5dde8"}}>
+                <div style={{background:"#fff",border:"1px solid #d8dfe9",borderRadius:12,padding:"12px 14px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8}}>
+                    <div style={{fontSize:24,fontWeight:800,color:"#4b5b73"}}>Bekleme / Kurulum Takibi</div>
+                    <div style={{fontSize:16,fontWeight:700,color:"#7d8ca3"}}>Beklenen Sure: {fmtDurationLong(waitingExpectedSec)}</div>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                    <div style={{background:"#f7f9fd",border:"1px solid #dce3ed",borderRadius:10,padding:"10px 12px"}}>
+                      <div style={{fontSize:14,color:"#8393a9",fontWeight:700}}>Gecen Sure</div>
+                      <div style={{fontSize:52,color:"#4a5a72",fontWeight:800,lineHeight:1.05,marginTop:6}}>{fmtDurationLong(waitingElapsedSec)}</div>
+                    </div>
+                    <div style={{background:"#f7f9fd",border:"1px solid #dce3ed",borderRadius:10,padding:"10px 12px",textAlign:"right"}}>
+                      <div style={{fontSize:14,color:"#8393a9",fontWeight:700}}>Kalan Sure</div>
+                      <div style={{fontSize:52,color:waitingOverrunSec>0?"#c95757":"#4a5a72",fontWeight:800,lineHeight:1.05,marginTop:6}}>
+                        {waitingOverrunSec>0?`+${fmtDurationLong(waitingOverrunSec)}`:fmtDurationLong(waitingRemainingSec)}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{height:20,background:"#d8dfe8",borderRadius:99,overflow:"hidden",position:"relative"}}>
+                    <div style={{width:`${Math.max(0,Math.min(100,waitingProgressPct))}%`,height:"100%",background:"#8d68d4"}}/>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:7,fontSize:13,color:"#74849a",fontWeight:700}}>
+                    <span>Kurulum hedefi: {fmtDurationLong(waitingExpectedSec)}</span>
+                    <span>Durum: {waitingOverrunSec>0?"Hedef asildi":"Hedef dahilinde"} ({waitingProgressPct}%)</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",alignItems:"stretch",minHeight:296,borderBottom:"1px solid #d5dde8",background:"#eef2f7"}}>
+              <div style={{padding:"24px 20px",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",gap:8}}>
+                <div style={{fontSize:56,color:"#667790",fontWeight:600,textAlign:"center"}}>Ãœretilen</div>
+                <div style={{fontSize:134,color:"#43546c",fontWeight:800,lineHeight:.95}}>{producedQty}</div>
+              </div>
+              <div style={{padding:"10px 0",display:"flex",justifyContent:"center",alignItems:"center"}}>
+                <div style={{width:ringSize,height:ringSize,position:"relative",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  <svg width={ringSize} height={ringSize} viewBox={`0 0 ${ringSize} ${ringSize}`}>
+                    <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} stroke="#dbe2eb" strokeWidth={ringStroke} fill="none"/>
+                    <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} stroke="#ec9342" strokeWidth={ringStroke} fill="none" strokeLinecap="round" strokeDasharray={`${ringDash} ${Math.max(0,ringCircumference-ringDash)}`} transform={`rotate(-90 ${ringSize/2} ${ringSize/2})`}/>
+                  </svg>
+                  <div style={{position:"absolute",textAlign:"center",color:"#5b6b83"}}>
+                    <div style={{fontSize:69,fontWeight:800,color:"#4b5b73",lineHeight:1}}>{behindQty}</div>
+                    <div style={{fontSize:23,fontWeight:600}}>Eksik ParÃ§a</div>
+                    <div style={{marginTop:10,fontSize:62,fontWeight:800,color:scrapQty>0?"#c95757":"#4b5b73",lineHeight:1}}>{scrapQty}</div>
+                    <div style={{fontSize:20,fontWeight:600}}>HatalÄ± ParÃ§a</div>
+                  </div>
+                </div>
+              </div>
+              <div style={{padding:"24px 20px",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",gap:8}}>
+                <div style={{fontSize:52,color:"#667790",fontWeight:600,textAlign:"center"}}>Beklenen Ãœretim</div>
+                <div style={{fontSize:134,color:"#65758d",fontWeight:800,lineHeight:.95}}>{expectedQty||"-"}</div>
+              </div>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:18,padding:"14px 16px",background:"#f2f5fa",borderBottom:"1px solid #d5dde8"}}>
+              <div style={{background:"#fff",border:"1px solid #d8dfe9",borderRadius:10,padding:"10px 12px"}}>
+                <div style={{fontSize:17,fontWeight:800,color:"#4b5a72",marginBottom:8}}>ParÃ§a Ãœretimi</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(6,minmax(0,1fr))",gap:8,alignItems:"end",height:120}}>
+                  {(partBars.length?partBars:[{id:"x1",correct:0,createdAt:""},{id:"x2",correct:0,createdAt:""},{id:"x3",correct:0,createdAt:""},{id:"x4",correct:0,createdAt:""},{id:"x5",correct:0,createdAt:""},{id:"x6",correct:0,createdAt:""}]).map((r,idx)=>{
+                    const val=Math.max(0,safeNum(r.correct));
+                    const h=val>0?Math.max(8,Math.round((val/maxPartBar)*88)):4;
+                    const label=r.createdAt?String(r.createdAt).slice(11,16):`T${idx+1}`;
+                    return (
+                      <div key={r.id||idx} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                        <div style={{fontSize:11,color:"#72829b",fontWeight:700}}>{val}</div>
+                        <div style={{width:24,height:h,background:val===0?"#d5dde8":"#c6cfde",borderRadius:4}}/>
+                        <div style={{fontSize:10,color:"#8c98aa"}}>{label}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div style={{background:"#fff",border:"1px solid #d8dfe9",borderRadius:10,padding:"10px 12px"}}>
+                <div style={{fontSize:17,fontWeight:800,color:"#4b5a72",marginBottom:8}}>Ã‡evrim SÃ¼resi</div>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {cycleRows.map(row=>(
+                    <div key={row.label} style={{display:"grid",gridTemplateColumns:"42px 1fr auto",alignItems:"center",gap:8}}>
+                      <div style={{fontSize:11,color:"#8190a7",fontWeight:700}}>{row.label}</div>
+                      <div style={{height:11,background:"#edf2f8",borderRadius:99,overflow:"hidden"}}>
+                        <div style={{height:"100%",width:`${Math.max(3,Math.round((Math.max(1,safeNum(row.value))/cycleMax)*100))}%`,background:row.color,borderRadius:99}}/>
+                      </div>
+                      <div style={{fontSize:11,color:"#62728a",fontWeight:700}}>{Math.round(safeNum(row.value))}s</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{marginTop:8,display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8,fontSize:12,color:cycleDeviationExceeded?"#ba4d4d":"#6f7f96",fontWeight:700}}>
+                  <span>Planlanan: {Math.round(cycleExpectedSec)}s</span>
+                  <span>Sapma: {cycleDeviationSec>=0?"+":""}{Math.round(cycleDeviationSec)}s (%{Math.abs(cycleDeviationPct).toFixed(1)})</span>
+                </div>
+                {kioskSettings.cycleDeviationNotificationEnabled&&(
+                  <div style={{marginTop:6,fontSize:11,color:"#8090a6"}}>
+                    Sapma bildirimi acik Â· Esik: {Math.round(cycleDeviationThresholdSec)}s {cycleDeviationExceeded?"(esik asildi)":"(normal)"}
+                  </div>
+                )}
+              </div>
+              <div style={{background:"#fff",border:"1px solid #d8dfe9",borderRadius:10,padding:"10px 12px"}}>
+                <div style={{fontSize:17,fontWeight:800,color:"#4b5a72",marginBottom:8}}>Gunluk Durum Grafigi</div>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
+                  <div style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 8px",borderRadius:999,background:"#e9f8ef",fontSize:11,color:"#2b9f58",fontWeight:700}}>
+                    <span style={{width:8,height:8,borderRadius:"50%",background:"#22a958",display:"inline-block"}}/>Calisma {fmtActiveShort(runningTodaySec)}
+                  </div>
+                  <div style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 8px",borderRadius:999,background:"#fff1df",fontSize:11,color:"#b17020",fontWeight:700}}>
+                    <span style={{width:8,height:8,borderRadius:"50%",background:"#e29a3d",display:"inline-block"}}/>Bekleme {fmtActiveShort(waitingTodaySec)}
+                  </div>
+                  <div style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 8px",borderRadius:999,background:"#eef2f8",fontSize:11,color:"#69778e",fontWeight:700}}>
+                    <span style={{width:8,height:8,borderRadius:"50%",background:"#8d98aa",display:"inline-block"}}/>Durus {fmtActiveShort(stoppedTodaySec)}
+                  </div>
+                  <div style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 8px",borderRadius:999,background:"#ffe9ea",fontSize:11,color:"#be4b57",fontWeight:700}}>
+                    <span style={{width:8,height:8,borderRadius:"50%",background:"#d45858",display:"inline-block"}}/>Uyari {fmtActiveShort(alarmTodaySec)}
+                  </div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(24,minmax(0,1fr))",gap:4,alignItems:"end",height:108}}>
+                  {hourlyStatusChart.map(col=>(
+                    <div key={`h_${col.hour}`} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                      <div style={{width:"100%",maxWidth:14,height:84,background:"#eaf0f6",borderRadius:4,overflow:"hidden",display:"flex",flexDirection:"column-reverse"}}>
+                        {col.alarmPct>0&&<div style={{height:`${col.alarmPct}%`,background:"#d45858"}}/>}
+                        {col.stoppedPct>0&&<div style={{height:`${col.stoppedPct}%`,background:"#8d98aa"}}/>}
+                        {col.waitingPct>0&&<div style={{height:`${col.waitingPct}%`,background:"#e29a3d"}}/>}
+                        {col.runningPct>0&&<div style={{height:`${col.runningPct}%`,background:"#22a958"}}/>}
+                      </div>
+                      <div style={{fontSize:9,color:"#8e9db1",fontWeight:700}}>{col.hour%3===0?pad2(col.hour):""}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{marginTop:3,display:"flex",justifyContent:"space-between",fontSize:10,color:"#8a99ad",fontWeight:700}}>
+                  <span>00</span>
+                  <span>Saatlik Dagilim</span>
+                  <span>23</span>
+                </div>
+                {!statusChartHasData&&(
+                  <div style={{marginTop:6,fontSize:11,color:"#8a99ad",fontWeight:700}}>Secili gun icin telemetry kaydi yok.</div>
+                )}
+              </div>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",background:"#fff"}}>
+              <button onClick={()=>setShowOrderDataPanel(true)} style={{...actionBtnStyle,fontSize:17}}>?? Is Emri Dosyalari</button>
+              <button onClick={openShiftEndModal} style={actionBtnStyle}>? Ä°ÅŸi Durdur</button>
+              <button onClick={openRejectPartsModal} style={actionBtnStyle}>? Hata GiriÅŸi</button>
+              <button onClick={openToolChangeModal} style={{...actionBtnStyle,borderRight:"none"}}>?? TakÄ±m DeÄŸiÅŸimi</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+        {showOrderDataPanel&&(
+          <div style={{position:"fixed",inset:0,background:"rgba(7,10,14,.62)",zIndex:58,display:"flex",alignItems:"center",justifyContent:"center",padding:18}} onClick={()=>setShowOrderDataPanel(false)}>
+            <div style={{width:"100%",maxWidth:960,maxHeight:"88vh",display:"flex",flexDirection:"column",background:"#f5f8fc",border:"1px solid #cfd8e4",borderRadius:14,overflow:"hidden",boxShadow:"0 24px 60px rgba(0,0,0,.35)"}} onClick={e=>e.stopPropagation()}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",background:"#fff",borderBottom:"1px solid #d5dde8"}}>
+                <div style={{minWidth:0}}>
+                  <div style={{fontSize:12,color:"#7386a1",fontWeight:700,letterSpacing:.5,textTransform:"uppercase"}}>Kiosk</div>
+                  <div style={{fontSize:17,color:"#33465f",fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                    Is Emri Dosyalari {form.selectedOrder?.code?`Â· ${form.selectedOrder.code}`:""}
+                  </div>
+                </div>
+                <button onClick={()=>setShowOrderDataPanel(false)} style={{border:"1px solid #d5dde8",background:"#fff",color:"#4d5e77",width:34,height:34,borderRadius:10,fontSize:22,lineHeight:1,cursor:"pointer"}}>Ã—</button>
+              </div>
+              <div style={{padding:12,overflowY:"auto",display:"flex",flexDirection:"column",gap:8}}>
+                {!form.selectedOrder&&(
+                  <div style={{padding:14,border:"1px dashed #c8d2df",borderRadius:10,background:"#fff",fontSize:13,color:"#6e8098",textAlign:"center"}}>
+                    Is emri secili degil.
+                  </div>
+                )}
+                {form.selectedOrder&&selectedOrderFiles.length===0&&(
+                  <div style={{padding:14,border:"1px dashed #c8d2df",borderRadius:10,background:"#fff",fontSize:13,color:"#6e8098",textAlign:"center"}}>
+                    Secili is emrinde dosya yok.
+                  </div>
+                )}
+                {form.selectedOrder&&selectedOrderFiles.length>0&&selectedOrderFiles.map((f,i)=>(
+                  <div key={`${f.name||"file"}_${i}`} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 10px",border:"1px solid #d5dde8",borderRadius:10,background:"#fff"}}>
+                    <div style={{fontSize:18,lineHeight:1}}>{getFileIcon(f.name)}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:700,color:"#32445b",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name||"Dokuman"}</div>
+                      <div style={{fontSize:11,color:"#7d8ea7"}}>{formatBytes(Number(f.size)||0)}</div>
+                    </div>
+                    <button onClick={()=>openOrderFile(f)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11,borderColor:"#c8d3e1",color:"#42566f",background:"#f7faff"}}>
+                      {canFilePreview(f)?"Viewer":"Indir"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+        {showPicker&&!kioskMode&&(
+          <div style={{position:"fixed",inset:0,background:"rgba(8,12,18,.78)",zIndex:55,display:"flex",alignItems:"center",justifyContent:"center",padding:0}} onClick={()=>{setShowPicker(false);setSearch("");}}>
+            <div style={{width:"100%",maxWidth:1120,height:"min(88vh,860px)",background:"#f3f6fb",border:"1px solid #cfd8e4",borderRadius:16,overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 24px 60px rgba(0,0,0,.35)"}} onClick={e=>e.stopPropagation()}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"12px 14px",borderBottom:"1px solid #d4dce7",background:"#fff"}}>
+                <div>
+                  <div style={{fontSize:12,color:"#7787a1",letterSpacing:.5,textTransform:"uppercase",fontWeight:700}}>Kiosk</div>
+                  <div style={{fontSize:18,color:"#32435b",fontWeight:800}}>Ä°ÅŸ Emri SeÃ§imi</div>
+                </div>
+                <button onClick={()=>{setShowPicker(false);setSearch("");}} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
+              </div>
+              <div style={{padding:12,display:"grid",gridTemplateColumns:"minmax(240px,420px) 1fr",gap:10,alignItems:"center",borderBottom:"1px solid #d4dce7",background:"#f7f9fd"}}>
+                <input style={{...inputSt,padding:"11px 12px",fontSize:14,background:"#fff"}} placeholder="Ä°ÅŸ emri ara..." value={search} onChange={e=>setSearch(e.target.value)} autoFocus/>
+                <div style={{fontSize:13,color:"#6f8097",fontWeight:700}}>{filtered.length} iÅŸ emri bulundu</div>
+              </div>
+              <div style={{flex:1,minHeight:0,overflowY:"auto",padding:12}}>
+                {filtered.length===0&&<div style={{height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:"#8a98ac",fontWeight:700}}>SonuÃ§ bulunamadÄ±.</div>}
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))",gap:10}}>
+                  {filtered.map(o=>(
+                    <button
+                      key={o.id}
+                      onClick={()=>{fv("selectedOrder",o);setShowPicker(false);setSearch("");}}
+                      style={{textAlign:"left",background:"#fff",border:"1px solid #d6dfeb",borderRadius:12,padding:"12px 12px",cursor:"pointer",display:"flex",flexDirection:"column",gap:4}}
+                    >
+                      <div style={{fontSize:13,fontFamily:"monospace",fontWeight:800,color:"#31425a"}}>{o.code}</div>
+                      <div style={{fontSize:12,color:"#667892",fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.name||"-"}</div>
+                      <div style={{fontSize:11,color:"#8594aa",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{(o.machines||[]).join(", ")||"Tezgah tanÄ±msÄ±z"}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {showToolModal&&(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={()=>setShowToolModal(false)}>
+            <div style={{width:"100%",maxWidth:680,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0}} onClick={e=>e.stopPropagation()}>
+              <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>TakÄ±m DeÄŸiÅŸimi</div>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                <div style={{flex:"1 1 260px"}}>
+                  <span style={labelSt}>Ä°ÅŸ Emri TakÄ±m DeÄŸiÅŸimi</span>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 95px",gap:8}}>
+                    <select style={inputSt} value={toolDraft.machineToolId} onChange={e=>setToolDraft(p=>({...p,machineToolId:e.target.value}))}>
+                      <option value="">TakÄ±m seÃ§ (opsiyonel)</option>
+                      {toolOptions.map(t=><option key={t.id} value={t.id}>{t.code} - {t.name} (Stok: {Number(t.qty)||0})</option>)}
+                    </select>
+                    <input style={inputSt} type="number" min="1" placeholder="Adet" disabled={!toolDraft.machineToolId} value={toolDraft.machineToolQty} onChange={e=>setToolDraft(p=>({...p,machineToolQty:e.target.value}))}/>
+                  </div>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
+                <button onClick={()=>setShowToolModal(false)} style={{...btnSt("ghost"),padding:"10px 14px"}}>Ä°ptal</button>
+                <button onClick={approveToolChange} style={{...btnSt("primary"),padding:"10px 14px"}}>DeÄŸiÅŸimi Onayla</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {showShiftModal&&(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={closeShiftModal}>
+            <div style={{width:"100%",maxWidth:560,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0}} onClick={e=>e.stopPropagation()}>
+              <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>{shiftModalMode==="rejectOnly"?"Hata GiriÅŸi":"Vardiya Sonu"}</div>
+              <div style={{display:"flex",gap:10}}>
+                {shiftModalMode!=="rejectOnly"&&<div style={{flex:1}}><span style={labelSt}>? DoÄŸru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>}
+                <div style={{flex:1}}><span style={labelSt}>{shiftModalMode==="rejectOnly"?"? KaÃ§ Adet HatalÄ±?":"? HatalÄ± Adet"}</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>
+              </div>
+              <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
+                <button onClick={closeShiftModal} style={{...btnSt("ghost"),padding:"10px 14px"}}>Ä°ptal</button>
+                <button onClick={approveShiftEnd} style={{...btnSt(saved?"green":"primary"),padding:"10px 14px"}}>{shiftModalMode==="rejectOnly"?"Hata Kaydet":(editId?"GÃ¼ncellemeyi Onayla":"VardiyayÄ± Onayla")}</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {previewFile&&(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.72)",zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:0}} onClick={()=>setPreviewFile(null)}>
+            <div style={{width:"100%",maxWidth:960,maxHeight:"88vh",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>
+                <div style={{fontSize:13,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{previewFile.name}</div>
+                <button onClick={()=>setPreviewFile(null)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kapat</button>
+              </div>
+              <div style={{padding:10,overflow:"auto",background:C.surface}}>
+                {isImageFile(previewFile)&&<img src={previewFile.data} alt={previewFile.name} style={{width:"100%",height:"auto",borderRadius:10,border:`1px solid ${C.border}`}}/>}
+                {isPdfFile(previewFile)&&<iframe title={previewFile.name} src={previewFile.data} style={{width:"100%",height:"70vh",border:`1px solid ${C.border}`,borderRadius:10,background:"#fff"}}/>}
+                {isStepFile(previewFile)&&<StepFileViewer file={previewFile}/>}
+                {!canFilePreview(previewFile)&&(
+                  <div style={{padding:22,textAlign:"center",color:C.muted2,fontSize:13,border:`1px dashed ${C.border}`,borderRadius:10,background:C.card}}>
+                    Bu dosya turu icin onizleme yok. Dosyayi indirip harici uygulamada acabilirsiniz.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={entryRootStyle}>
+      <div style={shellStyle}>
+        <div style={topInfoGridStyle}>
+          <div>
+            <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.7,textTransform:"uppercase"}}>Tezgah</div>
+            <div style={{fontSize:24,fontWeight:800,color:opTheme.text,lineHeight:1.1}}>{form.machine}</div>
+          </div>
+          <div>
+            <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.7,textTransform:"uppercase"}}>Istasyon / Vardiya</div>
+            <div style={{fontSize:17,fontWeight:700,color:opTheme.text}}>
+              {(stationTag||form.machine)} Â· {selectedShiftMeta.label} Â· {selectedShiftMeta.time}
+            </div>
+          </div>
+          <div>
+            <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.7,textTransform:"uppercase"}}>Is Emri</div>
+            <div style={{fontSize:17,fontWeight:700,color:opTheme.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{form.selectedOrder?.code||"-"}{form.selectedOrder?.name?` | ${form.selectedOrder.name}`:""}</div>
+          </div>
+          <div style={topControlStyle}>
+            <span style={{...infoPillStyle,display:"inline-flex",alignItems:"center",gap:6}}>
+              <span style={{width:10,height:10,borderRadius:"50%",background:statusMeta.color,display:"inline-block"}}/>
+              {statusMeta.label}
+            </span>
+            <input type="date" max={todayStr()} value={form.entryDate} onChange={e=>fv("entryDate",e.target.value||todayStr())} style={{...inputSt,...themedInputStyle,padding:"8px 10px",fontSize:12,width:160}}/>
+            {shiftOptions.map(s=><button key={s.id} onClick={()=>fv("shift",s.id)} style={shiftButtonStyle(form.shift===s.id)}>{s.label}</button>)}
+          </div>
+        </div>
+
+        {editId&&(
+          <div style={{marginTop:8,background:"rgba(255,225,143,.2)",border:`1px solid ${opTheme.warn}88`,borderRadius:10,padding:"8px 10px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+            <span style={{fontSize:12,color:opTheme.warn,fontWeight:700}}>DÃ¼zenleme modu aÃ§Ä±k</span>
+            <button onClick={()=>{setEditId(null);resetEntryForm();}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Ä°ptal</button>
+          </div>
+        )}
+
+        {isMachineLocked?(
+          <div style={{marginTop:8,padding:"8px 10px",borderRadius:10,border:`1px solid ${opTheme.border}`,background:"rgba(255,255,255,.08)",fontSize:12,color:opTheme.textDim}}>
+            Bu ekran tezgaha ozel calisiyor: <strong style={{color:opTheme.text}}>{form.machine}</strong>
+          </div>
+        ):(
+          <div style={{marginTop:8,display:"flex",gap:7,flexWrap:"wrap"}}>
+            {machines.map(m=><button key={m} onClick={()=>selectMachine(m)} style={machineChipStyle(form.machine===m)}>{m}</button>)}
+          </div>
+        )}
+
+        <div style={contentStackStyle}>
+          <div style={statStripStyle}>
+            <div style={{...rowCardStyle,padding:"8px 10px"}}>
+              <div style={{fontSize:10,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Durum</div>
+              <div style={{fontSize:15,fontWeight:800,color:statusMeta.color,marginTop:2}}>{statusMeta.label}</div>
+            </div>
+            <div style={{...rowCardStyle,padding:"8px 10px"}}>
+              <div style={{fontSize:10,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Uretilen</div>
+              <div style={{fontSize:15,fontWeight:800,color:opTheme.text,marginTop:2}}>{producedQty}</div>
+            </div>
+            <div style={{...rowCardStyle,padding:"8px 10px"}}>
+              <div style={{fontSize:10,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Hurda</div>
+              <div style={{fontSize:15,fontWeight:800,color:opTheme.danger,marginTop:2}}>{scrapQty}</div>
+            </div>
+            <div style={{...rowCardStyle,padding:"8px 10px"}}>
+              <div style={{fontSize:10,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Kalite</div>
+              <div style={{fontSize:15,fontWeight:800,color:qualityPct<90?opTheme.warn:opTheme.text,marginTop:2}}>%{qualityPct}</div>
+            </div>
+          </div>
+
+          <div style={opsPanelStyle}>
+            <div style={opsGridStyle}>
+              <div style={{...sectionCardStyle,...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
+              <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>KURULUM</div>
+              <button onClick={openToolChangeModal} style={{...btnSt("ghost"),width:"100%",padding:"12px 10px",fontSize:13,borderColor:opTheme.borderStrong,color:opTheme.text,background:opTheme.cardBgSoft,fontWeight:700}}>TakÄ±m DeÄŸiÅŸimi</button>
+              <div style={{marginTop:8,fontSize:12,color:opTheme.textDim,textAlign:"center"}}>
+                {machineToolPicked?`${machineToolPicked.code||machineToolPicked.name} x${Math.max(1,Number(form.machineToolQty)||1)}`:"TakÄ±m seÃ§ilmedi"}
+              </div>
+              <div style={{marginTop:10,fontSize:11,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Stoktaki TakÄ±mlar</div>
+              <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:5,maxHeight:130,overflowY:"auto"}}>
+                {stockedTools.slice(0,5).map(t=>(
+                  <div key={t.id} style={{...rowCardStyle,display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:opTheme.textDim}}>
+                    <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:155}}>{t.code||"-"} Â· {t.name||"TakÄ±m"}</span>
+                    <strong>{safeNum(t.qty)}</strong>
+                  </div>
+                ))}
+                {stockedTools.length===0&&<div style={{fontSize:11,color:opTheme.warn}}>Stokta takÄ±m yok.</div>}
+              </div>
+            </div>
+
+              <div style={{...sectionCardStyle,...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
+              <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>URETIM</div>
+              <div>
+                <span style={{...labelSt,color:opTheme.textMuted}}>Ä°ÅŸ Emri</span>
+                {form.selectedOrder?(
+                  <div style={{...rowCardStyle,padding:"9px 10px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontWeight:700,fontFamily:"monospace",fontSize:13,color:opTheme.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{form.selectedOrder.code}</div>
+                      <div style={{fontSize:11,color:opTheme.textDim,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{form.selectedOrder.name||"-"} Â· {fmtSec(form.selectedOrder.partSec)}</div>
+                    </div>
+                    <button onClick={()=>fv("selectedOrder",null)} style={{background:"transparent",border:"none",color:opTheme.danger,fontSize:18,cursor:"pointer"}}>Ã—</button>
+                  </div>
+                ):(
+                  <>
+                    <button onClick={()=>setShowPicker(!showPicker)} style={{...inputSt,...themedInputStyle,textAlign:"left",cursor:"pointer",color:opTheme.textDim,display:"block"}}>
+                      {orders.length===0?"Aktif iÅŸ emri yok":"Ä°ÅŸ emri seÃ§in..."}
+                    </button>
+                    {showPicker&&(
+                      <div style={{background:opTheme.cardBg,border:`1px solid ${opTheme.borderStrong}`,borderRadius:10,marginTop:4,overflow:"hidden"}}>
+                        <input style={{...inputSt,...themedInputStyle,borderRadius:0,borderBottom:`1px solid ${opTheme.borderStrong}`}} placeholder="Ara..." value={search} onChange={e=>setSearch(e.target.value)} autoFocus/>
+                        <div style={{maxHeight:170,overflowY:"auto"}}>
+                          {filtered.length===0&&<div style={{padding:12,color:opTheme.textDim,textAlign:"center",fontSize:12}}>SonuÃ§ yok</div>}
+                          {filtered.map(o=>(
+                            <div key={o.id} onClick={()=>{fv("selectedOrder",o);setShowPicker(false);setSearch("");}} style={{padding:"10px 11px",cursor:"pointer",borderBottom:`1px solid ${opTheme.border}`}}>
+                              <div style={{fontWeight:700,fontFamily:"monospace",fontSize:12,color:opTheme.text}}>{o.code}</div>
+                              <div style={{fontSize:11,color:opTheme.textDim,marginTop:1}}>{o.name} Â· {(o.machines||[]).join(", ")}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}>
+                <div><span style={{...labelSt,color:opTheme.textMuted}}>DoÄŸru</span><input style={{...inputSt,...themedInputStyle,padding:"12px 10px",fontSize:20,fontWeight:800,textAlign:"center"}} type="number" min="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>
+                <div><span style={{...labelSt,color:opTheme.textMuted}}>Hurda</span><input style={{...inputSt,...themedInputStyle,padding:"12px 10px",fontSize:20,fontWeight:800,textAlign:"center"}} type="number" min="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>
+              </div>
+              <button onClick={openShiftEndModal} style={{...btnSt(saved?"green":"primary"),width:"100%",padding:"12px 10px",fontSize:13,marginTop:9,borderColor:"transparent",fontWeight:700,boxShadow:"0 8px 16px rgba(0,0,0,.22)"}}>
+                {editId?"Vardiya Sonu GÃ¼ncelle":"Vardiya Sonu Onayla"}
+              </button>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:7,marginTop:9}}>
+                <div style={{...rowCardStyle,textAlign:"center"}}><div style={{fontSize:10,color:opTheme.textMuted}}>Hedef</div><div style={{fontSize:14,color:opTheme.text,fontWeight:800}}>{selectedOrderQty||"-"}</div></div>
+                <div style={{...rowCardStyle,textAlign:"center"}}><div style={{fontSize:10,color:opTheme.textMuted}}>Kalan</div><div style={{fontSize:14,color:opTheme.text,fontWeight:800}}>{selectedOrderQty?remainingQty:"-"}</div></div>
+                <div style={{...rowCardStyle,textAlign:"center"}}><div style={{fontSize:10,color:opTheme.textMuted}}>Ä°lerleme</div><div style={{fontSize:14,color:opTheme.text,fontWeight:800}}>{selectedOrderQty?`%${progressPct}`:"-"}</div></div>
+              </div>
+            </div>
+
+              <div style={{...sectionCardStyle,...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
+              <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>ARIZA / DURUS</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <div style={{...rowCardStyle,padding:"8px 9px",textAlign:"center"}}>
+                  <div style={{fontSize:10,color:opTheme.textMuted}}>Kalite</div>
+                  <div style={{fontSize:20,fontWeight:800,color:qualityPct<90?opTheme.warn:opTheme.text}}>%{qualityPct}</div>
+                </div>
+                <div style={{...rowCardStyle,padding:"8px 9px",textAlign:"center"}}>
+                  <div style={{fontSize:10,color:opTheme.textMuted}}>ParÃ§a SÃ¼resi</div>
+                  <div style={{fontSize:20,fontWeight:800,color:opTheme.text}}>{form.selectedOrder?fmtSec(form.selectedOrder.partSec):"--:--"}</div>
+                </div>
+              </div>
+              <button onClick={openShiftEndModal} style={{...btnSt("ghost"),width:"100%",padding:"11px 10px",fontSize:13,marginTop:8,borderColor:opTheme.borderStrong,color:opTheme.text,background:opTheme.cardBgSoft,fontWeight:700}}>Bitir / Durdur</button>
+              <div style={{marginTop:9,fontSize:11,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Son 3 KayÄ±t</div>
+              <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:5}}>
+                {recentMachineEntries.length===0&&<div style={{fontSize:11,color:opTheme.textDim}}>KayÄ±t yok.</div>}
+                {recentMachineEntries.map(e=>{
+                  const machineToolQty=Math.max(0,safeNum(e.machineToolQty??e.machineToolChange??0));
+                  const isToolChange=String(e.entryType||"")==="tool_change"||(machineToolQty>0&&safeNum(e.correct)===0&&safeNum(e.wrong)===0);
+                  const leftLabel=isToolChange
+                    ? `?? ${e.machineToolCode||e.machineToolName||"Takim"} x${machineToolQty}`
+                    : `${e.jobCode||"-"} Â· ?${safeNum(e.correct)} / ?${safeNum(e.wrong)}`;
+                  const timeText=String(e.createdAt||"").slice(11,16)||"--:--";
+                  return (
+                    <div key={e.id} style={{...rowCardStyle,display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:opTheme.textDim}}>
+                      <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:180}}>{leftLabel}</span>
+                      <span>{timeText} Â· {shiftWindowMap[e.shift]?.label||e.shift||"-"}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            </div>
+          </div>
+
+          <div style={stockPanelStyle}>
+            <div style={{fontSize:19,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>STOK BILGILERI</div>
+            <div style={stockGridStyle}>
+              <div style={{...sectionCardStyle,padding:"10px 9px",...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
+              <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.6,textTransform:"uppercase",marginBottom:6}}>Ä°ÅŸ Emri Teknik DokÃ¼manlarÄ± ({selectedOrderFiles.length})</div>
+              {selectedOrderFiles.length===0&&<div style={{fontSize:12,color:opTheme.textDim}}>DokÃ¼man yok.</div>}
+              {selectedOrderFiles.length>0&&(
+                <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:170,overflowY:"auto"}}>
+                  {selectedOrderFiles.map((f,i)=>(
+                    <div key={`${f.name||"file"}_${i}`} style={{...rowCardStyle,display:"flex",alignItems:"center",gap:8,padding:"7px 8px"}}>
+                      <div style={{fontSize:16,lineHeight:1}}>{getFileIcon(f.name)}</div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:11,color:opTheme.text,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name||"Dokuman"}</div>
+                        <div style={{fontSize:10,color:opTheme.textDim}}>{formatBytes(Number(f.size)||0)}</div>
+                      </div>
+                      <button onClick={()=>openOrderFile(f)} style={{...btnSt("ghost"),padding:"4px 8px",fontSize:10,borderColor:opTheme.borderStrong,color:opTheme.text,background:opTheme.cardBg}}>{canFilePreview(f)?"Ã–nizle":"Ä°ndir"}</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+              <div style={{...sectionCardStyle,padding:"10px 9px",...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
+              <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.6,textTransform:"uppercase",marginBottom:6}}>TakÄ±m StoklarÄ± ({stockedTools.length})</div>
+              {stockedTools.length===0&&<div style={{fontSize:12,color:opTheme.warn}}>Stokta takÄ±m yok.</div>}
+              {stockedTools.length>0&&(
+                <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:170,overflowY:"auto"}}>
+                  {stockedTools.slice(0,12).map(t=>{
+                    const qty=safeNum(t.qty);
+                    const min=Math.max(0,safeNum(t.minQty));
+                    const critical=qty<=min;
+                    return (
+                      <div key={t.id} style={{...rowCardStyle,display:"grid",gridTemplateColumns:"1fr auto",alignItems:"center",gap:8,padding:"7px 8px"}}>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:11,color:opTheme.text,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.code||"-"} Â· {t.name||"TakÄ±m"}</div>
+                          <div style={{fontSize:10,color:opTheme.textDim}}>{t.location||"Lokasyon yok"}</div>
+                        </div>
+                        <div style={{fontSize:11,color:critical?opTheme.danger:opTheme.text,fontWeight:800,textAlign:"right"}}>{qty}<div style={{fontSize:10,color:opTheme.textDim}}>Min {min}</div></div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {!kioskMode&&<div style={{fontSize:12,color:C.muted2}}>Uretim kaydi <strong>Vardiya Sonu</strong> onayinda, takim degisimi ise modal onayinda anlik olusur.</div>}
+      {showToolModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={()=>setShowToolModal(false)}>
+          <div style={{width:"100%",maxWidth:680,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>TakÄ±m DeÄŸiÅŸimi</div>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              <div style={{flex:"1 1 260px"}}>
+                <span style={labelSt}>Ä°ÅŸ Emri TakÄ±m DeÄŸiÅŸimi</span>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 95px",gap:8}}>
+                  <select style={inputSt} value={toolDraft.machineToolId} onChange={e=>setToolDraft(p=>({...p,machineToolId:e.target.value}))}>
+                    <option value="">TakÄ±m seÃ§ (opsiyonel)</option>
+                    {toolOptions.map(t=><option key={t.id} value={t.id}>{t.code} - {t.name} (Stok: {Number(t.qty)||0})</option>)}
+                  </select>
+                  <input style={inputSt} type="number" min="1" placeholder="Adet" disabled={!toolDraft.machineToolId} value={toolDraft.machineToolQty} onChange={e=>setToolDraft(p=>({...p,machineToolQty:e.target.value}))}/>
+                </div>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
+              <button onClick={()=>setShowToolModal(false)} style={{...btnSt("ghost"),padding:"10px 14px"}}>Ä°ptal</button>
+              <button onClick={approveToolChange} style={{...btnSt("primary"),padding:"10px 14px"}}>DeÄŸiÅŸimi Onayla</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showShiftModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={()=>setShowShiftModal(false)}>
+          <div style={{width:"100%",maxWidth:560,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>Vardiya Sonu</div>
+            <div style={{display:"flex",gap:10}}>
+              <div style={{flex:1}}><span style={labelSt}>? DoÄŸru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>
+              <div style={{flex:1}}><span style={labelSt}>? HatalÄ± Adet</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>
+            </div>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
+              <button onClick={()=>setShowShiftModal(false)} style={{...btnSt("ghost"),padding:"10px 14px"}}>Ä°ptal</button>
+              <button onClick={approveShiftEnd} style={{...btnSt(saved?"green":"primary"),padding:"10px 14px"}}>{editId?"GÃ¼ncellemeyi Onayla":"VardiyayÄ± Onayla"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {previewFile&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.72)",zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:0}} onClick={()=>setPreviewFile(null)}>
+          <div style={{width:"100%",maxWidth:960,maxHeight:"88vh",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>
+              <div style={{fontSize:13,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{previewFile.name}</div>
+              <button onClick={()=>setPreviewFile(null)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kapat</button>
+            </div>
+            <div style={{padding:10,overflow:"auto",background:C.surface}}>
+              {isImageFile(previewFile)&&<img src={previewFile.data} alt={previewFile.name} style={{width:"100%",height:"auto",borderRadius:10,border:`1px solid ${C.border}`}}/>}
+              {isPdfFile(previewFile)&&<iframe title={previewFile.name} src={previewFile.data} style={{width:"100%",height:"70vh",border:`1px solid ${C.border}`,borderRadius:10,background:"#fff"}}/>}
+              {isStepFile(previewFile)&&<StepFileViewer file={previewFile}/>}
+              {!canFilePreview(previewFile)&&(
+                <div style={{padding:22,textAlign:"center",color:C.muted2,fontSize:13,border:`1px dashed ${C.border}`,borderRadius:10,background:C.card}}>
+                  Bu dosya turu icin onizleme yok. Dosyayi indirip harici uygulamada acabilirsiniz.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {!kioskMode&&todayEntries.length>0&&(
+        <div>
+          <span style={{...labelSt,marginTop:4}}>SeÃ§ili GÃ¼n GiriÅŸlerim</span>
+          {todayEntries.slice(0,5).map(e=>{
+            const p=calcPerf(e.correct,e.wrong,e.partSec);
+            const machineToolQty=Number(e.machineToolQty??e.machineToolChange??0);
+            return (
+              <div key={e.id} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div><span style={{fontWeight:700,fontSize:13,fontFamily:"monospace",color:C.text}}>{e.jobCode}</span><span style={{fontSize:12,color:C.muted2,marginLeft:6}}>{e.jobName}</span></div>
+                  <div style={{display:"flex",gap:5}}><Badge label={e.machine} color={C.accent}/><Badge label={shiftWindowMap[e.shift]?.label||e.shift||"-"} color={C.muted2}/></div>
+                </div>
+                <div style={{display:"flex",gap:12,marginTop:7,fontSize:13}}>
+                  <span style={{color:C.green,fontWeight:600}}>? {e.correct}</span>
+                  <span style={{color:C.red,fontWeight:600}}>? {e.wrong}</span>
+                  {p&&<span style={{color:C.muted2}}>Maks/gÃ¼n: {p.max}</span>}
+                </div>
+                {machineToolQty>0&&<div style={{display:"flex",gap:8,marginTop:7,fontSize:12,color:C.muted2,flexWrap:"wrap"}}>
+                  {machineToolQty>0&&<Badge label={"Ä°ÅŸ Emri: "+((e.machineToolCode||e.machineToolName)?`${e.machineToolCode||e.machineToolName} x${machineToolQty}`:`${machineToolQty}`)} color={C.warn}/>}
+                </div>}
+                <div style={{marginTop:8,display:"flex",gap:8}}>
+                  <button onClick={()=>startEdit(e)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>DÃ¼zenle</button>
+                  <button onClick={()=>removeEntry(e)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
+                </div>
+                {p&&<PerfBar perf={p.perf} small/>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+//  OPERATOR WORKSPACE (TABLET-FIRST SINGLE PAGE)
+// ============================================================
+function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule}) {
+  const [loading,setLoading]=useState(true);
+  const [isWide,setIsWide]=useState(()=>typeof window!=="undefined"?window.matchMedia("(min-width: 920px)").matches:false);
+  const [orders,setOrders]=useState([]);
+  const [entries,setEntries]=useState([]);
+  const [downtimeTypes,setDowntimeTypes]=useState([]);
+  const [downtimeEvents,setDowntimeEvents]=useState([]);
+  const [telemetryRows,setTelemetryRows]=useState([]);
+  const [inspections,setInspections]=useState([]);
+  const shiftRows=useShiftWindows();
+  const fallbackShiftId=shiftRows[0]?.id||DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1";
+  const [selectedMachine,setSelectedMachine]=useState(machines[0]||"CNC-1");
+  const [selectedShift,setSelectedShift]=useState(fallbackShiftId);
+  const [selectedOrderId,setSelectedOrderId]=useState("");
+  const [entryForm,setEntryForm]=useState({correct:"",wrong:""});
+  const [downtimeForm,setDowntimeForm]=useState({typeId:"",minutes:"10",reason:""});
+  const [qualityForm,setQualityForm]=useState({result:"pass",serialNo:"",measurements:"",scrapQty:"0",scrapReason:""});
+  const [busy,setBusy]=useState({entry:false,downtime:false,quality:false});
+  const [flash,setFlash]=useState({type:"",msg:""});
+
+  const showFlash=useCallback((type,msg)=>{
+    setFlash({type,msg});
+    setTimeout(()=>setFlash({type:"",msg:""}),2600);
+  },[]);
+
+  useEffect(()=>{
+    const mq=window.matchMedia("(min-width: 920px)");
+    const onChange=e=>setIsWide(e.matches);
+    setIsWide(mq.matches);
+    if(mq.addEventListener) mq.addEventListener("change",onChange);
+    else mq.addListener(onChange);
+    return ()=>{
+      if(mq.removeEventListener) mq.removeEventListener("change",onChange);
+      else mq.removeListener(onChange);
+    };
+  },[]);
+
+  const load=useCallback(async()=>{
+    const [o,e,dt,de,tel,ins]=await Promise.all([
+      window.DB.getAll("orders"),
+      window.DB.getAll("entries"),
+      window.DB.getAll("downtimeTypes"),
+      window.DB.getAll("downtimeEvents"),
+      window.DB.getAll("machineTelemetryMock"),
+      window.DB.getAll("qualityInspections"),
+    ]);
+    const activeOrders=o.filter(x=>isOpenOrderStatus(x.status));
+    setOrders(activeOrders);
+    setEntries(e.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    let typeRows=dt;
+    if(typeRows.length===0){
+      const seeds=[["DT-ARIZA","Ariza","ariza"],["DT-MAT","Malzeme Yok","malzeme"],["DT-PROG","Program Hatasi","program"],["DT-MOLA","Mola","mola"],["DT-TEM","Temizlik","temizlik"]];
+      for(const [code,name,cat] of seeds){
+        await window.DB.addDoc("downtimeTypes",{code,name,category:cat,requireReason:true,notifyMaintenance:cat==="ariza",updatedAt:new Date().toISOString()});
+      }
+      typeRows=await window.DB.getAll("downtimeTypes");
+    }
+    setDowntimeTypes(typeRows);
+    setDowntimeEvents(de.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setTelemetryRows(tel.sort((a,b)=>(b.collectedAtUtc||"").localeCompare(a.collectedAtUtc||"")));
+    setInspections(ins.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setLoading(false);
+  },[]);
+
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    if(!machines.includes(selectedMachine)) setSelectedMachine(machines[0]||"CNC-1");
+  },[machines.join("|"),selectedMachine]);
+  useEffect(()=>{
+    setSelectedShift(prev=>shiftRows.some(row=>row.id===prev)?prev:fallbackShiftId);
+  },[shiftRows,fallbackShiftId]);
+
+  const machineOrders=orders.filter(o=>{
+    const m=o.machines||[];
+    return m.length===0||m.includes(selectedMachine);
+  });
+  useEffect(()=>{
+    if(machineOrders.length===0){setSelectedOrderId("");return;}
+    if(!machineOrders.some(o=>o.id===selectedOrderId)) setSelectedOrderId(machineOrders[0].id);
+  },[machineOrders.map(o=>o.id).join("|"),selectedOrderId]);
+
+  const latestByMachine={};
+  telemetryRows.forEach(r=>{
+    const key=r.machineName||r.machineCode||"";
+    if(!key||latestByMachine[key]) return;
+    latestByMachine[key]=r;
+  });
+  const selectedTelemetry=latestByMachine[selectedMachine]||null;
+  const selectedOrder=machineOrders.find(o=>o.id===selectedOrderId)||null;
+  const selectedShiftRow=shiftRows.find(row=>row.id===selectedShift)||shiftRows[0]||DEFAULT_SHIFT_WINDOWS[0];
+  const today=todayStr();
+  const todayEntries=entries.filter(e=>e.date===today&&e.operatorId===currentUser.id&&e.machine===selectedMachine);
+  const todayGood=todayEntries.reduce((s,e)=>s+safeNum(e.correct),0);
+  const todayScrap=todayEntries.reduce((s,e)=>s+safeNum(e.wrong),0);
+  const todayDowntimeRows=downtimeEvents.filter(e=>e.date===today&&e.machine===selectedMachine&&(e.operatorId===currentUser.id||e.createdBy===currentUser.id));
+  const todayDowntimeMin=todayDowntimeRows.reduce((s,e)=>s+safeNum(e.durationMin),0);
+  const todayQualityRows=inspections.filter(i=>String(i.createdAt||"").slice(0,10)===today);
+  const todayQualityFail=todayQualityRows.filter(i=>i.result==="fail").length;
+  const todayQualityPass=todayQualityRows.filter(i=>i.result==="pass").length;
+  const qualityPct=(todayQualityPass+todayQualityFail)>0?Math.round((todayQualityPass/(todayQualityPass+todayQualityFail))*100):100;
+
+  function statusMeta(status){
+    if(status==="running") return {label:"Calisiyor",color:C.green};
+    if(status==="idle") return {label:"Bosta",color:C.warn};
+    if(status==="alarm") return {label:"Alarm",color:C.red};
+    if(status==="setup") return {label:"Kurulum",color:C.accent};
+    return {label:"Offline",color:C.muted2};
+  }
+
+  async function saveEntryQuick(){
+    if(!selectedOrder){showFlash("err","Is emri secin.");return;}
+    const correct=Math.max(0,safeNum(entryForm.correct));
+    const wrong=Math.max(0,safeNum(entryForm.wrong));
+    if(correct===0&&wrong===0){showFlash("err","Uretim adedi girin.");return;}
+    setBusy(b=>({...b,entry:true}));
+    const d=parseYmdLocal(today);
+    const payload={
+      date:today,
+      week:weekStart(d),
+      month:monthStr(d),
+      machine:selectedMachine,
+      shift:selectedShift,
+      shiftLabel:selectedShiftRow?.label||selectedShift,
+      operatorId:currentUser.id,
+      operatorName:currentUser.fullName||currentUser.id,
+      jobCode:selectedOrder.code||"",
+      jobName:selectedOrder.name||selectedOrder.partNo||"",
+      partSec:Math.max(1,safeNum(selectedOrder.partSec)||60),
+      correct,
+      wrong,
+      machineToolId:"",
+      machineToolCode:"",
+      machineToolName:"",
+      machineToolQty:0,
+      machineToolChange:0,
+    };
+    const id=await window.DB.addDoc("entries",payload);
+    setBusy(b=>({...b,entry:false}));
+    if(!id){showFlash("err","Uretim kaydi olusturulamadi.");return;}
+    setEntries(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
+    setEntryForm({correct:"",wrong:""});
+    showFlash("ok","Uretim kaydi alindi.");
+  }
+
+  async function saveDowntimeQuick(){
+    const type=downtimeTypes.find(t=>t.id===downtimeForm.typeId);
+    if(!type){showFlash("err","Durus tipi secin.");return;}
+    const minutes=Math.max(1,safeNum(downtimeForm.minutes));
+    if(type.requireReason&&!downtimeForm.reason.trim()){showFlash("err","Durus nedeni zorunlu.");return;}
+    setBusy(b=>({...b,downtime:true}));
+    const endDate=new Date();
+    const startDate=new Date(endDate.getTime()-(minutes*60000));
+    const payload={
+      machine:selectedMachine,
+      typeId:type.id,
+      typeCode:type.code||"",
+      typeName:type.name||"",
+      category:type.category||"",
+      startAt:startDate.toISOString(),
+      endAt:endDate.toISOString(),
+      durationMin:minutes,
+      date:today,
+      operatorId:currentUser.id,
+      reason:downtimeForm.reason.trim(),
+      shift:selectedShift,
+      shiftLabel:selectedShiftRow?.label||selectedShift,
+      createdBy:currentUser.id,
+      updatedAt:new Date().toISOString(),
+    };
+    const id=await window.DB.addDoc("downtimeEvents",payload);
+    if(id&&type.notifyMaintenance){
+      await window.DB.addDoc("notifications",{type:"maintenance",title:"Bakim Bildirimi",message:`${selectedMachine} icin ${type.name} durusu girildi.`,severity:"high",status:"new",sourceKey:id,createdAt:new Date().toISOString()});
+    }
+    setBusy(b=>({...b,downtime:false}));
+    if(!id){showFlash("err","Durus kaydi olusturulamadi.");return;}
+    setDowntimeEvents(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
+    setDowntimeForm(f=>({...f,reason:""}));
+    showFlash("ok","Durus kaydi alindi.");
+  }
+
+  async function saveQualityQuick(){
+    if(!selectedOrder){showFlash("err","Kalite icin is emri secin.");return;}
+    const result=qualityForm.result||"pass";
+    const serialNo=qualityForm.serialNo.trim()||`${selectedOrder.code||"WO"}-${String(Date.now()).slice(-6)}`;
+    if(result==="fail"&&Math.max(0,safeNum(qualityForm.scrapQty))<=0){showFlash("err","Hatali sonuc icin hurda adedi girin.");return;}
+    setBusy(b=>({...b,quality:true}));
+    const tracePayload={
+      orderId:selectedOrder.id,
+      orderCode:selectedOrder.code||"",
+      partNo:selectedOrder.partNo||"",
+      revision:selectedOrder.revision||"",
+      machine:selectedMachine,
+      operatorId:currentUser.id,
+      programVersion:selectedTelemetry?.programName||"V1",
+      serialNo,
+      timestamp:new Date().toISOString(),
+      complaintRef:"",
+      createdBy:currentUser.id,
+      updatedAt:new Date().toISOString(),
+    };
+    const traceId=await window.DB.addDoc("partTraceability",tracePayload);
+    if(!traceId){setBusy(b=>({...b,quality:false}));showFlash("err","Izlenebilirlik kaydi olusturulamadi.");return;}
+    const inspectionPayload={
+      traceId,
+      orderId:selectedOrder.id,
+      orderCode:selectedOrder.code||"",
+      partNo:selectedOrder.partNo||"",
+      result,
+      measurements:qualityForm.measurements.trim(),
+      scrapQty:Math.max(0,safeNum(qualityForm.scrapQty)),
+      scrapReason:qualityForm.scrapReason.trim(),
+      scrapCost:0,
+      createdBy:currentUser.id,
+      createdAt:new Date().toISOString(),
+    };
+    const inspectionId=await window.DB.addDoc("qualityInspections",inspectionPayload);
+    if(inspectionId&&result==="fail"){
+      await window.DB.addDoc("notifications",{type:"quality",title:"Kalite Sapmasi",message:`${selectedOrder.code||"-"} icin fail kaydi olustu.`,severity:"high",status:"new",sourceKey:inspectionId,createdAt:new Date().toISOString()});
+    }
+    setBusy(b=>({...b,quality:false}));
+    if(!inspectionId){showFlash("err","Kalite kaydi olusturulamadi.");return;}
+    setInspections(prev=>[{id:inspectionId,...inspectionPayload},...prev]);
+    setQualityForm(f=>({...f,serialNo:"",measurements:"",scrapQty:"0",scrapReason:"",result:"pass"}));
+    showFlash("ok","Kalite kaydi alindi.");
+  }
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  const currentStatus=statusMeta(selectedTelemetry?.status||"offline");
+  const activeAlarms=selectedTelemetry?.activeAlarms||[];
+
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+      {flash.msg&&(
+        <div style={{background:flash.type==="ok"?C.greenDim:C.redDim,border:`1px solid ${flash.type==="ok"?C.green:C.red}55`,borderRadius:8,padding:"10px 12px",fontSize:13,color:flash.type==="ok"?C.green:C.red,fontWeight:600}}>
+          {flash.msg}
+        </div>
+      )}
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:10}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.text}}>Operator Tek Sayfa Ekrani</div>
+          <Badge label={currentStatus.label} color={currentStatus.color}/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:isWide?"1fr auto":"1fr",gap:10,alignItems:"center"}}>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {machines.map(m=>{
+              const tel=latestByMachine[m];
+              const st=statusMeta(tel?.status||"offline");
+              return (
+                <button key={m} onClick={()=>setSelectedMachine(m)} style={{...chip(selectedMachine===m,selectedMachine===m?C.accent:C.muted2),padding:"10px 12px",fontSize:12,minWidth:120,textAlign:"left"}}>
+                  <div style={{fontWeight:700}}>{m}</div>
+                  <div style={{fontSize:11,color:selectedMachine===m?"#fff":st.color}}>{st.label}</div>
+                </button>
+              );
+            })}
+          </div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:isWide?"flex-end":"flex-start"}}>
+            {shiftRows.map(s=><button key={s.id} onClick={()=>setSelectedShift(s.id)} style={{...chip(selectedShift===s.id,C.accent),padding:"8px 10px",fontSize:12}}>{s.label}</button>)}
+          </div>
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Bugun Dogru</div><div style={{fontSize:24,fontWeight:800,color:C.green}}>{todayGood}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Bugun Hurda</div><div style={{fontSize:24,fontWeight:800,color:C.red}}>{todayScrap}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Durus (dk)</div><div style={{fontSize:24,fontWeight:800,color:C.warn}}>{todayDowntimeMin}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Kalite Orani</div><div style={{fontSize:24,fontWeight:800,color:qualityPct<90?C.warn:C.green}}>%{qualityPct}</div></div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:isWide?"1.1fr .9fr":"1fr",gap:12}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Uretim Girisi</div>
+          <div><span style={labelSt}>Is Emri</span><select style={{...inputSt,padding:"11px 12px",fontSize:14}} value={selectedOrderId} onChange={e=>setSelectedOrderId(e.target.value)}><option value="">{machineOrders.length===0?"Uygun is emri yok":"Is emri secin"}</option>{machineOrders.map(o=><option key={o.id} value={o.id}>{o.code} Â· {o.name||o.partNo||"-"}</option>)}</select></div>
+          {selectedOrder&&<div style={{fontSize:12,color:C.muted2,marginTop:6}}>Parca sure: {fmtSec(selectedOrder.partSec)} Â· Termin: {selectedOrder.dueDate||"-"} Â· Oncelik: {selectedOrder.priority||"normal"}</div>}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
+            <div><span style={labelSt}>Dogru Adet</span><input style={{...inputSt,padding:"13px 12px",fontSize:18,fontWeight:700,textAlign:"center"}} type="number" min="0" value={entryForm.correct} onChange={e=>setEntryForm(f=>({...f,correct:e.target.value}))}/></div>
+            <div><span style={labelSt}>Hurda Adet</span><input style={{...inputSt,padding:"13px 12px",fontSize:18,fontWeight:700,textAlign:"center"}} type="number" min="0" value={entryForm.wrong} onChange={e=>setEntryForm(f=>({...f,wrong:e.target.value}))}/></div>
+          </div>
+          <button onClick={saveEntryQuick} disabled={busy.entry} style={{...btnSt("primary"),width:"100%",padding:"13px 12px",marginTop:12,fontSize:15,opacity:busy.entry?0.7:1}}>{busy.entry?"Kaydediliyor...":"Uretim Kaydet"}</button>
+          <div style={{marginTop:10,fontSize:12,color:C.muted2}}>
+            Son kayitlar: {todayEntries.slice(0,3).map(e=>`${e.jobCode} (${safeNum(e.correct)}/${safeNum(e.wrong)})`).join(" Â· ")||"-"}
+          </div>
+        </div>
+
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Makina Durumu ve Alarm</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Program</div><div style={{fontWeight:700,color:C.text}}>{selectedTelemetry?.programName||"-"}</div></div>
+            <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Parca Sayaci</div><div style={{fontWeight:700,color:C.text}}>{safeNum(selectedTelemetry?.partCounter)}</div></div>
+            <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Spindle %</div><div style={{fontWeight:700,color:C.text}}>{safeNum(selectedTelemetry?.spindleLoad)}</div></div>
+            <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Feed %</div><div style={{fontWeight:700,color:C.text}}>{safeNum(selectedTelemetry?.feedOverride)}</div></div>
+          </div>
+          <div style={{marginTop:10,padding:"10px 11px",border:`1px solid ${activeAlarms.length?C.red+"55":C.border}`,borderRadius:8,background:activeAlarms.length?C.redDim:C.surface2}}>
+            <div style={{fontSize:11,color:C.muted2,marginBottom:4}}>Aktif Alarm</div>
+            <div style={{fontSize:13,color:activeAlarms.length?C.red:C.muted2,fontWeight:activeAlarms.length?700:500}}>{activeAlarms.length?activeAlarms.join(" Â· "):"Aktif alarm yok"}</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:isWide?"1fr 1fr":"1fr",gap:12}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Durus Girisi</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 110px",gap:8}}>
+            <div><span style={labelSt}>Durus Tipi</span><select style={inputSt} value={downtimeForm.typeId} onChange={e=>setDowntimeForm(f=>({...f,typeId:e.target.value}))}><option value="">Secin</option>{downtimeTypes.map(t=><option key={t.id} value={t.id}>{t.code} Â· {t.name}</option>)}</select></div>
+            <div><span style={labelSt}>Dakika</span><input style={inputSt} type="number" min="1" value={downtimeForm.minutes} onChange={e=>setDowntimeForm(f=>({...f,minutes:e.target.value}))}/></div>
+          </div>
+          <div style={{marginTop:8}}><span style={labelSt}>Neden</span><input style={inputSt} value={downtimeForm.reason} onChange={e=>setDowntimeForm(f=>({...f,reason:e.target.value}))} placeholder="Malzeme yok / ariza detayi vb."/></div>
+          <button onClick={saveDowntimeQuick} disabled={busy.downtime} style={{...btnSt("danger"),width:"100%",padding:"12px 12px",marginTop:10,fontSize:14,opacity:busy.downtime?0.7:1}}>{busy.downtime?"Kaydediliyor...":"Durus Kaydet"}</button>
+          <div style={{marginTop:8,fontSize:12,color:C.muted2}}>
+            Son duruslar: {todayDowntimeRows.slice(0,3).map(r=>`${r.typeName} (${safeNum(r.durationMin)}dk)`).join(" Â· ")||"-"}
+          </div>
+        </div>
+
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Kalite Kontrol</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div><span style={labelSt}>Sonuc</span><select style={inputSt} value={qualityForm.result} onChange={e=>setQualityForm(f=>({...f,result:e.target.value}))}><option value="pass">Gecti</option><option value="fail">Kaldi</option></select></div>
+            <div><span style={labelSt}>Seri/Lot</span><input style={inputSt} value={qualityForm.serialNo} onChange={e=>setQualityForm(f=>({...f,serialNo:e.target.value}))} placeholder="Otomatik olusturulur"/></div>
+            <div><span style={labelSt}>Hurda Adet</span><input style={inputSt} type="number" min="0" value={qualityForm.scrapQty} onChange={e=>setQualityForm(f=>({...f,scrapQty:e.target.value}))}/></div>
+            <div><span style={labelSt}>Hurda Nedeni</span><input style={inputSt} value={qualityForm.scrapReason} onChange={e=>setQualityForm(f=>({...f,scrapReason:e.target.value}))}/></div>
+            <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Olcum</span><input style={inputSt} value={qualityForm.measurements} onChange={e=>setQualityForm(f=>({...f,measurements:e.target.value}))} placeholder="Opsiyonel olcum degeri"/></div>
+          </div>
+          <button onClick={saveQualityQuick} disabled={busy.quality} style={{...btnSt("green"),width:"100%",padding:"12px 12px",marginTop:10,fontSize:14,opacity:busy.quality?0.7:1}}>{busy.quality?"Kaydediliyor...":"Kalite Kaydet"}</button>
+          <div style={{marginTop:8,fontSize:12,color:C.muted2}}>Bugun pass/fail: <span style={{color:C.green,fontWeight:700}}>{todayQualityPass}</span> / <span style={{color:C.red,fontWeight:700}}>{todayQualityFail}</span></div>
+        </div>
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:12,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <div style={{fontSize:12,color:C.muted2}}>Detayli ekranlara gecis</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <button onClick={()=>onOpenModule&&onOpenModule("giris")} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Uretim Detay</button>
+          <button onClick={()=>onOpenModule&&onOpenModule("downtime")} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Durus Detay</button>
+          <button onClick={()=>onOpenModule&&onOpenModule("quality")} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Kalite Detay</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+//  REPORT
+// ============================================================
+function Report({currentUser,machines=DEFAULT_MACHINES}) {
+  const REPORT_SOURCE_DEFS={
+    entries:{
+      label:"Uretim Kayitlari",
+      dateField:"date",
+      dimensions:[
+        {id:"__all",label:"Toplam"},
+        {id:"machine",label:"Tezgah"},
+        {id:"jobCode",label:"Is Emri"},
+        {id:"operatorName",label:"Operator"},
+        {id:"shift",label:"Vardiya"},
+        {id:"date",label:"Tarih"},
+      ],
+      metrics:[
+        {id:"__count",label:"Kayit Sayisi",aggs:["sum"]},
+        {id:"totalParts",label:"Toplam Uretim",aggs:["sum","avg","max","min"]},
+        {id:"correct",label:"Dogru Adet",aggs:["sum","avg","max","min"]},
+        {id:"wrong",label:"Hatali Adet",aggs:["sum","avg","max","min"]},
+        {id:"partSec",label:"Parca Suresi (sn)",aggs:["avg","max","min"]},
+      ],
+    },
+    orders:{
+      label:"Is Emirleri",
+      dateField:"recordDate",
+      dimensions:[
+        {id:"__all",label:"Toplam"},
+        {id:"status",label:"Durum"},
+        {id:"priority",label:"Oncelik"},
+        {id:"customerName",label:"Musteri"},
+        {id:"material",label:"Malzeme"},
+        {id:"machineMain",label:"Tezgah"},
+      ],
+      metrics:[
+        {id:"__count",label:"Is Emri Sayisi",aggs:["sum"]},
+        {id:"qty",label:"Emir Miktari",aggs:["sum","avg","max","min"]},
+        {id:"partSec",label:"Parca Suresi (sn)",aggs:["avg","max","min"]},
+      ],
+    },
+    salesOrders:{
+      label:"Satis Siparisleri",
+      dateField:"recordDate",
+      dimensions:[
+        {id:"__all",label:"Toplam"},
+        {id:"status",label:"Durum"},
+        {id:"customerName",label:"Musteri"},
+        {id:"priority",label:"Oncelik"},
+      ],
+      metrics:[
+        {id:"__count",label:"Siparis Sayisi",aggs:["sum"]},
+        {id:"qty",label:"Siparis Miktari",aggs:["sum","avg","max","min"]},
+        {id:"deliveredQty",label:"Teslim Miktari",aggs:["sum","avg","max","min"]},
+        {id:"openQty",label:"Acik Miktar",aggs:["sum","avg","max","min"]},
+        {id:"totalAmount",label:"Tutar",aggs:["sum","avg","max","min"]},
+      ],
+    },
+    materials:{
+      label:"Malzeme Kartlari",
+      dateField:"recordDate",
+      dimensions:[
+        {id:"__all",label:"Toplam"},
+        {id:"type",label:"Tip"},
+        {id:"trackingMode",label:"Takip"},
+        {id:"valuationMethod",label:"Maliyetleme"},
+      ],
+      metrics:[
+        {id:"__count",label:"Kart Sayisi",aggs:["sum"]},
+        {id:"stock",label:"Stok",aggs:["sum","avg","max","min"]},
+        {id:"reorderPoint",label:"Yeniden Siparis Noktasi",aggs:["sum","avg","max","min"]},
+        {id:"safetyStock",label:"Guvenlik Stogu",aggs:["sum","avg","max","min"]},
+        {id:"leadTimeDays",label:"Lead-Time (gun)",aggs:["avg","max","min"]},
+      ],
+    },
+    downtime:{
+      label:"Durus Kayitlari",
+      dateField:"date",
+      dimensions:[
+        {id:"__all",label:"Toplam"},
+        {id:"machine",label:"Tezgah"},
+        {id:"typeName",label:"Durus Nedeni"},
+        {id:"category",label:"Kategori"},
+        {id:"shift",label:"Vardiya"},
+      ],
+      metrics:[
+        {id:"__count",label:"Durus Adedi",aggs:["sum"]},
+        {id:"durationMin",label:"Durus Dakikasi",aggs:["sum","avg","max","min"]},
+      ],
+    },
+    quality:{
+      label:"Kalite Muayeneleri",
+      dateField:"date",
+      dimensions:[
+        {id:"__all",label:"Toplam"},
+        {id:"result",label:"Sonuc"},
+        {id:"partNo",label:"Parca"},
+        {id:"orderCode",label:"Is Emri"},
+        {id:"scrapReason",label:"Hurda Nedeni"},
+      ],
+      metrics:[
+        {id:"__count",label:"Muayene Sayisi",aggs:["sum"]},
+        {id:"scrapQty",label:"Hurda Adedi",aggs:["sum","avg","max","min"]},
+        {id:"scrapCost",label:"Hurda Maliyeti",aggs:["sum","avg","max","min"]},
+      ],
+    },
+  };
+  const CHART_TYPE_OPTIONS=[
+    {id:"column",label:"Sutun"},
+    {id:"line",label:"Cizgi"},
+    {id:"pie",label:"Pasta"},
+    {id:"donut",label:"Donut"},
+    {id:"table",label:"Tablo"},
+  ];
+  const CHART_TYPE_LABELS=Object.fromEntries(CHART_TYPE_OPTIONS.map(x=>[x.id,x.label]));
+
+  const [period,setPeriod]=useState("gunluk");
+  const [rangeEnabled,setRangeEnabled]=useState(false);
+  const [fromDate,setFromDate]=useState(()=>todayStr());
+  const [toDate,setToDate]=useState(()=>todayStr());
+  const [entries,setEntries]=useState([]);
+  const [orders,setOrders]=useState([]);
+  const [salesOrders,setSalesOrders]=useState([]);
+  const [materials,setMaterials]=useState([]);
+  const [downtimeEvents,setDowntimeEvents]=useState([]);
+  const [qualityInspections,setQualityInspections]=useState([]);
+  const [customReports,setCustomReports]=useState([]);
+  const [selectedCustomReportId,setSelectedCustomReportId]=useState("");
+  const [reportPage,setReportPage]=useState("list");
+  const [showBuilder,setShowBuilder]=useState(false);
+  const [savingReport,setSavingReport]=useState(false);
+  const [editingReportId,setEditingReportId]=useState("");
+  const [reportForm,setReportForm]=useState({
+    name:"",
+    source:"entries",
+    dimension:"machine",
+    metric:"totalParts",
+    aggregation:"sum",
+    chartType:"column",
+    maxItems:"10",
+  });
+  const [loading,setLoading]=useState(true);
+
+  const sortReports=useCallback((rows=[])=>[...rows].sort((a,b)=>{
+    const ad=b.updatedAt||b.createdAt||"";
+    const bd=a.updatedAt||a.createdAt||"";
+    return ad.localeCompare(bd);
+  }),[]);
+
+  const load=useCallback(async()=>{
+    setLoading(true);
+    const [entryRows,orderRows,salesRows,materialRows,downtimeRows,qualityRows,reportRows]=await Promise.all([
+      window.DB.getAll("entries"),
+      window.DB.getAll("orders"),
+      window.DB.getAll("salesOrders"),
+      window.DB.getAll("materials"),
+      window.DB.getAll("downtimeEvents"),
+      window.DB.getAll("qualityInspections"),
+      window.DB.getAll("customReports"),
+    ]);
+    setEntries(entryRows||[]);
+    setOrders(orderRows||[]);
+    setSalesOrders(salesRows||[]);
+    setMaterials(materialRows||[]);
+    setDowntimeEvents(downtimeRows||[]);
+    setQualityInspections(qualityRows||[]);
+    setCustomReports(sortReports(reportRows||[]));
+    setLoading(false);
+  },[sortReports]);
+
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="rapor") return;
+      if(d.type==="refresh"){load();return;}
+      if(d.type==="new"){
+        openCreateReportPage();
+        window.scrollTo({top:0,behavior:"smooth"});
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load]);
+  useEffect(()=>{
+    if(selectedCustomReportId&& !customReports.some(r=>r.id===selectedCustomReportId)){
+      setSelectedCustomReportId("");
+    }
+  },[customReports,selectedCustomReportId]);
+  useEffect(()=>{
+    if(reportPage==="detail"&&!selectedCustomReportId) setReportPage("list");
+  },[reportPage,selectedCustomReportId]);
+
+  function applyRangePreset(type){
+    const end=todayStr();
+    const endDate=parseYmdLocal(end);
+    let start=end;
+    if(type==="last7"){
+      const d=new Date(endDate); d.setDate(d.getDate()-6); start=ymdLocal(d);
+    }else if(type==="last30"){
+      const d=new Date(endDate); d.setDate(d.getDate()-29); start=ymdLocal(d);
+    }else if(type==="thisMonth"){
+      const d=new Date(endDate.getFullYear(),endDate.getMonth(),1); start=ymdLocal(d);
+    }
+    setRangeEnabled(true);
+    setFromDate(start);
+    setToDate(end);
+  }
+
+  const today=todayStr(),thisWeek=weekStart(),thisMonth=monthStr();
+  const rangeStart=fromDate<=toDate?fromDate:toDate;
+  const rangeEnd=fromDate<=toDate?toDate:fromDate;
+  const filtered=entries.filter(e=>rangeEnabled?(e.date>=rangeStart&&e.date<=rangeEnd):(period==="gunluk"?e.date===today:period==="haftalik"?e.week===thisWeek:e.month===thisMonth));
+  const byJob={};
+  filtered.forEach(e=>{
+    if(!byJob[e.jobCode]) byJob[e.jobCode]={jobCode:e.jobCode,jobName:e.jobName,correct:0,wrong:0,partSec:e.partSec,machines:new Set(),ops:new Set()};
+    byJob[e.jobCode].correct+=e.correct; byJob[e.jobCode].wrong+=e.wrong;
+    byJob[e.jobCode].machines.add(e.machine); byJob[e.jobCode].ops.add(e.operatorName||e.operatorId);
+  });
+  const jobs=Object.values(byJob).map(j=>({...j,machines:[...j.machines],ops:[...j.ops]}));
+  const totalC=filtered.reduce((s,e)=>s+e.correct,0);
+  const totalW=filtered.reduce((s,e)=>s+e.wrong,0);
+  const qual=totalC+totalW>0?Math.round((totalC/(totalC+totalW))*100):0;
+  const periodLabel=rangeEnabled?`Tarih AralÄ±ÄŸÄ± (${rangeStart} - ${rangeEnd})`:(period==="gunluk"?"GÃ¼nlÃ¼k":period==="haftalik"?"HaftalÄ±k":"AylÄ±k");
+  const dailyBars=machines.map(m=>{
+    const md=filtered.filter(e=>e.machine===m);
+    const correct=md.reduce((s,e)=>s+e.correct,0);
+    const wrong=md.reduce((s,e)=>s+e.wrong,0);
+    const total=correct+wrong;
+    return {machine:m,correct,wrong,total};
+  }).filter(x=>x.total>0);
+  const dailyBarsPct=dailyBars.map(b=>({
+    ...b,
+    correctPct:(totalC+totalW)>0?(b.correct/(totalC+totalW))*100:0,
+    wrongPct:(totalC+totalW)>0?(b.wrong/(totalC+totalW))*100:0,
+  }));
+  const dailyMaxPct=Math.max(5,Math.ceil((Math.max(0,...dailyBarsPct.map(b=>b.correctPct+b.wrongPct))+2)/5)*5);
+  const chartPalette=[...CORPORATE_CHART_PALETTE];
+  const dayKeys=(()=>{
+    if(rangeEnabled){
+      const start=parseYmdLocal(rangeStart);
+      const end=parseYmdLocal(rangeEnd);
+      const out=[];
+      const cur=new Date(start);
+      while(cur<=end&&out.length<120){
+        out.push(ymdLocal(cur));
+        cur.setDate(cur.getDate()+1);
+      }
+      return out;
+    }
+    if(period==="gunluk") return [today];
+    if(period==="haftalik"){
+      const start=parseYmdLocal(thisWeek);
+      return Array.from({length:7},(_,i)=>{
+        const d=new Date(start);
+        d.setDate(start.getDate()+i);
+        return ymdLocal(d);
+      });
+    }
+    const [y,m]=thisMonth.split("-").map(Number);
+    const count=new Date(y,m,0).getDate();
+    return Array.from({length:count},(_,i)=>`${thisMonth}-${pad2(i+1)}`);
+  })();
+  const dayLabels=dayKeys.map(k=>{
+    const d=parseYmdLocal(k);
+    if(rangeEnabled) return String(d.getDate());
+    if(period==="haftalik") return new Intl.DateTimeFormat("tr-TR",{weekday:"short",day:"2-digit"}).format(d);
+    if(period==="aylik") return String(d.getDate());
+    return new Intl.DateTimeFormat("tr-TR",{day:"2-digit",month:"2-digit"}).format(d);
+  });
+  const lineSeries=machines.map((m,i)=>{
+    const totals=dayKeys.map(day=>filtered
+      .filter(e=>e.machine===m&&e.date===day)
+      .reduce((s,e)=>s+e.correct+e.wrong,0)
+    );
+    return {name:m,color:chartPalette[i%chartPalette.length],totals};
+  });
+  const maxLineValue=Math.max(1,...lineSeries.flatMap(s=>s.totals));
+  const sourceRows=useMemo(()=>({
+    entries:(entries||[]).map(row=>({
+      ...row,
+      operatorName:row.operatorName||row.operatorId||"-",
+      totalParts:safeNum(row.correct)+safeNum(row.wrong),
+    })),
+    orders:(orders||[]).map(row=>({
+      ...row,
+      machineMain:(row.machines&&row.machines.length>0)?row.machines[0]:"Atanmamis",
+      recordDate:row.dueDate||String(row.createdAt||"").slice(0,10),
+      qty:safeNum(row.qty),
+      partSec:safeNum(row.partSec),
+    })),
+    salesOrders:(salesOrders||[]).map(row=>({
+      ...row,
+      recordDate:row.dueDate||String(row.createdAt||"").slice(0,10),
+      qty:safeNum(row.qty),
+      deliveredQty:safeNum(row.deliveredQty),
+      openQty:Math.max(0,safeNum(row.qty)-safeNum(row.deliveredQty)),
+      totalAmount:safeNum(row.totalAmount),
+    })),
+    materials:(materials||[]).map(row=>({
+      ...row,
+      recordDate:String(row.updatedAt||row.createdAt||"").slice(0,10),
+      stock:safeNum(row.stock),
+      reorderPoint:safeNum(row.reorderPoint),
+      safetyStock:safeNum(row.safetyStock),
+      leadTimeDays:safeNum(row.leadTimeDays),
+    })),
+    downtime:(downtimeEvents||[]).map(row=>({
+      ...row,
+      date:row.date||String(row.startAt||"").slice(0,10),
+      durationMin:safeNum(row.durationMin),
+    })),
+    quality:(qualityInspections||[]).map(row=>({
+      ...row,
+      date:String(row.createdAt||"").slice(0,10),
+      scrapQty:safeNum(row.scrapQty),
+      scrapCost:safeNum(row.scrapCost),
+    })),
+  }),[entries,orders,salesOrders,materials,downtimeEvents,qualityInspections]);
+  const selectedCustomReport=customReports.find(r=>r.id===selectedCustomReportId)||null;
+  const activeBuilderSource=REPORT_SOURCE_DEFS[reportForm.source]||REPORT_SOURCE_DEFS.entries;
+  const activeBuilderMetric=activeBuilderSource.metrics.find(m=>m.id===reportForm.metric)||activeBuilderSource.metrics[0];
+
+  function normalizeDateYmd(value){
+    const raw=String(value||"").trim();
+    if(!raw) return "";
+    if(/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    if(/^\d{4}-\d{2}-\d{2}T/.test(raw)) return raw.slice(0,10);
+    const d=new Date(raw);
+    if(Number.isNaN(d.getTime())) return "";
+    return ymdLocal(d);
+  }
+  function inCurrentWindow(ymd){
+    if(!ymd) return true;
+    if(rangeEnabled) return ymd>=rangeStart&&ymd<=rangeEnd;
+    if(period==="gunluk") return ymd===today;
+    if(period==="haftalik") return weekStart(parseYmdLocal(ymd))===thisWeek;
+    return ymd.startsWith(thisMonth+"-");
+  }
+  function formatMetricNumber(value){
+    const n=safeNum(value);
+    return n.toLocaleString("tr-TR",{maximumFractionDigits:2});
+  }
+  function normalizeCustomConfig(raw){
+    const source=REPORT_SOURCE_DEFS[raw?.source]?raw.source:"entries";
+    const src=REPORT_SOURCE_DEFS[source];
+    const dimIds=src.dimensions.map(d=>d.id);
+    const metricIds=src.metrics.map(m=>m.id);
+    const dimension=dimIds.includes(raw?.dimension)?raw.dimension:src.dimensions[0]?.id||"__all";
+    const metric=metricIds.includes(raw?.metric)?raw.metric:src.metrics[0]?.id||"__count";
+    const metricDef=src.metrics.find(m=>m.id===metric)||src.metrics[0];
+    const aggs=metricDef?.aggs||["sum"];
+    const aggregation=aggs.includes(raw?.aggregation)?raw.aggregation:aggs[0];
+    const chartType=CHART_TYPE_LABELS[raw?.chartType]?raw.chartType:"column";
+    const maxItems=Math.max(3,Math.min(40,Math.floor(safeNum(raw?.maxItems)||10)));
+    return {
+      name:String(raw?.name||"").trim(),
+      source,
+      dimension,
+      metric,
+      aggregation,
+      chartType,
+      maxItems,
+    };
+  }
+  function updateReportFormField(key,value){
+    setReportForm(prev=>{
+      const next={...prev,[key]:value};
+      if(key==="source"){
+        const src=REPORT_SOURCE_DEFS[value]||REPORT_SOURCE_DEFS.entries;
+        const metric=src.metrics[0]?.id||"__count";
+        next.dimension=src.dimensions[0]?.id||"__all";
+        next.metric=metric;
+        next.aggregation=(src.metrics.find(m=>m.id===metric)?.aggs||["sum"])[0];
+        return next;
+      }
+      if(key==="metric"){
+        const src=REPORT_SOURCE_DEFS[next.source]||REPORT_SOURCE_DEFS.entries;
+        const metricDef=src.metrics.find(m=>m.id===value)||src.metrics[0];
+        const aggs=metricDef?.aggs||["sum"];
+        if(!aggs.includes(next.aggregation)) next.aggregation=aggs[0];
+      }
+      return next;
+    });
+  }
+  function resetReportBuilder(source="entries"){
+    const src=REPORT_SOURCE_DEFS[source]||REPORT_SOURCE_DEFS.entries;
+    const metric=src.metrics[0]?.id||"__count";
+    setReportForm({
+      name:"",
+      source,
+      dimension:src.dimensions[0]?.id||"__all",
+      metric,
+      aggregation:(src.metrics.find(m=>m.id===metric)?.aggs||["sum"])[0],
+      chartType:"column",
+      maxItems:"10",
+    });
+    setEditingReportId("");
+  }
+  function openReportListPage(){
+    setReportPage("list");
+    setShowBuilder(false);
+    setEditingReportId("");
+  }
+  function openCreateReportPage(){
+    resetReportBuilder();
+    setSelectedCustomReportId("");
+    setShowBuilder(true);
+    setReportPage("builder");
+  }
+  function openReportDetailPage(reportId){
+    if(!reportId) return;
+    setSelectedCustomReportId(reportId);
+    setShowBuilder(false);
+    setEditingReportId("");
+    setReportPage("detail");
+  }
+  async function saveCustomReport(){
+    const cfg=normalizeCustomConfig(reportForm);
+    if(!cfg.name){alert("Rapor adi zorunlu.");return;}
+    const payload={
+      name:cfg.name,
+      source:cfg.source,
+      dimension:cfg.dimension,
+      metric:cfg.metric,
+      aggregation:cfg.aggregation,
+      chartType:cfg.chartType,
+      maxItems:cfg.maxItems,
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser.id||"",
+    };
+    setSavingReport(true);
+    if(editingReportId){
+      const ok=await window.DB.updateDoc("customReports",editingReportId,payload);
+      setSavingReport(false);
+      if(!ok){alert("Rapor guncellenemedi.");return;}
+      setCustomReports(prev=>sortReports(prev.map(r=>r.id===editingReportId?{...r,...payload}:r)));
+      setSelectedCustomReportId(editingReportId);
+      setEditingReportId("");
+      setShowBuilder(false);
+      setReportPage("detail");
+      return;
+    }
+    const id=await window.DB.addDoc("customReports",{...payload,createdBy:currentUser.id||""});
+    setSavingReport(false);
+    if(!id){alert("Rapor kaydedilemedi.");return;}
+    const row={id,...payload,createdAt:new Date().toISOString()};
+    setCustomReports(prev=>sortReports([row,...prev]));
+    setSelectedCustomReportId(id);
+    setEditingReportId("");
+    setShowBuilder(false);
+    setReportPage("detail");
+  }
+  async function removeCustomReport(report){
+    if(!report) return;
+    if(!confirm(`"${report.name||"Rapor"}" silinsin mi?`)) return;
+    const ok=await window.DB.deleteDoc("customReports",report.id);
+    if(!ok){alert("Rapor silinemedi.");return;}
+    setCustomReports(prev=>prev.filter(r=>r.id!==report.id));
+    if(selectedCustomReportId===report.id) setSelectedCustomReportId("");
+    if(editingReportId===report.id) setEditingReportId("");
+    if(reportPage==="detail"&&selectedCustomReportId===report.id) setReportPage("list");
+  }
+  function startEditCustomReport(report){
+    if(!report) return;
+    const cfg=normalizeCustomConfig(report);
+    setReportForm({
+      name:report.name||"",
+      source:cfg.source,
+      dimension:cfg.dimension,
+      metric:cfg.metric,
+      aggregation:cfg.aggregation,
+      chartType:cfg.chartType,
+      maxItems:String(cfg.maxItems),
+    });
+    setEditingReportId(report.id);
+    setSelectedCustomReportId(report.id);
+    setShowBuilder(true);
+    setReportPage("builder");
+  }
+  function normalizeDashboardWidgetRows(rows){
+    const src=Array.isArray(rows)?rows:[];
+    const out=[];
+    const seen=new Set();
+    src.forEach((row,idx)=>{
+      const id=String(row?.id||`w_${idx}`).trim();
+      const reportId=String(row?.reportId||"").trim();
+      if(!id||!reportId||seen.has(id)) return;
+      seen.add(id);
+      const size=row?.size==="sm"||row?.size==="lg"?row.size:"md";
+      out.push({id,reportId,size});
+    });
+    return out;
+  }
+  async function addReportToDashboard(report){
+    if(!report||!report.id){alert("Rapor bulunamadi.");return;}
+    const userKey=String(currentUser?.id||"default");
+    const cfg=await window.DB.getDoc("config","dashboardReportWidgets");
+    const widgetsByUser=(cfg&&typeof cfg.widgetsByUser==="object")?cfg.widgetsByUser:{};
+    const currentRows=normalizeDashboardWidgetRows(widgetsByUser[userKey]);
+    if(currentRows.some(x=>x.reportId===report.id)){
+      alert("Bu rapor zaten gosterge paneline ekli.");
+      return;
+    }
+    const nextRows=[...currentRows,{id:`w_${Date.now()}_${Math.floor(Math.random()*1000)}`,reportId:report.id,size:"md"}];
+    const ok=await window.DB.setDoc("config","dashboardReportWidgets",{
+      widgetsByUser:{...widgetsByUser,[userKey]:nextRows},
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser?.id||"",
+    });
+    if(!ok){alert("Rapor gosterge paneline eklenemedi.");return;}
+    window.dispatchEvent(new CustomEvent("dashboard:report-widgets-updated",{detail:{userId:userKey}}));
+    alert("Rapor grafigi gosterge paneline eklendi.");
+  }
+  function aggregateCustomReport(configRaw){
+    const cfg=normalizeCustomConfig(configRaw);
+    const src=REPORT_SOURCE_DEFS[cfg.source];
+    let rows=[...(sourceRows[cfg.source]||[])];
+    if(src.dateField){
+      rows=rows.filter(row=>{
+        const ymd=normalizeDateYmd(row[src.dateField]);
+        if(!ymd) return true;
+        return inCurrentWindow(ymd);
+      });
+    }
+    const grouped={};
+    rows.forEach(row=>{
+      const rawLabel=cfg.dimension==="__all"?"Toplam":row[cfg.dimension];
+      const label=(rawLabel===undefined||rawLabel===null||String(rawLabel).trim()==="")?"(Bos)":String(rawLabel);
+      if(!grouped[label]) grouped[label]=[];
+      grouped[label].push(cfg.metric==="__count"?1:safeNum(row[cfg.metric]));
+    });
+    let data=Object.entries(grouped).map(([label,values])=>{
+      let value=0;
+      if(cfg.metric==="__count"){
+        value=values.length;
+      }else if(cfg.aggregation==="avg"){
+        value=values.length?values.reduce((s,v)=>s+v,0)/values.length:0;
+      }else if(cfg.aggregation==="max"){
+        value=values.length?Math.max(...values):0;
+      }else if(cfg.aggregation==="min"){
+        value=values.length?Math.min(...values):0;
+      }else{
+        value=values.reduce((s,v)=>s+v,0);
+      }
+      return {label,value,count:values.length};
+    }).sort((a,b)=>b.value-a.value);
+    if(cfg.chartType!=="table") data=data.slice(0,cfg.maxItems);
+    const metricLabel=(src.metrics.find(m=>m.id===cfg.metric)||{}).label||cfg.metric;
+    const dimensionLabel=(src.dimensions.find(d=>d.id===cfg.dimension)||{}).label||"Toplam";
+    return {cfg,src,data,rowCount:rows.length,metricLabel,dimensionLabel};
+  }
+  const previewCustomReport=useMemo(()=>{
+    if(showBuilder) return aggregateCustomReport(reportForm);
+    if(selectedCustomReport) return aggregateCustomReport(selectedCustomReport);
+    return null;
+  },[selectedCustomReport,showBuilder,reportForm,sourceRows,period,rangeEnabled,fromDate,toDate]);
+  function renderCustomReportView(preview){
+    if(!preview) return null;
+    if(preview.rowCount===0){
+      return (
+        <div style={{padding:"20px 14px",border:`1px dashed ${C.border}`,borderRadius:10,color:C.muted2,fontSize:13,background:C.surface2}}>
+          Secili filtrede rapor verisi yok.
+        </div>
+      );
+    }
+    const rows=preview.data||[];
+    if(rows.length===0){
+      return (
+        <div style={{padding:"20px 14px",border:`1px dashed ${C.border}`,borderRadius:10,color:C.muted2,fontSize:13,background:C.surface2}}>
+          Bu rapor icin gosterilecek satir yok.
+        </div>
+      );
+    }
+    const maxVal=Math.max(1,...rows.map(r=>safeNum(r.value)));
+    if(preview.cfg.chartType==="table"){
+      return (
+        <div style={{overflowX:"auto",border:`1px solid ${C.border}`,borderRadius:10}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead>
+              <tr style={{background:C.surface2,color:C.muted2,textAlign:"left"}}>
+                <th style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`}}>{preview.dimensionLabel}</th>
+                <th style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`}}>{preview.metricLabel}</th>
+                <th style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`}}>Kayit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r,i)=>(
+                <tr key={`${r.label}-${i}`} style={{borderBottom:`1px solid ${C.border}`}}>
+                  <td style={{padding:"8px 10px",color:C.text}}>{r.label}</td>
+                  <td style={{padding:"8px 10px",color:C.text,fontWeight:700}}>{formatMetricNumber(r.value)}</td>
+                  <td style={{padding:"8px 10px",color:C.muted2}}>{r.count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+    if(preview.cfg.chartType==="pie"||preview.cfg.chartType==="donut"){
+      const total=rows.reduce((s,r)=>s+safeNum(r.value),0);
+      let cursor=0;
+      const segments=rows.map((r,i)=>{
+        const share=total>0?(safeNum(r.value)/total)*360:0;
+        const start=cursor;
+        cursor+=share;
+        return `${chartPalette[i%chartPalette.length]} ${start.toFixed(2)}deg ${cursor.toFixed(2)}deg`;
+      });
+      const pieStyle=rows.length?chartPalette[0]:C.border;
+      return (
+        <div style={{display:"flex",gap:14,flexWrap:"wrap",alignItems:"center"}}>
+          <div style={{position:"relative",width:220,height:220,borderRadius:"50%",background:pieStyle,border:`1px solid ${C.border}`,flexShrink:0}}>
+            {preview.cfg.chartType==="donut"&&<div style={{position:"absolute",inset:48,borderRadius:"50%",background:C.card,border:`1px solid ${C.border}`}}/>}
+          </div>
+          <div style={{flex:1,minWidth:220,display:"flex",flexDirection:"column",gap:7}}>
+            {rows.map((r,i)=>{
+              const share=total>0?(safeNum(r.value)/total)*100:0;
+              return (
+                <div key={`${r.label}-${i}`} style={{display:"grid",gridTemplateColumns:"18px 1fr auto auto",gap:8,alignItems:"center",fontSize:12}}>
+                  <span style={{width:12,height:12,borderRadius:3,background:chartPalette[i%chartPalette.length],display:"inline-block"}}/>
+                  <span style={{color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.label}</span>
+                  <span style={{color:C.muted2}}>{share.toFixed(1)}%</span>
+                  <span style={{color:C.text,fontWeight:700}}>{formatMetricNumber(r.value)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+    if(preview.cfg.chartType==="line"){
+      const lineRows=rows.slice(0,18);
+      const lineMax=Math.max(1,...lineRows.map(r=>safeNum(r.value)));
+      const n=Math.max(lineRows.length-1,1);
+      const points=lineRows.map((r,i)=>{
+        const x=56+(684*(i/n));
+        const y=180-((safeNum(r.value)/lineMax)*150);
+        return `${x},${y}`;
+      }).join(" ");
+      return (
+        <div style={{height:220,overflowX:"auto"}}>
+          <svg width="100%" height="220" viewBox="0 0 760 220" preserveAspectRatio="none">
+            <rect x="0" y="0" width="760" height="220" fill="transparent"/>
+            {[0,1,2,3,4].map(i=>{
+              const y=20+i*40;
+              const v=Math.round(lineMax*((4-i)/4));
+              return (
+                <g key={i}>
+                  <line x1="56" y1={y} x2="740" y2={y} stroke={C.border} strokeWidth="1"/>
+                  <text x="50" y={y+4} fill={C.muted2} fontSize="10" textAnchor="end">{v}</text>
+                </g>
+              );
+            })}
+            <polyline points={points} fill="none" stroke={C.accent} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"/>
+            {lineRows.map((r,i)=>{
+              const x=56+(684*(i/n));
+              const y=180-((safeNum(r.value)/lineMax)*150);
+              const lbl=String(r.label||"");
+              const shortLbl=lbl.length>9?lbl.slice(0,8)+"â€¦":lbl;
+              return (
+                <g key={`${r.label}-${i}`}>
+                  <circle cx={x} cy={y} r="3.5" fill={C.accent}/>
+                  <text x={x} y="206" fill={C.muted2} fontSize="10" textAnchor="middle">{shortLbl}</text>
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+      );
+    }
+    return (
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {rows.map((r,i)=>{
+          const pct=(safeNum(r.value)/maxVal)*100;
+          return (
+            <div key={`${r.label}-${i}`} style={{display:"grid",gridTemplateColumns:"1.2fr 2fr auto",gap:8,alignItems:"center"}}>
+              <div style={{fontSize:12,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.label}</div>
+              <div style={{height:10,background:C.surface2,border:`1px solid ${C.border}`,borderRadius:999,overflow:"hidden"}}>
+                <div style={{width:`${Math.max(4,pct)}%`,height:"100%",background:chartPalette[i%chartPalette.length]}}/>
+              </div>
+              <div style={{fontSize:12,color:C.text,fontWeight:700}}>{formatMetricNumber(r.value)}</div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>YÃ¼kleniyor...</div>;
+  const qualityTone=qual>=90?C.green:(qual>=75?C.warn:C.red);
+  const panelStyle={background:C.card,border:`1px solid ${C.border}`,borderRadius:12};
+  const sectionCaptionStyle={color:C.muted2,fontSize:11,letterSpacing:.8,textTransform:"uppercase",fontWeight:700};
+  const summaryCards=[
+    {label:"Toplam Dogru",value:totalC,tone:C.green},
+    {label:"Toplam Hatali",value:totalW,tone:C.red},
+    {label:"Kalite Orani",value:`${qual}%`,tone:qualityTone},
+  ];
+
+  return (
+    <div style={{padding:"0 0 12px",display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{...panelStyle,padding:"14px 16px",background:C.surface}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+          <div>
+            <div style={{fontSize:18,fontWeight:800,color:C.text}}>Rapor Merkezi</div>
+            <div style={{fontSize:12,color:C.muted2,marginTop:3}}>Uretim, kalite ve performans verilerini tek ekranda izleyin.</div>
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <Badge label={periodLabel} color={C.accent}/>
+            <Badge label={`${filtered.length} Kayit`} color={C.muted2}/>
+            <Badge label={`${customReports.length} Ozel Rapor`} color={C.green}/>
+          </div>
+        </div>
+      </div>
+
+      <div style={{display:"flex",gap:7}}>
+        {[["gunluk","GÃ¼nlÃ¼k"],["haftalik","HaftalÄ±k"],["aylik","AylÄ±k"]].map(([id,lbl])=>(
+          <button key={id} onClick={()=>{setPeriod(id);setRangeEnabled(false);}} style={{flex:1,...chip(!rangeEnabled&&period===id),padding:"10px 12px"}}>{lbl}</button>
+        ))}
+      </div>
+      <div style={{...panelStyle,padding:"10px 12px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:rangeEnabled?10:0,gap:8,flexWrap:"wrap"}}>
+          <div style={sectionCaptionStyle}>Filtre</div>
+          <button onClick={()=>setRangeEnabled(v=>!v)} style={chip(rangeEnabled,C.accent)}>{rangeEnabled?"Tarih AralÄ±ÄŸÄ±: AÃ§Ä±k":"Tarih AralÄ±ÄŸÄ±"}</button>
+        </div>
+        {rangeEnabled&&(
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              <button onClick={()=>applyRangePreset("last7")} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Son 7 gÃ¼n</button>
+              <button onClick={()=>applyRangePreset("last30")} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Son 30 gÃ¼n</button>
+              <button onClick={()=>applyRangePreset("thisMonth")} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Bu ay</button>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:8,alignItems:"end"}}>
+            <div><span style={labelSt}>BaÅŸlangÄ±Ã§</span><input type="date" value={fromDate} max={today} onChange={e=>setFromDate(e.target.value||today)} style={{...inputSt,padding:"9px 10px",fontSize:13}}/></div>
+            <div><span style={labelSt}>BitiÅŸ</span><input type="date" value={toDate} max={today} onChange={e=>setToDate(e.target.value||today)} style={{...inputSt,padding:"9px 10px",fontSize:13}}/></div>
+            <button onClick={()=>{const t=todayStr();setFromDate(t);setToDate(t);}} style={{...btnSt("ghost"),padding:"9px 11px",fontSize:12,marginBottom:1}}>BugÃ¼n</button>
+            </div>
+          </div>
+        )}
+      </div>
+      <div style={{...panelStyle,padding:"12px 14px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+          <div>
+            <div style={sectionCaptionStyle}>Rapor Sayfalari</div>
+            <div style={{fontSize:13,color:C.text,fontWeight:700,marginTop:2}}>
+              {reportPage==="builder"?(editingReportId?"Raporu Duzenle":"Rapor Olustur"):reportPage==="detail"?"Rapor Detayi":"Rapor Listesi"}
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {reportPage!=="list"&&(
+              <button onClick={openReportListPage} style={{...btnSt("ghost"),padding:"7px 11px",fontSize:12}}>
+                Raporlara Don
+              </button>
+            )}
+            <button onClick={openCreateReportPage} style={{...btnSt("primary"),padding:"7px 11px",fontSize:12}}>
+              Rapor Olustur
+            </button>
+            {reportPage==="detail"&&!!selectedCustomReport&&(
+              <button onClick={()=>startEditCustomReport(selectedCustomReport)} style={{...btnSt("ghost"),padding:"7px 11px",fontSize:12}}>
+                Duzenle
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8,marginBottom:10}}>
+          <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:9,padding:"8px 10px",fontSize:12,color:C.muted2}}>
+            Kayitli Rapor: <span style={{color:C.text,fontWeight:700}}>{customReports.length}</span>
+          </div>
+          <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:9,padding:"8px 10px",fontSize:12,color:C.muted2}}>
+            Aktif Kaynak: <span style={{color:C.text,fontWeight:700}}>{(previewCustomReport?.src?.label)||"-"}</span>
+          </div>
+          <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:9,padding:"8px 10px",fontSize:12,color:C.muted2}}>
+            Aktif Grafik: <span style={{color:C.text,fontWeight:700}}>{CHART_TYPE_LABELS[(previewCustomReport?.cfg?.chartType)||""]||"-"}</span>
+          </div>
+        </div>
+        {reportPage==="list"&&(
+          <>
+            {customReports.length===0&&(
+              <div style={{marginBottom:10,padding:"12px 10px",border:`1px dashed ${C.border}`,borderRadius:10,fontSize:12,color:C.muted2,background:C.surface2}}>
+                Henuz kayitli ozel rapor yok. "Rapor Olustur" ile yeni rapor tasarlayin.
+              </div>
+            )}
+            {customReports.length>0&&(
+              <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:10,maxHeight:340,overflowY:"auto",paddingRight:2}}>
+                {customReports.map(rep=>{
+                  const isActive=rep.id===selectedCustomReportId;
+                  return (
+                    <div key={rep.id} style={{display:"grid",gridTemplateColumns:"1fr auto",gap:8,alignItems:"center",padding:"8px 10px",border:`1px solid ${isActive?C.accent+"66":C.border}`,borderRadius:10,background:isActive?C.brandTint:C.surface}}>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontWeight:700,fontSize:13,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{rep.name||"Adsiz Rapor"}</div>
+                        <div style={{fontSize:11,color:C.muted2,marginTop:2}}>
+                          {(REPORT_SOURCE_DEFS[rep.source]?.label)||rep.source||"-"} Â· {CHART_TYPE_LABELS[rep.chartType]||rep.chartType||"-"} Â· {String(rep.aggregation||"").toUpperCase()||"-"}
+                        </div>
+                      </div>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                        <button onClick={()=>openReportDetailPage(rep.id)} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11}}>Ac</button>
+                        <button onClick={()=>startEditCustomReport(rep)} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11}}>Duzenle</button>
+                        <button onClick={()=>addReportToDashboard(rep)} style={{...btnSt("primary"),padding:"6px 9px",fontSize:11}}>Panele Ekle</button>
+                        <button onClick={()=>removeCustomReport(rep)} style={{...btnSt("danger"),padding:"6px 9px",fontSize:11}}>Sil</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+
+        {reportPage==="builder"&&(
+          <>
+            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10,marginBottom:10}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
+                <div><span style={labelSt}>Rapor Adi *</span><input style={inputSt} value={reportForm.name} onChange={e=>updateReportFormField("name",e.target.value)} placeholder="Orn. Tezgah Performans Ozeti"/></div>
+                <div><span style={labelSt}>Veri Kaynagi</span><select style={inputSt} value={reportForm.source} onChange={e=>updateReportFormField("source",e.target.value)}>{Object.entries(REPORT_SOURCE_DEFS).map(([id,def])=><option key={id} value={id}>{def.label}</option>)}</select></div>
+                <div><span style={labelSt}>Boyut (X Alan)</span><select style={inputSt} value={reportForm.dimension} onChange={e=>updateReportFormField("dimension",e.target.value)}>{activeBuilderSource.dimensions.map(dim=><option key={dim.id} value={dim.id}>{dim.label}</option>)}</select></div>
+                <div><span style={labelSt}>Olcum (Y Alan)</span><select style={inputSt} value={reportForm.metric} onChange={e=>updateReportFormField("metric",e.target.value)}>{activeBuilderSource.metrics.map(met=><option key={met.id} value={met.id}>{met.label}</option>)}</select></div>
+                <div><span style={labelSt}>Toplama</span><select style={inputSt} value={reportForm.aggregation} onChange={e=>updateReportFormField("aggregation",e.target.value)}>{(activeBuilderMetric?.aggs||["sum"]).map(agg=><option key={agg} value={agg}>{agg.toUpperCase()}</option>)}</select></div>
+                <div><span style={labelSt}>Grafik Tipi</span><select style={inputSt} value={reportForm.chartType} onChange={e=>updateReportFormField("chartType",e.target.value)}>{CHART_TYPE_OPTIONS.map(opt=><option key={opt.id} value={opt.id}>{opt.label}</option>)}</select></div>
+                <div><span style={labelSt}>Maks Satir</span><input style={inputSt} type="number" min="3" max="40" value={reportForm.maxItems} onChange={e=>updateReportFormField("maxItems",e.target.value)}/></div>
+              </div>
+              <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10,flexWrap:"wrap"}}>
+                <button onClick={()=>resetReportBuilder(reportForm.source)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Temizle</button>
+                <button onClick={saveCustomReport} disabled={savingReport} style={{...btnSt("green"),padding:"8px 12px",fontSize:12,opacity:savingReport?0.7:1}}>
+                  {savingReport?"Kaydediliyor...":(editingReportId?"Raporu Guncelle":"Raporu Kaydet")}
+                </button>
+              </div>
+            </div>
+            {previewCustomReport&&(
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"center",marginBottom:9,flexWrap:"wrap"}}>
+                  <div>
+                    <div style={{fontWeight:700,color:C.text,fontSize:14}}>{reportForm.name||"Yeni Rapor Onizleme"}</div>
+                    <div style={{fontSize:11,color:C.muted2,marginTop:1}}>
+                      {previewCustomReport.src.label} Â· {previewCustomReport.dimensionLabel} / {previewCustomReport.metricLabel} Â· {previewCustomReport.cfg.aggregation.toUpperCase()}
+                    </div>
+                  </div>
+                  <Badge label={CHART_TYPE_LABELS[previewCustomReport.cfg.chartType]||previewCustomReport.cfg.chartType} color={C.accent}/>
+                </div>
+                {renderCustomReportView(previewCustomReport)}
+              </div>
+            )}
+          </>
+        )}
+
+        {reportPage==="detail"&&(
+          <>
+            {!selectedCustomReport&&(
+              <div style={{padding:"16px 12px",border:`1px dashed ${C.border}`,borderRadius:10,color:C.muted2,fontSize:12,background:C.surface2}}>
+                Rapor secimi bulunamadi. Listeye donup bir rapor secin.
+              </div>
+            )}
+            {!!selectedCustomReport&&!!previewCustomReport&&(
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"center",marginBottom:9,flexWrap:"wrap"}}>
+                  <div>
+                    <div style={{fontWeight:700,color:C.text,fontSize:14}}>{selectedCustomReport.name||"Rapor"}</div>
+                    <div style={{fontSize:11,color:C.muted2,marginTop:1}}>
+                      {previewCustomReport.src.label} Â· {previewCustomReport.dimensionLabel} / {previewCustomReport.metricLabel} Â· {previewCustomReport.cfg.aggregation.toUpperCase()}
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+                    <Badge label={CHART_TYPE_LABELS[previewCustomReport.cfg.chartType]||previewCustomReport.cfg.chartType} color={C.accent}/>
+                    <button onClick={()=>addReportToDashboard(selectedCustomReport)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:11}}>Gosterge Paneline Ekle</button>
+                  </div>
+                </div>
+                {renderCustomReportView(previewCustomReport)}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+      {filtered.length===0?(
+        <div style={{...panelStyle,textAlign:"center",color:C.muted2,padding:"34px 20px"}}>
+          <div style={{fontSize:16,fontWeight:700,color:C.text,marginBottom:4}}>Secili donemde kayit bulunamadi</div>
+          <div style={{fontSize:12}}>Tarih araligini degistirerek tekrar deneyin.</div>
+        </div>
+      ):(
+        <>
+          <div style={{...panelStyle,padding:"12px 14px",marginBottom:12}}>
+            <div style={{...sectionCaptionStyle,marginBottom:10}}>Tezgah Grafigi Â· {periodLabel}</div>
+            {period==="gunluk"?(
+              <>
+                <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:8,fontSize:11,color:C.muted2}}>
+                  <span style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:12,height:12,borderRadius:3,background:C.green,display:"inline-block"}}/>DoÄŸru</span>
+                  <span style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:12,height:12,borderRadius:3,background:C.red,display:"inline-block"}}/>YanlÄ±ÅŸ</span>
+                </div>
+                <div style={{height:250,overflowX:"auto"}}>
+                  <svg width="100%" height="250" viewBox="0 0 760 250" preserveAspectRatio="none">
+                    <rect x="0" y="0" width="760" height="250" fill="transparent"/>
+                    {[0,1,2,3,4,5].map(i=>{
+                      const y=210-(170*(i/5));
+                      const v=Math.round((dailyMaxPct*i)/5);
+                      return (
+                        <g key={i}>
+                          <line x1="58" y1={y} x2="740" y2={y} stroke={C.border} strokeWidth="1"/>
+                          <text x="50" y={y+4} fill={C.muted2} fontSize="10" textAnchor="end">{v}%</text>
+                        </g>
+                      );
+                    })}
+                    <line x1="58" y1="40" x2="58" y2="210" stroke={C.muted2} strokeWidth="1.2"/>
+                    <line x1="58" y1="210" x2="740" y2="210" stroke={C.muted2} strokeWidth="1.2"/>
+                    {dailyBarsPct.map((b,i)=>{
+                      const n=Math.max(dailyBarsPct.length,1);
+                      const band=680/n;
+                      const barW=Math.min(56,band*.62);
+                      const x=60+(band*i)+((band-barW)/2);
+                      const hCorrect=(b.correctPct/dailyMaxPct)*170;
+                      const hWrong=(b.wrongPct/dailyMaxPct)*170;
+                      const yCorrect=210-hCorrect;
+                      const yWrong=yCorrect-hWrong;
+                      return (
+                        <g key={b.machine}>
+                          <rect x={x} y={yCorrect} width={barW} height={Math.max(hCorrect,1)} fill={C.green}/>
+                          <rect x={x} y={yWrong} width={barW} height={Math.max(hWrong,1)} fill={C.red}/>
+                          {(b.correct+b.wrong)>0&&<text x={x+barW/2} y={Math.max(yWrong-6,16)} fill={C.text} fontSize="10" textAnchor="middle">{b.correct+b.wrong}</text>}
+                          <text x={x+barW/2} y="228" fill={C.muted2} fontSize="10" textAnchor="middle">{b.machine}</text>
+                        </g>
+                      );
+                    })}
+                    <text x="399" y="245" fill={C.muted2} fontSize="11" textAnchor="middle">Tezgah</text>
+                  </svg>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:6}}>
+                  {dailyBars.map(b=>(
+                    <div key={b.machine} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 8px",fontSize:11,color:C.muted2}}>
+                      <span style={{color:C.text,fontWeight:700}}>{b.machine}</span> Â· <span style={{color:C.green}}>? {b.correct}</span> <span style={{color:C.red}}>? {b.wrong}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ):(
+              <>
+                <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:10}}>
+                  {lineSeries.map(s=>(
+                    <div key={s.name} style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.muted2}}>
+                      <span style={{width:12,height:3,borderRadius:99,background:s.color,display:"inline-block"}}/>
+                      <span>{s.name}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{height:220,overflowX:"auto"}}>
+                  <svg width="100%" height="220" viewBox="0 0 760 220" preserveAspectRatio="none">
+                    <rect x="0" y="0" width="760" height="220" fill="transparent" />
+                    {[0,1,2,3,4].map(i=>{
+                      const y=20+i*40;
+                      const v=Math.round(maxLineValue*((4-i)/4));
+                      return (
+                        <g key={i}>
+                          <line x1="56" y1={y} x2="740" y2={y} stroke={C.border} strokeWidth="1" />
+                          <text x="50" y={y+4} fill={C.muted2} fontSize="10" textAnchor="end">{v}</text>
+                        </g>
+                      );
+                    })}
+                    {lineSeries.map(s=>{
+                      const n=Math.max(dayKeys.length-1,1);
+                      const pts=s.totals.map((v,i)=>{
+                        const x=56+(684*(i/n));
+                        const y=180-((v/maxLineValue)*160);
+                        return `${x},${y}`;
+                      }).join(" ");
+                      return <polyline key={s.name} points={pts} fill="none" stroke={s.color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />;
+                    })}
+                    {dayLabels.map((lbl,i)=>{
+                      const n=Math.max(dayLabels.length-1,1);
+                      const x=56+(684*(i/n));
+                      return <text key={i} x={x} y="206" fill={C.muted2} fontSize="10" textAnchor="middle">{lbl}</text>;
+                    })}
+                  </svg>
+                </div>
+              </>
+            )}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8,marginBottom:12}}>
+            {summaryCards.map(card=>(
+              <div key={card.label} style={{...panelStyle,padding:"12px 14px"}}>
+                <div style={{color:C.muted2,fontSize:10,letterSpacing:1,textTransform:"uppercase",marginBottom:3}}>{card.label}</div>
+                <div style={{color:card.tone,fontSize:24,fontWeight:800,fontFamily:"monospace"}}>{card.value}</div>
+                <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{periodLabel}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{...panelStyle,padding:"12px 14px",marginBottom:12}}>
+            <div style={{...sectionCaptionStyle,marginBottom:10}}>Is Emri Bazli Ozet</div>
+            <div style={{overflowX:"auto",border:`1px solid ${C.border}`,borderRadius:10}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:820}}>
+                <thead>
+                  <tr style={{background:C.surface2,color:C.muted2,textAlign:"left"}}>
+                    <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Is Emri</th>
+                    <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Parca</th>
+                    <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Tezgah / Operator</th>
+                    <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Dogru</th>
+                    <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Hatali</th>
+                    <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Kalite</th>
+                    <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Maks/Gun</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {jobs.map(j=>{
+                    const p=calcPerf(j.correct,j.wrong,j.partSec);
+                    const q=j.correct+j.wrong>0?Math.round((j.correct/(j.correct+j.wrong))*100):0;
+                    const tone=q>=90?C.green:(q>=75?C.warn:C.red);
+                    return (
+                      <tr key={j.jobCode} style={{borderBottom:`1px solid ${C.border}`}}>
+                        <td style={{padding:"9px 10px",fontWeight:700,color:C.text,fontFamily:"monospace"}}>{j.jobCode}</td>
+                        <td style={{padding:"9px 10px",color:C.text}}>{j.jobName||"-"}</td>
+                        <td style={{padding:"9px 10px",color:C.muted2}}>{(j.machines.join(", ")||"-")} Â· {(j.ops.join(", ")||"-")}</td>
+                        <td style={{padding:"9px 10px",color:C.green,fontWeight:700}}>{formatMetricNumber(j.correct)}</td>
+                        <td style={{padding:"9px 10px",color:C.red,fontWeight:700}}>{formatMetricNumber(j.wrong)}</td>
+                        <td style={{padding:"9px 10px",color:tone,fontWeight:800}}>{q}%</td>
+                        <td style={{padding:"9px 10px",color:C.muted2}}>{p?formatMetricNumber(p.max):"-"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div style={{...panelStyle,padding:"12px 14px"}}>
+            <div style={{...sectionCaptionStyle,marginBottom:10}}>Tezgah Ozeti</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8}}>
+              {machines.map(m=>{
+                const md=filtered.filter(e=>e.machine===m);
+                const mc=md.reduce((s,e)=>s+e.correct,0),mw=md.reduce((s,e)=>s+e.wrong,0);
+                const mq=mc+mw>0?Math.round((mc/(mc+mw))*100):null;
+                return (
+                  <div key={m} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",opacity:md.length===0?0.5:1}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}><span style={{fontWeight:700,color:C.text}}>{m}</span>{mq!==null&&<span style={{color:mq>=90?C.green:mq>=75?C.warn:C.red,fontWeight:700,fontSize:13}}>{mq}%</span>}</div>
+                    <div style={{fontSize:12,color:C.muted2}}>{md.length===0?"KayÄ±t yok":`? ${mc}  ? ${mw}`}</div>
+                    {mq!==null&&<div style={{background:C.border,borderRadius:99,height:4,marginTop:8}}><div style={{width:`${mq}%`,height:"100%",background:mq>=90?C.green:mq>=75?C.warn:C.red,borderRadius:99}}/></div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          {currentUser.role==="admin"&&(()=>{
+            const byOp={};
+            filtered.forEach(e=>{const k=e.operatorName||e.operatorId;if(!byOp[k])byOp[k]={name:k,correct:0,wrong:0};byOp[k].correct+=e.correct;byOp[k].wrong+=e.wrong;});
+            const ops=Object.values(byOp).sort((a,b)=>b.correct-a.correct);
+            if(!ops.length) return null;
+            return (<>
+              <div style={{...panelStyle,padding:"12px 14px",marginTop:12}}>
+                <div style={{...sectionCaptionStyle,marginBottom:10}}>Operator Performansi</div>
+                <div style={{overflowX:"auto",border:`1px solid ${C.border}`,borderRadius:10}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:520}}>
+                    <thead>
+                      <tr style={{background:C.surface2,color:C.muted2,textAlign:"left"}}>
+                        <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Sira</th>
+                        <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Operator</th>
+                        <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Dogru</th>
+                        <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Hatali</th>
+                        <th style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`}}>Kalite</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ops.map((op,i)=>{
+                        const q=op.correct+op.wrong>0?Math.round((op.correct/(op.correct+op.wrong))*100):0;
+                        const tone=q>=90?C.green:(q>=75?C.warn:C.red);
+                        return (
+                          <tr key={op.name} style={{borderBottom:`1px solid ${C.border}`}}>
+                            <td style={{padding:"9px 10px",color:C.muted2,fontWeight:700}}>{i+1}</td>
+                            <td style={{padding:"9px 10px",color:C.text,fontWeight:600}}>{op.name}</td>
+                            <td style={{padding:"9px 10px",color:C.green,fontWeight:700}}>{formatMetricNumber(op.correct)}</td>
+                            <td style={{padding:"9px 10px",color:C.red,fontWeight:700}}>{formatMetricNumber(op.wrong)}</td>
+                            <td style={{padding:"9px 10px",color:tone,fontWeight:800}}>{q}%</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>);
+          })()}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+//  PLANNING
+// ============================================================
+function Planning({currentUser,machines=DEFAULT_MACHINES}) {
+  const emptyForm={startDate:todayStr(),endDate:todayStr(),machine:machines[0]||"CNC-1",orderId:"",note:""};
+  const [form,setForm]=useState(emptyForm);
+  const [orders,setOrders]=useState([]);
+  const [parts,setParts]=useState([]);
+  const [plans,setPlans]=useState([]);
+  const [sales,setSales]=useState([]);
+  const [mpsPlans,setMpsPlans]=useState([]);
+  const [operationTypes,setOperationTypes]=useState(DEFAULT_ROUTING_OPERATION_TYPES);
+  const [editId,setEditId]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const [ganttMonth,setGanttMonth]=useState(monthStr());
+  const [selectedPlan,setSelectedPlan]=useState(null);
+  const [showPlanModal,setShowPlanModal]=useState(false);
+  const [showMpsModal,setShowMpsModal]=useState(false);
+  const [mpsForm,setMpsForm]=useState({partNo:"",weekStart:startOfWeekYmd(todayStr()),plannedQty:"0",note:""});
+  const [dragPlanId,setDragPlanId]=useState(null);
+  const [dragBoardSegmentId,setDragBoardSegmentId]=useState("");
+  const [dragBoardOrderId,setDragBoardOrderId]=useState("");
+  const [exporting,setExporting]=useState(false);
+  const [planQuery,setPlanQuery]=useState("");
+  const [planMachineFilter,setPlanMachineFilter]=useState("all");
+  const [planDateFrom,setPlanDateFrom]=useState("");
+  const [planDateTo,setPlanDateTo]=useState("");
+  const [showGanttDetail,setShowGanttDetail]=useState(false);
+  const ganttRef=useRef(null);
+
+  const load=useCallback(async()=>{
+    setLoading(true);
+    const [o,p,s,m,partRows,opDoc]=await Promise.all([
+      window.DB.getAll("orders"),
+      window.DB.getAll("plans"),
+      window.DB.getAll("salesOrders"),
+      window.DB.getAll("mpsPlans"),
+      window.DB.getAll("parts"),
+      window.DB.getDoc("config","routingOperationTypes"),
+    ]);
+    setOrders(o.filter(x=>isOpenOrderStatus(x.status)));
+    setParts(partRows.sort((a,b)=>(a.partNo||"").localeCompare(b.partNo||"","tr")));
+    setPlans(p.sort((a,b)=>(b.date||"").localeCompare(a.date||"")));
+    setSales(s);
+    setMpsPlans(m);
+    setOperationTypes(normalizeRoutingOperationTypes(opDoc||{}));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="planning") return;
+      if(d.type==="refresh"){load();return;}
+      if(d.type==="new"){
+        const machineDefault=(machines[0]||"CNC-1");
+        const today=todayStr();
+        setEditId(null);
+        setSelectedPlan(null);
+        setShowMpsModal(false);
+        setForm({startDate:today,endDate:today,machine:machineDefault,orderId:"",note:""});
+        setGanttMonth(monthStr());
+        setShowPlanModal(true);
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load,machines]);
+
+  useEffect(()=>{
+    if(!machines.includes(form.machine)){
+      setForm(f=>({...f,machine:machines[0]||"CNC-1"}));
+    }
+  },[machines.join(","),form.machine]);
+  useEffect(()=>{
+    if(planMachineFilter!=="all"&&!machines.includes(planMachineFilter)){
+      setPlanMachineFilter("all");
+    }
+  },[machines.join(","),planMachineFilter]);
+
+  const fv=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const selectedOrder=orders.find(o=>o.id===form.orderId)||null;
+  const setMpsF=(k,v)=>setMpsForm(p=>({...p,[k]:v}));
+  const plannedOrderIdSet=new Set();
+  const plannedLegacyOrderCodeSet=new Set();
+  plans.forEach(p=>{
+    const orderId=String(p.orderId||"").trim();
+    if(orderId){
+      plannedOrderIdSet.add(orderId);
+    }
+    const orderCode=String(p.orderCode||"").trim().toUpperCase();
+    if(!orderId&&orderCode) plannedLegacyOrderCodeSet.add(orderCode);
+  });
+  function isOrderAlreadyInPlanning(order){
+    const id=String(order?.id||"").trim();
+    if(id&&plannedOrderIdSet.has(id)) return true;
+    const code=String(order?.code||"").trim().toUpperCase();
+    if(code&&plannedLegacyOrderCodeSet.has(code)) return true;
+    return false;
+  }
+  const priorityWeight={urgent:0,acil:0,normal:1,low:2,dusuk:2};
+  const ordersToPlan=[...orders]
+    .filter(o=>{
+      const st=String(o.status||"").toLowerCase();
+      if(st==="completed") return false;
+      return !isOrderAlreadyInPlanning(o);
+    })
+    .sort((a,b)=>{
+      const pa=priorityWeight[String(a.priority||"normal").toLowerCase()]??1;
+      const pb=priorityWeight[String(b.priority||"normal").toLowerCase()]??1;
+      if(pa!==pb) return pa-pb;
+      const da=String(a.dueDate||"9999-12-31");
+      const db=String(b.dueDate||"9999-12-31");
+      const dd=da.localeCompare(db);
+      if(dd!==0) return dd;
+      return String(a.code||"").localeCompare(String(b.code||""),"tr");
+    });
+  function openPlanModalForOrder(order){
+    if(!order) return;
+    const orderMachines=Array.isArray(order.machines)?order.machines:[];
+    const pickedMachine=orderMachines.find(m=>machines.includes(m))||(machines[0]||"CNC-1");
+    const baseDate=order.dueDate||todayStr();
+    setEditId(null);
+    setSelectedPlan(null);
+    setForm({
+      startDate:baseDate,
+      endDate:baseDate,
+      machine:pickedMachine,
+      orderId:order.id||"",
+      note:order.notes||"",
+    });
+    setShowPlanModal(true);
+  }
+  function resolveOrderMachines(order){
+    const orderMachines=Array.isArray(order?.machines)?order.machines.filter(m=>machines.includes(m)):[];
+    if(orderMachines.length>0) return orderMachines;
+    if(Array.isArray(machines)&&machines.length>0) return machines;
+    return ["CNC-1"];
+  }
+  function openWeekPlanModalForOrder(order){
+    if(!order) return;
+    const today=todayStr();
+    const weekEnd=addDays(startOfWeekYmd(today),6);
+    const endDate=weekEnd<today?today:weekEnd;
+    const pickedMachine=resolveOrderMachines(order)[0]||(machines[0]||"CNC-1");
+    setEditId(null);
+    setSelectedPlan(null);
+    setForm({
+      startDate:today,
+      endDate,
+      machine:pickedMachine,
+      orderId:order.id||"",
+      note:order.notes||"",
+    });
+    setShowPlanModal(true);
+  }
+  async function quickPlanToday(order){
+    if(!order||!order.id) return;
+    const today=todayStr();
+    const candidates=resolveOrderMachines(order);
+    if(isOrderAlreadyInPlanning(order)){
+      alert("Bu is emri planlama ekraninda zaten mevcut.");
+      return;
+    }
+    const pickedMachine=candidates.find(machine=>!plans.some(p=>p.machine===machine&&p.date===today));
+    if(!pickedMachine){
+      alert("BugÃ¼n iÃ§in uygun boÅŸ tezgah bulunamadÄ±.");
+      return;
+    }
+    const data={
+      machine:pickedMachine,
+      orderId:order.id,
+      orderCode:order.code||"",
+      orderName:order.name||"",
+      orderPartSec:Number(order.partSec)||0,
+      orderCustomerName:order.customerName||"",
+      note:order.notes||"",
+      status:"planned",
+      createdBy:currentUser.id,
+      date:today,
+      week:weekStart(parseYmdLocal(today)),
+      month:monthStr(parseYmdLocal(today)),
+      updatedAt:new Date().toISOString(),
+    };
+    const id=await window.DB.addDoc("plans",data);
+    if(!id){
+      alert("HÄ±zlÄ± planlama kaydedilemedi.");
+      return;
+    }
+    setPlans(prev=>[{id,...data},...prev]);
+  }
+  const allPlanSegments=buildPlanSegments(plans);
+  const allSegmentById={};
+  allPlanSegments.forEach(seg=>{allSegmentById[seg.id]=seg;});
+  const sortedPlanSegments=allPlanSegments;
+  const mpsBaseWeek=startOfWeekYmd(todayStr());
+  const mpsBuckets=Array.from({length:8},(_,i)=>{
+    const start=addDays(mpsBaseWeek,i*7);
+    const end=addDays(start,6);
+    const demand=sales.reduce((sum,s)=>{
+      if(["cancelled","delivered"].includes(s.status||"")) return sum;
+      if(s.lines&&s.lines.length){
+        return sum+s.lines.filter(l=>l.dueDate>=start&&l.dueDate<=end).reduce((x,l)=>x+safeNum(l.qty),0);
+      }
+      if(s.dueDate>=start&&s.dueDate<=end) return sum+safeNum(s.qty);
+      return sum;
+    },0);
+    const wo=orders.filter(o=>o.dueDate>=start&&o.dueDate<=end).reduce((s,o)=>s+safeNum(o.qty),0);
+    const mps=mpsPlans.filter(p=>p.weekStart===start).reduce((s,p)=>s+safeNum(p.plannedQty),0);
+    const balance=(wo+mps)-demand;
+    return {start,end,demand,wo,mps,balance};
+  });
+  const mpsExportRows=mpsBuckets.map(b=>({hafta:`${b.start} - ${b.end}`,talep:b.demand,isEmriArz:b.wo,mpsPlan:b.mps,bakiye:b.balance}));
+  const startObj=parseYmdLocal(form.startDate||todayStr());
+  const endObj=parseYmdLocal(form.endDate||form.startDate||todayStr());
+  const rangeStart=startObj<=endObj?startObj:endObj;
+  const rangeEnd=startObj<=endObj?endObj:startObj;
+  const rangeDays=Math.max(1,Math.floor((rangeEnd-rangeStart)/86400000)+1);
+  const rangeLabel=`${ymdLocal(rangeStart)} - ${ymdLocal(rangeEnd)} (${rangeDays} gÃ¼n)`;
+  const operationTypeById={};
+  operationTypes.forEach(op=>{operationTypeById[op.id]=op;});
+  const partByNo={};
+  parts.forEach(part=>{
+    const key=String(part.partNo||"").trim().toUpperCase();
+    if(key&&!partByNo[key]) partByNo[key]=part;
+  });
+  function getOrderOperationMeta(order){
+    if(!order) return null;
+    const key=String(order.partNo||"").trim().toUpperCase();
+    if(!key) return null;
+    const part=partByNo[key];
+    if(!part) return null;
+    const firstOp=(part.routingOps||[])[0]||null;
+    if(!firstOp) return null;
+    const type=firstOp.operationTypeId?operationTypeById[firstOp.operationTypeId]:null;
+    const icon=String(firstOp.operationIcon||type?.icon||"??").trim()||"??";
+    const color=normalizeHexColor(firstOp.operationColor||type?.color||"#57BE90");
+    const code=String(firstOp.operationCode||type?.code||"").trim();
+    const name=String(firstOp.operationName||type?.name||firstOp.operation||"Operasyon").trim()||"Operasyon";
+    return {icon,color,code,name,machine:firstOp.machine||""};
+  }
+  const orderOperationMetaById={};
+  orders.forEach(order=>{orderOperationMetaById[order.id]=getOrderOperationMeta(order);});
+  const selectedOrderOperationMeta=getOrderOperationMeta(selectedOrder);
+  const ganttDate=new Date(...ganttMonth.split("-").map((x,i)=>i===1?Number(x)-1:Number(x)),1);
+  const ganttDaysCount=new Date(ganttDate.getFullYear(),ganttDate.getMonth()+1,0).getDate();
+  const ganttDays=Array.from({length:ganttDaysCount},(_,i)=>`${ganttMonth}-${pad2(i+1)}`);
+  const monthPlans=plans.filter(p=>(p.date||"").startsWith(ganttMonth+"-"));
+  const monthSegments=buildPlanSegments(monthPlans);
+  const monthSegmentsByMachine={};
+  monthSegments.forEach(seg=>{
+    const key=seg.machine||"";
+    if(!monthSegmentsByMachine[key]) monthSegmentsByMachine[key]=[];
+    monthSegmentsByMachine[key].push(seg);
+  });
+  const segmentById={};
+  const ganttRows=machines.map(machine=>{
+    const byDate={};
+    const machineSegments=monthSegmentsByMachine[machine]||[];
+    machineSegments.forEach(seg=>{
+      segmentById[seg.id]=seg;
+      (seg.plans||[]).forEach(cp=>{
+        byDate[cp.date]={...cp,_segmentId:seg.id,_isStart:cp.date===seg.startDate,_isEnd:cp.date===seg.endDate};
+      });
+    });
+    return {machine,byDate};
+  });
+  const orderColorPalette=[...CORPORATE_CHART_PALETTE];
+  function colorFromOrder(orderId){
+    const key=String(orderId||"");
+    let h=0;
+    for(let i=0;i<key.length;i++) h=((h<<5)-h)+key.charCodeAt(i);
+    return orderColorPalette[Math.abs(h)%orderColorPalette.length];
+  }
+  const monthOrderMap={};
+  monthPlans.forEach(p=>{if(p.orderId&&!monthOrderMap[p.orderId]) monthOrderMap[p.orderId]={id:p.orderId,code:p.orderCode,name:p.orderName,customer:p.orderCustomerName||"",color:colorFromOrder(p.orderId)};});
+  const monthOrders=Object.values(monthOrderMap);
+  const dayColWidth=26;
+  const machineColWidth=144;
+  const ganttMinWidth=Math.max(980,machineColWidth+(ganttDays.length*dayColWidth));
+  const ganttGridTemplate=`${machineColWidth}px repeat(${ganttDays.length}, minmax(${dayColWidth}px, 1fr))`;
+  const planQueryText=String(planQuery||"").trim().toLowerCase();
+  const filteredPlanSegments=sortedPlanSegments.filter(seg=>{
+    if(planMachineFilter!=="all"&&seg.machine!==planMachineFilter) return false;
+    if(planDateFrom&&String(seg.endDate||"")<planDateFrom) return false;
+    if(planDateTo&&String(seg.startDate||"")>planDateTo) return false;
+    if(!planQueryText) return true;
+    const hay=[
+      seg.orderCode||"",
+      seg.orderName||"",
+      seg.orderCustomerName||"",
+      seg.machine||"",
+      seg.note||"",
+    ].join(" ").toLowerCase();
+    return hay.includes(planQueryText);
+  });
+  const filteredGanttRows=ganttRows;
+  const ganttRowHeight=23;
+  const ganttHeaderHeight=24;
+  const ganttVisibleRowCount=Math.max(1,filteredGanttRows.length);
+  const ganttViewportHeight=Math.min(780,Math.max(220,ganttHeaderHeight+(ganttVisibleRowCount*ganttRowHeight)+16));
+  const ganttCardMinHeight=ganttViewportHeight+(monthOrders.length>0?72:40);
+  function shiftGanttMonth(delta){
+    const [y,m]=ganttMonth.split("-").map(Number);
+    const d=new Date(y,m-1+delta,1);
+    setGanttMonth(`${d.getFullYear()}-${pad2(d.getMonth()+1)}`);
+  }
+  const ganttMonthLabel=new Intl.DateTimeFormat("tr-TR",{month:"long",year:"numeric"}).format(new Date(ganttDate.getFullYear(),ganttDate.getMonth(),1));
+
+  async function refreshPlans(){
+    const p=await window.DB.getAll("plans");
+    setPlans(p.sort((a,b)=>(b.date||"").localeCompare(a.date||"")));
+  }
+
+  function getSegmentToken(seg){
+    const first=(seg&&Array.isArray(seg.plans)&&seg.plans.length>0)?seg.plans[0]:null;
+    if(first&&first.id) return `plan:${first.id}`;
+    return `seg:${seg?.id||""}`;
+  }
+  function buildMachineQueueSpecs(machine){
+    return allPlanSegments
+      .filter(seg=>seg.machine===machine)
+      .sort((a,b)=>{
+        const sa=String(a.startDate||"");
+        const sb=String(b.startDate||"");
+        const ds=sa.localeCompare(sb);
+        if(ds!==0) return ds;
+        return String(a.orderCode||"").localeCompare(String(b.orderCode||""),"tr");
+      })
+      .map(seg=>({
+        token:getSegmentToken(seg),
+        machine,
+        seed:(seg.plans&&seg.plans.length>0)?seg.plans[0]:null,
+        startDate:String(seg.startDate||todayStr()),
+        endDate:String(seg.endDate||seg.startDate||todayStr()),
+        days:Math.max(1,dayDiff(seg.startDate||todayStr(),seg.endDate||seg.startDate||todayStr())+1),
+        planIds:(seg.plans||[]).map(p=>p.id).filter(Boolean),
+      }));
+  }
+  function applySequentialDatesToSpecs(specs,{anchorIndex=0,forceStartDate=""}={}){
+    const rows=(Array.isArray(specs)?specs:[]).map(spec=>({
+      ...spec,
+      startDate:String(spec?.startDate||todayStr()),
+      endDate:String(spec?.endDate||spec?.startDate||todayStr()),
+      days:Math.max(1,Math.floor(Number(spec?.days)||1)),
+      planIds:Array.isArray(spec?.planIds)?spec.planIds.filter(Boolean):[],
+    }));
+    if(rows.length===0) return rows;
+    const anchor=Math.max(0,Math.min(rows.length-1,Math.floor(Number(anchorIndex)||0)));
+    for(let i=anchor;i<rows.length;i+=1){
+      const prev=i>0?rows[i-1]:null;
+      let start=rows[i].startDate||todayStr();
+      if(i===anchor&&forceStartDate) start=String(forceStartDate);
+      if(prev){
+        const minStart=addDays(prev.endDate||prev.startDate||todayStr(),1);
+        if(i===anchor){
+          if(start<minStart) start=minStart;
+        }else{
+          start=minStart;
+        }
+      }
+      const end=addDays(start,Math.max(1,rows[i].days)-1);
+      rows[i]={...rows[i],startDate:start,endDate:end};
+    }
+    return rows;
+  }
+  function firstDifferentTokenIndex(before,after){
+    const a=Array.isArray(before)?before:[];
+    const b=Array.isArray(after)?after:[];
+    const len=Math.min(a.length,b.length);
+    for(let i=0;i<len;i+=1){
+      if(String(a[i]?.token||"")!==String(b[i]?.token||"")) return i;
+    }
+    if(a.length!==b.length) return len;
+    return -1;
+  }
+  async function persistMachineQueueFromSpecs(machine,specs,anchorIndex=0){
+    const rows=Array.isArray(specs)?specs:[];
+    if(rows.length===0){
+      const machinePlanIds=plans.filter(p=>p.machine===machine).map(p=>p.id).filter(Boolean);
+      for(const id of machinePlanIds){
+        const ok=await window.DB.deleteDoc("plans",id);
+        if(!ok){
+          alert("Plan sirasi guncellenemedi (silme).");
+          await refreshPlans();
+          return false;
+        }
+      }
+      if(machinePlanIds.length>0){
+        const removed=new Set(machinePlanIds);
+        setPlans(prev=>prev.filter(p=>!removed.has(p.id)));
+      }
+      return true;
+    }
+    const anchor=Math.max(0,Math.min(rows.length-1,Math.floor(Number(anchorIndex)||0)));
+    const impacted=rows.slice(anchor);
+    const removeIds=[...new Set(impacted.flatMap(spec=>Array.isArray(spec.planIds)?spec.planIds:[]).filter(Boolean))];
+    for(const id of removeIds){
+      const ok=await window.DB.deleteDoc("plans",id);
+      if(!ok){
+        alert("Plan sirasi guncellenemedi (silme).");
+        await refreshPlans();
+        return false;
+      }
+    }
+    const recreated=[];
+    for(const spec of impacted){
+      const seed=spec.seed||{};
+      const dates=getDateRange(spec.startDate,spec.endDate);
+      for(const dt of dates){
+        const payload=buildPlanPayloadFromSeed(seed,machine,dt);
+        const id=await window.DB.addDoc("plans",payload);
+        if(!id){
+          alert("Plan sirasi guncellenemedi (ekleme).");
+          await refreshPlans();
+          return false;
+        }
+        recreated.push({id,...payload});
+      }
+    }
+    const removedSet=new Set(removeIds);
+    setPlans(prev=>[...recreated.reverse(),...prev.filter(p=>!removedSet.has(p.id))]);
+    return true;
+  }
+
+  async function resizeSegment(segmentId,targetDate,edge){
+    const seg=segmentById[segmentId];
+    if(!seg||!targetDate) return;
+    const oldStart=seg.startDate;
+    const oldEnd=seg.endDate;
+    const nextStart=edge==="start"?(targetDate<=oldEnd?targetDate:oldEnd):oldStart;
+    const nextEnd=edge==="end"?(targetDate>=oldStart?targetDate:oldStart):oldEnd;
+    if(nextStart===oldStart&&nextEnd===oldEnd) return;
+    const machine=seg.machine||"";
+    if(!machine) return;
+    const machineSpecs=buildMachineQueueSpecs(machine);
+    const token=getSegmentToken(seg);
+    const idx=machineSpecs.findIndex(spec=>spec.token===token);
+    if(idx<0) return;
+    const updated=[...machineSpecs];
+    updated[idx]={
+      ...updated[idx],
+      startDate:nextStart,
+      endDate:nextEnd,
+      days:Math.max(1,dayDiff(nextStart,nextEnd)+1),
+    };
+    const forceStartDate=edge==="start"?nextStart:"";
+    const scheduled=applySequentialDatesToSpecs(updated,{anchorIndex:idx,forceStartDate});
+    const editedIds=new Set((seg.plans||[]).map(p=>p.id));
+    if(editId&&editedIds.has(editId)){
+      setForm(f=>({...f,startDate:scheduled[idx].startDate,endDate:scheduled[idx].endDate}));
+    }
+    const ok=await persistMachineQueueFromSpecs(machine,scheduled,idx);
+    if(ok&&selectedPlan) setSelectedPlan(null);
+  }
+
+  async function loadScriptOnce(src,globalName){
+    if(globalName&&window[globalName]) return true;
+    if(document.querySelector(`script[data-src="${src}"]`)) return true;
+    const s=document.createElement("script");
+    s.src=src;
+    s.async=true;
+    s.dataset.src=src;
+    document.head.appendChild(s);
+    await new Promise((res,rej)=>{s.onload=res;s.onerror=rej;});
+    return true;
+  }
+
+  async function exportGanttPng(){
+    if(!ganttRef.current) return;
+    try{
+      setExporting(true);
+      await loadScriptOnce("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js","html2canvas");
+      const canvas=await window.html2canvas(ganttRef.current,{backgroundColor:"#12151f",scale:2});
+      const a=document.createElement("a");
+      a.href=canvas.toDataURL("image/png");
+      a.download=`gantt-${ganttMonth}.png`;
+      a.click();
+    }catch{
+      alert("PNG dÄ±ÅŸa aktarma baÅŸarÄ±sÄ±z.");
+    }finally{
+      setExporting(false);
+    }
+  }
+
+  async function exportGanttPdf(){
+    if(!ganttRef.current) return;
+    try{
+      setExporting(true);
+      await loadScriptOnce("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js","html2canvas");
+      await loadScriptOnce("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js","jspdf");
+      const canvas=await window.html2canvas(ganttRef.current,{backgroundColor:"#12151f",scale:2});
+      const imgData=canvas.toDataURL("image/png");
+      const {jsPDF}=window.jspdf;
+      const pdf=new jsPDF({orientation:"landscape",unit:"pt",format:"a4"});
+      const w=pdf.internal.pageSize.getWidth();
+      const h=pdf.internal.pageSize.getHeight();
+      const ratio=Math.min(w/canvas.width,h/canvas.height);
+      const rw=canvas.width*ratio;
+      const rh=canvas.height*ratio;
+      const x=(w-rw)/2;
+      const y=(h-rh)/2;
+      pdf.addImage(imgData,"PNG",x,y,rw,rh);
+      pdf.save(`gantt-${ganttMonth}.pdf`);
+    }catch{
+      alert("PDF dÄ±ÅŸa aktarma baÅŸarÄ±sÄ±z.");
+    }finally{
+      setExporting(false);
+    }
+  }
+
+  function getDateRange(startDate,endDate){
+    const s=parseYmdLocal(startDate);
+    const e=parseYmdLocal(endDate);
+    const from=s<=e?s:e;
+    const to=s<=e?e:s;
+    const out=[];
+    const d=new Date(from);
+    while(d<=to){
+      out.push(ymdLocal(d));
+      d.setDate(d.getDate()+1);
+    }
+    return out;
+  }
+  function samePlanOrder(a,b){
+    return String(a?.orderId||a?.orderCode||"")===String(b?.orderId||b?.orderCode||"");
+  }
+  function buildPlanSegments(list){
+    const byMachine={};
+    list.forEach(p=>{
+      const key=p.machine||"";
+      if(!byMachine[key]) byMachine[key]=[];
+      byMachine[key].push(p);
+    });
+    const out=[];
+    Object.keys(byMachine).forEach(machine=>{
+      const rows=[...byMachine[machine]].sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+      let cur=null;
+      rows.forEach(p=>{
+        if(!cur){
+          cur={machine,orderId:p.orderId||"",orderCode:p.orderCode||"",orderName:p.orderName||"",orderCustomerName:p.orderCustomerName||"",note:p.note||"",startDate:p.date||"",endDate:p.date||"",plans:[p]};
+          return;
+        }
+        const nextDate=ymdLocal(new Date(parseYmdLocal(cur.endDate).getFullYear(),parseYmdLocal(cur.endDate).getMonth(),parseYmdLocal(cur.endDate).getDate()+1));
+        if(samePlanOrder(cur,p)&&p.date===nextDate){
+          cur.endDate=p.date;
+          cur.plans.push(p);
+        }else{
+          out.push({...cur,id:`${cur.machine}|${cur.orderId||cur.orderCode||"x"}|${cur.startDate}|${cur.endDate}`});
+          cur={machine,orderId:p.orderId||"",orderCode:p.orderCode||"",orderName:p.orderName||"",orderCustomerName:p.orderCustomerName||"",note:p.note||"",startDate:p.date||"",endDate:p.date||"",plans:[p]};
+        }
+      });
+      if(cur) out.push({...cur,id:`${cur.machine}|${cur.orderId||cur.orderCode||"x"}|${cur.startDate}|${cur.endDate}`});
+    });
+    return out.sort((a,b)=>{
+      const da=(a.startDate||"").localeCompare(b.startDate||"");
+      if(da!==0) return da;
+      return (a.machine||"").localeCompare(b.machine||"");
+    });
+  }
+  function findSegmentForPlan(plan){
+    if(!plan) return null;
+    if(plan._segmentId&&segmentById[plan._segmentId]) return segmentById[plan._segmentId];
+    const all=buildPlanSegments(plans);
+    return all.find(seg=>(seg.plans||[]).some(x=>x.id===plan.id))||null;
+  }
+
+  async function savePlan(){
+    if(!form.startDate||!form.endDate){alert("Tarih aralÄ±ÄŸÄ± seÃ§in!");return;}
+    if(!form.machine){alert("Tezgah seÃ§in!");return;}
+    if(!form.orderId){alert("Ä°ÅŸ emri seÃ§in!");return;}
+    const picked=orders.find(o=>o.id===form.orderId);
+    if(!picked){alert("GeÃ§erli bir iÅŸ emri seÃ§in!");return;}
+    const planDates=editId?[form.startDate]:getDateRange(form.startDate,form.endDate);
+    const duplicateDates=planDates.filter(dt=>plans.some(p=>p.id!==editId&&p.date===dt&&p.machine===form.machine));
+    if(duplicateDates.length>0){
+      alert(`Bu tezgah iÃ§in plan zaten var: ${duplicateDates.slice(0,5).join(", ")}${duplicateDates.length>5?" ...":""}`);
+      return;
+    }
+    const baseData={
+      machine:form.machine,
+      orderId:picked.id,
+      orderCode:picked.code,
+      orderName:picked.name,
+      orderPartSec:Number(picked.partSec)||0,
+      orderCustomerName:picked.customerName||"",
+      note:form.note.trim(),
+      status:"planned",
+      updatedAt:new Date().toISOString(),
+      ...(editId?{}:{createdBy:currentUser.id}),
+    };
+    if(editId){
+      const seg=buildPlanSegments(plans).find(s=>(s.plans||[]).some(x=>x.id===editId))||null;
+      if(!seg||!seg.plans||seg.plans.length===0){alert("DÃ¼zenlenecek plan bulunamadÄ±.");return;}
+      const segIds=new Set(seg.plans.map(x=>x.id));
+      const targetDates=getDateRange(form.startDate,form.endDate);
+      const duplicateDates=targetDates.filter(dt=>plans.some(p=>!segIds.has(p.id)&&p.date===dt&&p.machine===form.machine));
+      if(duplicateDates.length>0){
+        alert(`Bu tezgah iÃ§in plan zaten var: ${duplicateDates.slice(0,5).join(", ")}${duplicateDates.length>5?" ...":""}`);
+        return;
+      }
+      for(const old of seg.plans){
+        const ok=await window.DB.deleteDoc("plans",old.id);
+        if(!ok){alert("Plan gÃ¼ncellenemedi (silme).");await refreshPlans();return;}
+      }
+      const recreated=[];
+      for(const dt of targetDates){
+        const data={
+          ...baseData,
+          date:dt,
+          week:weekStart(parseYmdLocal(dt)),
+          month:monthStr(parseYmdLocal(dt)),
+        };
+        const id=await window.DB.addDoc("plans",data);
+        if(!id){alert("Plan gÃ¼ncellenemedi (ekleme).");await refreshPlans();return;}
+        recreated.push({id,...data});
+      }
+      setPlans(prev=>{
+        const cleaned=prev.filter(x=>!segIds.has(x.id));
+        return [...recreated.reverse(),...cleaned];
+      });
+      setEditId(null);
+      setForm({...emptyForm,machine:form.machine,startDate:form.startDate,endDate:form.endDate});
+      setShowPlanModal(false);
+      return;
+    }
+    const created=[];
+    for(const dt of planDates){
+      const data={
+        ...baseData,
+        date:dt,
+        week:weekStart(parseYmdLocal(dt)),
+        month:monthStr(parseYmdLocal(dt)),
+      };
+      const id=await window.DB.addDoc("plans",data);
+      if(!id){
+        alert(`Plan kaydÄ± sÄ±rasÄ±nda hata oluÅŸtu. OluÅŸan kayÄ±t: ${created.length}/${planDates.length}`);
+        break;
+      }
+      created.push({id,...data});
+    }
+    if(created.length>0){
+      setPlans(p=>[...created.reverse(),...p]);
+      setForm({...emptyForm,machine:form.machine,startDate:form.startDate,endDate:form.endDate});
+      setShowPlanModal(false);
+    }
+  }
+
+  async function saveMpsPlan(){
+    if(!mpsForm.partNo.trim()){alert("Parca no zorunlu.");return;}
+    const payload={
+      partNo:mpsForm.partNo.trim().toUpperCase(),
+      weekStart:startOfWeekYmd(mpsForm.weekStart||todayStr()),
+      plannedQty:Math.max(0,safeNum(mpsForm.plannedQty)),
+      note:mpsForm.note.trim(),
+      updatedAt:new Date().toISOString(),
+    };
+    const id=await window.DB.addDoc("mpsPlans",payload);
+    if(!id){alert("MPS kaydi olusturulamadi.");return;}
+    setMpsPlans(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
+    setMpsForm({partNo:"",weekStart:startOfWeekYmd(todayStr()),plannedQty:"0",note:""});
+  }
+
+  function startEdit(plan){
+    const seg=(plan&&plan.plans&&plan.plans.length)?plan:findSegmentForPlan(plan);
+    const firstPlan=(seg&&seg.plans&&seg.plans.length)?seg.plans[0]:plan;
+    setEditId(firstPlan?.id||null);
+    setForm({
+      startDate:seg?.startDate||firstPlan?.date||todayStr(),
+      endDate:seg?.endDate||firstPlan?.date||todayStr(),
+      machine:firstPlan?.machine||machines[0]||"CNC-1",
+      orderId:firstPlan?.orderId||"",
+      note:firstPlan?.note||"",
+    });
+    setShowPlanModal(true);
+  }
+
+  async function removePlan(plan){
+    const seedPlan=(plan&&plan.plans&&plan.plans.length)?plan.plans[0]:plan;
+    const segment=findSegmentForPlan(seedPlan)||(plan&&plan.plans&&plan.plans.length?plan:null);
+    if(!segment||!segment.plans||segment.plans.length===0){alert("Silinecek plan bulunamadÄ±.");return;}
+    if(!confirm(`Plan silinsin mi? (${segment.orderCode||"-"} / ${segment.machine||"-"} / ${segment.startDate||"-"} - ${segment.endDate||"-"})`)) return;
+    for(const p of segment.plans){
+      const ok=await window.DB.deleteDoc("plans",p.id);
+      if(!ok){alert("Plan silinemedi.");await refreshPlans();return;}
+    }
+    const removedIds=new Set(segment.plans.map(x=>x.id));
+    setPlans(prev=>prev.filter(x=>!removedIds.has(x.id)));
+    if(editId&&removedIds.has(editId)){
+      setEditId(null);
+      setForm({...emptyForm,machine:form.machine,startDate:form.startDate,endDate:form.endDate});
+    }
+  }
+
+  function buildPlanPayloadFromSeed(seed,machine,date){
+    return {
+      machine,
+      orderId:seed?.orderId||"",
+      orderCode:seed?.orderCode||"",
+      orderName:seed?.orderName||"",
+      orderPartSec:Number(seed?.orderPartSec)||0,
+      orderCustomerName:seed?.orderCustomerName||"",
+      note:seed?.note||"",
+      status:seed?.status||"planned",
+      createdBy:seed?.createdBy||currentUser.id,
+      date,
+      week:weekStart(parseYmdLocal(date)),
+      month:monthStr(parseYmdLocal(date)),
+      updatedAt:new Date().toISOString(),
+    };
+  }
+
+  function readBoardDragPayload(e){
+    const raw=(e&&e.dataTransfer&&e.dataTransfer.getData)?(e.dataTransfer.getData("text/plain")||""):"";
+    if(raw){
+      try{
+        const payload=JSON.parse(raw);
+        if(payload&&payload.type==="board-segment"&&payload.segmentId) return {type:"board-segment",segmentId:String(payload.segmentId)};
+        if(payload&&payload.type==="board-order"&&payload.orderId) return {type:"board-order",orderId:String(payload.orderId)};
+      }catch{}
+    }
+    if(dragBoardSegmentId) return {type:"board-segment",segmentId:String(dragBoardSegmentId)};
+    if(dragBoardOrderId) return {type:"board-order",orderId:String(dragBoardOrderId)};
+    return null;
+  }
+
+  function findNextFreeMachineDate(machine,startDate){
+    const base=String(startDate||todayStr());
+    for(let i=0;i<370;i+=1){
+      const dt=addDays(base,i);
+      const occupied=plans.some(p=>p.machine===machine&&p.date===dt);
+      if(!occupied) return dt;
+    }
+    return "";
+  }
+
+  async function createPlanFromQueueOrderDrop(order,targetMachine,targetSegmentId=""){
+    if(!order||!order.id||!targetMachine) return false;
+    if(isOrderAlreadyInPlanning(order)){
+      alert("Bu is emri zaten planlandi.");
+      return false;
+    }
+    const allowed=resolveOrderMachines(order);
+    if(allowed.length>0&&!allowed.includes(targetMachine)){
+      alert(`Bu is emri ${targetMachine} icin uygun degil.`);
+      return false;
+    }
+    const seed={
+      orderId:order.id,
+      orderCode:order.code||"",
+      orderName:order.name||"",
+      orderPartSec:Number(order.partSec)||0,
+      orderCustomerName:order.customerName||"",
+      note:order.notes||"",
+      status:"planned",
+      createdBy:currentUser.id,
+    };
+    if(targetSegmentId){
+      const targetSeg=allSegmentById[targetSegmentId]||null;
+      if(targetSeg&&targetSeg.machine===targetMachine){
+        const machineSpecs=buildMachineQueueSpecs(targetMachine);
+        const targetToken=getSegmentToken(targetSeg);
+        const targetIdx=machineSpecs.findIndex(spec=>spec.token===targetToken);
+        if(targetIdx>=0){
+          const insertStart=addDays(targetSeg.endDate||targetSeg.startDate||todayStr(),1);
+          const insertSpec={
+            token:`new-order:${order.id}:${Date.now()}`,
+            machine:targetMachine,
+            seed,
+            startDate:insertStart,
+            endDate:insertStart,
+            days:1,
+            planIds:[],
+          };
+          const nextSpecs=[...machineSpecs];
+          const insertIdx=targetIdx+1;
+          nextSpecs.splice(insertIdx,0,insertSpec);
+          const scheduled=applySequentialDatesToSpecs(nextSpecs,{anchorIndex:insertIdx,forceStartDate:insertStart});
+          const ok=await persistMachineQueueFromSpecs(targetMachine,scheduled,insertIdx);
+          if(ok&&selectedPlan) setSelectedPlan(null);
+          return ok;
+        }
+      }
+    }
+    let desiredDate=todayStr();
+    if(targetSegmentId){
+      const targetSeg=allSegmentById[targetSegmentId]||null;
+      if(targetSeg){
+        desiredDate=addDays(targetSeg.endDate||targetSeg.startDate||todayStr(),1);
+      }
+    }
+    const planDate=findNextFreeMachineDate(targetMachine,desiredDate);
+    if(!planDate){
+      alert("Hedef tezgah icin bos plan tarihi bulunamadi.");
+      return false;
+    }
+    const payload={
+      machine:targetMachine,
+      ...seed,
+      date:planDate,
+      week:weekStart(parseYmdLocal(planDate)),
+      month:monthStr(parseYmdLocal(planDate)),
+      updatedAt:new Date().toISOString(),
+    };
+    const id=await window.DB.addDoc("plans",payload);
+    if(!id){
+      alert("Surukle-birak plan kaydi olusturulamadi.");
+      return false;
+    }
+    setPlans(prev=>[{id,...payload},...prev]);
+    return true;
+  }
+
+  async function moveSegmentToMachine(segmentId,targetMachine){
+    const seg=allSegmentById[segmentId];
+    if(!seg||!targetMachine) return false;
+    if(seg.machine===targetMachine) return true;
+    const segIds=new Set((seg.plans||[]).map(p=>p.id));
+    const dates=getDateRange(seg.startDate,seg.endDate);
+    const conflicts=dates.filter(dt=>plans.some(p=>p.machine===targetMachine&&p.date===dt&&!segIds.has(p.id)));
+    if(conflicts.length>0){
+      alert(`Hedef tezgahta cakisma var: ${conflicts.slice(0,4).join(", ")}${conflicts.length>4?" ...":""}`);
+      return false;
+    }
+    const nowIso=new Date().toISOString();
+    for(const p of seg.plans||[]){
+      const ok=await window.DB.updateDoc("plans",p.id,{machine:targetMachine,updatedAt:nowIso});
+      if(!ok){
+        alert("Operasyon tasinamadi.");
+        await refreshPlans();
+        return false;
+      }
+    }
+    setPlans(prev=>prev.map(p=>segIds.has(p.id)?{...p,machine:targetMachine,updatedAt:nowIso}:p));
+    return true;
+  }
+
+  function getMachineTailSegment(machine,excludeSegmentId=""){
+    if(!machine) return null;
+    const rows=allPlanSegments
+      .filter(seg=>seg.machine===machine&&(!excludeSegmentId||seg.id!==excludeSegmentId))
+      .sort((a,b)=>{
+        const sa=String(a.startDate||"");
+        const sb=String(b.startDate||"");
+        const ds=sa.localeCompare(sb);
+        if(ds!==0) return ds;
+        return String(a.orderCode||"").localeCompare(String(b.orderCode||""),"tr");
+      });
+    return rows.length>0?rows[rows.length-1]:null;
+  }
+
+  async function swapSegmentSlots(sourceSegmentId,targetSegmentId){
+    const sourceSeg=allSegmentById[sourceSegmentId];
+    const targetSeg=allSegmentById[targetSegmentId];
+    if(!sourceSeg||!targetSeg) return false;
+    if(sourceSeg.id===targetSeg.id) return true;
+    const sourceSeed=(sourceSeg.plans||[])[0]||null;
+    const targetSeed=(targetSeg.plans||[])[0]||null;
+    if(!sourceSeed||!targetSeed){
+      alert("Operasyon yer degistirme icin yeterli plan verisi yok.");
+      return false;
+    }
+    const sourceDates=getDateRange(sourceSeg.startDate,sourceSeg.endDate);
+    const targetDates=getDateRange(targetSeg.startDate,targetSeg.endDate);
+    const sourceIds=(sourceSeg.plans||[]).map(p=>p.id);
+    const targetIds=(targetSeg.plans||[]).map(p=>p.id);
+    for(const id of [...sourceIds,...targetIds]){
+      const ok=await window.DB.deleteDoc("plans",id);
+      if(!ok){
+        alert("Operasyonlar yer degistirilemedi (silme asamasi).");
+        await refreshPlans();
+        return false;
+      }
+    }
+    const recreated=[];
+    for(const dt of targetDates){
+      const payload=buildPlanPayloadFromSeed(sourceSeed,targetSeg.machine,dt);
+      const id=await window.DB.addDoc("plans",payload);
+      if(!id){
+        alert("Operasyonlar yer degistirilemedi (ekleme asamasi).");
+        await refreshPlans();
+        return false;
+      }
+      recreated.push({id,...payload});
+    }
+    for(const dt of sourceDates){
+      const payload=buildPlanPayloadFromSeed(targetSeed,sourceSeg.machine,dt);
+      const id=await window.DB.addDoc("plans",payload);
+      if(!id){
+        alert("Operasyonlar yer degistirilemedi (ekleme asamasi).");
+        await refreshPlans();
+        return false;
+      }
+      recreated.push({id,...payload});
+    }
+    const removedIdSet=new Set([...sourceIds,...targetIds]);
+    setPlans(prev=>[...recreated.reverse(),...prev.filter(p=>!removedIdSet.has(p.id))]);
+    if(selectedPlan) setSelectedPlan(null);
+    return true;
+  }
+  async function placeSegmentAfterSegment(sourceSegmentId,targetSegmentId){
+    const sourceSeg=allSegmentById[sourceSegmentId];
+    const targetSeg=allSegmentById[targetSegmentId];
+    if(!sourceSeg||!targetSeg) return false;
+    if(sourceSeg.id===targetSeg.id) return true;
+    const sourceMachine=String(sourceSeg.machine||"");
+    const targetMachine=String(targetSeg.machine||"");
+    if(!sourceMachine||!targetMachine) return false;
+    const sourceSpecs=buildMachineQueueSpecs(sourceMachine);
+    const sourceToken=getSegmentToken(sourceSeg);
+    const sourceIdx=sourceSpecs.findIndex(spec=>spec.token===sourceToken);
+    if(sourceIdx<0) return false;
+    const movingSpec={...sourceSpecs[sourceIdx],machine:targetMachine};
+    if(sourceMachine===targetMachine){
+      const nextSpecs=sourceSpecs.filter((_,idx)=>idx!==sourceIdx);
+      const targetToken=getSegmentToken(targetSeg);
+      const targetIdx=nextSpecs.findIndex(spec=>spec.token===targetToken);
+      if(targetIdx<0) return false;
+      const insertIdx=targetIdx+1;
+      nextSpecs.splice(insertIdx,0,movingSpec);
+      const firstDiff=firstDifferentTokenIndex(sourceSpecs,nextSpecs);
+      if(firstDiff<0) return true;
+      const scheduled=applySequentialDatesToSpecs(nextSpecs,{anchorIndex:firstDiff});
+      const ok=await persistMachineQueueFromSpecs(sourceMachine,scheduled,firstDiff);
+      if(ok&&selectedPlan) setSelectedPlan(null);
+      return ok;
+    }
+    const targetSpecs=buildMachineQueueSpecs(targetMachine);
+    const targetToken=getSegmentToken(targetSeg);
+    const targetIdx=targetSpecs.findIndex(spec=>spec.token===targetToken);
+    if(targetIdx<0) return false;
+    const sourceRemain=sourceSpecs.filter((_,idx)=>idx!==sourceIdx);
+    const sourceAnchor=sourceRemain.length>0?Math.min(sourceIdx,sourceRemain.length-1):0;
+    const sourceScheduled=sourceRemain.length>0
+      ? applySequentialDatesToSpecs(sourceRemain,{anchorIndex:sourceAnchor})
+      : [];
+    const movedIds=(movingSpec.planIds||[]).filter(Boolean);
+    const insertStart=addDays(targetSpecs[targetIdx].endDate||targetSpecs[targetIdx].startDate||todayStr(),1);
+    const targetNext=[...targetSpecs];
+    targetNext.splice(targetIdx+1,0,{
+      ...movingSpec,
+      machine:targetMachine,
+      startDate:insertStart,
+      endDate:insertStart,
+      planIds:[],
+    });
+    const targetScheduled=applySequentialDatesToSpecs(targetNext,{anchorIndex:targetIdx+1,forceStartDate:insertStart});
+    const okSource=await persistMachineQueueFromSpecs(sourceMachine,sourceScheduled,sourceAnchor);
+    if(!okSource) return false;
+    if(sourceRemain.length>0&&movedIds.length>0){
+      for(const id of movedIds){
+        const ok=await window.DB.deleteDoc("plans",id);
+        if(!ok){
+          alert("Operasyon tasinamadi.");
+          await refreshPlans();
+          return false;
+        }
+      }
+      const movedSet=new Set(movedIds);
+      setPlans(prev=>prev.filter(p=>!movedSet.has(p.id)));
+    }
+    const okTarget=await persistMachineQueueFromSpecs(targetMachine,targetScheduled,targetIdx+1);
+    if(!okTarget){
+      await refreshPlans();
+      return false;
+    }
+    if(selectedPlan) setSelectedPlan(null);
+    return true;
+  }
+
+  async function handleBoardDrop(e,{targetSegmentId="",targetMachine=""}={}){
+    e.preventDefault();
+    e.stopPropagation();
+    const dragPayload=readBoardDragPayload(e);
+    setDragBoardSegmentId("");
+    setDragBoardOrderId("");
+    if(!dragPayload) return;
+    if(dragPayload.type==="board-order"){
+      const sourceOrder=orders.find(o=>o.id===dragPayload.orderId)||null;
+      if(!sourceOrder){
+        alert("Suruklenen is emri bulunamadi.");
+        return;
+      }
+      const dropMachine=targetMachine||(targetSegmentId?(allSegmentById[targetSegmentId]?.machine||""):"");
+      if(!dropMachine) return;
+      await createPlanFromQueueOrderDrop(sourceOrder,dropMachine,targetSegmentId);
+      return;
+    }
+    const sourceSegmentId=dragPayload.segmentId||"";
+    if(!sourceSegmentId) return;
+    if(targetSegmentId){
+      if(sourceSegmentId===targetSegmentId) return;
+      const placed=await placeSegmentAfterSegment(sourceSegmentId,targetSegmentId);
+      if(!placed){
+        await swapSegmentSlots(sourceSegmentId,targetSegmentId);
+      }
+      return;
+    }
+    if(targetMachine){
+      const tailSeg=getMachineTailSegment(targetMachine,sourceSegmentId);
+      if(tailSeg){
+        const placed=await placeSegmentAfterSegment(sourceSegmentId,tailSeg.id);
+        if(placed) return;
+      }
+      await moveSegmentToMachine(sourceSegmentId,targetMachine);
+    }
+  }
+
+  const selectedPlanSegment=selectedPlan?findSegmentForPlan(selectedPlan):null;
+  const selectedSegmentId=selectedPlan?(selectedPlan._segmentId||selectedPlanSegment?.id||""):"";
+  const selectedPlanOperationMeta=(selectedPlan&&selectedPlan.orderId)?(orderOperationMetaById[selectedPlan.orderId]||null):null;
+  const planningToday=todayStr();
+  const orderById={};
+  orders.forEach(o=>{orderById[o.id]=o;});
+  function segmentDurationLabel(seg){
+    const days=Math.max(1,dayDiff(seg.startDate||planningToday,seg.endDate||seg.startDate||planningToday)+1);
+    return days===1?"1 gun":`${days} gun`;
+  }
+  function machineRowStateLabel(row){
+    if(row.activeSegment) return `Aktif | ${segmentDurationLabel(row.activeSegment)}`;
+    if(row.segments.length>0) return `Kuyruk | ${row.segments.length} is`;
+    return "Bos";
+  }
+  function segmentRiskType(seg){
+    const due=String(orderById[seg.orderId]?.dueDate||"");
+    if(!due) return "normal";
+    if(due<planningToday) return "critical";
+    if((seg.endDate||seg.startDate||planningToday)>due) return "warning";
+    return "normal";
+  }
+  function segmentTone(seg){
+    const risk=segmentRiskType(seg);
+    if(risk==="critical") return {
+      header:"#eb3b3b",
+      border:"#e55d5d",
+      bg:"#fff7f7",
+      text:"#7f1d1d",
+      badge:"#ffe1e1",
+      badgeText:"#b42323",
+    };
+    if(risk==="warning") return {
+      header:"#f59e0b",
+      border:"#efb351",
+      bg:"#fffaf0",
+      text:"#8a4b08",
+      badge:"#ffedd1",
+      badgeText:"#a76200",
+    };
+    return {
+      header:"#5a6fdb",
+      border:"#97a7ea",
+      bg:"#f8f9ff",
+      text:"#2b3a8a",
+      badge:"#e8edff",
+      badgeText:"#445ac7",
+    };
+  }
+  function buildSegmentCard(seg,{active=false}={}){
+    if(!seg) return null;
+    const ord=orderById[seg.orderId]||null;
+    const op=orderOperationMetaById[seg.orderId]||null;
+    const tone=segmentTone(seg);
+    const qty=Math.max(0,safeNum(ord?.qty));
+    const due=String(ord?.dueDate||seg.endDate||"-");
+    const spanLabel=`${seg.startDate||"-"}${seg.endDate&&seg.endDate!==seg.startDate?` - ${seg.endDate}`:""}`;
+    return {
+      id:seg.id,
+      orderCode:seg.orderCode||"-",
+      orderName:seg.orderName||"-",
+      customer:seg.orderCustomerName||ord?.customerName||"",
+      qty,
+      due,
+      spanLabel,
+      tone,
+      op,
+      active,
+      segment:seg,
+      seedPlan:(seg.plans&&seg.plans[0])?seg.plans[0]:null,
+    };
+  }
+  const machineBoardRows=machines.map(machine=>{
+    const segs=filteredPlanSegments
+      .filter(seg=>seg.machine===machine)
+      .sort((a,b)=>{
+        const s=String(a.startDate||"").localeCompare(String(b.startDate||""));
+        if(s!==0) return s;
+        return String(a.orderCode||"").localeCompare(String(b.orderCode||""),"tr");
+      });
+    const activeSegment=segs.find(seg=>(seg.startDate||"")<=planningToday&&(seg.endDate||seg.startDate||"")>=planningToday)||null;
+    const nextSegments=segs
+      .filter(seg=>!activeSegment||seg.id!==activeSegment.id)
+      .filter(seg=>(seg.endDate||seg.startDate||"")>=planningToday)
+      .slice(0,3);
+    const readyHours=activeSegment?Math.max(1,dayDiff(activeSegment.startDate||planningToday,planningToday)+1):0;
+    return {
+      machine,
+      segments:segs,
+      activeSegment,
+      nextSegments,
+      readyHours,
+      activeCard:buildSegmentCard(activeSegment,{active:true}),
+      nextCards:nextSegments.map(seg=>buildSegmentCard(seg)),
+    };
+  });
+  const dueKnownSegments=filteredPlanSegments.filter(seg=>String(orderById[seg.orderId]?.dueDate||"").trim()!=="");
+  const overdueCount=dueKnownSegments.filter(seg=>String(orderById[seg.orderId]?.dueDate||"")<planningToday).length;
+  const behindCount=dueKnownSegments.filter(seg=>(seg.endDate||seg.startDate||planningToday)>String(orderById[seg.orderId]?.dueDate||"")).length;
+  const dueTodayCount=dueKnownSegments.filter(seg=>String(orderById[seg.orderId]?.dueDate||"")===planningToday).length;
+  const activeCount=machineBoardRows.filter(r=>Boolean(r.activeSegment)).length;
+  const scheduledCount=filteredPlanSegments.length;
+  const onTimePct=dueKnownSegments.length>0?Math.max(0,Math.min(100,Math.round(((dueKnownSegments.length-behindCount)/dueKnownSegments.length)*100))):100;
+  const setupCount=machines.reduce((sum,m)=>sum+Math.max(0,((monthSegmentsByMachine[m]||[]).length-1)),0);
+  const summaryCards=[
+    {label:"Aktif",value:String(activeCount),sub:"Degisim Yok"},
+    {label:"Planli",value:String(scheduledCount),sub:"Degisim Yok"},
+    {label:"Bugun Terminli",value:String(dueTodayCount),sub:"Degisim Yok"},
+    {label:"Geciken",value:String(overdueCount),sub:"Degisim Yok",tone:overdueCount>0?C.red:C.text},
+    {label:"Geride",value:String(behindCount),sub:"Degisim Yok",tone:behindCount>0?C.warn:C.text},
+    {label:"Zamaninda",value:`%${onTimePct}`,sub:"Izleniyor"},
+    {label:"Kurulumlar",value:String(setupCount),sub:"Bu ay"},
+  ];
+  const machineBoardVisible=planMachineFilter==="all"
+    ? machineBoardRows
+    : machineBoardRows.filter(row=>row.machine===planMachineFilter);
+  const boardDragActive=Boolean(dragBoardSegmentId||dragBoardOrderId);
+  function renderBoardSegmentCard(card,{compact=false,targetMachine=""}={}){
+    if(!card){
+      return (
+        <div
+          onDragOver={e=>{if(boardDragActive) e.preventDefault();}}
+          onDrop={e=>handleBoardDrop(e,{targetMachine})}
+          style={{
+            minHeight:compact?118:142,
+            display:"flex",
+            alignItems:"center",
+            justifyContent:"center",
+            border:`1px dashed ${boardDragActive?C.accent:C.border}`,
+            borderRadius:12,
+            background:boardDragActive?(C.accent+"11"):C.surface,
+            color:C.muted2,
+            fontSize:12,
+          }}
+        >
+          {boardDragActive?"Buraya Birak":"Atanmis operasyon yok"}
+        </div>
+      );
+    }
+    const segment=card.segment||null;
+    const isSelected=selectedSegmentId===card.id;
+    const isDragging=dragBoardSegmentId===card.id;
+    const duePast=card.due&&card.due!=="-"&&card.due<planningToday;
+    const dueSoon=card.due&&card.due!=="-"&&card.due>=planningToday&&dayDiff(planningToday,card.due)<=2;
+    const dueTone=duePast?C.red:(dueSoon?C.warn:C.green);
+    return (
+      <div
+        draggable
+        onDragStart={e=>{
+          const payload=JSON.stringify({type:"board-segment",segmentId:card.id});
+          e.dataTransfer.setData("text/plain",payload);
+          e.dataTransfer.effectAllowed="move";
+          setDragBoardSegmentId(card.id);
+          setDragBoardOrderId("");
+        }}
+        onDragEnd={()=>{setDragBoardSegmentId("");setDragBoardOrderId("");}}
+        onDragOver={e=>{if(boardDragActive) e.preventDefault();}}
+        onDrop={e=>handleBoardDrop(e,{targetSegmentId:card.id,targetMachine:segment?.machine||targetMachine})}
+        onClick={()=>setSelectedPlan(card.seedPlan||segment)}
+        style={{background:card.tone.bg,border:`1px solid ${isSelected?card.tone.text:card.tone.border}`,borderRadius:12,overflow:"hidden",cursor:"pointer",boxShadow:isSelected?`0 0 0 1px ${card.tone.text}66`:"none",display:"flex",flexDirection:"column",opacity:isDragging?0.56:1}}
+      >
+        <div style={{background:card.tone.header,color:"#fff",padding:"8px 10px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+          <div style={{minWidth:0}}>
+            <div style={{fontWeight:800,fontSize:13,fontFamily:"monospace",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.orderCode||"-"}</div>
+            <div style={{fontSize:11,opacity:.95,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.op?.code||"Operasyon"}{card.op?.name?` Â· ${card.op.name}`:""}</div>
+          </div>
+          <div style={{fontSize:11,fontWeight:700,padding:"3px 7px",borderRadius:999,background:"rgba(255,255,255,.2)",whiteSpace:"nowrap"}}>
+            {segment?segmentDurationLabel(segment):"-"}
+          </div>
+        </div>
+        <div style={{padding:"10px 10px 9px"}}>
+          <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.orderName||"-"}</div>
+          <div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.customer||"-"}</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginTop:8}}>
+            <div style={{fontSize:19,fontWeight:800,color:card.tone.text,lineHeight:1}}>{card.qty}</div>
+            <div style={{fontSize:11,color:dueTone,fontWeight:700}}>Termin: {card.due||"-"}</div>
+          </div>
+          <div style={{fontSize:11,color:C.muted2,marginTop:4}}>{card.spanLabel}</div>
+          {card.op&&(
+            <div style={{marginTop:6}}>
+              <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"2px 8px",borderRadius:999,border:`1px solid ${card.op.color}66`,background:card.op.color+"22",color:card.op.color,fontSize:10,fontWeight:700}}>
+                {card.op.icon||"??"} {card.op.code?`${card.op.code} - `:""}{card.op.name}
+              </span>
+            </div>
+          )}
+          {!compact&&segment&&(
+            <div style={{display:"flex",gap:6,marginTop:8}}>
+              <button onClick={e=>{e.stopPropagation();startEdit(segment);}} style={{...btnSt("ghost"),padding:"4px 8px",fontSize:11}}>Duzenle</button>
+              <button onClick={e=>{e.stopPropagation();removePlan(segment);}} style={{...btnSt("danger"),padding:"4px 8px",fontSize:11}}>Sil</button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>YÃ¼kleniyor...</div>;
+
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+          <div>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Planlamayi Duzenle</div>
+            <div style={{fontWeight:800,color:C.text,fontSize:19}}>Planlama Merkezi</div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+            <button onClick={()=>setShowGanttDetail(v=>!v)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>
+              {showGanttDetail?"Detayi Gizle":"Detayli Gantt"}
+            </button>
+            <button
+              onClick={()=>{
+                const today=todayStr();
+                setEditId(null);
+                setForm({startDate:today,endDate:today,machine:(machines[0]||"CNC-1"),orderId:"",note:""});
+                setShowPlanModal(true);
+              }}
+              style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}
+            >
+              Yeni Planlama
+            </button>
+            <button onClick={()=>setShowMpsModal(true)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>MPS Calistir</button>
+          </div>
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr",gap:10}}>
+          {!showGanttDetail&&(
+          <div style={{order:0,background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:10,display:"flex",flexDirection:"column",gap:10}}>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end"}}>
+              <div style={{minWidth:240,flex:"1 1 320px"}}>
+                <input value={planQuery} onChange={e=>setPlanQuery(e.target.value)} placeholder="Makine, is emri, musteri, operasyon ara..." style={{...inputSt,padding:"10px 12px",fontSize:13}}/>
+              </div>
+              <div style={{minWidth:150,flex:"1 1 170px"}}>
+                <select value={planMachineFilter} onChange={e=>setPlanMachineFilter(e.target.value)} style={{...inputSt,padding:"10px 12px",fontSize:13}}>
+                  <option value="all">Tum Tezgahlar</option>
+                  {machines.map(m=><option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              <div style={{minWidth:150,flex:"1 1 170px"}}>
+                <input type="date" value={planDateFrom} onChange={e=>setPlanDateFrom(e.target.value||"")} style={{...inputSt,padding:"10px 12px",fontSize:13}}/>
+              </div>
+              <div style={{minWidth:150,flex:"1 1 170px"}}>
+                <input type="date" value={planDateTo} onChange={e=>setPlanDateTo(e.target.value||"")} style={{...inputSt,padding:"10px 12px",fontSize:13}}/>
+              </div>
+              <button onClick={()=>{setPlanQuery("");setPlanMachineFilter("all");setPlanDateFrom("");setPlanDateTo("");}} style={{...btnSt("ghost"),padding:"10px 11px",fontSize:12,whiteSpace:"nowrap"}}>
+                Sifirla
+              </button>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(115px,1fr))",gap:6}}>
+              {summaryCards.map(card=>(
+                <div key={card.label} style={{padding:"8px 10px",borderRadius:10,background:C.card,border:`1px solid ${C.border}`}}>
+                  <div style={{fontSize:11,color:C.muted2}}>{card.label}</div>
+                  <div style={{fontSize:24,fontWeight:800,color:card.tone||C.text,lineHeight:1.15}}>{card.value}</div>
+                  <div style={{fontSize:11,color:C.muted2}}>{card.sub}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{fontSize:11,color:C.muted2}}>
+              Ipucu: Karti baska kartin ustune biraktiginizda hedef karttan sonraya planlanir. Ilk operasyon uzarsa siradaki planlar otomatik kaydirilir. Planlanacak is emri kartlarini da surukleyip tezgah satirina birakabilirsiniz.
+            </div>
+
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflowX:"auto"}}>
+              <div style={{minWidth:900}}>
+              <div style={{display:"grid",gridTemplateColumns:"minmax(220px,1fr) minmax(260px,1.1fr) minmax(420px,1.8fr)",gap:10,padding:"9px 12px",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.muted2,fontWeight:700}}>
+                <div>Tezgahlar</div>
+                <div>Aktif</div>
+                <div>Siradaki</div>
+              </div>
+              <div style={{maxHeight:560,overflowY:"auto"}}>
+                {machineBoardVisible.map(row=>{
+                  const statusColor=row.activeSegment?C.green:(row.segments.length>0?C.warn:C.muted2);
+                  return (
+                    <div key={row.machine} style={{display:"grid",gridTemplateColumns:"minmax(220px,1fr) minmax(260px,1.1fr) minmax(420px,1.8fr)",gap:10,padding:10,borderBottom:`1px solid ${C.border}`,alignItems:"stretch"}}>
+                      <div style={{display:"flex",flexDirection:"column",justifyContent:"space-between",gap:8}}>
+                        <div>
+                          <div style={{fontSize:26,lineHeight:1,color:C.text,fontWeight:800}}>{row.machine}</div>
+                          <div style={{fontSize:12,color:C.muted2,marginTop:2}}>{machineRowStateLabel(row)}{row.readyHours?` Â· ${row.readyHours} gun`:""}</div>
+                        </div>
+                        <div style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:11,padding:"4px 9px",borderRadius:999,border:`1px solid ${statusColor}66`,background:statusColor+"1a",color:statusColor,width:"fit-content"}}>
+                          <span style={{width:8,height:8,borderRadius:99,background:statusColor}}/>
+                          {row.activeSegment?"Calisiyor":(row.segments.length>0?"Kuyrukta":"Bos")}
+                        </div>
+                      </div>
+                      <div onDragOver={e=>{if(boardDragActive) e.preventDefault();}} onDrop={e=>handleBoardDrop(e,{targetMachine:row.machine})}>
+                        {renderBoardSegmentCard(row.activeCard,{targetMachine:row.machine})}
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))",gap:8}} onDragOver={e=>{if(boardDragActive) e.preventDefault();}} onDrop={e=>handleBoardDrop(e,{targetMachine:row.machine})}>
+                        {row.nextCards.map(card=>(
+                          <div key={card.id}>
+                            {renderBoardSegmentCard(card,{compact:true,targetMachine:row.machine})}
+                          </div>
+                        ))}
+                        {row.nextCards.length===0&&(
+                          <div>{renderBoardSegmentCard(null,{compact:true,targetMachine:row.machine})}</div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                {machineBoardVisible.length===0&&(
+                  <div style={{padding:"28px 12px",textAlign:"center",color:C.muted2,fontSize:12}}>
+                    Secili filtreye uygun tezgah bulunamadi.
+                  </div>
+                )}
+              </div>
+              </div>
+            </div>
+          </div>
+          )}
+
+          {showGanttDetail&&(
+          <div style={{order:0,background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:10,minHeight:ganttCardMinHeight}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+              <div>
+                <div style={{fontSize:11,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Detayli Plan</div>
+                <div style={{fontWeight:800,color:C.text,fontSize:14}}>Detayli Gantt</div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                <button onClick={()=>shiftGanttMonth(-1)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>?</button>
+                <div style={{fontSize:13,color:C.text,minWidth:150,textAlign:"center",textTransform:"capitalize",fontWeight:700}}>{ganttMonthLabel}</div>
+                <button onClick={()=>shiftGanttMonth(1)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>?</button>
+                <button onClick={()=>setGanttMonth(monthStr())} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Bu Ay</button>
+                <button onClick={exportGanttPng} disabled={exporting} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,opacity:exporting?0.7:1}}>PNG</button>
+                <button onClick={exportGanttPdf} disabled={exporting} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,opacity:exporting?0.7:1}}>PDF</button>
+              </div>
+            </div>
+            {monthOrders.length>0&&<div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:10}}>
+              {monthOrders.map(o=><span key={o.id} style={{display:"inline-flex",alignItems:"center",gap:6,background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px",fontSize:11,color:C.muted2}}><span style={{width:10,height:10,borderRadius:3,background:o.color,display:"inline-block"}}/>{o.code?`${o.code} - ${o.name||""}${o.customer?` - ${o.customer}`:""}`:(o.name||"Ä°ÅŸ Emri")}</span>)}
+            </div>}
+            <div ref={ganttRef} style={{height:ganttViewportHeight,overflow:"auto",border:`1px solid ${C.border}`,borderRadius:10,background:C.card}}>
+              <div style={{minWidth:ganttMinWidth,width:"100%",padding:8}}>
+                <div style={{display:"grid",gridTemplateColumns:ganttGridTemplate,columnGap:1,rowGap:1,alignItems:"center",marginBottom:4}}>
+                  <div style={{fontSize:10,color:C.muted2,fontWeight:700,textTransform:"uppercase",letterSpacing:.6,paddingLeft:4}}>Tezgah</div>
+                  {ganttDays.map((d,i)=>{
+                    const wd=parseYmdLocal(d).getDay();
+                    const weekend=wd===0||wd===6;
+                    return <div key={d} style={{fontSize:10,textAlign:"center",color:weekend?C.warn:C.muted2,opacity:weekend?0.95:0.85,lineHeight:1,padding:"2px 0"}}>{i+1}</div>;
+                  })}
+                </div>
+                {filteredGanttRows.map(row=>(
+                  <div key={row.machine} style={{display:"grid",gridTemplateColumns:ganttGridTemplate,columnGap:1,rowGap:1,alignItems:"center",marginBottom:3}}>
+                    <div style={{fontSize:12,fontWeight:700,color:C.text,padding:"0 6px 0 4px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{row.machine}</div>
+                    {ganttDays.map(d=>{
+                      const p=row.byDate[d];
+                      const wd=parseYmdLocal(d).getDay();
+                      const weekend=wd===0||wd===6;
+                      if(!p) return <div key={d} onDragOver={e=>e.preventDefault()} onDrop={async e=>{e.preventDefault();const raw=e.dataTransfer.getData("text/plain")||dragPlanId;if(!raw) return;let payload=null;try{payload=JSON.parse(raw);}catch{}if(payload&&payload.type&&payload.segmentId){await resizeSegment(payload.segmentId,d,payload.type);}setDragPlanId(null);}} style={{height:20,borderRadius:3,background:weekend?C.surface2:C.surface,border:`1px solid ${C.border}`}}/>;
+                      const col=colorFromOrder(p.orderId||p.orderCode||p.orderName);
+                      const opMeta=orderOperationMetaById[p.orderId]||null;
+                      const isSelected=p._segmentId===selectedSegmentId;
+                      const borderColor=isSelected?C.text:col;
+                      const edgeLeft=Boolean(p._isStart);
+                      const edgeRight=Boolean(p._isEnd);
+                      const cellRadius=edgeLeft?(edgeRight?"3px":"3px 0 0 3px"):(edgeRight?"0 3px 3px 0":"0");
+                      return <div
+                        key={d}
+                        title={`${d} Â· ${row.machine} Â· ${p.orderCode||""} ${p.orderName||""}${p.orderCustomerName?` Â· ${p.orderCustomerName}`:""}`}
+                        onDragOver={e=>e.preventDefault()}
+                        onDrop={async e=>{e.preventDefault();const raw=e.dataTransfer.getData("text/plain")||dragPlanId;if(!raw) return;let payload=null;try{payload=JSON.parse(raw);}catch{}if(payload&&payload.type&&payload.segmentId){await resizeSegment(payload.segmentId,d,payload.type);}setDragPlanId(null);}}
+                        onClick={()=>setSelectedPlan(p)}
+                        style={{
+                          height:20,
+                          borderRadius:cellRadius,
+                          background:col,
+                          borderTop:`1px solid ${borderColor}99`,
+                          borderBottom:`1px solid ${borderColor}99`,
+                          borderLeft:edgeLeft?`1px solid ${borderColor}99`:"0",
+                          borderRight:edgeRight?`1px solid ${borderColor}99`:"0",
+                          boxShadow:isSelected?`inset 0 0 0 1px ${C.text}aa`:"none",
+                          cursor:"pointer",
+                          position:"relative",
+                          marginLeft:edgeLeft?0:-1,
+                        }}
+                      >
+                        {p._isStart&&<span
+                          draggable
+                          onDragStart={e=>{const payload=JSON.stringify({type:"start",segmentId:p._segmentId});setDragPlanId(payload);e.dataTransfer.setData("text/plain",payload);}}
+                          title="BaÅŸlangÄ±cÄ± sÃ¼rÃ¼kle"
+                          style={{position:"absolute",left:0,top:0,bottom:0,width:5,background:"rgba(0,0,0,.35)",cursor:"ew-resize"}}
+                        />}
+                        {p._isEnd&&<span
+                          draggable
+                          onDragStart={e=>{const payload=JSON.stringify({type:"end",segmentId:p._segmentId});setDragPlanId(payload);e.dataTransfer.setData("text/plain",payload);}}
+                          title="BitiÅŸi sÃ¼rÃ¼kle"
+                          style={{position:"absolute",right:0,top:0,bottom:0,width:5,background:"rgba(0,0,0,.35)",cursor:"ew-resize"}}
+                        />}
+                        {p._isStart&&opMeta&&<span title={`${opMeta.code?opMeta.code+" - ":""}${opMeta.name}`} style={{position:"absolute",right:6,top:2,fontSize:10,lineHeight:1,color:"#fff",textShadow:"0 1px 2px rgba(0,0,0,.55)"}}>{opMeta.icon||"??"}</span>}
+                      </div>;
+                    })}
+                  </div>
+                ))}
+                {filteredGanttRows.length===0&&(
+                  <div style={{fontSize:12,color:C.muted2,textAlign:"center",padding:"30px 12px"}}>
+                    SeÃ§ili filtreye ait tezgah satÄ±rÄ± yok.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          )}
+
+          <div style={{order:2,background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+              <div>
+                <div style={{fontSize:11,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Planlama Kuyrugu</div>
+                <div style={{fontWeight:800,color:C.text,fontSize:15}}>Planlanacak Is Emirleri</div>
+              </div>
+              <Badge label={`${ordersToPlan.length} Is Emri`} color={ordersToPlan.length>0?C.warn:C.green}/>
+            </div>
+            {ordersToPlan.length===0&&(
+              <div style={{fontSize:12,color:C.muted2,padding:"6px 2px"}}>
+                Planlanmayi bekleyen is emri yok.
+              </div>
+            )}
+            {ordersToPlan.length>0&&(
+              <div style={{display:"flex",flexDirection:"column",gap:7,maxHeight:190,overflowY:"auto",paddingRight:2}}>
+                {ordersToPlan.map(order=>{
+                  const pMeta=PRIORITY_OPTIONS.find(p=>p.id===order.priority)||{label:(order.priority||"Normal"),color:C.muted2};
+                  return (
+                    <div
+                      key={order.id}
+                      draggable
+                      onDragStart={e=>{
+                        const payload=JSON.stringify({type:"board-order",orderId:order.id});
+                        e.dataTransfer.setData("text/plain",payload);
+                        e.dataTransfer.effectAllowed="copyMove";
+                        setDragBoardOrderId(order.id);
+                        setDragBoardSegmentId("");
+                      }}
+                      onDragEnd={()=>setDragBoardOrderId("")}
+                      style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 9px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",cursor:"grab",opacity:dragBoardOrderId===order.id?0.58:1}}
+                    >
+                      <div style={{minWidth:210,flex:1}}>
+                        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                          <span style={{fontWeight:800,color:C.text,fontFamily:"monospace",fontSize:12}}>{order.code||"-"}</span>
+                          <Badge label={pMeta.label||"-"} color={pMeta.color||C.muted2}/>
+                        </div>
+                        <div style={{fontSize:12,color:C.text,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                          {order.name||"-"}{order.customerName?` Â· ${order.customerName}`:""}
+                        </div>
+                        <div style={{fontSize:11,color:C.muted2,marginTop:2}}>
+                          Termin: {order.dueDate||"-"} Â· Tezgah: {Array.isArray(order.machines)&&order.machines.length>0?order.machines.join(", "):"-"}
+                        </div>
+                      </div>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                        <button onClick={()=>quickPlanToday(order)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>
+                          Bugun
+                        </button>
+                        <button onClick={()=>openWeekPlanModalForOrder(order)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>
+                          Bu Hafta
+                        </button>
+                        <button onClick={()=>openPlanModalForOrder(order)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}>
+                          Planla
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      {selectedPlan&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:"clamp(18px,4vw,36px)"}} onClick={()=>setSelectedPlan(null)}>
+          <div style={{width:"100%",maxWidth:540,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"18px 18px 16px"}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>Plan DetayÄ±</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,fontSize:13,color:C.muted2}}>
+              <div><strong>Tarih:</strong> {(selectedPlanSegment?.startDate||selectedPlan.date||"-")}{(selectedPlanSegment?.endDate&&selectedPlanSegment.endDate!==(selectedPlanSegment.startDate||selectedPlan.date))?` - ${selectedPlanSegment.endDate}`:""}</div>
+              <div><strong>Tezgah:</strong> {selectedPlan.machine||"-"}</div>
+              <div><strong>Ä°ÅŸ Emri:</strong> {selectedPlan.orderCode||"-"}</div>
+              <div><strong>Ad:</strong> {selectedPlan.orderName||"-"}</div>
+              <div><strong>Firma:</strong> {selectedPlan.orderCustomerName||"-"}</div>
+              <div><strong>GÃ¼n:</strong> {(selectedPlanSegment?.plans||[]).length||1}</div>
+              {selectedPlanOperationMeta&&(
+                <div style={{gridColumn:"1 / -1"}}>
+                  <strong>Operasyon:</strong>{" "}
+                  <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"2px 8px",borderRadius:999,border:`1px solid ${selectedPlanOperationMeta.color}66`,background:selectedPlanOperationMeta.color+"22",color:selectedPlanOperationMeta.color,fontWeight:700}}>
+                    {selectedPlanOperationMeta.icon||"??"} {selectedPlanOperationMeta.code?`${selectedPlanOperationMeta.code} - `:""}{selectedPlanOperationMeta.name}
+                  </span>
+                </div>
+              )}
+            </div>
+            {selectedPlan.note&&<div style={{marginTop:10,fontSize:13,color:C.muted2}}>{selectedPlan.note}</div>}
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
+              <button onClick={()=>setSelectedPlan(null)} style={{...btnSt("ghost"),padding:"9px 12px"}}>Kapat</button>
+              <button onClick={()=>{startEdit(selectedPlan);setSelectedPlan(null);}} style={{...btnSt("ghost"),padding:"9px 12px"}}>DÃ¼zenle</button>
+              <button onClick={async()=>{const p=selectedPlan;setSelectedPlan(null);await removePlan(p);}} style={{...btnSt("danger"),padding:"9px 12px"}}>Sil</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showPlanModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.68)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:54,padding:14}} onClick={()=>setShowPlanModal(false)}>
+          <div style={{width:"100%",maxWidth:640,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8}}>
+              <div style={{fontWeight:700,color:C.text,fontSize:16}}>{editId?"Planlama DÃ¼zenle":"Yeni Planlama"}</div>
+              {editId&&<Badge label="DÃ¼zenleme" color={C.warn}/>}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div><span style={labelSt}>BaÅŸlangÄ±Ã§</span><input type="date" value={form.startDate} onChange={e=>fv("startDate",e.target.value||todayStr())} style={{...inputSt,padding:"9px 10px",fontSize:13}}/></div>
+              <div><span style={labelSt}>BitiÅŸ</span><input type="date" value={form.endDate} onChange={e=>fv("endDate",e.target.value||form.startDate||todayStr())} style={{...inputSt,padding:"9px 10px",fontSize:13}}/></div>
+            </div>
+            <div style={{fontSize:12,color:C.muted2,marginTop:6}}>{editId?`DÃ¼zenlenen aralÄ±k: ${form.startDate}${form.endDate&&form.endDate!==form.startDate?` - ${form.endDate}`:""}`:`Uygulanacak aralÄ±k: ${rangeLabel}`}</div>
+            <div style={{marginTop:9}}>
+              <span style={labelSt}>Tezgah</span>
+              <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+                {machines.map(m=><button key={m} onClick={()=>fv("machine",m)} style={chip(form.machine===m)}>{m}</button>)}
+              </div>
+            </div>
+            <div style={{marginTop:9}}>
+              <span style={labelSt}>Ä°ÅŸ Emri</span>
+              <select value={form.orderId} onChange={e=>fv("orderId",e.target.value)} style={inputSt}>
+                <option value="">Ä°ÅŸ emri seÃ§in...</option>
+                {orders.map(o=><option key={o.id} value={o.id}>{o.code} - {o.name}{o.customerName?` - ${o.customerName}`:""} ({(o.machines||[]).join(", ")})</option>)}
+              </select>
+              {selectedOrder&&<div style={{fontSize:12,color:C.muted2,marginTop:6}}>ParÃ§a sÃ¼resi: {fmtSec(selectedOrder.partSec)} Â· Maks/gÃ¼n: {selectedOrder.partSec?Math.floor(EFFECTIVE_SECONDS/selectedOrder.partSec):"-"}</div>}
+              {selectedOrderOperationMeta&&(
+                <div style={{marginTop:6}}>
+                  <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"2px 8px",borderRadius:999,border:`1px solid ${selectedOrderOperationMeta.color}66`,background:selectedOrderOperationMeta.color+"22",color:selectedOrderOperationMeta.color,fontSize:11,fontWeight:700}}>
+                    {selectedOrderOperationMeta.icon||"??"} {selectedOrderOperationMeta.code?`${selectedOrderOperationMeta.code} - `:""}{selectedOrderOperationMeta.name}
+                  </span>
+                </div>
+              )}
+            </div>
+            <div style={{marginTop:9}}>
+              <span style={labelSt}>Not</span>
+              <textarea value={form.note} onChange={e=>fv("note",e.target.value)} rows={2} style={{...inputSt,minHeight:64,resize:"vertical"}} placeholder="Opsiyonel not..."/>
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:12,justifyContent:"flex-end"}}>
+              <button onClick={()=>setShowPlanModal(false)} style={{...btnSt("ghost"),padding:"10px 14px"}}>Kapat</button>
+              {editId&&<button onClick={()=>{setEditId(null);setForm({...emptyForm,machine:form.machine,startDate:form.startDate,endDate:form.endDate});setShowPlanModal(false);}} style={{...btnSt("ghost"),padding:"10px 14px"}}>Ä°ptal</button>}
+              <button onClick={savePlan} style={{...btnSt("primary"),padding:"10px 14px"}}>{editId?"PlanÄ± GÃ¼ncelle":"AralÄ±ÄŸÄ± Planla"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showMpsModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.68)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:53,padding:14}} onClick={()=>setShowMpsModal(false)}>
+          <div style={{width:"100%",maxWidth:920,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0,maxHeight:"88vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8,flexWrap:"wrap"}}>
+              <div style={{fontWeight:700,color:C.text,fontSize:16}}>MPS Calistir</div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <button onClick={()=>downloadCsv(`mps-${todayStr()}.csv`,[{label:"Hafta",key:"hafta"},{label:"Talep",key:"talep"},{label:"Is Emri Arz",key:"isEmriArz"},{label:"MPS Plan",key:"mpsPlan"},{label:"Bakiye",key:"bakiye"}],mpsExportRows)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>CSV Ä°ndir</button>
+                <button onClick={()=>setShowMpsModal(false)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
+              </div>
+            </div>
+            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                <div><span style={labelSt}>ParÃ§a No</span><input style={inputSt} value={mpsForm.partNo} onChange={e=>setMpsF("partNo",e.target.value)} placeholder="PRT-001"/></div>
+                <div><span style={labelSt}>Hafta BaÅŸlangÄ±Ã§</span><input style={inputSt} type="date" value={mpsForm.weekStart} onChange={e=>setMpsF("weekStart",e.target.value||todayStr())}/></div>
+                <div><span style={labelSt}>Planlanan Adet</span><input style={inputSt} type="number" min="0" value={mpsForm.plannedQty} onChange={e=>setMpsF("plannedQty",e.target.value)}/></div>
+              </div>
+              <div style={{marginTop:8}}><span style={labelSt}>Not</span><textarea rows={2} style={{...inputSt,minHeight:62,resize:"vertical"}} value={mpsForm.note} onChange={e=>setMpsF("note",e.target.value)}/></div>
+              <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}>
+                <button onClick={saveMpsPlan} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>MPS Kaydet</button>
+              </div>
+            </div>
+            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 10px",marginTop:10}}>
+              <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>8 HaftalÄ±k Ana Ãœretim PlanÄ±</div>
+              {mpsBuckets.map(b=>(
+                <div key={b.start} style={{display:"grid",gridTemplateColumns:"1.3fr repeat(4,.8fr)",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,alignItems:"center"}}>
+                  <div style={{color:C.text,fontWeight:700}}>{b.start} - {b.end}</div>
+                  <div style={{color:C.muted2}}>Talep: {b.demand}</div>
+                  <div style={{color:C.muted2}}>WO: {b.wo}</div>
+                  <div style={{color:C.muted2}}>MPS: {b.mps}</div>
+                  <div style={{color:b.balance<0?C.red:C.green,fontWeight:700}}>Bakiye: {b.balance}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+// ============================================================
+//  MACHINE CONNECTIVITY PREP
+// ============================================================
+function MachineConnectivityPrep({currentUser,machines=DEFAULT_MACHINES,onMachinesSync}) {
+  const emptyForm={
+    code:"",
+    machineName:machines[0]||"CNC-1",
+    brand:"Fanuc",
+    protocol:"FOCAS2",
+    connectionMode:"not_connected",
+    ip:"",
+    port:"",
+    pollingSec:"10",
+    timezone:"Europe/Istanbul",
+    edgeAgent:"IPC-01",
+    ncTransfer:"bidirectional",
+    notes:"",
+    dataPoints:{...MACHINE_DEFAULT_POINTS},
+  };
+  const [profiles,setProfiles]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [showForm,setShowForm]=useState(false);
+  const [editId,setEditId]=useState(null);
+  const [form,setForm]=useState(emptyForm);
+  const [search,setSearch]=useState("");
+  const [simMap,setSimMap]=useState({});
+  const [savingEdge,setSavingEdge]=useState(false);
+  const [edgeConfig,setEdgeConfig]=useState({
+    ipcName:"IPC-01",
+    location:"Atolye A",
+    defaultPollingSec:10,
+    maxBufferRows:5000,
+    resendSec:5,
+    syncBatch:200,
+    timezone:"Europe/Istanbul",
+  });
+  const syncMachines=useCallback((rows)=>{
+    if(typeof onMachinesSync!=="function") return;
+    const names=machineNamesFromConnectors(rows);
+    if(names.length===0) return;
+    onMachinesSync(names);
+  },[onMachinesSync]);
+
+  const load=useCallback(async()=>{
+    const [rows,edgeDoc,mockRows]=await Promise.all([
+      window.DB.getAll("machineConnectors"),
+      window.DB.getDoc("config","edgeConnectivity"),
+      window.DB.getAll("machineTelemetryMock"),
+    ]);
+    const sortedRows=rows.sort((a,b)=>(a.machineName||"").localeCompare(b.machineName||"","tr"));
+    setProfiles(sortedRows);
+    syncMachines(sortedRows);
+    if(edgeDoc){
+      setEdgeConfig(prev=>({
+        ...prev,
+        ipcName:edgeDoc.ipcName||prev.ipcName,
+        location:edgeDoc.location||prev.location,
+        defaultPollingSec:Number(edgeDoc.defaultPollingSec)||prev.defaultPollingSec,
+        maxBufferRows:Number(edgeDoc.maxBufferRows)||prev.maxBufferRows,
+        resendSec:Number(edgeDoc.resendSec)||prev.resendSec,
+        syncBatch:Number(edgeDoc.syncBatch)||prev.syncBatch,
+        timezone:edgeDoc.timezone||prev.timezone,
+      }));
+    }
+    const latest={};
+    mockRows
+      .sort((a,b)=>(b.collectedAtUtc||"").localeCompare(a.collectedAtUtc||""))
+      .forEach(r=>{
+        if(!r.machineId||latest[r.machineId]) return;
+        latest[r.machineId]=r;
+      });
+    setSimMap(latest);
+    setLoading(false);
+  },[syncMachines]);
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="machineprep") return;
+      if(d.type==="refresh"){load(); return;}
+      if(d.type==="new"){
+        startCreate();
+        window.scrollTo({top:0,behavior:"smooth"});
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load,profiles,machines,edgeConfig.ipcName]);
+
+  useEffect(()=>{
+    const options=MACHINE_PROTOCOL_OPTIONS[form.brand]||[];
+    if(options.length===0||options.includes(form.protocol)) return;
+    setForm(f=>({...f,protocol:options[0]}));
+  },[form.brand,form.protocol]);
+
+  const protocolOptions=MACHINE_PROTOCOL_OPTIONS[form.brand]||[];
+  const fv=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const fp=(k,v)=>setForm(f=>({...f,dataPoints:{...f.dataPoints,[k]:v}}));
+  const fe=(k,v)=>setEdgeConfig(p=>({...p,[k]:v}));
+
+  function nextConnectorCode(list=profiles){
+    const nums=list.map(r=>{
+      const m=String(r.code||"").toUpperCase().match(/^MC-(\d+)$/);
+      return m?Number(m[1]):null;
+    }).filter(n=>n!==null);
+    const next=(nums.length?Math.max(...nums):0)+1;
+    return `MC-${String(next).padStart(3,"0")}`;
+  }
+
+  function modeMeta(mode){
+    if(mode==="live") return {label:"Canli",color:C.green};
+    if(mode==="simulation") return {label:"Simulasyon",color:C.warn};
+    return {label:"Bagli Degil",color:C.muted2};
+  }
+
+  async function saveEdgeConfig(){
+    setSavingEdge(true);
+    const payload={
+      ipcName:(edgeConfig.ipcName||"IPC-01").trim(),
+      location:(edgeConfig.location||"").trim(),
+      defaultPollingSec:Math.max(1,Number(edgeConfig.defaultPollingSec)||10),
+      maxBufferRows:Math.max(100,Number(edgeConfig.maxBufferRows)||5000),
+      resendSec:Math.max(1,Number(edgeConfig.resendSec)||5),
+      syncBatch:Math.max(1,Number(edgeConfig.syncBatch)||200),
+      timezone:(edgeConfig.timezone||"Europe/Istanbul").trim(),
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser.id,
+    };
+    const ok=await window.DB.setDoc("config","edgeConnectivity",payload);
+    setSavingEdge(false);
+    if(!ok){alert("IPC ayari kaydedilemedi.");return;}
+    setEdgeConfig(payload);
+  }
+
+  async function saveProfile(){
+    if(!form.machineName.trim()){alert("Makina adi zorunlu.");return;}
+    if(!form.brand||!form.protocol){alert("Marka ve protokol secin.");return;}
+    const payload={
+      code:(form.code||nextConnectorCode()).toUpperCase(),
+      machineName:form.machineName.trim(),
+      brand:form.brand,
+      protocol:form.protocol,
+      connectionMode:form.connectionMode||"not_connected",
+      ip:form.ip.trim(),
+      port:String(form.port||"").trim(),
+      pollingSec:Math.max(1,Number(form.pollingSec)||10),
+      timezone:(form.timezone||"Europe/Istanbul").trim(),
+      edgeAgent:(form.edgeAgent||edgeConfig.ipcName||"IPC-01").trim(),
+      ncTransfer:"bidirectional",
+      notes:form.notes.trim(),
+      dataPoints:{...MACHINE_DEFAULT_POINTS,...(form.dataPoints||{})},
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser.id,
+      ...(editId?{}:{createdBy:currentUser.id}),
+    };
+    if(editId){
+      const ok=await window.DB.updateDoc("machineConnectors",editId,payload);
+      if(!ok){alert("Makina profili guncellenemedi.");return;}
+      setProfiles(prev=>{
+        const nextRows=prev.map(x=>x.id===editId?{...x,...payload}:x).sort((a,b)=>(a.machineName||"").localeCompare(b.machineName||"","tr"));
+        syncMachines(nextRows);
+        return nextRows;
+      });
+    }else{
+      const id=await window.DB.addDoc("machineConnectors",payload);
+      if(!id){alert("Makina profili kaydedilemedi.");return;}
+      setProfiles(prev=>{
+        const nextRows=[{id,...payload,createdAt:new Date().toISOString()},...prev].sort((a,b)=>(a.machineName||"").localeCompare(b.machineName||"","tr"));
+        syncMachines(nextRows);
+        return nextRows;
+      });
+    }
+    setEditId(null);
+    setShowForm(false);
+    setForm({...emptyForm,code:nextConnectorCode(),edgeAgent:edgeConfig.ipcName||"IPC-01"});
+  }
+
+  function startCreate(){
+    setEditId(null);
+    setForm({...emptyForm,code:nextConnectorCode(),machineName:machines[0]||"CNC-1",edgeAgent:edgeConfig.ipcName||"IPC-01"});
+    setShowForm(true);
+  }
+
+  function startEdit(row){
+    const protocolList=MACHINE_PROTOCOL_OPTIONS[row.brand]||[];
+    setEditId(row.id);
+    setForm({
+      code:row.code||nextConnectorCode(),
+      machineName:row.machineName||machines[0]||"CNC-1",
+      brand:row.brand||"Fanuc",
+      protocol:(row.protocol&&protocolList.includes(row.protocol))?row.protocol:(protocolList[0]||"FOCAS2"),
+      connectionMode:row.connectionMode||"not_connected",
+      ip:row.ip||"",
+      port:row.port||"",
+      pollingSec:String(Number(row.pollingSec)||10),
+      timezone:row.timezone||"Europe/Istanbul",
+      edgeAgent:row.edgeAgent||edgeConfig.ipcName||"IPC-01",
+      ncTransfer:"bidirectional",
+      notes:row.notes||"",
+      dataPoints:{...MACHINE_DEFAULT_POINTS,...(row.dataPoints||{})},
+    });
+    setShowForm(true);
+  }
+
+  async function removeProfile(row){
+    if(!confirm(`"${row.machineName||row.code||"Makina"}" profili silinsin mi?`)) return;
+    const ok=await window.DB.deleteDoc("machineConnectors",row.id);
+    if(!ok){alert("Makina profili silinemedi.");return;}
+    setProfiles(prev=>{
+      const nextRows=prev.filter(x=>x.id!==row.id);
+      syncMachines(nextRows);
+      return nextRows;
+    });
+    setSimMap(prev=>{const n={...prev};delete n[row.id];return n;});
+    if(editId===row.id){
+      setEditId(null);
+      setShowForm(false);
+      setForm({...emptyForm,code:nextConnectorCode()});
+    }
+  }
+
+  async function setConnectionMode(row,mode){
+    const patch={connectionMode:mode,updatedAt:new Date().toISOString(),updatedBy:currentUser.id};
+    const ok=await window.DB.updateDoc("machineConnectors",row.id,patch);
+    if(!ok){alert("Baglanti modu guncellenemedi.");return;}
+    setProfiles(prev=>prev.map(x=>x.id===row.id?{...x,...patch}:x));
+  }
+
+  async function simulateProfile(row){
+    const statePool=["running","idle","alarm","setup"];
+    const status=statePool[Math.floor(Math.random()*statePool.length)];
+    const nowIso=new Date().toISOString();
+    let machineLocalTime=nowIso;
+    try{
+      machineLocalTime=new Date().toLocaleString("sv-SE",{timeZone:row.timezone||"Europe/Istanbul",hour12:false}).replace(" ","T");
+    }catch{}
+    const nextPart=(Number(row.mockPartCounter)||0)+(status==="running"?Math.floor(Math.random()*2):0);
+    const sample={
+      machineId:row.id,
+      machineCode:row.code||"",
+      machineName:row.machineName||"",
+      status,
+      programName:`O${String(1000+Math.floor(Math.random()*9000))}`,
+      spindleLoad:status==="running"?Math.floor(45+Math.random()*45):Math.floor(Math.random()*20),
+      feedOverride:Math.floor(85+Math.random()*20),
+      cycleElapsedSec:status==="running"?Math.floor(20+Math.random()*260):0,
+      partCounter:nextPart,
+      activeAlarms:status==="alarm"?["A-102 OVERLOAD"]:[],
+      toolNumber:1+Math.floor(Math.random()*24),
+      toolLifeRemainPct:Math.floor(20+Math.random()*80),
+      operatorId:`OP-${String(1+Math.floor(Math.random()*8)).padStart(3,"0")}`,
+      collectedAtUtc:nowIso,
+      machineLocalTime,
+      source:"simulation",
+    };
+    await window.DB.addDoc("machineTelemetryMock",sample);
+    const patch={
+      connectionMode:"simulation",
+      status:"simulating",
+      mockPartCounter:nextPart,
+      lastHeartbeatAt:nowIso,
+      updatedAt:nowIso,
+      updatedBy:currentUser.id,
+    };
+    await window.DB.updateDoc("machineConnectors",row.id,patch);
+    setProfiles(prev=>prev.map(x=>x.id===row.id?{...x,...patch}:x));
+    setSimMap(prev=>({...prev,[row.id]:sample}));
+  }
+
+  const q=search.trim().toLowerCase();
+  const machineNameOptions=useMemo(
+    ()=>normalizeMachineList([...(machines||[]),...profiles.map(r=>r.machineName||"")],[]),
+    [machines,profiles]
+  );
+  const filtered=profiles.filter(r=>{
+    if(!q) return true;
+    return (r.machineName||"").toLowerCase().includes(q)||
+      (r.code||"").toLowerCase().includes(q)||
+      (r.brand||"").toLowerCase().includes(q)||
+      (r.protocol||"").toLowerCase().includes(q)||
+      (r.ip||"").toLowerCase().includes(q);
+  });
+  const plannedCount=profiles.filter(r=>(r.connectionMode||"not_connected")==="not_connected").length;
+  const simCount=profiles.filter(r=>r.connectionMode==="simulation").length;
+  const liveCount=profiles.filter(r=>r.connectionMode==="live").length;
+  const pilotTarget=5;
+  async function downloadMachineConnectionPdf(){
+    const loaded=await ensureExternalScript(
+      "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
+      ()=>Boolean(window.jspdf&&window.jspdf.jsPDF)
+    );
+    if(!loaded||!window.jspdf||!window.jspdf.jsPDF){alert("PDF motoru yuklenemedi.");return;}
+    try{
+      const {jsPDF}=window.jspdf;
+      const pdf=new jsPDF({unit:"pt",format:"a4"});
+      const pageW=pdf.internal.pageSize.getWidth();
+      const pageH=pdf.internal.pageSize.getHeight();
+      const margin=38;
+      const contentW=pageW-(margin*2);
+      let y=margin;
+      function newPage(){
+        pdf.addPage();
+        y=margin;
+      }
+      function ensureSpace(h){
+        if(y+h>pageH-margin) newPage();
+      }
+      function addTitle(text){
+        ensureSpace(30);
+        pdf.setFont("helvetica","bold");
+        pdf.setFontSize(18);
+        pdf.setTextColor(17,24,39);
+        pdf.text(text,margin,y);
+        y+=24;
+      }
+      function addSection(text){
+        ensureSpace(24);
+        pdf.setFont("helvetica","bold");
+        pdf.setFontSize(12);
+        pdf.setTextColor(31,41,55);
+        pdf.text(text,margin,y);
+        y+=16;
+      }
+      function addParagraph(text,size=10,indent=0){
+        pdf.setFont("helvetica","normal");
+        pdf.setFontSize(size);
+        pdf.setTextColor(55,65,81);
+        const lines=pdf.splitTextToSize(String(text||""),contentW-indent);
+        const h=Math.max(12,lines.length*(size+2));
+        ensureSpace(h+2);
+        pdf.text(lines,margin+indent,y);
+        y+=h;
+      }
+      function addBullet(text){
+        ensureSpace(14);
+        pdf.setFont("helvetica","normal");
+        pdf.setFontSize(10);
+        pdf.setTextColor(55,65,81);
+        const lines=pdf.splitTextToSize(String(text||""),contentW-14);
+        pdf.text("-",margin,y);
+        pdf.text(lines,margin+10,y);
+        y+=Math.max(13,lines.length*12);
+      }
+      const nowIso=new Date().toISOString();
+      const statusLabel=mode=>mode==="live"?"Canli":mode==="simulation"?"Simulasyon":"Bagli Degil";
+      const profileRows=[...profiles].sort((a,b)=>(a.machineName||"").localeCompare(b.machineName||"","tr"));
+
+      addTitle("CNC Tezgah Baglanti Hazirlik Dokumani");
+      addParagraph(`Olusturma Tarihi (UTC): ${nowIso}`);
+      addParagraph(`Olusturan Kullanici: ${currentUser?.name||currentUser?.id||"-"}`);
+      y+=4;
+
+      addSection("1) Sistem Ozet Bilgisi");
+      addBullet(`IPC: ${(edgeConfig.ipcName||"IPC-01")} Â· Konum: ${(edgeConfig.location||"-")} Â· Timezone: ${(edgeConfig.timezone||"Europe/Istanbul")}`);
+      addBullet(`Default polling: ${Math.max(1,Number(edgeConfig.defaultPollingSec)||10)} sn`);
+      addBullet(`Buffer: ${Math.max(100,Number(edgeConfig.maxBufferRows)||5000)} satir Â· Resend: ${Math.max(1,Number(edgeConfig.resendSec)||5)} sn Â· Sync batch: ${Math.max(1,Number(edgeConfig.syncBatch)||200)}`);
+      addBullet(`Makina profili: ${profiles.length} (Bagli Degil: ${plannedCount}, Simulasyon: ${simCount}, Canli: ${liveCount})`);
+      y+=4;
+
+      addSection("2) Protokol ve Baglanti Notlari");
+      addBullet("Fanuc: FOCAS2 veya MTConnect adaptoru. FOCAS2 icin port, CNC option ve erisim lisansi kontrol edilir.");
+      addBullet("Siemens: OPC-UA endpoint, namespace ve sertifika guven iliskisi (trust list) hazirlanir.");
+      addBullet("Heidenhain: DNC/LSV2 veya OPC-UA. DNC icin IP/port ve izinli istemci tanimi yapilir.");
+      addBullet("Generic: MTConnect veya MQTT. Broker adresi, topic yapisi ve QoS standardi belirlenir.");
+      addBullet("Tum profiller UTC zaman damgasi ile toplanir; makina lokal saati ayrica kaydedilir.");
+      y+=4;
+
+      addSection("3) Toplanacak Veri Noktalari");
+      addParagraph(MACHINE_DATA_POINTS.map(p=>p.label).join(", "));
+      y+=4;
+
+      addSection("4) Makina Profil Listesi");
+      if(profileRows.length===0){
+        addParagraph("Kayitli makina profili yok.");
+      }else{
+        profileRows.forEach((row,idx)=>{
+          ensureSpace(66);
+          pdf.setDrawColor(220,224,230);
+          pdf.setFillColor(248,250,252);
+          const boxH=60;
+          pdf.roundedRect(margin,y,contentW,boxH,6,6,"FD");
+          pdf.setFont("helvetica","bold");
+          pdf.setFontSize(10);
+          pdf.setTextColor(17,24,39);
+          pdf.text(`${idx+1}. ${row.machineName||"-"} (${row.code||"-"})`,margin+8,y+14);
+          pdf.setFont("helvetica","normal");
+          pdf.setFontSize(9);
+          pdf.setTextColor(55,65,81);
+          const line1=`Marka/Protokol: ${row.brand||"-"} / ${row.protocol||"-"}   |   Mod: ${statusLabel(row.connectionMode||"not_connected")}   |   Polling: ${Number(row.pollingSec)||10}s`;
+          const line2=`IP/Port: ${row.ip?`${row.ip}${row.port?`:${row.port}`:""}`:"-"}   |   Edge: ${row.edgeAgent||edgeConfig.ipcName||"IPC-01"}   |   TZ: ${row.timezone||"Europe/Istanbul"}`;
+          const enabledPoints=MACHINE_DATA_POINTS.filter(p=>row.dataPoints?.[p.id]).map(p=>p.label).join(", ")||"Secilmemis";
+          pdf.text(pdf.splitTextToSize(line1,contentW-16),margin+8,y+28);
+          pdf.text(pdf.splitTextToSize(line2,contentW-16),margin+8,y+40);
+          pdf.text(pdf.splitTextToSize(`Veri: ${enabledPoints}`,contentW-16),margin+8,y+52);
+          y+=boxH+6;
+        });
+      }
+
+      addSection("5) Canliya Gecis Kontrol Listesi");
+      addBullet("Fiziksel ag kablolamasi tamamlandi (IPC - switch - CNC).");
+      addBullet("Makina IP, port, protokol ve polling degerleri profille birebir dogrulandi.");
+      addBullet("Durum/parca/program/alarm/tool-life alanlari testte veri uretiyor.");
+      addBullet("Baglanti kesme-senkronizasyon testi (edge buffer) basariyla tamamlandi.");
+      addBullet("Operasyon ekibi icin sorumlular, rollback ve acil durum plani kayda alindi.");
+
+      const safeDate=todayStr().replace(/[^0-9-]/g,"");
+      pdf.save(`tezgah-baglanti-dokumani-${safeDate}.pdf`);
+    }catch{
+      alert("Baglanti dokumani PDF olusturulamadi.");
+    }
+  }
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+          <div style={{fontWeight:700,color:C.text}}>Makina Baglanti Hazirligi (Baglanti Yok Modu)</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={downloadMachineConnectionPdf} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Baglanti Dokumani PDF</button>
+            <button onClick={startCreate} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>+ Makina Profili</button>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8}}>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:10,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Pilot Hedef</div><div style={{fontWeight:800,color:C.accent,fontSize:18}}>{pilotTarget}</div></div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:10,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Toplam Profil</div><div style={{fontWeight:800,color:C.text,fontSize:18}}>{profiles.length}</div></div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:10,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Bagli Degil</div><div style={{fontWeight:800,color:C.muted2,fontSize:18}}>{plannedCount}</div></div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:10,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Simulasyon</div><div style={{fontWeight:800,color:C.warn,fontSize:18}}>{simCount}</div></div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:10,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Canli</div><div style={{fontWeight:800,color:C.green,fontSize:18}}>{liveCount}</div></div>
+        </div>
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontWeight:700,color:C.text,marginBottom:10}}>IPC Edge Konfigurasyonu</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <div><span style={labelSt}>IPC Adi</span><input style={inputSt} value={edgeConfig.ipcName} onChange={e=>fe("ipcName",e.target.value)} placeholder="IPC-01"/></div>
+          <div><span style={labelSt}>Konum</span><input style={inputSt} value={edgeConfig.location} onChange={e=>fe("location",e.target.value)} placeholder="Atolye A"/></div>
+          <div><span style={labelSt}>Default Polling (sn)</span><input style={inputSt} type="number" min="1" value={edgeConfig.defaultPollingSec} onChange={e=>fe("defaultPollingSec",e.target.value)}/></div>
+          <div><span style={labelSt}>Maks Buffer Kaydi</span><input style={inputSt} type="number" min="100" value={edgeConfig.maxBufferRows} onChange={e=>fe("maxBufferRows",e.target.value)}/></div>
+          <div><span style={labelSt}>Resend Periyodu (sn)</span><input style={inputSt} type="number" min="1" value={edgeConfig.resendSec} onChange={e=>fe("resendSec",e.target.value)}/></div>
+          <div><span style={labelSt}>Sync Batch</span><input style={inputSt} type="number" min="1" value={edgeConfig.syncBatch} onChange={e=>fe("syncBatch",e.target.value)}/></div>
+          <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Timezone</span><input style={inputSt} value={edgeConfig.timezone} onChange={e=>fe("timezone",e.target.value)} placeholder="Europe/Istanbul"/></div>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:10}}>
+          <div style={{fontSize:12,color:C.muted2}}>Bu alanlar baglanti yapmadan once edge agent paketine aktarilacak hazir ayarlardir.</div>
+          <button onClick={saveEdgeConfig} disabled={savingEdge} style={{...btnSt("green"),padding:"8px 12px",fontSize:12,opacity:savingEdge?0.7:1}}>{savingEdge?"Kaydediliyor...":"IPC Ayarini Kaydet"}</button>
+        </div>
+      </div>
+
+      {showForm&&(
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:10}}>
+            <div style={{fontWeight:700,color:C.text}}>{editId?"Makina Profili Duzenle":"Yeni Makina Profili"}</div>
+            {form.ncTransfer==="bidirectional"&&<Badge label="NC Transfer Cift Yon" color={C.accent}/>}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div><span style={labelSt}>Profil Kodu</span><input style={{...inputSt,background:C.surface,color:C.muted2}} value={form.code||nextConnectorCode()} readOnly/></div>
+            <div>
+              <span style={labelSt}>Makina</span>
+              <input list="machine-name-options" style={inputSt} value={form.machineName} onChange={e=>fv("machineName",e.target.value)} placeholder="CNC-101"/>
+              <datalist id="machine-name-options">
+                {machineNameOptions.map(m=><option key={m} value={m}/>)}
+              </datalist>
+            </div>
+            <div>
+              <span style={labelSt}>Marka</span>
+              <select style={inputSt} value={form.brand} onChange={e=>fv("brand",e.target.value)}>
+                {MACHINE_BRAND_OPTIONS.map(b=><option key={b} value={b}>{b}</option>)}
+              </select>
+            </div>
+            <div>
+              <span style={labelSt}>Protokol</span>
+              <select style={inputSt} value={form.protocol} onChange={e=>fv("protocol",e.target.value)}>
+                {protocolOptions.map(p=><option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+            <div>
+              <span style={labelSt}>Baglanti Modu</span>
+              <select style={inputSt} value={form.connectionMode} onChange={e=>fv("connectionMode",e.target.value)}>
+                <option value="not_connected">Bagli Degil</option>
+                <option value="simulation">Simulasyon</option>
+                <option value="live">Canli</option>
+              </select>
+            </div>
+            <div><span style={labelSt}>Polling (sn)</span><input style={inputSt} type="number" min="1" value={form.pollingSec} onChange={e=>fv("pollingSec",e.target.value)}/></div>
+            <div><span style={labelSt}>IP (Opsiyonel)</span><input style={inputSt} value={form.ip} onChange={e=>fv("ip",e.target.value)} placeholder="192.168.1.25"/></div>
+            <div><span style={labelSt}>Port (Opsiyonel)</span><input style={inputSt} value={form.port} onChange={e=>fv("port",e.target.value)} placeholder="8193 / 4840"/></div>
+            <div><span style={labelSt}>Edge Agent</span><input style={inputSt} value={form.edgeAgent} onChange={e=>fv("edgeAgent",e.target.value)} placeholder="IPC-01"/></div>
+            <div><span style={labelSt}>Timezone</span><input style={inputSt} value={form.timezone} onChange={e=>fv("timezone",e.target.value)} placeholder="Europe/Istanbul"/></div>
+            <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Not</span><textarea style={{...inputSt,minHeight:64,resize:"vertical"}} value={form.notes} onChange={e=>fv("notes",e.target.value)} placeholder="Kablo takildiginda canliya alinacak gibi notlar..."/></div>
+          </div>
+          <div style={{marginTop:10}}>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:7}}>Toplanacak Veriler</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:7}}>
+              {MACHINE_DATA_POINTS.map(dp=>{
+                const active=Boolean(form.dataPoints?.[dp.id]);
+                return (
+                  <button key={dp.id} onClick={()=>fp(dp.id,!active)} style={{...chip(active,active?C.accent:C.muted2),textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span>{dp.label}</span><span>{active?"On":"Off"}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8,marginTop:10}}>
+            <button onClick={saveProfile} style={{...btnSt("primary"),flex:1,padding:12}}>{editId?"Profili Guncelle":"Profili Kaydet"}</button>
+            <button onClick={()=>{setEditId(null);setShowForm(false);setForm({...emptyForm,code:nextConnectorCode()});}} style={{...btnSt("ghost"),padding:"12px 14px"}}>Iptal</button>
+          </div>
+        </div>
+      )}
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <div style={{fontSize:12,color:C.muted2}}>Makina Profilleri ({profiles.length})</div>
+        <input style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:220}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Makina, kod, marka, protokol ara..."/>
+      </div>
+
+      {filtered.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"28px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Makina profili bulunamadi</div>}
+      {filtered.map(row=>{
+        const mode=modeMeta(row.connectionMode||"not_connected");
+        const sample=simMap[row.id];
+        return (
+          <div key={row.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"12px 14px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+              <div>
+                <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+                  <span style={{fontWeight:800,fontFamily:"monospace",fontSize:13,color:C.text}}>{row.code||"-"}</span>
+                  <Badge label={mode.label} color={mode.color}/>
+                  <Badge label={`${row.brand||"-"} / ${row.protocol||"-"}`} color={C.muted2}/>
+                  <Badge label={`Polling ${Number(row.pollingSec)||10}s`} color={C.warn}/>
+                </div>
+                <div style={{fontSize:14,color:C.text,marginTop:3}}>{row.machineName||"-"}</div>
+                <div style={{fontSize:11,color:C.muted2,marginTop:2}}>
+                  {(row.edgeAgent||edgeConfig.ipcName||"IPC-01")} Â· {(row.timezone||"Europe/Istanbul")}
+                  {row.ip?` Â· ${row.ip}${row.port?`:${row.port}`:""}`:" Â· IP tanimsiz"}
+                </div>
+                <div style={{fontSize:11,color:C.muted,marginTop:2}}>NC Transfer: Cift Yon Â· Son heartbeat: {(row.lastHeartbeatAt||"-").slice(0,19).replace("T"," ")||"-"}</div>
+              </div>
+              <div style={{display:"flex",gap:7,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                <button onClick={()=>simulateProfile(row)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}>Simule Et</button>
+                <button onClick={()=>setConnectionMode(row,"not_connected")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Bagli Degil</button>
+                <button onClick={()=>setConnectionMode(row,"live")} style={{...btnSt("green"),padding:"6px 10px",fontSize:12}}>Canliya Hazir</button>
+                <button onClick={()=>startEdit(row)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
+                <button onClick={()=>removeProfile(row)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
+              </div>
+            </div>
+            {row.notes&&<div style={{fontSize:12,color:C.muted2,marginTop:8}}>{row.notes}</div>}
+            <div style={{marginTop:8,fontSize:11,color:C.muted2}}>
+              Veri noktasi: {MACHINE_DATA_POINTS.filter(p=>row.dataPoints?.[p.id]).map(p=>p.label).join(", ")||"Secilmemis"}
+            </div>
+            {sample&&(
+              <div style={{marginTop:8,background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px",fontSize:11,color:C.muted2}}>
+                <div style={{marginBottom:4,color:C.text,fontWeight:700}}>Son Simulasyon Ornegi</div>
+                <div>Durum: {sample.status} Â· Program: {sample.programName} Â· Spindle: %{sample.spindleLoad} Â· Feed: %{sample.feedOverride}</div>
+                <div>Cevrim: {sample.cycleElapsedSec}s Â· Parca: {sample.partCounter} Â· Takim: T{sample.toolNumber} (%{sample.toolLifeRemainPct})</div>
+                <div>Zaman UTC: {sample.collectedAtUtc?.slice(0,19).replace("T"," ")} Â· Lokal: {sample.machineLocalTime||"-"}</div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function CncMonitorWall({currentUser,machines=DEFAULT_MACHINES}){
+  const [loading,setLoading]=useState(true);
+  const [data,setData]=useState({connectors:[],telemetry:[],entries:[],plans:[],orders:[],kioskSettings:DEFAULT_KIOSK_SETTINGS});
+  const [refreshTick,setRefreshTick]=useState(Date.now());
+  const [isFullscreen,setIsFullscreen]=useState(()=>typeof document!=="undefined"&&Boolean(document.fullscreenElement));
+  const [fsError,setFsError]=useState("");
+  const wallRef=useRef(null);
+
+  const load=useCallback(async()=>{
+    const [connectors,telemetry,entries,plans,orders,kioskCfg]=await Promise.all([
+      window.DB.getAll("machineConnectors"),
+      window.DB.getAll("machineTelemetryMock"),
+      window.DB.getAll("entries"),
+      window.DB.getAll("plans"),
+      window.DB.getAll("orders"),
+      window.DB.getDoc("config","kioskSettings"),
+    ]);
+    setData({
+      connectors,
+      telemetry,
+      entries,
+      plans,
+      orders,
+      kioskSettings:normalizeKioskSettings(kioskCfg||{}),
+    });
+    setRefreshTick(Date.now());
+    setLoading(false);
+  },[]);
+
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    const timer=setInterval(()=>{load();},12000);
+    return ()=>clearInterval(timer);
+  },[load]);
+  useEffect(()=>{
+    if(typeof document==="undefined") return;
+    const onFs=()=>setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange",onFs);
+    return ()=>document.removeEventListener("fullscreenchange",onFs);
+  },[]);
+
+  async function toggleFullscreen(){
+    if(typeof document==="undefined") return;
+    setFsError("");
+    try{
+      if(document.fullscreenElement){
+        await document.exitFullscreen();
+      }else if(wallRef.current&&wallRef.current.requestFullscreen){
+        await wallRef.current.requestFullscreen();
+      }
+    }catch{
+      setFsError("Tam ekran acilamadi.");
+    }
+  }
+
+  function formatCompactDuration(totalSec){
+    const sec=Math.max(0,Math.floor(safeNum(totalSec)));
+    if(sec>=604800) return `${Math.floor(sec/604800)}w`;
+    if(sec>=86400) return `${Math.floor(sec/86400)}d`;
+    if(sec>=3600) return `${Math.floor(sec/3600)}h`;
+    if(sec>=60) return `${Math.floor(sec/60)}m`;
+    return `${sec}s`;
+  }
+  function statusKeyOf(value){
+    const key=String(value||"offline").toLowerCase();
+    if(["running","live"].includes(key)) return "running";
+    if(["idle","waiting"].includes(key)) return "idle";
+    if(["setup"].includes(key)) return "setup";
+    if(["alarm"].includes(key)) return "alarm";
+    if(["stopped","down"].includes(key)) return "stopped";
+    return "offline";
+  }
+  function statusLabelOf(key){
+    if(key==="running") return "Aktif";
+    if(key==="idle") return "Beklemede";
+    if(key==="setup") return "Ayar";
+    if(key==="alarm") return "Alarm";
+    if(key==="stopped") return "Duruyor";
+    return "Raporlanmadi";
+  }
+  function statusMetaOf(key){
+    if(key==="running") return {label:"Calisiyor",chip:C.green,banner:C.green};
+    if(key==="idle") return {label:"Beklemede",chip:C.accent,banner:C.accent};
+    if(key==="setup") return {label:"Ayar",chip:C.warn,banner:C.warn};
+    if(key==="alarm") return {label:"Alarm",chip:C.red,banner:C.red};
+    if(key==="stopped") return {label:"Durdu",chip:C.red,banner:C.red};
+    return {label:"Bagli Degil",chip:C.muted2,banner:C.muted2};
+  }
+  function toneForCard(card){
+    if(!card.hasTelemetry||card.status==="offline"){
+      return {ring:C.muted2,bg:C.surface2,border:C.border,bar:C.muted2};
+    }
+    if(card.status==="alarm"||card.status==="stopped"){
+      return {ring:C.red,bg:C.redDim,border:`${C.red}44`,bar:C.red};
+    }
+    if(card.status==="idle"||card.status==="setup"){
+      return {ring:C.accent,bg:C.accentDim,border:`${C.accent}44`,bar:C.accent};
+    }
+    if(card.score>=85){
+      return {ring:C.green,bg:C.greenDim,border:`${C.green}44`,bar:C.green};
+    }
+    if(card.score>=65){
+      return {ring:C.warn,bg:C.warnDim,border:`${C.warn}44`,bar:C.warn};
+    }
+    return {ring:C.red,bg:C.redDim,border:`${C.red}44`,bar:C.red};
+  }
+  function shiftBoundsForNow(now,row){
+    const startMin=hmToMinute(row?.start);
+    const endMin=hmToMinute(row?.end);
+    const base=new Date(now);
+    base.setHours(0,0,0,0);
+    const start=new Date(base);
+    const end=new Date(base);
+    start.setMinutes(startMin===null?360:startMin);
+    end.setMinutes(endMin===null?840:endMin);
+    const s=startMin===null?360:startMin;
+    const e=endMin===null?840:endMin;
+    const nowMin=now.getHours()*60+now.getMinutes();
+    if(s===e){
+      end.setTime(start.getTime()+(8*3600*1000));
+    }else if(s<e){
+      if(nowMin<e&&nowMin<s){
+        start.setDate(start.getDate()-1);
+        end.setDate(end.getDate()-1);
+      }
+    }else{
+      if(nowMin<e){
+        start.setDate(start.getDate()-1);
+      }else{
+        end.setDate(end.getDate()+1);
+      }
+    }
+    if(end<=start) end.setTime(start.getTime()+(8*3600*1000));
+    return {start,end};
+  }
+
+  if(loading){
+    return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>CNC monitor yukleniyor...</div>;
+  }
+
+  const now=new Date(refreshTick||Date.now());
+  const nowIso=now.toISOString();
+  const today=todayStr();
+  const kioskCfg=normalizeKioskSettings(data.kioskSettings||{});
+  const shiftRows=(kioskCfg.shiftWindows&&kioskCfg.shiftWindows.length>0)?kioskCfg.shiftWindows:DEFAULT_SHIFT_WINDOWS;
+  const nowMinute=(now.getHours()*60)+now.getMinutes();
+  const activeShiftId=resolveShiftIdByMinute(shiftRows,nowMinute);
+  const activeShift=shiftRows.find(s=>s.id===activeShiftId)||shiftRows[0]||DEFAULT_SHIFT_WINDOWS[0];
+  const activeShiftBounds=shiftBoundsForNow(now,activeShift);
+
+  const latestByMachineId={};
+  const latestByMachineName={};
+  [...data.telemetry].sort((a,b)=>(b.collectedAtUtc||b.createdAt||"").localeCompare(a.collectedAtUtc||a.createdAt||"")).forEach(t=>{
+    if(t.machineId&&!latestByMachineId[t.machineId]) latestByMachineId[t.machineId]=t;
+    const key=(t.machineName||t.machine||t.machineCode||"").trim();
+    if(key&&!latestByMachineName[key]) latestByMachineName[key]=t;
+  });
+  const entriesByMachine={};
+  data.entries.filter(e=>e.date===today).forEach(e=>{
+    const key=String(e.machine||"").trim();
+    if(!key) return;
+    if(!entriesByMachine[key]) entriesByMachine[key]=[];
+    entriesByMachine[key].push(e);
+  });
+  Object.keys(entriesByMachine).forEach(key=>{
+    entriesByMachine[key].sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||""));
+  });
+  const planByMachine={};
+  data.plans.forEach(p=>{
+    if(p.date!==today||!p.machine||planByMachine[p.machine]) return;
+    planByMachine[p.machine]=p;
+  });
+  const orderById={};
+  const orderByCode={};
+  data.orders.forEach(o=>{
+    orderById[o.id]=o;
+    const code=String(o.code||"").toUpperCase();
+    if(code&&!orderByCode[code]) orderByCode[code]=o;
+  });
+
+  const baseRows=(data.connectors.length?data.connectors:machines.map((m,idx)=>({id:`virt_${idx}`,machineName:m,code:m}))).map((row,idx)=>({
+    id:row.id||`virt_${idx}`,
+    machineName:row.machineName||row.code||`CNC-${idx+1}`,
+  }));
+
+  const cards=[...baseRows].map((row,idx)=>{
+    const telemetry=latestByMachineId[row.id]||latestByMachineName[row.machineName]||null;
+    const status=statusKeyOf(telemetry?.status);
+    const hasTelemetry=Boolean(telemetry);
+    const dayRows=entriesByMachine[row.machineName]||[];
+    const produced=dayRows.reduce((sum,e)=>sum+safeNum(e.correct)+safeNum(e.wrong),0);
+    const correct=dayRows.reduce((sum,e)=>sum+safeNum(e.correct),0);
+    const plan=planByMachine[row.machineName]||null;
+    const plannedOrder=plan?(orderById[plan.orderId]||orderByCode[String(plan.orderCode||"").toUpperCase()]||null):null;
+    const plannedCycleSec=Math.max(1,safeNum(plannedOrder?.partSec||plan?.orderPartSec||telemetry?.expectedCycleSec||60));
+    const shiftTotalSec=Math.max(1,Math.floor((activeShiftBounds.end.getTime()-activeShiftBounds.start.getTime())/1000));
+    const shiftElapsedSec=Math.max(0,Math.min(shiftTotalSec,Math.floor((now.getTime()-activeShiftBounds.start.getTime())/1000)));
+    const expectedQty=Math.floor(shiftElapsedSec/plannedCycleSec);
+    const deltaQty=produced-expectedQty;
+    let score=expectedQty>0?Math.round((produced/Math.max(1,expectedQty))*100):Math.round(safeNum(telemetry?.oeePct||telemetry?.oee||0));
+    if((!score||score<=0)&&safeNum(telemetry?.utilizationPct)>0) score=Math.round(safeNum(telemetry?.utilizationPct));
+    score=Math.max(0,Math.min(160,score||0));
+    const ringPct=Math.max(0,Math.min(100,score));
+    const partCount=Math.max(safeNum(telemetry?.partCounter),produced,correct);
+    const ts=telemetry?.collectedAtUtc||telemetry?.createdAt||nowIso;
+    const ageSec=Math.max(0,Math.floor((now.getTime()-new Date(ts).getTime())/1000));
+    const runtimeRaw=safeNum(telemetry?.activeSec||telemetry?.runtimeSec||telemetry?.runSec||telemetry?.statusDurationSec);
+    const statusSec=runtimeRaw>0?runtimeRaw:(hasTelemetry?ageSec:(14*24*3600));
+    const statusLine=`${formatCompactDuration(statusSec)} Â· ${statusLabelOf(status)}`;
+    const bars=dayRows.slice(0,5).reverse().map(e=>Math.max(0,safeNum(e.correct)));
+    while(bars.length<5) bars.unshift(0);
+    const maxBar=Math.max(1,...bars);
+    const gapSec=Math.abs(deltaQty)*plannedCycleSec;
+    const flowText=!hasTelemetry
+      ? "Telemetri yok"
+      : `${Math.abs(deltaQty)} parca ${deltaQty>=0?"onde":"geride"} (${formatCompactDuration(gapSec)})`;
+    return {
+      id:row.id||`row_${idx}`,
+      machineName:row.machineName,
+      status,
+      hasTelemetry,
+      statusLine,
+      score,
+      ringPct,
+      partCount,
+      expectedQty,
+      deltaQty,
+      flowText,
+      bars,
+      maxBar,
+    };
+  }).sort((a,b)=>(a.machineName||"").localeCompare(b.machineName||"","tr"));
+
+  const shiftLabel=activeShift?.label||activeShiftId||"-";
+  const shiftStart=normalizeHm(activeShift?.start,"00:00");
+  const shiftEnd=normalizeHm(activeShift?.end,"00:00");
+  const updateText=new Intl.DateTimeFormat("tr-TR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(now);
+  const monitorUser=String(currentUser?.fullName||"").trim();
+  const machineCount=cards.length;
+  const connectedCount=cards.filter(c=>c.hasTelemetry).length;
+  const runningCount=cards.filter(c=>c.status==="running").length;
+  const alarmCount=cards.filter(c=>c.status==="alarm"||c.status==="stopped").length;
+  const behindCount=cards.filter(c=>c.deltaQty<0).length;
+  const avgScore=machineCount?Math.round(cards.reduce((sum,c)=>sum+safeNum(c.score),0)/machineCount):0;
+  const totalParts=cards.reduce((sum,c)=>sum+safeNum(c.partCount),0);
+
+  return (
+    <div ref={wallRef} style={{padding:isFullscreen?12:16,display:"flex",flexDirection:"column",gap:12,background:isFullscreen?C.bgAlt:"transparent",minHeight:isFullscreen?"100vh":"auto"}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:10}}>
+          <div>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.9,textTransform:"uppercase"}}>Operasyon Duvari</div>
+            <div style={{fontSize:20,fontWeight:800,color:C.text}}>CNC Izleme</div>
+            <div style={{fontSize:12,color:C.muted2,marginTop:2}}>
+              Vardiya: {shiftLabel} ({shiftStart} - {shiftEnd}) Â· Son guncelleme: {updateText}{monitorUser?` Â· ${monitorUser}`:""}
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            {fsError&&<span style={{fontSize:11,color:C.red}}>{fsError}</span>}
+            <button onClick={load} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Yenile</button>
+            <button onClick={toggleFullscreen} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>{isFullscreen?"Tam Ekrandan Cik":"Tam Ekran"}</button>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px"}}>
+            <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Toplam Tezgah</div>
+            <div style={{fontSize:24,fontWeight:800,color:C.text,lineHeight:1.15}}>{machineCount}</div>
+          </div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px"}}>
+            <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Canli Veri</div>
+            <div style={{fontSize:24,fontWeight:800,color:connectedCount===machineCount?C.green:C.warn,lineHeight:1.15}}>{connectedCount}/{machineCount}</div>
+          </div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px"}}>
+            <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Calisan</div>
+            <div style={{fontSize:24,fontWeight:800,color:C.green,lineHeight:1.15}}>{runningCount}</div>
+          </div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px"}}>
+            <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Alarm / Durdu</div>
+            <div style={{fontSize:24,fontWeight:800,color:alarmCount>0?C.red:C.green,lineHeight:1.15}}>{alarmCount}</div>
+          </div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px"}}>
+            <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Ortalama OEE</div>
+            <div style={{fontSize:24,fontWeight:800,color:avgScore>=75?C.green:(avgScore>=60?C.warn:C.red),lineHeight:1.15}}>%{avgScore}</div>
+          </div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px"}}>
+            <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Toplam Parca</div>
+            <div style={{fontSize:24,fontWeight:800,color:C.text,lineHeight:1.15}}>{totalParts}</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+          <div style={{fontWeight:800,color:C.text,fontSize:16}}>Tezgah Kartlari</div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <Badge label={`Gecikmede: ${behindCount}`} color={behindCount>0?C.red:C.green}/>
+            <Badge label={`Aktif: ${runningCount}`} color={C.green}/>
+          </div>
+        </div>
+        <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:12,padding:10}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:10}}>
+            {cards.map(card=>{
+              const ringSize=112;
+              const ringStroke=10;
+              const radius=(ringSize-ringStroke)/2;
+              const circ=2*Math.PI*radius;
+              const dash=(card.ringPct/100)*circ;
+              const meta=statusMetaOf(card.status);
+              const tone=toneForCard(card);
+              return (
+                <div key={card.id} style={{border:`1px solid ${tone.border}`,borderRadius:12,overflow:"hidden",display:"flex",flexDirection:"column",minHeight:262,background:tone.bg}}>
+                  <div style={{background:meta.banner,padding:"9px 10px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontWeight:800,color:"#fff",fontSize:20,lineHeight:1.03,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.machineName}</div>
+                      <div style={{fontSize:11,color:"#f4f7ff",marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.statusLine}</div>
+                    </div>
+                    <span style={{fontSize:10,fontWeight:800,color:"#fff",padding:"4px 7px",borderRadius:999,border:"1px solid rgba(255,255,255,.45)",background:"rgba(0,0,0,.12)",letterSpacing:.4,whiteSpace:"nowrap"}}>{meta.label}</span>
+                  </div>
+
+                  <div style={{padding:10,display:"grid",gridTemplateColumns:"120px minmax(0,1fr)",gap:10,alignItems:"center",flex:1}}>
+                    <div style={{display:"flex",justifyContent:"center"}}>
+                      <div style={{position:"relative",width:ringSize,height:ringSize}}>
+                        <svg width={ringSize} height={ringSize} viewBox={`0 0 ${ringSize} ${ringSize}`}>
+                          <circle cx={ringSize/2} cy={ringSize/2} r={radius} stroke="rgba(15,23,42,.14)" strokeWidth={ringStroke} fill="none"/>
+                          <circle cx={ringSize/2} cy={ringSize/2} r={radius} stroke={tone.ring} strokeWidth={ringStroke} fill="none" strokeLinecap="round" strokeDasharray={`${dash} ${Math.max(0,circ-dash)}`} transform={`rotate(-90 ${ringSize/2} ${ringSize/2})`}/>
+                        </svg>
+                        <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+                          <div style={{fontSize:27,fontWeight:800,color:C.text,lineHeight:1}}>{card.hasTelemetry?`%${card.score}`:"-"}</div>
+                          <div style={{fontSize:10,color:C.muted2,fontWeight:700,letterSpacing:.6}}>OEE</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}>
+                      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
+                        <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Parca</div>
+                        <div style={{fontSize:16,color:C.text,fontWeight:800,marginTop:1}}>{card.partCount}</div>
+                      </div>
+                      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
+                        <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Beklenen</div>
+                        <div style={{fontSize:16,color:C.text,fontWeight:800,marginTop:1}}>{card.expectedQty}</div>
+                      </div>
+                      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
+                        <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Fark</div>
+                        <div style={{fontSize:15,color:card.deltaQty>=0?C.green:C.red,fontWeight:800,marginTop:1}}>{card.deltaQty>=0?`+${card.deltaQty}`:card.deltaQty}</div>
+                      </div>
+                      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
+                        <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Durum</div>
+                        <div style={{fontSize:14,color:meta.chip,fontWeight:800,marginTop:2}}>{meta.label}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{padding:"0 10px 10px"}}>
+                    <div style={{fontSize:11,color:card.deltaQty>=0?C.green:(card.hasTelemetry?C.red:C.muted2),fontWeight:700,marginBottom:7,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.flowText}</div>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:5,alignItems:"end",height:42}}>
+                      {card.bars.map((v,idx)=>{
+                        const h=v>0?Math.max(6,Math.round((v/card.maxBar)*40)):6;
+                        return (
+                          <div key={idx} style={{height:"100%",display:"flex",alignItems:"flex-end"}}>
+                            <div style={{height:h,width:"100%",borderRadius:5,background:tone.bar,opacity:v>0?0.92:0.25}}/>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6,fontSize:10,color:C.muted2}}>
+                      <span>{shiftStart}</span>
+                      <span>{shiftEnd}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {cards.length===0&&(
+            <div style={{padding:"24px 12px",textAlign:"center",color:C.muted2,fontSize:12}}>
+              Izleme karti olusturulacak tezgah bulunamadi.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MRPDashboard({
+  currentUser,
+  machines=DEFAULT_MACHINES,
+  logoSrc=LOGO_SRC,
+  themeMode="light",
+  onThemeToggle=()=>{},
+  onLogout=()=>{},
+  onQuickAction=()=>{},
+  roleLabel="Kullanici",
+  layoutMode="desktop",
+}){
+  const [loading,setLoading]=useState(true);
+  const [machineQuery,setMachineQuery]=useState("");
+  const [filterPanelOpen,setFilterPanelOpen]=useState(false);
+  const [statusFilter,setStatusFilter]=useState("all");
+  const [sortMode,setSortMode]=useState("status");
+  const [viewMode,setViewMode]=useState("cards");
+  const [quickDate,setQuickDate]=useState(()=>todayStr());
+  const [lastLoadedAt,setLastLoadedAt]=useState("");
+  const [customReports,setCustomReports]=useState([]);
+  const [dashboardWidgets,setDashboardWidgets]=useState([]);
+  const [dashboardEditMode,setDashboardEditMode]=useState(false);
+  const [widgetReportId,setWidgetReportId]=useState("");
+  const [dragWidgetId,setDragWidgetId]=useState("");
+  const [isNarrow,setIsNarrow]=useState(()=>typeof window!=="undefined"?window.innerWidth<980:false);
+  const [data,setData]=useState({orders:[],sales:[],materials:[],prs:[],connectors:[],telemetry:[],downtimes:[],entries:[],quality:[],notifs:[],tools:[]});
+  const dashboardUserKey=String(currentUser?.id||"default");
+  function sortReports(rows=[]){
+    return [...rows].sort((a,b)=>{
+      const ad=b.updatedAt||b.createdAt||"";
+      const bd=a.updatedAt||a.createdAt||"";
+      return ad.localeCompare(bd);
+    });
+  }
+  function normalizeDashboardWidgetRows(rows){
+    const src=Array.isArray(rows)?rows:[];
+    const out=[];
+    const seen=new Set();
+    src.forEach((row,idx)=>{
+      const id=String(row?.id||`w_${idx}`).trim();
+      const reportId=String(row?.reportId||"").trim();
+      if(!id||!reportId||seen.has(id)) return;
+      seen.add(id);
+      const size=row?.size==="sm"||row?.size==="lg"?row.size:"md";
+      out.push({id,reportId,size});
+    });
+    return out;
+  }
+  const dashboardReportSourceMeta=useMemo(()=>({
+    entries:{label:"Uretim Kayitlari"},
+    orders:{label:"Is Emirleri"},
+    salesOrders:{label:"Satis Siparisleri"},
+    materials:{label:"Malzeme Kartlari"},
+    downtime:{label:"Durus Kayitlari"},
+    quality:{label:"Kalite Muayeneleri"},
+  }),[]);
+  const load=useCallback(async()=>{
+    setLoading(true);
+    const [orders,sales,materials,prs,connectors,telemetry,downtimes,entries,quality,notifs,tools,reportRows,dashboardCfg]=await Promise.all([
+      window.DB.getAll("orders"),
+      window.DB.getAll("salesOrders"),
+      window.DB.getAll("materials"),
+      window.DB.getAll("purchaseRequests"),
+      window.DB.getAll("machineConnectors"),
+      window.DB.getAll("machineTelemetryMock"),
+      window.DB.getAll("downtimeEvents"),
+      window.DB.getAll("entries"),
+      window.DB.getAll("qualityInspections"),
+      window.DB.getAll("notifications"),
+      window.DB.getAll("toolStock"),
+      window.DB.getAll("customReports"),
+      window.DB.getDoc("config","dashboardReportWidgets"),
+    ]);
+    const widgetsByUser=(dashboardCfg&&typeof dashboardCfg.widgetsByUser==="object")?dashboardCfg.widgetsByUser:{};
+    setData({orders,sales,materials,prs,connectors,telemetry,downtimes,entries,quality,notifs,tools});
+    setCustomReports(sortReports(reportRows||[]));
+    setDashboardWidgets(normalizeDashboardWidgetRows(widgetsByUser[dashboardUserKey]));
+    setLastLoadedAt(new Date().toISOString());
+    setLoading(false);
+  },[dashboardUserKey]);
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    function onResize(){
+      setIsNarrow(window.innerWidth<980);
+    }
+    window.addEventListener("resize",onResize);
+    return ()=>window.removeEventListener("resize",onResize);
+  },[]);
+  useEffect(()=>{
+    function onDashboardWidgetSync(ev){
+      const userId=String(ev&&ev.detail&&ev.detail.userId||"");
+      if(userId&&userId!==dashboardUserKey) return;
+      load();
+    }
+    window.addEventListener("dashboard:report-widgets-updated",onDashboardWidgetSync);
+    return ()=>window.removeEventListener("dashboard:report-widgets-updated",onDashboardWidgetSync);
+  },[dashboardUserKey,load]);
+  useEffect(()=>{
+    if(widgetReportId&&customReports.some(r=>r.id===widgetReportId)) return;
+    setWidgetReportId(customReports[0]?.id||"");
+  },[customReports,widgetReportId]);
+  async function persistDashboardWidgets(nextRows){
+    const cfg=await window.DB.getDoc("config","dashboardReportWidgets");
+    const widgetsByUser=(cfg&&typeof cfg.widgetsByUser==="object")?cfg.widgetsByUser:{};
+    const normalized=normalizeDashboardWidgetRows(nextRows);
+    const ok=await window.DB.setDoc("config","dashboardReportWidgets",{
+      widgetsByUser:{...widgetsByUser,[dashboardUserKey]:normalized},
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser?.id||"",
+    });
+    if(!ok){
+      alert("Dashboard duzeni kaydedilemedi.");
+      return false;
+    }
+    setDashboardWidgets(normalized);
+    window.dispatchEvent(new CustomEvent("dashboard:report-widgets-updated",{detail:{userId:dashboardUserKey}}));
+    return true;
+  }
+  async function addDashboardWidgetFromReport(reportId){
+    const rid=String(reportId||"").trim();
+    if(!rid){alert("Eklenecek raporu secin.");return;}
+    if(!customReports.some(r=>r.id===rid)){alert("Secilen rapor bulunamadi.");return;}
+    if(dashboardWidgets.some(w=>w.reportId===rid)){alert("Bu rapor zaten dashboard'da var.");return;}
+    const next=[...dashboardWidgets,{id:`w_${Date.now()}_${Math.floor(Math.random()*1000)}`,reportId:rid,size:"md"}];
+    await persistDashboardWidgets(next);
+  }
+  async function removeDashboardWidget(widgetId){
+    const id=String(widgetId||"").trim();
+    if(!id) return;
+    const next=dashboardWidgets.filter(w=>w.id!==id);
+    await persistDashboardWidgets(next);
+  }
+  async function updateDashboardWidgetSize(widgetId,size){
+    const nextSize=size==="sm"||size==="lg"?size:"md";
+    const next=dashboardWidgets.map(w=>w.id===widgetId?{...w,size:nextSize}:w);
+    await persistDashboardWidgets(next);
+  }
+  async function moveDashboardWidget(sourceId,targetId){
+    const source=String(sourceId||"").trim();
+    const target=String(targetId||"").trim();
+    if(!source||!target||source===target) return;
+    const from=dashboardWidgets.findIndex(w=>w.id===source);
+    const to=dashboardWidgets.findIndex(w=>w.id===target);
+    if(from<0||to<0) return;
+    const next=[...dashboardWidgets];
+    const [item]=next.splice(from,1);
+    next.splice(to,0,item);
+    await persistDashboardWidgets(next);
+  }
+  const reportById=useMemo(()=>Object.fromEntries(customReports.map(r=>[r.id,r])),[customReports]);
+  const dashboardWidgetRows=useMemo(
+    ()=>dashboardWidgets.map(w=>({...w,report:reportById[w.reportId]||null})).filter(w=>w.report),
+    [dashboardWidgets,reportById]
+  );
+  const dashboardSourceRows=useMemo(()=>({
+    entries:(data.entries||[]).map(row=>({
+      ...row,
+      operatorName:row.operatorName||row.operatorId||"-",
+      totalParts:safeNum(row.correct)+safeNum(row.wrong),
+    })),
+    orders:(data.orders||[]).map(row=>({
+      ...row,
+      machineMain:(row.machines&&row.machines.length>0)?row.machines[0]:"Atanmamis",
+      recordDate:row.dueDate||String(row.createdAt||"").slice(0,10),
+      qty:safeNum(row.qty),
+      partSec:safeNum(row.partSec),
+    })),
+    salesOrders:(data.sales||[]).map(row=>({
+      ...row,
+      recordDate:row.dueDate||String(row.createdAt||"").slice(0,10),
+      qty:safeNum(row.qty),
+      deliveredQty:safeNum(row.deliveredQty),
+      openQty:Math.max(0,safeNum(row.qty)-safeNum(row.deliveredQty)),
+      totalAmount:safeNum(row.totalAmount),
+    })),
+    materials:(data.materials||[]).map(row=>({
+      ...row,
+      recordDate:String(row.updatedAt||row.createdAt||"").slice(0,10),
+      stock:safeNum(row.stock),
+      reorderPoint:safeNum(row.reorderPoint),
+      safetyStock:safeNum(row.safetyStock),
+      leadTimeDays:safeNum(row.leadTimeDays),
+    })),
+    downtime:(data.downtimes||[]).map(row=>({
+      ...row,
+      date:row.date||String(row.startAt||"").slice(0,10),
+      durationMin:safeNum(row.durationMin),
+    })),
+    quality:(data.quality||[]).map(row=>({
+      ...row,
+      date:String(row.createdAt||"").slice(0,10),
+      scrapQty:safeNum(row.scrapQty),
+      scrapCost:safeNum(row.scrapCost),
+    })),
+  }),[data]);
+  const widgetChartPalette=[...CORPORATE_CHART_PALETTE];
+  function normalizeWidgetReportConfig(raw){
+    const sourceRaw=String(raw?.source||"entries");
+    const source=Object.prototype.hasOwnProperty.call(dashboardSourceRows,sourceRaw)?sourceRaw:"entries";
+    const chartTypeRaw=String(raw?.chartType||"column");
+    const chartType=["column","line","pie","donut","table"].includes(chartTypeRaw)?chartTypeRaw:"column";
+    const aggregationRaw=String(raw?.aggregation||"sum");
+    const aggregation=["sum","avg","max","min"].includes(aggregationRaw)?aggregationRaw:"sum";
+    const dimension=String(raw?.dimension||"__all");
+    const metric=String(raw?.metric||"__count");
+    const maxItems=Math.max(3,Math.min(40,Math.floor(safeNum(raw?.maxItems)||10)));
+    return {source,chartType,aggregation,dimension,metric,maxItems};
+  }
+  function aggregateWidgetReport(report){
+    if(!report) return null;
+    const cfg=normalizeWidgetReportConfig(report);
+    const srcRows=[...(dashboardSourceRows[cfg.source]||[])];
+    const grouped={};
+    srcRows.forEach(row=>{
+      const rawLabel=cfg.dimension==="__all"?"Toplam":row[cfg.dimension];
+      const label=(rawLabel===undefined||rawLabel===null||String(rawLabel).trim()==="")?"(Bos)":String(rawLabel);
+      if(!grouped[label]) grouped[label]=[];
+      grouped[label].push(cfg.metric==="__count"?1:safeNum(row[cfg.metric]));
+    });
+    let dataRows=Object.entries(grouped).map(([label,values])=>{
+      let value=0;
+      if(cfg.metric==="__count"){
+        value=values.length;
+      }else if(cfg.aggregation==="avg"){
+        value=values.length?values.reduce((s,v)=>s+v,0)/values.length:0;
+      }else if(cfg.aggregation==="max"){
+        value=values.length?Math.max(...values):0;
+      }else if(cfg.aggregation==="min"){
+        value=values.length?Math.min(...values):0;
+      }else{
+        value=values.reduce((s,v)=>s+v,0);
+      }
+      return {label,value,count:values.length};
+    }).sort((a,b)=>b.value-a.value);
+    if(cfg.chartType!=="table") dataRows=dataRows.slice(0,cfg.maxItems);
+    const sourceLabel=dashboardReportSourceMeta[cfg.source]?.label||cfg.source;
+    return {cfg,rowCount:srcRows.length,data:dataRows,sourceLabel};
+  }
+  function formatWidgetMetric(value){
+    return safeNum(value).toLocaleString("tr-TR",{maximumFractionDigits:2});
+  }
+  function renderDashboardWidgetChart(preview){
+    if(!preview){
+      return (
+        <div style={{padding:"14px 10px",border:`1px dashed ${C.border}`,borderRadius:9,color:C.muted2,fontSize:12,background:C.surface2}}>
+          Rapor onizlemesi yuklenemedi.
+        </div>
+      );
+    }
+    if(preview.rowCount===0||!preview.data.length){
+      return (
+        <div style={{padding:"14px 10px",border:`1px dashed ${C.border}`,borderRadius:9,color:C.muted2,fontSize:12,background:C.surface2}}>
+          Bu rapor icin gosterilecek veri yok.
+        </div>
+      );
+    }
+    const rows=preview.data||[];
+    const maxVal=Math.max(1,...rows.map(r=>safeNum(r.value)));
+    if(preview.cfg.chartType==="table"){
+      return (
+        <div style={{overflowX:"auto",border:`1px solid ${C.border}`,borderRadius:9}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:340}}>
+            <thead>
+              <tr style={{background:C.surface2,color:C.muted2,textAlign:"left"}}>
+                <th style={{padding:"7px 8px",borderBottom:`1px solid ${C.border}`}}>Alan</th>
+                <th style={{padding:"7px 8px",borderBottom:`1px solid ${C.border}`}}>Deger</th>
+                <th style={{padding:"7px 8px",borderBottom:`1px solid ${C.border}`}}>Kayit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r,i)=>(
+                <tr key={`${r.label}_${i}`} style={{borderBottom:`1px solid ${C.border}`}}>
+                  <td style={{padding:"7px 8px",color:C.text}}>{r.label}</td>
+                  <td style={{padding:"7px 8px",color:C.text,fontWeight:700}}>{formatWidgetMetric(r.value)}</td>
+                  <td style={{padding:"7px 8px",color:C.muted2}}>{r.count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+    if(preview.cfg.chartType==="pie"||preview.cfg.chartType==="donut"){
+      const total=rows.reduce((s,r)=>s+safeNum(r.value),0);
+      let cursor=0;
+      const segments=rows.map((r,i)=>{
+        const share=total>0?(safeNum(r.value)/total)*360:0;
+        const start=cursor;
+        cursor+=share;
+        return `${widgetChartPalette[i%widgetChartPalette.length]} ${start.toFixed(2)}deg ${cursor.toFixed(2)}deg`;
+      });
+      const pieStyle=rows.length?widgetChartPalette[0]:C.border;
+      return (
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+          <div style={{position:"relative",width:160,height:160,borderRadius:"50%",background:pieStyle,border:`1px solid ${C.border}`,flexShrink:0}}>
+            {preview.cfg.chartType==="donut"&&<div style={{position:"absolute",inset:36,borderRadius:"50%",background:C.card,border:`1px solid ${C.border}`}}/>}
+          </div>
+          <div style={{flex:1,minWidth:170,display:"flex",flexDirection:"column",gap:6}}>
+            {rows.map((r,i)=>{
+              const share=total>0?(safeNum(r.value)/total)*100:0;
+              return (
+                <div key={`${r.label}_${i}`} style={{display:"grid",gridTemplateColumns:"14px 1fr auto",gap:7,alignItems:"center",fontSize:11}}>
+                  <span style={{width:10,height:10,borderRadius:2,background:widgetChartPalette[i%widgetChartPalette.length],display:"inline-block"}}/>
+                  <span style={{color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.label}</span>
+                  <span style={{color:C.muted2}}>{share.toFixed(1)}%</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+    if(preview.cfg.chartType==="line"){
+      const lineRows=rows.slice(0,16);
+      const lineMax=Math.max(1,...lineRows.map(r=>safeNum(r.value)));
+      const n=Math.max(lineRows.length-1,1);
+      const points=lineRows.map((r,i)=>{
+        const x=42+(500*(i/n));
+        const y=154-((safeNum(r.value)/lineMax)*128);
+        return `${x},${y}`;
+      }).join(" ");
+      return (
+        <div style={{height:188,overflowX:"auto"}}>
+          <svg width="100%" height="188" viewBox="0 0 560 188" preserveAspectRatio="none">
+            {[0,1,2,3].map(i=>{
+              const y=18+i*34;
+              return <line key={i} x1="42" y1={y} x2="548" y2={y} stroke={C.border} strokeWidth="1"/>;
+            })}
+            <polyline points={points} fill="none" stroke={C.accent} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"/>
+            {lineRows.map((r,i)=>{
+              const x=42+(500*(i/n));
+              const y=154-((safeNum(r.value)/lineMax)*128);
+              const lbl=String(r.label||"");
+              const shortLbl=lbl.length>8?`${lbl.slice(0,7)}â€¦`:lbl;
+              return (
+                <g key={`${r.label}_${i}`}>
+                  <circle cx={x} cy={y} r="3.2" fill={C.accent}/>
+                  <text x={x} y="176" fill={C.muted2} fontSize="10" textAnchor="middle">{shortLbl}</text>
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+      );
+    }
+    return (
+      <div style={{display:"flex",flexDirection:"column",gap:7}}>
+        {rows.map((r,i)=>{
+          const pct=(safeNum(r.value)/maxVal)*100;
+          return (
+            <div key={`${r.label}_${i}`} style={{display:"grid",gridTemplateColumns:"1fr 1.4fr auto",gap:8,alignItems:"center"}}>
+              <div style={{fontSize:11,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.label}</div>
+              <div style={{height:9,background:C.surface2,border:`1px solid ${C.border}`,borderRadius:999,overflow:"hidden"}}>
+                <div style={{width:`${Math.max(4,pct)}%`,height:"100%",background:widgetChartPalette[i%widgetChartPalette.length]}}/>
+              </div>
+              <div style={{fontSize:11,color:C.text,fontWeight:700}}>{formatWidgetMetric(r.value)}</div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+  const widgetPreviewMap=useMemo(()=>{
+    const out={};
+    dashboardWidgetRows.forEach(row=>{
+      out[row.id]=aggregateWidgetReport(row.report);
+    });
+    return out;
+  },[dashboardWidgetRows,dashboardSourceRows,dashboardReportSourceMeta]);
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  const today=todayStr();
+  const openOrders=data.orders.filter(o=>isOpenOrderStatus(o.status));
+  const lateOrders=openOrders.filter(o=>o.dueDate&&o.dueDate<today);
+  const nearSales=data.sales.filter(s=>{
+    if(["delivered","cancelled"].includes(s.status||"")) return false;
+    const due=s.dueDate||"";
+    if(!due) return false;
+    return dayDiff(today,due)>=0&&dayDiff(today,due)<=3;
+  });
+  const lowStocks=data.materials.filter(m=>(safeNum(m.stock)<=Math.max(safeNum(m.reorderPoint),safeNum(m.safetyStock),0)));
+  const pendingPr=data.prs.filter(r=>!["received","cancelled","closed"].includes(r.status||""));
+  const unresolvedNotifs=data.notifs.filter(n=>!["resolved","closed"].includes(n.status||""));
+  const lowLifeTools=data.tools.filter(t=>t.remainingLifePct!==undefined&&t.remainingLifePct!==null&&safeNum(t.remainingLifePct)<=20);
+
+  const latestTelemetry={};
+  [...data.telemetry].sort((a,b)=>(b.collectedAtUtc||"").localeCompare(a.collectedAtUtc||"")).forEach(t=>{
+    if(!t.machineId||latestTelemetry[t.machineId]) return;
+    latestTelemetry[t.machineId]=t;
+  });
+  const machineRows=(data.connectors.length?data.connectors:machines.map((m,idx)=>({id:`virt_${idx}`,machineName:m,connectionMode:"not_connected"}))).map(mc=>{
+    const t=latestTelemetry[mc.id]||null;
+    const machineName=mc.machineName||mc.code||mc.id;
+    const rows=data.entries.filter(e=>e.machine===machineName&&e.date===today);
+    const stopMin=data.downtimes.filter(d=>d.machine===machineName&&d.date===today).reduce((s,d)=>s+safeNum(d.durationMin),0);
+    const planned=EFFECTIVE_SECONDS;
+    const up=Math.max(0,planned-stopMin*60);
+    const produced=rows.reduce((s,e)=>s+safeNum(e.correct)+safeNum(e.wrong),0);
+    const correct=rows.reduce((s,e)=>s+safeNum(e.correct),0);
+    const scrap=Math.max(0,produced-correct);
+    const cycleSecAvg=rows.length?rows.reduce((s,e)=>s+safeNum(e.partSec||0),0)/rows.length:Math.max(1,safeNum(t?.expectedCycleSec||60));
+    const runSec=produced*Math.max(1,cycleSecAvg);
+    const availability=planned>0?up/planned:0;
+    const performance=up>0?Math.min(1,runSec/up):0;
+    const quality=produced>0?correct/produced:1;
+    const oee=Math.round(availability*performance*quality*100);
+    const expectedQty=Math.floor(up/Math.max(1,cycleSecAvg));
+    const gapParts=produced-expectedQty;
+    const telemetryTime=t?.collectedAtUtc||t?.createdAt||"";
+    const freshSec=telemetryTime?Math.max(0,Math.floor((Date.now()-new Date(telemetryTime).getTime())/1000)):null;
+    return {
+      id:mc.id,
+      machineName,
+      status:t?.status||(mc.connectionMode==="simulation"?"simulation":"offline"),
+      program:t?.programName||"-",
+      partCounter:safeNum(t?.partCounter),
+      alarms:(t?.activeAlarms||[]).length,
+      oee,
+      availability:Math.round(availability*100),
+      performance:Math.round(performance*100),
+      quality:Math.round(quality*100),
+      produced,
+      correct,
+      scrap,
+      stopMin,
+      expectedQty:Math.max(0,expectedQty),
+      gapParts,
+      cycleSecAvg:Math.max(1,Math.round(cycleSecAvg)),
+      freshSec,
+    };
+  });
+  const statusMeta=s=>{
+    const key=String(s||"offline").toLowerCase();
+    if(["running","live"].includes(key)) return {key:"running",label:"Ã‡alÄ±ÅŸÄ±yor",color:C.green,banner:C.green};
+    if(key==="setup") return {key:"setup",label:"Kurulum",color:C.warn,banner:C.warn};
+    if(["idle","simulation"].includes(key)) return {key:"idle",label:"Beklemede",color:C.accent,banner:C.accent};
+    if(key==="alarm") return {key:"alarm",label:"Alarm",color:C.red,banner:C.red};
+    return {key:"offline",label:"BaÄŸlÄ± DeÄŸil",color:C.muted2,banner:C.muted2};
+  };
+  function formatAge(sec){
+    const v=Math.max(0,Math.floor(safeNum(sec)));
+    if(v<60) return `${v}s`;
+    if(v<3600) return `${Math.floor(v/60)}dk`;
+    return `${Math.floor(v/3600)}sa`;
+  }
+  function toneByRow(row){
+    const meta=statusMeta(row.status);
+    if(meta.key==="alarm") return {ring:C.red,bg:C.redDim,border:`${C.red}55`};
+    if(meta.key==="offline") return {ring:C.muted2,bg:C.surface2,border:C.border};
+    if(meta.key==="setup") return {ring:C.warn,bg:C.warnDim,border:`${C.warn}55`};
+    if(meta.key==="idle") return {ring:C.accent,bg:C.accentDim,border:`${C.accent}55`};
+    if((row.oee||0)>=85) return {ring:C.green,bg:C.greenDim,border:`${C.green}55`};
+    if((row.oee||0)>=60) return {ring:C.warn,bg:C.warnDim,border:`${C.warn}55`};
+    return {ring:C.red,bg:C.redDim,border:`${C.red}55`};
+  }
+  function fmtMinute(min){
+    const v=Math.max(0,Math.round(safeNum(min)));
+    if(v<60) return `${v} dk`;
+    const h=Math.floor(v/60);
+    const m=v%60;
+    return m?`${h}s ${m}dk`:`${h}s`;
+  }
+  const machineRowsSorted=[...machineRows].sort((a,b)=>{
+    if(sortMode==="oee_desc"){
+      const d=safeNum(b.oee)-safeNum(a.oee);
+      if(d!==0) return d;
+      return (a.machineName||"").localeCompare(b.machineName||"","tr");
+    }
+    if(sortMode==="name_asc"){
+      return (a.machineName||"").localeCompare(b.machineName||"","tr");
+    }
+    const rank={alarm:0,setup:1,idle:2,running:3,offline:4};
+    const ka=statusMeta(a.status).key;
+    const kb=statusMeta(b.status).key;
+    if((rank[ka]??9)!==(rank[kb]??9)) return (rank[ka]??9)-(rank[kb]??9);
+    return (a.machineName||"").localeCompare(b.machineName||"","tr");
+  });
+  const statusCounts=machineRowsSorted.reduce((acc,row)=>{
+    const key=statusMeta(row.status).key;
+    acc[key]=(acc[key]||0)+1;
+    return acc;
+  },{running:0,idle:0,setup:0,alarm:0,offline:0});
+  const machineQueryText=String(machineQuery||"").trim().toLowerCase();
+  const filteredMachineRows=machineRowsSorted.filter(row=>{
+    const meta=statusMeta(row.status);
+    if(statusFilter!=="all"&&meta.key!==statusFilter) return false;
+    if(!machineQueryText) return true;
+    const hay=[row.machineName,row.program,meta.label].join(" ").toLowerCase();
+    return hay.includes(machineQueryText);
+  });
+  const machineCount=machineRowsSorted.length;
+  const avgOee=machineCount?Math.round(machineRowsSorted.reduce((s,r)=>s+safeNum(r.oee),0)/machineCount):0;
+  const avgAvailability=machineCount?Math.round(machineRowsSorted.reduce((s,r)=>s+safeNum(r.availability),0)/machineCount):0;
+  const avgQuality=machineCount?Math.round(machineRowsSorted.reduce((s,r)=>s+safeNum(r.quality),0)/machineCount):0;
+  const totalParts=machineRowsSorted.reduce((s,r)=>s+Math.max(safeNum(r.partCounter),safeNum(r.produced)),0);
+  const runningPct=machineCount?Math.round((safeNum(statusCounts.running)/machineCount)*100):0;
+  const kpiCards=[
+    {label:"Ã‡alÄ±ÅŸan Tezgah",value:`${statusCounts.running}/${machineCount}`,sub:`%${runningPct} aktif`,tone:C.green},
+    {label:"Ortalama OEE",value:`%${avgOee}`,sub:`A %${avgAvailability} Â· Q %${avgQuality}`,tone:avgOee>=75?C.green:(avgOee>=55?C.warn:C.red)},
+    {label:"Toplam Ãœretim",value:String(totalParts),sub:"BugÃ¼n toplam parÃ§a",tone:C.accent},
+    {label:"AlarmlÄ± Tezgah",value:String(statusCounts.alarm),sub:statusCounts.alarm>0?"AnlÄ±k mÃ¼dahale gerekli":"Alarm yok",tone:statusCounts.alarm>0?C.red:C.green},
+    {label:"Geciken Ä°ÅŸ",value:String(lateOrders.length),sub:lateOrders.length>0?"Termin riski var":"Takvimde gecikme yok",tone:lateOrders.length>0?C.red:C.green},
+    {label:"Acil SatÄ±n Alma",value:String(pendingPr.length),sub:pendingPr.length>0?"Bekleyen talep var":"Acil talep yok",tone:pendingPr.length>0?C.warn:C.green},
+  ];
+  const filterButtons=[
+    {id:"all",label:"TÃ¼m Durumlar"},
+    {id:"running",label:"Ã‡alÄ±ÅŸÄ±yor"},
+    {id:"idle",label:"Beklemede"},
+    {id:"setup",label:"Kurulum"},
+    {id:"alarm",label:"Alarm"},
+    {id:"offline",label:"BaÄŸlÄ± DeÄŸil"},
+  ];
+  const sortChoices=[
+    {id:"status",label:"Duruma Gore"},
+    {id:"oee_desc",label:"OEE (Yuksek)"},
+    {id:"name_asc",label:"Makine (A-Z)"},
+  ];
+  const viewChoices=[
+    {id:"cards",label:"Kartlar",icon:"\u25A6"},
+    {id:"compact",label:"Liste",icon:"\u2630"},
+    {id:"table",label:"Tablo",icon:"\u25A4"},
+  ];
+  const quickActions=[
+    {id:"notif",label:"Bildirimler",icon:"\uD83D\uDD14"},
+    {id:"calendar",label:"Takvim",icon:"\uD83D\uDCC5"},
+    {id:"mail",label:"Mesajlar",icon:"\u2709"},
+    {id:"settings",label:"Ayarlar",icon:"\u2699"},
+  ];
+  const hasReportWidgets=dashboardWidgetRows.length>0;
+  const showReportWidgetArea=hasReportWidgets||dashboardEditMode;
+  const commandBarTone=themeMode==="dark"
+    ? {
+      heroBg:"#2A3038",
+      heroText:"#F2F4F7",
+      heroMuted:"rgba(242,244,247,.82)",
+      heroFieldBg:"rgba(255,255,255,.08)",
+      heroFieldBorder:"rgba(255,255,255,.24)",
+      heroChipBg:"rgba(255,255,255,.07)",
+      heroChipBorder:"rgba(255,255,255,.20)",
+      heroShadow:"0 16px 34px rgba(0,0,0,.42)",
+      subBg:"#232931",
+      subBorder:"rgba(255,255,255,.10)",
+    }
+    : {
+      heroBg:"#2B7A78",
+      heroText:"#FEFFFF",
+      heroMuted:"rgba(254,255,255,.90)",
+      heroFieldBg:"rgba(255,255,255,.22)",
+      heroFieldBorder:"rgba(255,255,255,.44)",
+      heroChipBg:"rgba(255,255,255,.16)",
+      heroChipBorder:"rgba(255,255,255,.38)",
+      heroShadow:"0 14px 30px rgba(23,82,73,.20)",
+      subBg:"#DEF2F1",
+      subBorder:"#CBE3E1",
+    };
+  const lastLoadText=lastLoadedAt?new Intl.DateTimeFormat("tr-TR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(new Date(lastLoadedAt)):"-";
+  const userLabel=String(currentUser?.fullName||"").trim();
+  const layoutBadge=layoutMode==="desktop"?"DESKTOP":(layoutMode==="tablet"?"TABLET":"MOBIL");
+
+  return (
+    <div style={{padding:"0 0 12px",display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{position:"sticky",top:8,zIndex:24,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:commandBarTone.heroShadow}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",background:commandBarTone.heroBg}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+            <div style={{width:40,height:40,borderRadius:10,background:"rgba(255,255,255,.16)",border:`1px solid ${commandBarTone.heroChipBorder}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
+              {logoSrc?<img src={logoSrc} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:17,color:commandBarTone.heroText}}>{"\uD83C\uDFED"}</span>}
+            </div>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:11,color:commandBarTone.heroMuted,letterSpacing:.7,textTransform:"uppercase"}}>CanlÄ± Ãœretim Panosu</div>
+              <div style={{fontWeight:800,color:commandBarTone.heroText,fontSize:20,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>GÃ¶sterge Paneli</div>
+              <div style={{fontSize:12,color:commandBarTone.heroMuted,marginTop:2,display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+                <span>{userLabel||"-"}</span>
+                <Badge label={String(roleLabel||"Kullanici").toUpperCase()} color={C.accent}/>
+                <Badge label={layoutBadge} color={C.muted2}/>
+                <span>Â·</span>
+                <span>Son gÃ¼ncelleme: {lastLoadText}</span>
+              </div>
+            </div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <div style={{position:"relative",minWidth:isNarrow?190:250}}>
+              <span style={{position:"absolute",left:10,top:8,color:commandBarTone.heroMuted,fontSize:13}}>{"\uD83D\uDD0D"}</span>
+              <input value={machineQuery} onChange={e=>setMachineQuery(e.target.value)} placeholder="Kayitlarda ara..." style={{...inputSt,padding:"8px 10px 8px 30px",fontSize:12,minWidth:isNarrow?190:250,background:commandBarTone.heroFieldBg,borderColor:commandBarTone.heroFieldBorder,color:commandBarTone.heroText}}/>
+            </div>
+            <button onClick={()=>setDashboardEditMode(v=>!v)} title="Yeni aksiyon" style={{border:`1px solid ${commandBarTone.heroChipBorder}`,background:commandBarTone.heroChipBg,color:commandBarTone.heroText,padding:"8px 10px",fontSize:14,minWidth:34,borderRadius:8,cursor:"pointer"}}>{dashboardEditMode?"Ã—":"+"}</button>
+            {quickActions.map(act=>(
+              <button key={act.id} onClick={()=>onQuickAction(act.id)} title={act.label} style={{border:`1px solid ${commandBarTone.heroChipBorder}`,background:commandBarTone.heroChipBg,color:commandBarTone.heroText,padding:"7px 9px",fontSize:13,minWidth:34,borderRadius:8,cursor:"pointer"}}>
+                {act.icon}
+              </button>
+            ))}
+            <button onClick={onThemeToggle} style={{border:`1px solid ${commandBarTone.heroChipBorder}`,background:commandBarTone.heroChipBg,color:commandBarTone.heroText,padding:"7px 10px",fontSize:12,borderRadius:8,cursor:"pointer",minWidth:98}}>
+              {themeMode==="dark"?"Acik Tema":"Koyu Tema"}
+            </button>
+            <button onClick={onLogout} style={{border:`1px solid ${commandBarTone.heroChipBorder}`,background:commandBarTone.heroChipBg,color:commandBarTone.heroText,padding:"7px 10px",fontSize:12,borderRadius:8,cursor:"pointer",minWidth:72}}>
+              Cikis
+            </button>
+          </div>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 12px",borderTop:`1px solid ${commandBarTone.subBorder}`,background:commandBarTone.subBg}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <button onClick={()=>setFilterPanelOpen(v=>!v)} style={{...(filterPanelOpen?btnSt("primary"):btnSt("ghost")),padding:"7px 10px",fontSize:12}}>
+              Filtre Uygula
+            </button>
+            <div style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",border:`1px solid ${C.border}`,borderRadius:8,background:C.card}}>
+              <span style={{fontSize:11,color:C.muted2,fontWeight:700}}>SÄ±rala</span>
+              <select value={sortMode} onChange={e=>setSortMode(e.target.value)} style={{...inputSt,padding:"5px 6px",fontSize:12,minWidth:140}}>
+                {sortChoices.map(opt=><option key={opt.id} value={opt.id}>{opt.label}</option>)}
+              </select>
+              {sortMode!=="status"&&<button onClick={()=>setSortMode("status")} style={{...btnSt("ghost"),padding:"3px 6px",fontSize:11}}>Ã—</button>}
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:4,padding:"4px",border:`1px solid ${C.border}`,borderRadius:9,background:C.card}}>
+              {viewChoices.map(mode=>(
+                <button key={mode.id} onClick={()=>setViewMode(mode.id)} title={mode.label} style={{border:"none",background:viewMode===mode.id?C.accent:"transparent",color:viewMode===mode.id?"#fff":C.muted2,padding:"6px 8px",fontSize:12,borderRadius:6,cursor:"pointer"}}>
+                  {mode.icon}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+            <input type="date" value={quickDate} onChange={e=>setQuickDate(e.target.value||today)} style={{...inputSt,padding:"7px 9px",fontSize:12,width:150}}/>
+            <button onClick={()=>{setMachineQuery("");setStatusFilter("all");setSortMode("status");}} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Temizle</button>
+            <button onClick={()=>setDashboardEditMode(true)} style={{...btnSt("primary"),padding:"7px 12px",fontSize:12,minWidth:140}}>Yeni Kayit Olustur</button>
+            <button onClick={()=>setDashboardEditMode(v=>!v)} style={{...(dashboardEditMode?btnSt("green"):btnSt("ghost")),padding:"7px 10px",fontSize:12}}>
+              {dashboardEditMode?"Duzenleme Bitti":"Sayfayi Duzenle"}
+            </button>
+            <button onClick={load} style={{...btnSt("primary"),padding:"7px 10px",fontSize:12}}>Yenile</button>
+          </div>
+        </div>
+        {filterPanelOpen&&(
+          <div style={{padding:"10px 12px",borderTop:`1px solid ${C.border}`,background:C.card}}>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {filterButtons.map(f=>(
+                <button key={f.id} onClick={()=>setStatusFilter(f.id)} style={chip(statusFilter===f.id,statusFilter===f.id?C.accent:C.muted2)}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(185px,1fr))",gap:8}}>
+          {kpiCards.map(card=>(
+            <div key={card.label} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}>
+              <div style={{fontSize:11,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>{card.label}</div>
+              <div style={{fontSize:28,color:card.tone,fontWeight:800,fontFamily:"monospace",marginTop:2,lineHeight:1.1}}>{card.value}</div>
+              <div style={{fontSize:11,color:C.muted2,marginTop:3}}>{card.sub}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {showReportWidgetArea&&(
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+          <div>
+            <div style={{fontWeight:800,color:C.text,fontSize:16}}>Rapor Grafik Alani</div>
+            <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{dashboardWidgetRows.length} grafik widget</div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            {dashboardEditMode&&(
+              <>
+                <select value={widgetReportId} onChange={e=>setWidgetReportId(e.target.value)} style={{...inputSt,minWidth:220,padding:"8px 10px",fontSize:12}}>
+                  {customReports.length===0&&<option value="">Kayitli rapor yok</option>}
+                  {customReports.map(rep=><option key={rep.id} value={rep.id}>{rep.name||"Adsiz Rapor"}</option>)}
+                </select>
+                <button onClick={()=>addDashboardWidgetFromReport(widgetReportId)} disabled={customReports.length===0} style={{...btnSt("primary"),padding:"8px 11px",fontSize:12,opacity:customReports.length===0?0.6:1}}>
+                  Rapor Grafigi Ekle
+                </button>
+              </>
+            )}
+            <Badge label={`${dashboardWidgetRows.length} Widget`} color={dashboardWidgetRows.length>0?C.accent:C.muted2}/>
+          </div>
+        </div>
+        {dashboardEditMode&&(
+          <div style={{marginBottom:10,padding:"9px 10px",border:`1px dashed ${C.border}`,borderRadius:9,fontSize:11,color:C.muted2,background:C.surface2}}>
+            Duzenleme modu acik. Kartlari surukleyip birakabilir, boyutunu degistirebilir ve kaldirabilirsiniz.
+          </div>
+        )}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(12,minmax(0,1fr))",gap:10}}>
+          {dashboardWidgetRows.map(row=>{
+            const preview=widgetPreviewMap[row.id]||null;
+            const span=isNarrow?12:(row.size==="sm"?4:row.size==="lg"?12:6);
+            return (
+              <div
+                key={row.id}
+                draggable={dashboardEditMode}
+                onDragStart={e=>{
+                  if(!dashboardEditMode) return;
+                  setDragWidgetId(row.id);
+                  e.dataTransfer.effectAllowed="move";
+                  e.dataTransfer.setData("text/plain",row.id);
+                }}
+                onDragEnd={()=>setDragWidgetId("")}
+                onDragOver={e=>{if(dashboardEditMode) e.preventDefault();}}
+                onDrop={e=>{
+                  if(!dashboardEditMode) return;
+                  e.preventDefault();
+                  const sourceId=e.dataTransfer.getData("text/plain")||dragWidgetId;
+                  if(!sourceId) return;
+                  moveDashboardWidget(sourceId,row.id);
+                  setDragWidgetId("");
+                }}
+                style={{
+                  gridColumn:`span ${span}`,
+                  background:C.surface,
+                  border:`1px solid ${dragWidgetId===row.id?C.accent:C.border}`,
+                  borderRadius:12,
+                  padding:10,
+                  minHeight:220,
+                  display:"flex",
+                  flexDirection:"column",
+                  gap:8,
+                  cursor:dashboardEditMode?"grab":"default",
+                }}
+              >
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,flexWrap:"wrap"}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontSize:13,color:C.text,fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{row.report.name||"Adsiz Rapor"}</div>
+                    <div style={{fontSize:11,color:C.muted2,marginTop:2}}>
+                      {(dashboardReportSourceMeta[row.report.source]?.label)||row.report.source||"-"} Â· {String(row.report.chartType||"").toUpperCase()||"-"}
+                    </div>
+                  </div>
+                  {dashboardEditMode&&(
+                    <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                      <select value={row.size} onChange={e=>updateDashboardWidgetSize(row.id,e.target.value)} style={{...inputSt,width:84,padding:"5px 7px",fontSize:11}}>
+                        <option value="sm">Kucuk</option>
+                        <option value="md">Orta</option>
+                        <option value="lg">Genis</option>
+                      </select>
+                      <button onClick={()=>removeDashboardWidget(row.id)} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Kaldir</button>
+                    </div>
+                  )}
+                </div>
+                <div style={{flex:1}}>
+                  {renderDashboardWidgetChart(preview)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {dashboardWidgetRows.length===0&&(
+          <div style={{padding:"24px 12px",textAlign:"center",color:C.muted2,fontSize:12}}>
+            Dashboard'a ekli rapor grafigi yok. {dashboardEditMode?"Rapor Grafigi Ekle ile baslayin.":"Sayfayi Duzenle modundan rapor ekleyin."}
+          </div>
+        )}
+      </div>
+      )}
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+          <div>
+            <div style={{fontWeight:800,color:C.text,fontSize:16}}>Tezgah Performans GÃ¶rÃ¼nÃ¼mÃ¼</div>
+            <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{filteredMachineRows.length} tezgah listeleniyor</div>
+          </div>
+          <Badge label={`Alarm: ${statusCounts.alarm}`} color={statusCounts.alarm>0?C.red:C.green}/>
+        </div>
+        <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:12,padding:10}}>
+          {viewMode==="cards"&&(
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(290px,1fr))",gap:10}}>
+            {filteredMachineRows.map(m=>{
+              const meta=statusMeta(m.status);
+              const tone=toneByRow(m);
+              const ringSize=114;
+              const ringStroke=10;
+              const radius=(ringSize-ringStroke)/2;
+              const circ=2*Math.PI*radius;
+              const ringPct=Math.max(0,Math.min(100,m.oee||0));
+              const dash=(ringPct/100)*circ;
+              const perfBars=[m.availability,m.performance,m.quality,Math.max(0,Math.min(100,m.oee||0))];
+              return (
+              <div key={m.id} style={{border:`1px solid ${tone.border}`,borderRadius:12,overflow:"hidden",display:"flex",flexDirection:"column",minHeight:254,background:tone.bg}}>
+                <div style={{background:meta.banner,padding:"9px 10px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontWeight:800,color:"#fff",fontSize:18,lineHeight:1.05,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.machineName}</div>
+                    <div style={{fontSize:11,color:"#f1f5ff",marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.program||"-"}</div>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
+                    <span style={{fontSize:10,fontWeight:800,color:"#fff",padding:"4px 7px",borderRadius:999,border:"1px solid rgba(255,255,255,.45)",background:"rgba(0,0,0,.12)",letterSpacing:.4}}>{meta.label}</span>
+                    <span style={{fontSize:10,color:"#f3f7ff"}}>Veri yaÅŸÄ±: {m.freshSec===null?"-":formatAge(m.freshSec)}</span>
+                  </div>
+                </div>
+                <div style={{padding:10,display:"grid",gridTemplateColumns:"122px minmax(0,1fr)",gap:10,alignItems:"center",flex:1}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    <div style={{position:"relative",width:ringSize,height:ringSize}}>
+                      <svg width={ringSize} height={ringSize} viewBox={`0 0 ${ringSize} ${ringSize}`}>
+                        <circle cx={ringSize/2} cy={ringSize/2} r={radius} stroke="rgba(15,23,42,.14)" strokeWidth={ringStroke} fill="none"/>
+                        <circle cx={ringSize/2} cy={ringSize/2} r={radius} stroke={tone.ring} strokeWidth={ringStroke} fill="none" strokeLinecap="round" strokeDasharray={`${dash} ${Math.max(0,circ-dash)}`} transform={`rotate(-90 ${ringSize/2} ${ringSize/2})`}/>
+                      </svg>
+                      <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+                        <div style={{fontSize:26,fontWeight:800,color:C.text,lineHeight:1}}>%{m.oee}</div>
+                        <div style={{fontSize:10,color:C.muted2,fontWeight:700,letterSpacing:.6}}>OEE</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
+                      <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>ParÃ§a</div>
+                      <div style={{fontSize:16,color:C.text,fontWeight:800,marginTop:1}}>{Math.max(m.partCounter,m.produced)}</div>
+                    </div>
+                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
+                      <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Alarm</div>
+                      <div style={{fontSize:16,color:m.alarms>0?C.red:C.text,fontWeight:800,marginTop:1}}>{m.alarms}</div>
+                    </div>
+                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
+                      <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Beklenen</div>
+                      <div style={{fontSize:15,color:C.text,fontWeight:800,marginTop:1}}>{m.expectedQty}</div>
+                    </div>
+                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px"}}>
+                      <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Fark</div>
+                      <div style={{fontSize:15,color:m.gapParts>=0?C.green:C.red,fontWeight:800,marginTop:1}}>{m.gapParts>=0?`+${m.gapParts}`:m.gapParts}</div>
+                    </div>
+                  </div>
+                </div>
+                <div style={{padding:"0 10px 10px"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:5,alignItems:"end",height:34}}>
+                    {perfBars.map((v,idx)=>(
+                      <div key={`${m.id}_${idx}`} style={{height:"100%",display:"flex",alignItems:"flex-end"}}>
+                        <div style={{height:`${Math.max(8,Math.min(100,v||0))}%`,width:"100%",borderRadius:5,background:idx===3?tone.ring:"#7ba4e6"}}/>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{fontSize:10,color:C.muted2,marginTop:5}}>A %{m.availability} Â· P %{m.performance} Â· Q %{m.quality} Â· DuruÅŸ {fmtMinute(m.stopMin)}</div>
+                </div>
+              </div>
+            );
+            })}
+          </div>
+          )}
+          {viewMode==="compact"&&filteredMachineRows.length>0&&(
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {filteredMachineRows.map(m=>{
+                const meta=statusMeta(m.status);
+                return (
+                  <div key={`compact_${m.id}`} style={{display:"grid",gridTemplateColumns:"minmax(200px,1.2fr) repeat(5,minmax(90px,1fr))",gap:8,alignItems:"center",padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:10,background:C.card}}>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:800,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.machineName}</div>
+                      <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.program||"-"}</div>
+                    </div>
+                    <div style={{fontSize:11,fontWeight:700,color:meta.color}}>{meta.label}</div>
+                    <div style={{fontSize:12,color:C.text,fontWeight:700}}>OEE %{m.oee}</div>
+                    <div style={{fontSize:12,color:C.text,fontWeight:700}}>ParÃ§a {Math.max(m.partCounter,m.produced)}</div>
+                    <div style={{fontSize:12,color:m.alarms>0?C.red:C.text,fontWeight:700}}>Alarm {m.alarms}</div>
+                    <div style={{fontSize:12,color:m.gapParts>=0?C.green:C.red,fontWeight:700}}>{m.gapParts>=0?`+${m.gapParts}`:m.gapParts}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {viewMode==="table"&&filteredMachineRows.length>0&&(
+            <div style={{border:`1px solid ${C.border}`,borderRadius:10,overflow:"auto",background:C.card}}>
+              <table style={{width:"100%",borderCollapse:"collapse",minWidth:760}}>
+                <thead>
+                  <tr>
+                    <th style={{textAlign:"left",padding:"8px 10px",fontSize:11,color:C.muted2,borderBottom:`1px solid ${C.border}`}}>Makine</th>
+                    <th style={{textAlign:"left",padding:"8px 10px",fontSize:11,color:C.muted2,borderBottom:`1px solid ${C.border}`}}>Durum</th>
+                    <th style={{textAlign:"right",padding:"8px 10px",fontSize:11,color:C.muted2,borderBottom:`1px solid ${C.border}`}}>OEE</th>
+                    <th style={{textAlign:"right",padding:"8px 10px",fontSize:11,color:C.muted2,borderBottom:`1px solid ${C.border}`}}>ParÃ§a</th>
+                    <th style={{textAlign:"right",padding:"8px 10px",fontSize:11,color:C.muted2,borderBottom:`1px solid ${C.border}`}}>Alarm</th>
+                    <th style={{textAlign:"right",padding:"8px 10px",fontSize:11,color:C.muted2,borderBottom:`1px solid ${C.border}`}}>A/P/Q</th>
+                    <th style={{textAlign:"right",padding:"8px 10px",fontSize:11,color:C.muted2,borderBottom:`1px solid ${C.border}`}}>Durus</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredMachineRows.map(m=>{
+                    const meta=statusMeta(m.status);
+                    return (
+                      <tr key={`table_${m.id}`}>
+                        <td style={{padding:"9px 10px",fontSize:12,color:C.text,borderBottom:`1px solid ${C.border}`}}>
+                          <div style={{fontWeight:700}}>{m.machineName}</div>
+                          <div style={{fontSize:11,color:C.muted2}}>{m.program||"-"}</div>
+                        </td>
+                        <td style={{padding:"9px 10px",fontSize:12,color:meta.color,fontWeight:700,borderBottom:`1px solid ${C.border}`}}>{meta.label}</td>
+                        <td style={{padding:"9px 10px",fontSize:12,color:C.text,fontWeight:700,textAlign:"right",borderBottom:`1px solid ${C.border}`}}>%{m.oee}</td>
+                        <td style={{padding:"9px 10px",fontSize:12,color:C.text,fontWeight:700,textAlign:"right",borderBottom:`1px solid ${C.border}`}}>{Math.max(m.partCounter,m.produced)}</td>
+                        <td style={{padding:"9px 10px",fontSize:12,color:m.alarms>0?C.red:C.text,fontWeight:700,textAlign:"right",borderBottom:`1px solid ${C.border}`}}>{m.alarms}</td>
+                        <td style={{padding:"9px 10px",fontSize:11,color:C.muted2,textAlign:"right",borderBottom:`1px solid ${C.border}`}}>A %{m.availability} Â· P %{m.performance} Â· Q %{m.quality}</td>
+                        <td style={{padding:"9px 10px",fontSize:12,color:C.text,textAlign:"right",borderBottom:`1px solid ${C.border}`}}>{fmtMinute(m.stopMin)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {filteredMachineRows.length===0&&(
+            <div style={{padding:"26px 12px",textAlign:"center",color:C.muted2,fontSize:12}}>
+              SeÃ§ili filtrede tezgah bulunamadÄ±.
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:12}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Termin Riski Olan Ä°ÅŸ Emirleri</div>
+          {lateOrders.slice(0,8).map(o=>(
+            <div key={o.id} style={{padding:"7px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.muted2}}>
+              <span style={{color:C.text,fontWeight:700,fontFamily:"monospace"}}>{o.code}</span> Â· {o.name||"-"} Â· {o.dueDate||"-"}
+            </div>
+          ))}
+          {lateOrders.length===0&&<div style={{fontSize:12,color:C.muted2}}>Geciken iÅŸ emri yok.</div>}
+        </div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>YaklaÅŸan SatÄ±ÅŸ Terminleri (3 GÃ¼n)</div>
+          {nearSales.slice(0,8).map(s=>(
+            <div key={s.id} style={{padding:"7px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.muted2}}>
+              <span style={{color:C.text,fontWeight:700,fontFamily:"monospace"}}>{s.code||"-"}</span> Â· {s.customerName||"-"} Â· {s.dueDate||"-"}
+            </div>
+          ))}
+          {nearSales.length===0&&<div style={{fontSize:12,color:C.muted2}}>YaklaÅŸan termin bulunmuyor.</div>}
+        </div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>AnlÄ±k Operasyon UyarÄ±larÄ±</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:9,padding:"8px 9px"}}>
+              <div style={{fontSize:10,color:C.muted2}}>Kritik Stok</div>
+              <div style={{fontSize:20,fontWeight:800,color:lowStocks.length>0?C.warn:C.green,lineHeight:1.15}}>{lowStocks.length}</div>
+            </div>
+            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:9,padding:"8px 9px"}}>
+              <div style={{fontSize:10,color:C.muted2}}>Bekleyen Bildirim</div>
+              <div style={{fontSize:20,fontWeight:800,color:unresolvedNotifs.length>0?C.red:C.green,lineHeight:1.15}}>{unresolvedNotifs.length}</div>
+            </div>
+            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:9,padding:"8px 9px"}}>
+              <div style={{fontSize:10,color:C.muted2}}>Kritik TakÄ±m Ã–mrÃ¼</div>
+              <div style={{fontSize:20,fontWeight:800,color:lowLifeTools.length>0?C.red:C.green,lineHeight:1.15}}>{lowLifeTools.length}</div>
+            </div>
+            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:9,padding:"8px 9px"}}>
+              <div style={{fontSize:10,color:C.muted2}}>Kurulum/Bekleme</div>
+              <div style={{fontSize:20,fontWeight:800,color:(statusCounts.setup+statusCounts.idle)>0?C.warn:C.green,lineHeight:1.15}}>{safeNum(statusCounts.setup)+safeNum(statusCounts.idle)}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MPSModule(){
+  const [loading,setLoading]=useState(true);
+  const [sales,setSales]=useState([]);
+  const [orders,setOrders]=useState([]);
+  const [mpsPlans,setMpsPlans]=useState([]);
+  const [showPlanForm,setShowPlanForm]=useState(false);
+  const [form,setForm]=useState({partNo:"",weekStart:startOfWeekYmd(todayStr()),plannedQty:"0",note:""});
+  const planFormRef=useRef(null);
+  const setF=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const load=useCallback(async()=>{
+    const [s,o,m]=await Promise.all([window.DB.getAll("salesOrders"),window.DB.getAll("orders"),window.DB.getAll("mpsPlans")]);
+    setSales(s); setOrders(o); setMpsPlans(m);
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="mps") return;
+      if(d.type==="refresh"){load();return;}
+      if(d.type==="new"){
+        setShowPlanForm(true);
+        setForm({partNo:"",weekStart:startOfWeekYmd(todayStr()),plannedQty:"0",note:""});
+        setTimeout(()=>{
+          if(planFormRef.current&&planFormRef.current.scrollIntoView){
+            planFormRef.current.scrollIntoView({behavior:"smooth",block:"start"});
+          }else{
+            window.scrollTo({top:0,behavior:"smooth"});
+          }
+        },40);
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load]);
+  async function savePlan(){
+    if(!form.partNo.trim()){alert("Parca no zorunlu.");return;}
+    const payload={
+      partNo:form.partNo.trim().toUpperCase(),
+      weekStart:startOfWeekYmd(form.weekStart||todayStr()),
+      plannedQty:Math.max(0,safeNum(form.plannedQty)),
+      note:form.note.trim(),
+      updatedAt:new Date().toISOString(),
+    };
+    const id=await window.DB.addDoc("mpsPlans",payload);
+    if(!id){alert("MPS kaydi olusturulamadi.");return;}
+    setMpsPlans(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
+    setForm({partNo:"",weekStart:startOfWeekYmd(todayStr()),plannedQty:"0",note:""});
+    setShowPlanForm(false);
+  }
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  const base=startOfWeekYmd(todayStr());
+  const buckets=Array.from({length:8},(_,i)=>{
+    const start=addDays(base,i*7);
+    const end=addDays(start,6);
+    const demand=sales.reduce((sum,s)=>{
+      if(["cancelled","delivered"].includes(s.status||"")) return sum;
+      if(s.lines&&s.lines.length){
+        return sum+s.lines.filter(l=>l.dueDate>=start&&l.dueDate<=end).reduce((x,l)=>x+safeNum(l.qty),0);
+      }
+      if(s.dueDate>=start&&s.dueDate<=end) return sum+safeNum(s.qty);
+      return sum;
+    },0);
+    const wo=orders.filter(o=>o.dueDate>=start&&o.dueDate<=end).reduce((s,o)=>s+safeNum(o.qty),0);
+    const mps=mpsPlans.filter(p=>p.weekStart===start).reduce((s,p)=>s+safeNum(p.plannedQty),0);
+    const balance=(wo+mps)-demand;
+    return {start,end,demand,wo,mps,balance};
+  });
+  const exportRows=buckets.map(b=>({hafta:`${b.start} - ${b.end}`,talep:b.demand,isEmriArz:b.wo,mpsPlan:b.mps,bakiye:b.balance}));
+
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+          <div style={{fontWeight:700,color:C.text}}>MPS Planlama</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={()=>{if(showPlanForm){setShowPlanForm(false);}else{setForm({partNo:"",weekStart:startOfWeekYmd(todayStr()),plannedQty:"0",note:""});setShowPlanForm(true);setTimeout(()=>{if(planFormRef.current&&planFormRef.current.scrollIntoView){planFormRef.current.scrollIntoView({behavior:"smooth",block:"start"});}},40);}}} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>
+              {showPlanForm?"Formu Kapat":"+ Yeni Planlama"}
+            </button>
+            <button onClick={()=>downloadCsv(`mps-${todayStr()}.csv`,[{label:"Hafta",key:"hafta"},{label:"Talep",key:"talep"},{label:"Is Emri Arz",key:"isEmriArz"},{label:"MPS Plan",key:"mpsPlan"},{label:"Bakiye",key:"bakiye"}],exportRows)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>CSV Indir</button>
+          </div>
+        </div>
+        {showPlanForm&&(
+          <div ref={planFormRef} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+              <div><span style={labelSt}>Parca No</span><input style={inputSt} value={form.partNo} onChange={e=>setF("partNo",e.target.value)} placeholder="PRT-001"/></div>
+              <div><span style={labelSt}>Hafta Baslangic</span><input style={inputSt} type="date" value={form.weekStart} onChange={e=>setF("weekStart",e.target.value||todayStr())}/></div>
+              <div><span style={labelSt}>Planlanan Adet</span><input style={inputSt} type="number" min="0" value={form.plannedQty} onChange={e=>setF("plannedQty",e.target.value)}/></div>
+            </div>
+            <div style={{marginTop:8}}><span style={labelSt}>Not</span><textarea rows={2} style={{...inputSt,minHeight:62,resize:"vertical"}} value={form.note} onChange={e=>setF("note",e.target.value)}/></div>
+            <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}>
+              <button onClick={savePlan} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>MPS Kaydet</button>
+            </div>
+          </div>
+        )}
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>8 Haftalik Ana Uretim Plani</div>
+        {buckets.map(b=>(
+          <div key={b.start} style={{display:"grid",gridTemplateColumns:"1.3fr repeat(4,.8fr)",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,alignItems:"center"}}>
+            <div style={{color:C.text,fontWeight:700}}>{b.start} - {b.end}</div>
+            <div style={{color:C.muted2}}>Talep: {b.demand}</div>
+            <div style={{color:C.muted2}}>WO: {b.wo}</div>
+            <div style={{color:C.muted2}}>MPS: {b.mps}</div>
+            <div style={{color:b.balance<0?C.red:C.green,fontWeight:700}}>Bakiye: {b.balance}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MRPRunModule({currentUser}){
+  const [loading,setLoading]=useState(true);
+  const [parts,setParts]=useState([]);
+  const [materials,setMaterials]=useState([]);
+  const [orders,setOrders]=useState([]);
+  const [purchaseRequests,setPurchaseRequests]=useState([]);
+  const [result,setResult]=useState([]);
+  const [running,setRunning]=useState(false);
+  const load=useCallback(async()=>{
+    const [p,m,o,r]=await Promise.all([window.DB.getAll("parts"),window.DB.getAll("materials"),window.DB.getAll("orders"),window.DB.getAll("purchaseRequests")]);
+    setParts(p); setMaterials(m); setOrders(o); setPurchaseRequests(r);
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  function runMrp(){
+    setRunning(true);
+    const partMap={};
+    parts.forEach(p=>{partMap[String(p.partNo||"").toUpperCase()]=p;});
+    const materialByCode={};
+    materials.forEach(m=>{
+      materialByCode[String(m.code||"").toUpperCase()]=m;
+      materialByCode[String(m.name||"").toUpperCase()]=m;
+    });
+    const agg={};
+    const activeOrders=orders.filter(o=>isOpenOrderStatus(o.status));
+    activeOrders.forEach(o=>{
+      const key=String(o.partNo||"").toUpperCase();
+      const part=partMap[key];
+      if(!part||(part.bomLines||[]).length===0) return;
+      (part.bomLines||[]).forEach(line=>{
+        const code=String(line.componentCode||"").toUpperCase();
+        if(!code) return;
+        const gross=safeNum(o.qty)*safeNum(line.qtyPer)*(1+safeNum(line.scrapPct)/100);
+        if(!agg[code]) agg[code]={componentCode:code,componentName:line.componentName||"",grossReq:0,orders:new Set()};
+        agg[code].grossReq+=gross;
+        agg[code].orders.add(o.code||o.id);
+      });
+    });
+    const rows=Object.values(agg).map(r=>{
+      const mat=materialByCode[r.componentCode]||null;
+      const onHand=safeNum(mat?.stock);
+      const safety=Math.max(safeNum(mat?.safetyStock),0);
+      const openPr=purchaseRequests.filter(x=>!["received","cancelled","closed"].includes(x.status||"")&&String(x.materialCode||x.materialName||"").toUpperCase()===r.componentCode).reduce((s,x)=>s+safeNum(x.qty),0);
+      const net=Math.max(0,Math.ceil((r.grossReq+safety)-(onHand+openPr)));
+      return {
+        componentCode:r.componentCode,
+        componentName:r.componentName||mat?.name||"-",
+        grossReq:Math.ceil(r.grossReq),
+        onHand,
+        openPr,
+        safety,
+        net,
+        leadTimeDays:Math.max(0,safeNum(mat?.leadTimeDays||5)),
+        orders:[...r.orders],
+        materialId:mat?.id||"",
+      };
+    }).sort((a,b)=>b.net-a.net);
+    setResult(rows);
+    setRunning(false);
+  }
+
+  async function createRequests(){
+    const shortages=result.filter(r=>r.net>0);
+    if(shortages.length===0){alert("Acik satin alma ihtiyaci bulunmuyor.");return;}
+    const now=new Date().toISOString();
+    for(const row of shortages){
+      const payload={
+        code:`PR-${Date.now().toString().slice(-6)}-${Math.floor(Math.random()*99)}`,
+        materialId:row.materialId||"",
+        materialCode:row.componentCode,
+        materialName:row.componentName,
+        qty:row.net,
+        needDate:addDays(todayStr(),row.leadTimeDays||0),
+        priority:"high",
+        source:"mrp_auto",
+        status:"pending",
+        orderRefs:row.orders,
+        createdBy:currentUser.id,
+        updatedAt:now,
+      };
+      await window.DB.addDoc("purchaseRequests",payload);
+      await addAuditLog(currentUser.id,"purchaseRequest","", "create_from_mrp",null,payload,{module:"mrp"});
+    }
+    await window.DB.addDoc("mrpRuns",{ranAt:now,createdBy:currentUser.id,rowCount:shortages.length,rows:result});
+    alert(`${shortages.length} satin alma talebi olusturuldu.`);
+    load();
+  }
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  const critical=result.filter(r=>r.net>0).length;
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <div>
+          <div style={{fontWeight:700,color:C.text}}>MRP Net Ihtiyac Calistirma</div>
+          <div style={{fontSize:12,color:C.muted2,marginTop:3}}>BOM + acik is emirleri + mevcut stok + acik PR bazli hesap.</div>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={runMrp} disabled={running} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,opacity:running?0.7:1}}>{running?"Calisiyor...":"MRP Calistir"}</button>
+          <button onClick={createRequests} style={{...btnSt("green"),padding:"8px 12px",fontSize:12}}>Talep Olustur</button>
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>BOM Lu Parca</div><div style={{fontSize:23,color:C.accent,fontWeight:800}}>{parts.filter(p=>(p.bomLines||[]).length>0).length}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Acik Is Emri</div><div style={{fontSize:23,color:C.text,fontWeight:800}}>{orders.filter(o=>isOpenOrderStatus(o.status)).length}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Kritik Eksik</div><div style={{fontSize:23,color:critical?C.red:C.green,fontWeight:800}}>{critical}</div></div>
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Net Ihtiyac Sonucu ({result.length})</div>
+        {result.map(r=>(
+          <div key={r.componentCode} style={{padding:"8px 0",borderBottom:`1px solid ${C.border}`,display:"grid",gridTemplateColumns:"1.3fr repeat(5,.8fr)",gap:8,fontSize:12,alignItems:"center"}}>
+            <div style={{color:C.text,fontWeight:700}}>{r.componentCode} Â· {r.componentName}</div>
+            <div style={{color:C.muted2}}>Brut: {r.grossReq}</div>
+            <div style={{color:C.muted2}}>Stok: {r.onHand}</div>
+            <div style={{color:C.muted2}}>Acik PR: {r.openPr}</div>
+            <div style={{color:C.muted2}}>SS: {r.safety}</div>
+            <div style={{color:r.net>0?C.red:C.green,fontWeight:700}}>Net: {r.net}</div>
+          </div>
+        ))}
+        {result.length===0&&<div style={{fontSize:12,color:C.muted2}}>MRP henuz calistirilmadi.</div>}
+      </div>
+    </div>
+  );
+}
+
+function PurchasingModule({currentUser}){
+  const [loading,setLoading]=useState(true);
+  const [suppliers,setSuppliers]=useState([]);
+  const [supplierGroups,setSupplierGroups]=useState(normalizeSupplierGroups({}).list||[]);
+  const [materials,setMaterials]=useState([]);
+  const [requests,setRequests]=useState([]);
+  const [quotes,setQuotes]=useState([]);
+  const [orders,setOrders]=useState([]);
+  const [receipts,setReceipts]=useState([]);
+  const [view,setView]=useState("requests");
+  const [supplierGroupFilter,setSupplierGroupFilter]=useState("all");
+  const [supplierForm,setSupplierForm]=useState({name:"",code:"",groupId:"",leadTimeDays:"7",email:"",phone:"",currency:"TRY"});
+  const [reqForm,setReqForm]=useState({materialId:"",qty:"",needDate:todayStr(),priority:"normal",note:""});
+  const [quoteForm,setQuoteForm]=useState({requestId:"",supplierId:"",unitPrice:"0",leadTimeDays:"7",paymentTermDays:"30",currency:"TRY",note:""});
+  const [recvForm,setRecvForm]=useState({poId:"",acceptedQty:"",rejectedQty:"0",receiptDate:todayStr(),note:""});
+
+  const load=useCallback(async()=>{
+    const [s,m,r,q,p,gr,groupDoc]=await Promise.all([
+      window.DB.getAll("suppliers"),
+      window.DB.getAll("materials"),
+      window.DB.getAll("purchaseRequests"),
+      window.DB.getAll("supplierQuotes"),
+      window.DB.getAll("purchaseOrders"),
+      window.DB.getAll("goodsReceipts"),
+      window.DB.getDoc("config","supplierGroups"),
+    ]);
+    const normalizedGroups=normalizeSupplierGroups(groupDoc||{}).list||[];
+    setSupplierGroups(normalizedGroups);
+    setSuppliers(s); setMaterials(m); setRequests(r); setQuotes(q); setOrders(p); setReceipts(gr);
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    if(!supplierGroups.length) return;
+    setSupplierForm(prev=>{
+      if(prev.groupId&&supplierGroups.some(g=>g.id===prev.groupId)) return prev;
+      return {...prev,groupId:supplierGroups[0].id};
+    });
+  },[supplierGroups]);
+  useEffect(()=>{
+    setSupplierGroupFilter(prev=>{
+      if(prev==="all"||prev==="ungrouped") return prev;
+      return supplierGroups.some(g=>g.id===prev)?prev:"all";
+    });
+  },[supplierGroups]);
+  const matById=Object.fromEntries(materials.map(m=>[m.id,m]));
+  const reqById=Object.fromEntries(requests.map(r=>[r.id,r]));
+  const supplierGroupById=Object.fromEntries((supplierGroups||[]).map(row=>[row.id,row]));
+
+  function resolveSupplierGroup(row){
+    const match=row?.groupId?supplierGroupById[row.groupId]:null;
+    if(match) return match;
+    return {
+      id:"ungrouped",
+      name:String(row?.groupName||"Grupsuz").trim()||"Grupsuz",
+      color:normalizeHexColor(row?.groupColor,"#64748b"),
+      sortOrder:99999,
+    };
+  }
+
+  async function saveSupplier(){
+    if(!supplierForm.name.trim()){alert("Tedarikci adi zorunlu.");return;}
+    const group=supplierGroups.find(x=>x.id===supplierForm.groupId)||supplierGroups[0]||null;
+    const payload={name:supplierForm.name.trim(),code:(supplierForm.code||`TED-${Date.now().toString().slice(-4)}`).toUpperCase(),groupId:group?.id||"",groupName:group?.name||"Grupsuz",groupColor:group?.color||"#64748b",leadTimeDays:Math.max(0,safeNum(supplierForm.leadTimeDays)),email:supplierForm.email.trim(),phone:supplierForm.phone.trim(),currency:supplierForm.currency||"TRY",updatedAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("suppliers",payload);
+    if(!id){alert("Tedarikci kaydedilemedi.");return;}
+    setSuppliers(prev=>[{id,...payload},...prev]);
+    setSupplierForm({name:"",code:"",groupId:supplierGroups[0]?.id||"",leadTimeDays:"7",email:"",phone:"",currency:"TRY"});
+  }
+  async function saveRequest(){
+    if(!reqForm.materialId||safeNum(reqForm.qty)<=0){alert("Malzeme ve miktar zorunlu.");return;}
+    const mat=matById[reqForm.materialId];
+    const payload={code:`PR-${String(Date.now()).slice(-6)}`,materialId:reqForm.materialId,materialCode:mat?.code||"",materialName:mat?.name||"",qty:Math.max(0,safeNum(reqForm.qty)),needDate:reqForm.needDate||todayStr(),priority:reqForm.priority||"normal",source:"manual",status:"pending",note:reqForm.note.trim(),createdBy:currentUser.id,updatedAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("purchaseRequests",payload);
+    if(!id){alert("Talep olusturulamadi.");return;}
+    setRequests(prev=>[{id,...payload},...prev]);
+    setReqForm({materialId:"",qty:"",needDate:todayStr(),priority:"normal",note:""});
+  }
+  async function setRequestStatus(r,status){
+    const patch={status,updatedAt:new Date().toISOString()};
+    const ok=await window.DB.updateDoc("purchaseRequests",r.id,patch);
+    if(!ok) return;
+    setRequests(prev=>prev.map(x=>x.id===r.id?{...x,...patch}:x));
+  }
+  async function saveQuote(){
+    if(!quoteForm.requestId||!quoteForm.supplierId){alert("Talep ve tedarikci secin.");return;}
+    const req=reqById[quoteForm.requestId];
+    const supplier=suppliers.find(s=>s.id===quoteForm.supplierId);
+    if(!req||!supplier){alert("Talep veya tedarikci bulunamadi.");return;}
+    const supplierGroup=resolveSupplierGroup(supplier);
+    const payload={requestId:req.id,requestCode:req.code||"",supplierId:supplier.id,supplierName:supplier.name||"",supplierGroupId:supplierGroup.id||"",supplierGroupName:supplierGroup.name||"Grupsuz",supplierGroupColor:supplierGroup.color||"#64748b",unitPrice:Math.max(0,safeNum(quoteForm.unitPrice)),leadTimeDays:Math.max(0,safeNum(quoteForm.leadTimeDays)),paymentTermDays:Math.max(0,safeNum(quoteForm.paymentTermDays??30)),currency:quoteForm.currency||supplier.currency||"TRY",total:Math.max(0,safeNum(quoteForm.unitPrice))*safeNum(req.qty),note:quoteForm.note.trim(),status:"new",updatedAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("supplierQuotes",payload);
+    if(!id){alert("Teklif kaydedilemedi.");return;}
+    setQuotes(prev=>[{id,...payload},...prev]);
+    setQuoteForm({requestId:"",supplierId:"",unitPrice:"0",leadTimeDays:"7",paymentTermDays:"30",currency:"TRY",note:""});
+  }
+  async function quoteToPo(q){
+    const req=reqById[q.requestId];
+    if(!req){alert("Talep bulunamadi.");return;}
+    const payload={code:`PO-${String(Date.now()).slice(-6)}`,requestId:req.id,requestCode:req.code||"",supplierId:q.supplierId,supplierName:q.supplierName||"",supplierGroupId:q.supplierGroupId||"",supplierGroupName:q.supplierGroupName||"",supplierGroupColor:q.supplierGroupColor||"",materialId:req.materialId||"",materialCode:req.materialCode||"",materialName:req.materialName||"",qty:safeNum(req.qty),unitPrice:safeNum(q.unitPrice),currency:q.currency||"TRY",total:safeNum(req.qty)*safeNum(q.unitPrice),orderDate:todayStr(),expectedDate:addDays(todayStr(),safeNum(q.leadTimeDays)),paymentTermDays:Math.max(0,safeNum(q.paymentTermDays??30)),receivedQty:0,rejectedQty:0,status:"ordered",createdBy:currentUser.id,updatedAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("purchaseOrders",payload);
+    if(!id){alert("PO olusturulamadi.");return;}
+    await setRequestStatus(req,"ordered");
+    setOrders(prev=>[{id,...payload},...prev]);
+  }
+  async function receivePo(){
+    const po=orders.find(o=>o.id===recvForm.poId);
+    if(!po){alert("PO secin.");return;}
+    const accepted=Math.max(0,safeNum(recvForm.acceptedQty));
+    const rejected=Math.max(0,safeNum(recvForm.rejectedQty));
+    if(accepted+rejected<=0){alert("Alinan miktar girin.");return;}
+    const payload={poId:po.id,poCode:po.code||"",materialId:po.materialId||"",materialCode:po.materialCode||"",materialName:po.materialName||"",acceptedQty:accepted,rejectedQty:rejected,receiptDate:recvForm.receiptDate||todayStr(),note:recvForm.note.trim(),createdBy:currentUser.id,createdAt:new Date().toISOString()};
+    const rid=await window.DB.addDoc("goodsReceipts",payload);
+    if(!rid){alert("Malzeme girisi kaydedilemedi.");return;}
+    const newAccepted=safeNum(po.receivedQty)+accepted;
+    const newRejected=safeNum(po.rejectedQty)+rejected;
+    const totalIn=newAccepted+newRejected;
+    const status=totalIn>=safeNum(po.qty)?"received":"partial";
+    await window.DB.updateDoc("purchaseOrders",po.id,{receivedQty:newAccepted,rejectedQty:newRejected,status,updatedAt:new Date().toISOString()});
+    if(po.materialId){
+      const mat=matById[po.materialId];
+      if(mat) await window.DB.updateDoc("materials",mat.id,{stock:safeNum(mat.stock)+accepted,updatedAt:new Date().toISOString()});
+    }
+    if(accepted>0){
+      const paymentTermDays=Math.max(0,safeNum(po.paymentTermDays??30));
+      const dueDate=addDays(recvForm.receiptDate||todayStr(),paymentTermDays);
+      const amount=Math.max(0,accepted*safeNum(po.unitPrice));
+      if(amount>0){
+        const financePayload={
+          flow:"odeme",
+          status:"planned",
+          dueDate,
+          amount,
+          currency:String(po.currency||"TRY").toUpperCase(),
+          paymentTermDays,
+          eventDate:recvForm.receiptDate||todayStr(),
+          qty:accepted,
+          sourceType:"purchase_receipt",
+          sourceId:rid,
+          sourceRefId:po.id||"",
+          sourceCode:po.code||"",
+          poId:po.id||"",
+          poCode:po.code||"",
+          supplierId:po.supplierId||"",
+          supplierName:po.supplierName||"",
+          note:recvForm.note.trim(),
+          createdBy:currentUser.id,
+          updatedAt:new Date().toISOString(),
+        };
+        const fid=await window.DB.addDoc("financeLedger",financePayload);
+        if(!fid){
+          alert("Malzeme girisi alindi ancak finans odeme satiri olusturulamadi.");
+        }
+      }
+    }
+    setRecvForm({poId:"",acceptedQty:"",rejectedQty:"0",receiptDate:todayStr(),note:""});
+    load();
+  }
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  const openReq=requests.filter(r=>!["received","cancelled","closed"].includes(r.status||""));
+  const supplierPerf=suppliers.map(s=>{
+    const group=resolveSupplierGroup(s);
+    const pos=orders.filter(o=>o.supplierId===s.id);
+    const gr=receipts.filter(r=>pos.some(p=>p.id===r.poId));
+    const onTime=gr.filter(r=>{
+      const po=pos.find(p=>p.id===r.poId);
+      return po&&r.receiptDate<=po.expectedDate;
+    }).length;
+    const quality=gr.reduce((a,r)=>a+safeNum(r.acceptedQty),0);
+    const total=gr.reduce((a,r)=>a+safeNum(r.acceptedQty)+safeNum(r.rejectedQty),0);
+    return {id:s.id,name:s.name||"-",groupId:group.id||"ungrouped",groupName:group.name||"Grupsuz",groupColor:group.color||"#64748b",groupSort:safeNum(group.sortOrder)||99999,po:pos.length,onTimePct:gr.length?Math.round((onTime/gr.length)*100):0,qualityPct:total?Math.round((quality/total)*100):0};
+  });
+  const filteredSupplierPerf=supplierGroupFilter==="all"?supplierPerf:supplierPerf.filter(row=>row.groupId===supplierGroupFilter);
+  const supplierPerfMap={};
+  filteredSupplierPerf.forEach(row=>{
+    const key=row.groupId||"ungrouped";
+    if(!supplierPerfMap[key]){
+      supplierPerfMap[key]={id:key,name:row.groupName||"Grupsuz",color:normalizeHexColor(row.groupColor,"#64748b"),sortOrder:safeNum(row.groupSort)||99999,rows:[]};
+    }
+    supplierPerfMap[key].rows.push(row);
+  });
+  const supplierPerfGroups=Object.values(supplierPerfMap).sort((a,b)=>{
+    const s=safeNum(a.sortOrder)-safeNum(b.sortOrder);
+    if(s!==0) return s;
+    return (a.name||"").localeCompare(b.name||"","tr");
+  });
+
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <button onClick={()=>setView("requests")} style={chip(view==="requests",C.accent)}>Talep ve PO</button>
+        <button onClick={()=>setView("suppliers")} style={chip(view==="suppliers",C.green)}>Tedarikciler</button>
+        <button onClick={()=>setView("quotes")} style={chip(view==="quotes",C.warn)}>Teklifler</button>
+      </div>
+
+      {view==="suppliers"&&(
+        <>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+            <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Tedarikci Karti</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
+              <div><span style={labelSt}>Unvan</span><input style={inputSt} value={supplierForm.name} onChange={e=>setSupplierForm(f=>({...f,name:e.target.value}))}/></div>
+              <div><span style={labelSt}>Kod</span><input style={inputSt} value={supplierForm.code} onChange={e=>setSupplierForm(f=>({...f,code:e.target.value}))}/></div>
+              <div><span style={labelSt}>Grup</span><select style={inputSt} value={supplierForm.groupId} onChange={e=>setSupplierForm(f=>({...f,groupId:e.target.value}))}>{supplierGroups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
+              <div><span style={labelSt}>Lead-Time</span><input style={inputSt} type="number" min="0" value={supplierForm.leadTimeDays} onChange={e=>setSupplierForm(f=>({...f,leadTimeDays:e.target.value}))}/></div>
+              <div><span style={labelSt}>E-Posta</span><input style={inputSt} value={supplierForm.email} onChange={e=>setSupplierForm(f=>({...f,email:e.target.value}))}/></div>
+              <div><span style={labelSt}>Telefon</span><input style={inputSt} value={supplierForm.phone} onChange={e=>setSupplierForm(f=>({...f,phone:e.target.value}))}/></div>
+              <div><span style={labelSt}>Para Birimi</span><select style={inputSt} value={supplierForm.currency} onChange={e=>setSupplierForm(f=>({...f,currency:e.target.value}))}><option value="TRY">TRY</option><option value="EUR">EUR</option><option value="USD">USD</option></select></div>
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}><button onClick={saveSupplier} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Kaydet</button></div>
+          </div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+              <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Tedarikci Performansi</div>
+              <select style={{...inputSt,padding:"6px 8px",fontSize:12,minWidth:220}} value={supplierGroupFilter} onChange={e=>setSupplierGroupFilter(e.target.value)}>
+                <option value="all">Tum Gruplar</option>
+                {supplierGroups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
+                {supplierPerf.some(x=>x.groupId==="ungrouped")&&<option value="ungrouped">Grupsuz</option>}
+              </select>
+            </div>
+            {supplierPerfGroups.map(group=>(
+              <div key={group.id} style={{border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden",marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",background:C.surface,borderBottom:`1px solid ${C.border}`}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{width:10,height:10,borderRadius:99,background:normalizeHexColor(group.color,"#64748b"),display:"inline-block"}}/>
+                    <div style={{fontSize:12,color:C.text,fontWeight:700}}>{group.name}</div>
+                  </div>
+                  <div style={{fontSize:11,color:C.muted2}}>{group.rows.length} tedarikci</div>
+                </div>
+                {group.rows.map(s=>(
+                  <div key={s.id} style={{display:"grid",gridTemplateColumns:"1.4fr repeat(3,.8fr)",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
+                    <div style={{color:C.text,fontWeight:700}}>{s.name}</div>
+                    <div style={{color:C.muted2}}>PO: {s.po}</div>
+                    <div style={{color:s.onTimePct<70?C.red:C.green}}>OTD %{s.onTimePct}</div>
+                    <div style={{color:s.qualityPct<90?C.warn:C.green}}>Kalite %{s.qualityPct}</div>
+                  </div>
+                ))}
+              </div>
+            ))}
+            {supplierPerf.length>0&&supplierPerfGroups.length===0&&<div style={{fontSize:12,color:C.muted2}}>Secilen grupte kayit yok.</div>}
+            {supplierPerf.length===0&&<div style={{fontSize:12,color:C.muted2}}>Kayitli tedarikci yok.</div>}
+          </div>
+        </>
+      )}
+
+      {view==="quotes"&&(
+        <>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+            <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Tedarikci Teklifi</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8}}>
+              <div><span style={labelSt}>Talep</span><select style={inputSt} value={quoteForm.requestId} onChange={e=>setQuoteForm(f=>({...f,requestId:e.target.value}))}><option value="">Secin</option>{openReq.map(r=><option key={r.id} value={r.id}>{r.code} Â· {r.materialCode} Â· {r.qty}</option>)}</select></div>
+              <div><span style={labelSt}>Tedarikci</span><select style={inputSt} value={quoteForm.supplierId} onChange={e=>setQuoteForm(f=>({...f,supplierId:e.target.value}))}><option value="">Secin</option>{suppliers.map(s=>{const group=resolveSupplierGroup(s);return <option key={s.id} value={s.id}>{s.name} Â· {group.name}</option>;})}</select></div>
+              <div><span style={labelSt}>Birim Fiyat</span><input style={inputSt} type="number" min="0" value={quoteForm.unitPrice} onChange={e=>setQuoteForm(f=>({...f,unitPrice:e.target.value}))}/></div>
+              <div><span style={labelSt}>Lead-Time</span><input style={inputSt} type="number" min="0" value={quoteForm.leadTimeDays} onChange={e=>setQuoteForm(f=>({...f,leadTimeDays:e.target.value}))}/></div>
+              <div><span style={labelSt}>Odeme Vadesi (Gun)</span><input style={inputSt} type="number" min="0" value={quoteForm.paymentTermDays} onChange={e=>setQuoteForm(f=>({...f,paymentTermDays:e.target.value}))}/></div>
+              <div><span style={labelSt}>Para</span><select style={inputSt} value={quoteForm.currency} onChange={e=>setQuoteForm(f=>({...f,currency:e.target.value}))}><option value="TRY">TRY</option><option value="EUR">EUR</option><option value="USD">USD</option></select></div>
+            </div>
+            <div style={{marginTop:8}}><span style={labelSt}>Not</span><input style={inputSt} value={quoteForm.note} onChange={e=>setQuoteForm(f=>({...f,note:e.target.value}))}/></div>
+            <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}><button onClick={saveQuote} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Teklif Kaydet</button></div>
+          </div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Teklif Listesi</div>
+            {quotes.map(q=>(
+              <div key={q.id} style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr 1fr auto",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,alignItems:"center",fontSize:12}}>
+                <div style={{color:C.text,fontWeight:700}}>{q.requestCode} Â· {q.supplierName} {q.supplierGroupName?`Â· ${q.supplierGroupName}`:""}</div>
+                <div style={{color:C.muted2}}>{moneyFmt(q.unitPrice)} / {q.currency}</div>
+                <div style={{color:C.muted2}}>Toplam {moneyFmt(q.total)}</div>
+                <div style={{color:C.muted2}}>LT {q.leadTimeDays}g Â· Vade {Math.max(0,safeNum(q.paymentTermDays??30))}g</div>
+                <button onClick={()=>quoteToPo(q)} style={{...btnSt("green"),padding:"6px 8px",fontSize:11}}>PO Olustur</button>
+              </div>
+            ))}
+            {quotes.length===0&&<div style={{fontSize:12,color:C.muted2}}>Teklif yok.</div>}
+          </div>
+        </>
+      )}
+
+      {view==="requests"&&(
+        <>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+            <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Satin Alma Talebi (Manuel)</div>
+            <div style={{display:"grid",gridTemplateColumns:"1.2fr .8fr .8fr .8fr",gap:8}}>
+              <div><span style={labelSt}>Malzeme</span><select style={inputSt} value={reqForm.materialId} onChange={e=>setReqForm(f=>({...f,materialId:e.target.value}))}><option value="">Secin</option>{materials.map(m=><option key={m.id} value={m.id}>{m.code} Â· {m.name}</option>)}</select></div>
+              <div><span style={labelSt}>Miktar</span><input style={inputSt} type="number" min="0" value={reqForm.qty} onChange={e=>setReqForm(f=>({...f,qty:e.target.value}))}/></div>
+              <div><span style={labelSt}>Ihtiyac Tarihi</span><input style={inputSt} type="date" value={reqForm.needDate} onChange={e=>setReqForm(f=>({...f,needDate:e.target.value||todayStr()}))}/></div>
+              <div><span style={labelSt}>Oncelik</span><select style={inputSt} value={reqForm.priority} onChange={e=>setReqForm(f=>({...f,priority:e.target.value}))}><option value="high">Yuksek</option><option value="normal">Normal</option><option value="low">Dusuk</option></select></div>
+            </div>
+            <div style={{marginTop:8}}><span style={labelSt}>Not</span><input style={inputSt} value={reqForm.note} onChange={e=>setReqForm(f=>({...f,note:e.target.value}))}/></div>
+            <div style={{display:"flex",justifyContent:"space-between",marginTop:10,flexWrap:"wrap",gap:8}}>
+              <button onClick={saveRequest} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Talep Kaydet</button>
+              <button onClick={()=>downloadCsv(`purchase-requests-${todayStr()}.csv`,[{label:"Kod",key:"code"},{label:"Malzeme",key:"materialCode"},{label:"Ad",key:"materialName"},{label:"Miktar",key:"qty"},{label:"Ihtiyac",key:"needDate"},{label:"Durum",key:"status"}],requests)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>CSV Indir</button>
+            </div>
+          </div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Talep Listesi ({requests.length})</div>
+            {requests.map(r=>(
+              <div key={r.id} style={{display:"grid",gridTemplateColumns:"1.2fr 1fr .8fr .8fr auto auto",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,alignItems:"center",fontSize:12}}>
+                <div style={{color:C.text,fontWeight:700}}>{r.code} Â· {r.materialCode} Â· {r.materialName}</div>
+                <div style={{color:C.muted2}}>Qty {safeNum(r.qty)} Â· {r.needDate||"-"}</div>
+                <div style={{color:C.muted2}}>{r.priority||"normal"}</div>
+                <Badge label={r.status||"pending"} color={["pending","approved","ordered"].includes(r.status||"")?C.warn:C.green}/>
+                <button onClick={()=>setRequestStatus(r,"approved")} style={{...btnSt("ghost"),padding:"6px 8px",fontSize:11}}>Onayla</button>
+                <button onClick={()=>setRequestStatus(r,"cancelled")} style={{...btnSt("danger"),padding:"6px 8px",fontSize:11}}>Iptal</button>
+              </div>
+            ))}
+          </div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Satin Alma Siparisleri ({orders.length})</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr .7fr .7fr .7fr",gap:8,marginBottom:8}}>
+              <div><span style={labelSt}>PO Sec</span><select style={inputSt} value={recvForm.poId} onChange={e=>setRecvForm(f=>({...f,poId:e.target.value}))}><option value="">Secin</option>{orders.filter(o=>o.status!=="received").map(o=><option key={o.id} value={o.id}>{o.code} Â· {o.materialCode} Â· Kalan {Math.max(0,safeNum(o.qty)-safeNum(o.receivedQty)-safeNum(o.rejectedQty))}</option>)}</select></div>
+              <div><span style={labelSt}>Kabul</span><input style={inputSt} type="number" min="0" value={recvForm.acceptedQty} onChange={e=>setRecvForm(f=>({...f,acceptedQty:e.target.value}))}/></div>
+              <div><span style={labelSt}>Red</span><input style={inputSt} type="number" min="0" value={recvForm.rejectedQty} onChange={e=>setRecvForm(f=>({...f,rejectedQty:e.target.value}))}/></div>
+              <div><span style={labelSt}>Giris Tarihi</span><input style={inputSt} type="date" value={recvForm.receiptDate} onChange={e=>setRecvForm(f=>({...f,receiptDate:e.target.value||todayStr()}))}/></div>
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end"}}><button onClick={receivePo} style={{...btnSt("green"),padding:"8px 12px",fontSize:12}}>Malzeme Girisi Isle</button></div>
+            {orders.map(o=>(
+              <div key={o.id} style={{padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.muted2,display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr .8fr",gap:8}}>
+                <div style={{color:C.text,fontWeight:700}}>{o.code} Â· {o.supplierName} {o.supplierGroupName?`Â· ${o.supplierGroupName}`:""}</div>
+                <div>Malzeme: {o.materialCode} Â· {o.qty}</div>
+                <div>Alinan: {safeNum(o.receivedQty)} Â· Red: {safeNum(o.rejectedQty)}</div>
+                <Badge label={o.status||"ordered"} color={o.status==="received"?C.green:C.warn}/>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function DowntimeModule({currentUser,machines=DEFAULT_MACHINES}){
+  const [loading,setLoading]=useState(true);
+  const [types,setTypes]=useState([]);
+  const [events,setEvents]=useState([]);
+  const shiftRows=useShiftWindows();
+  const fallbackShiftId=shiftRows[0]?.id||DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1";
+  const [typeForm,setTypeForm]=useState({code:"",name:"",category:"ariza",requireReason:true,notifyMaintenance:true});
+  const [eventForm,setEventForm]=useState({machine:machines[0]||"CNC-1",typeId:"",startAt:`${todayStr()}T08:00`,endAt:`${todayStr()}T09:00`,operatorId:currentUser.id||"",reason:"",shift:fallbackShiftId});
+
+  const load=useCallback(async()=>{
+    const [t,e]=await Promise.all([window.DB.getAll("downtimeTypes"),window.DB.getAll("downtimeEvents")]);
+    setTypes(t); setEvents(e);
+    if(t.length===0){
+      const seeds=[["DT-ARIZA","Ariza","ariza"],["DT-MAT","Malzeme Yok","malzeme"],["DT-PROG","Program Hatasi","program"],["DT-MOLA","Mola","mola"],["DT-TEM","Temizlik","temizlik"]];
+      for(const [code,name,cat] of seeds){
+        await window.DB.addDoc("downtimeTypes",{code,name,category:cat,requireReason:true,notifyMaintenance:cat==="ariza",updatedAt:new Date().toISOString()});
+      }
+      const again=await window.DB.getAll("downtimeTypes");
+      setTypes(again);
+    }
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    setEventForm(prev=>shiftRows.some(row=>row.id===prev.shift)?prev:{...prev,shift:fallbackShiftId});
+  },[shiftRows,fallbackShiftId]);
+
+  async function saveType(){
+    if(!typeForm.name.trim()){alert("Durus tipi adi zorunlu.");return;}
+    const payload={code:(typeForm.code||`DT-${Date.now().toString().slice(-4)}`).toUpperCase(),name:typeForm.name.trim(),category:typeForm.category||"ariza",requireReason:Boolean(typeForm.requireReason),notifyMaintenance:Boolean(typeForm.notifyMaintenance),updatedAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("downtimeTypes",payload);
+    if(!id){alert("Durus tipi kaydedilemedi.");return;}
+    setTypes(prev=>[{id,...payload},...prev]);
+    setTypeForm({code:"",name:"",category:"ariza",requireReason:true,notifyMaintenance:true});
+  }
+  async function saveEvent(){
+    const type=types.find(t=>t.id===eventForm.typeId);
+    const selectedShiftRow=shiftRows.find(row=>row.id===eventForm.shift)||shiftRows[0]||DEFAULT_SHIFT_WINDOWS[0];
+    if(!type){alert("Durus tipi secin.");return;}
+    if(type.requireReason&&!eventForm.reason.trim()){alert("Bu durus tipi icin neden girisi zorunlu.");return;}
+    const startIso=new Date(eventForm.startAt).toISOString();
+    const endIso=new Date(eventForm.endAt).toISOString();
+    const durationMin=Math.max(0,Math.round((new Date(endIso)-new Date(startIso))/60000));
+    if(durationMin<=0){alert("Bitis zamani baslangictan buyuk olmali.");return;}
+    const payload={machine:eventForm.machine,typeId:type.id,typeCode:type.code||"",typeName:type.name||"",category:type.category||"",startAt:startIso,endAt:endIso,durationMin,date:eventForm.startAt.slice(0,10),operatorId:eventForm.operatorId||"",reason:eventForm.reason.trim(),shift:eventForm.shift||"",shiftLabel:selectedShiftRow?.label||eventForm.shift||"",createdBy:currentUser.id,updatedAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("downtimeEvents",payload);
+    if(!id){alert("Durus kaydedilemedi.");return;}
+    if(type.notifyMaintenance){
+      await window.DB.addDoc("notifications",{type:"maintenance",title:"Bakim Bildirimi",message:`${payload.machine} icin ${type.name} durusu girildi.`,severity:"high",status:"new",sourceKey:id,createdAt:new Date().toISOString()});
+    }
+    setEvents(prev=>[{id,...payload},...prev]);
+    setEventForm(f=>({...f,reason:""}));
+  }
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  const paretoMap={};
+  events.forEach(e=>{
+    const key=`${e.typeCode||"-"} ${e.typeName||"-"}`;
+    if(!paretoMap[key]) paretoMap[key]={key,count:0,min:0};
+    paretoMap[key].count+=1;
+    paretoMap[key].min+=safeNum(e.durationMin);
+  });
+  const pareto=Object.values(paretoMap).sort((a,b)=>b.min-a.min).slice(0,10);
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Durus Kaydi</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
+          <div><span style={labelSt}>Tezgah</span><select style={inputSt} value={eventForm.machine} onChange={e=>setEventForm(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+          <div><span style={labelSt}>Durus Tipi</span><select style={inputSt} value={eventForm.typeId} onChange={e=>setEventForm(f=>({...f,typeId:e.target.value}))}><option value="">Secin</option>{types.map(t=><option key={t.id} value={t.id}>{t.code} Â· {t.name}</option>)}</select></div>
+          <div><span style={labelSt}>Baslangic</span><input style={inputSt} type="datetime-local" value={eventForm.startAt} onChange={e=>setEventForm(f=>({...f,startAt:e.target.value}))}/></div>
+          <div><span style={labelSt}>Bitis</span><input style={inputSt} type="datetime-local" value={eventForm.endAt} onChange={e=>setEventForm(f=>({...f,endAt:e.target.value}))}/></div>
+          <div><span style={labelSt}>Operator</span><input style={inputSt} value={eventForm.operatorId} onChange={e=>setEventForm(f=>({...f,operatorId:e.target.value}))}/></div>
+          <div><span style={labelSt}>Vardiya</span><select style={inputSt} value={eventForm.shift} onChange={e=>setEventForm(f=>({...f,shift:e.target.value}))}>{shiftRows.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
+          <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Neden</span><input style={inputSt} value={eventForm.reason} onChange={e=>setEventForm(f=>({...f,reason:e.target.value}))} placeholder="Ariza detayi / malzeme yok vb."/></div>
+        </div>
+        <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}><button onClick={saveEvent} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Durus Kaydet</button></div>
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Durus Tipi Tanimi</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:8}}>
+          <input style={inputSt} value={typeForm.code} onChange={e=>setTypeForm(f=>({...f,code:e.target.value}))} placeholder="DT-KOD"/>
+          <input style={inputSt} value={typeForm.name} onChange={e=>setTypeForm(f=>({...f,name:e.target.value}))} placeholder="Tip Adi"/>
+          <select style={inputSt} value={typeForm.category} onChange={e=>setTypeForm(f=>({...f,category:e.target.value}))}><option value="ariza">Ariza</option><option value="malzeme">Malzeme</option><option value="program">Program</option><option value="mola">Mola</option><option value="temizlik">Temizlik</option><option value="diger">Diger</option></select>
+          <button onClick={saveType} style={{...btnSt("green"),padding:"8px 12px",fontSize:12}}>Ekle</button>
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Son Duruslar ({events.length})</div>
+          {events.slice(0,20).map(e=>(
+            <div key={e.id} style={{padding:"7px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.muted2}}>
+              <span style={{color:C.text,fontWeight:700}}>{e.machine}</span> Â· {e.typeName} Â· {e.durationMin} dk Â· {(e.date||"")}
+            </div>
+          ))}
+        </div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Top 10 Durus Nedeni (Pareto)</div>
+          {pareto.map((p,idx)=>(
+            <div key={p.key} style={{padding:"7px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,display:"flex",justifyContent:"space-between",gap:8}}>
+              <div style={{color:C.text}}>{idx+1}. {p.key}</div>
+              <div style={{color:C.muted2}}>{p.min} dk ({p.count})</div>
+            </div>
+          ))}
+          {pareto.length===0&&<div style={{fontSize:12,color:C.muted2}}>Durus kaydi yok.</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
+  const [loading,setLoading]=useState(true);
+  const [orders,setOrders]=useState([]);
+  const [salesOrders,setSalesOrders]=useState([]);
+  const [traces,setTraces]=useState([]);
+  const [inspections,setInspections]=useState([]);
+  const [fai,setFai]=useState([]);
+  const [balloonRuns,setBalloonRuns]=useState([]);
+  const [view,setView]=useState("trace");
+  const [traceForm,setTraceForm]=useState({orderId:"",machine:machines[0]||"CNC-1",operatorId:currentUser.id||"",programVersion:"V1",serialNo:"",timestamp:todayStr()+"T08:00",complaintRef:""});
+  const [inspForm,setInspForm]=useState({traceId:"",result:"pass",measurements:"",scrapQty:"0",scrapReason:"",scrapCost:"0"});
+  const [faiForm,setFaiForm]=useState({orderId:"",partNo:"",status:"draft",note:"",balloonRunId:""});
+  const [balloonForm,setBalloonForm]=useState({orderId:"",fileId:"",page:"1"});
+  const [balloonBusy,setBalloonBusy]=useState(false);
+  const [balloonSaveBusy,setBalloonSaveBusy]=useState(false);
+  const [balloonDeleteBusyId,setBalloonDeleteBusyId]=useState("");
+  const [balloonError,setBalloonError]=useState("");
+  const [balloonPreview,setBalloonPreview]=useState(null);
+  const [editableBalloons,setEditableBalloons]=useState([]);
+  const [drawSelection,setDrawSelection]=useState(null);
+  const [lastSelection,setLastSelection]=useState(null);
+  const [dragBalloon,setDragBalloon]=useState(null);
+  const previewDrawRef=useRef(null);
+  const load=useCallback(async()=>{
+    const [o,s,t,i,f,b]=await Promise.all([
+      window.DB.getAll("orders"),
+      window.DB.getAll("salesOrders"),
+      window.DB.getAll("partTraceability"),
+      window.DB.getAll("qualityInspections"),
+      window.DB.getAll("faiRecords"),
+      window.DB.getAll("faiBalloonRuns"),
+    ]);
+    setOrders(o);
+    setSalesOrders(s);
+    setTraces(t);
+    setInspections(i);
+    setFai(f);
+    setBalloonRuns((b||[]).sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  const orderById=Object.fromEntries(orders.map(o=>[o.id,o]));
+  const approvedSalesOrderIds=new Set((salesOrders||[])
+    .filter(s=>["approved","in_production","delivered"].includes(s.status||""))
+    .map(s=>s.id));
+  const pdfOrders=(orders||[])
+    .filter(o=>Array.isArray(o.files)&&(o.files||[]).some(f=>f&&f.data&&isPdfFile(f)))
+    .filter(o=>!o.sourceSalesOrderId||approvedSalesOrderIds.has(o.sourceSalesOrderId));
+  const pdfOrderById=Object.fromEntries(pdfOrders.map(o=>[o.id,o]));
+  const selectedPdfOrder=pdfOrderById[balloonForm.orderId]||null;
+  const selectedPdfFiles=selectedPdfOrder
+    ? (selectedPdfOrder.files||[])
+      .filter(f=>f&&f.data&&isPdfFile(f))
+      .map((f,idx)=>({
+        ...f,
+        _pickId:String(f.id||`pdf_${idx}`),
+      }))
+    : [];
+  const selectedPdfFile=selectedPdfFiles.find(f=>f._pickId===balloonForm.fileId)||null;
+  const selectedBalloonRun=balloonRuns.find(r=>r.id===faiForm.balloonRunId)||null;
+  const orderBalloonRuns=balloonForm.orderId
+    ? balloonRuns.filter(r=>r.orderId===balloonForm.orderId)
+    : [];
+  useEffect(()=>{
+    if(!pdfOrders.length) return;
+    if(balloonForm.orderId&&pdfOrderById[balloonForm.orderId]) return;
+    const first=pdfOrders[0];
+    const files=(first.files||[]).filter(f=>f&&f.data&&isPdfFile(f));
+    setBalloonForm({
+      orderId:first.id||"",
+      fileId:String(files[0]?.id||"pdf_0"),
+      page:"1",
+    });
+  },[pdfOrders.map(o=>o.id).join(","),balloonForm.orderId]);
+  useEffect(()=>{
+    if(!selectedPdfOrder) return;
+    if(selectedPdfFiles.length===0){
+      setBalloonForm(f=>({...f,fileId:""}));
+      return;
+    }
+    if(selectedPdfFiles.some(f=>f._pickId===balloonForm.fileId)) return;
+    setBalloonForm(f=>({...f,fileId:selectedPdfFiles[0]._pickId}));
+  },[selectedPdfOrder?.id,selectedPdfFiles.map(f=>f._pickId).join(","),balloonForm.fileId]);
+  function normalizeBalloonRows(rows){
+    const normalized=(rows||[]).map((row,idx)=>({
+      no:idx+1,
+      text:String(row?.text||"").trim(),
+      page:Math.max(1,safeNum(row?.page)||Math.max(1,safeNum(balloonForm.page)||1)),
+      xPct:Math.max(0,Math.min(100,safeNum(row?.xPct))),
+      yPct:Math.max(0,Math.min(100,safeNum(row?.yPct))),
+    }));
+    return normalized.filter(r=>r.text);
+  }
+  function loadEditableBalloonsFromRun(run){
+    if(!run){
+      setEditableBalloons([]);
+      return;
+    }
+    const rows=Array.isArray(run.dimensions)?run.dimensions:[];
+    const prepared=rows.map((r,idx)=>({
+      no:idx+1,
+      text:String(r?.text||"").trim(),
+      page:Math.max(1,safeNum(r?.page)||Math.max(1,safeNum(run.page)||1)),
+      xPct:Math.max(0,Math.min(100,safeNum(r?.xPct))),
+      yPct:Math.max(0,Math.min(100,safeNum(r?.yPct))),
+    }));
+    setEditableBalloons(prepared);
+  }
+  function updateEditableBalloon(idx,key,value){
+    setEditableBalloons(prev=>prev.map((row,i)=>{
+      if(i!==idx) return row;
+      if(key==="text") return {...row,text:String(value||"")};
+      if(key==="page") return {...row,page:Math.max(1,safeNum(value)||1)};
+      if(key==="xPct"||key==="yPct") return {...row,[key]:Math.max(0,Math.min(100,safeNum(value)))};
+      return row;
+    }));
+  }
+  function addEditableBalloonRow(){
+    setEditableBalloons(prev=>{
+      const nextNo=prev.length+1;
+      return [...prev,{
+        no:nextNo,
+        text:"",
+        page:Math.max(1,safeNum(balloonForm.page)||1),
+        xPct:50,
+        yPct:50,
+      }];
+    });
+  }
+  function clampPct(v){
+    return Math.max(0,Math.min(100,safeNum(v)));
+  }
+  function normalizeSelectionRect(sel){
+    if(!sel) return null;
+    const x1=clampPct(sel.x1);
+    const y1=clampPct(sel.y1);
+    const x2=clampPct(sel.x2);
+    const y2=clampPct(sel.y2);
+    const left=Math.min(x1,x2);
+    const top=Math.min(y1,y2);
+    const width=Math.abs(x2-x1);
+    const height=Math.abs(y2-y1);
+    return {xPct:left,yPct:top,wPct:width,hPct:height};
+  }
+  function previewPointFromEvent(ev){
+    const host=previewDrawRef.current;
+    if(!host) return null;
+    const rect=host.getBoundingClientRect();
+    if(!rect||rect.width<=0||rect.height<=0) return null;
+    const xPct=((ev.clientX-rect.left)/rect.width)*100;
+    const yPct=((ev.clientY-rect.top)/rect.height)*100;
+    return {xPct:clampPct(xPct),yPct:clampPct(yPct)};
+  }
+  function appendSelectionAsDimensions(rect){
+    const tokens=Array.isArray(balloonPreview?.tokens)?balloonPreview.tokens:[];
+    if(tokens.length===0){
+      alert("Secim icin kullanilabilir olcu verisi yok. Once Oto Balonla calistirin.");
+      return;
+    }
+    const xMin=rect.xPct;
+    const xMax=rect.xPct+rect.wPct;
+    const yMin=rect.yPct;
+    const yMax=rect.yPct+rect.hPct;
+    const picked=tokens.filter(t=>safeNum(t.xPct)>=xMin&&safeNum(t.xPct)<=xMax&&safeNum(t.yPct)>=yMin&&safeNum(t.yPct)<=yMax);
+    if(picked.length===0){
+      alert("Secilen alanda olcu bulunamadi.");
+      return;
+    }
+    const existingKeySet=new Set(editableBalloons.map(r=>`${String(r.text||"").trim().toUpperCase()}|${Math.round(safeNum(r.xPct)*10)/10}|${Math.round(safeNum(r.yPct)*10)/10}`));
+    const dedupeToken={};
+    const toAdd=[];
+    picked.forEach(t=>{
+      const key=`${String(t.text||"").trim().toUpperCase()}|${Math.round(safeNum(t.xPct)*10)/10}|${Math.round(safeNum(t.yPct)*10)/10}`;
+      if(existingKeySet.has(key)||dedupeToken[key]) return;
+      dedupeToken[key]=true;
+      toAdd.push({
+        no:0,
+        text:String(t.text||"").trim(),
+        page:Math.max(1,safeNum(t.page)||Math.max(1,safeNum(balloonForm.page)||1)),
+        xPct:clampPct(t.xPct),
+        yPct:clampPct(t.yPct),
+      });
+    });
+    if(toAdd.length===0){
+      alert("Secimdeki olculer zaten listede var.");
+      return;
+    }
+    setEditableBalloons(prev=>[...prev,...toAdd].map((row,idx)=>({...row,no:idx+1})));
+  }
+  function startBalloonDrag(ev,idx){
+    const row=editableBalloons[idx];
+    if(!row) return;
+    const pt=previewPointFromEvent(ev);
+    if(!pt) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    setDrawSelection(null);
+    setLastSelection(null);
+    setDragBalloon({
+      idx,
+      offsetXPct:clampPct(row.xPct)-pt.xPct,
+      offsetYPct:clampPct(row.yPct)-pt.yPct,
+    });
+  }
+  function onPreviewMouseDown(ev){
+    if(dragBalloon) return;
+    if(!(balloonPreview&&Array.isArray(balloonPreview.tokens)&&balloonPreview.tokens.length>0)) return;
+    const pt=previewPointFromEvent(ev);
+    if(!pt) return;
+    setDrawSelection({active:true,x1:pt.xPct,y1:pt.yPct,x2:pt.xPct,y2:pt.yPct});
+    setLastSelection(null);
+  }
+  function onPreviewMouseMove(ev){
+    if(dragBalloon){
+      const pt=previewPointFromEvent(ev);
+      if(!pt) return;
+      setEditableBalloons(prev=>prev.map((row,i)=>{
+        if(i!==dragBalloon.idx) return row;
+        return {
+          ...row,
+          xPct:clampPct(pt.xPct+safeNum(dragBalloon.offsetXPct)),
+          yPct:clampPct(pt.yPct+safeNum(dragBalloon.offsetYPct)),
+        };
+      }));
+      return;
+    }
+    if(!(drawSelection&&drawSelection.active)) return;
+    const pt=previewPointFromEvent(ev);
+    if(!pt) return;
+    setDrawSelection(sel=>sel?{...sel,x2:pt.xPct,y2:pt.yPct}:sel);
+  }
+  function finalizePreviewSelection(ev){
+    if(dragBalloon){
+      setDragBalloon(null);
+      return;
+    }
+    if(!(drawSelection&&drawSelection.active)) return;
+    const pt=ev?previewPointFromEvent(ev):null;
+    const finalSel={...drawSelection,x2:pt?pt.xPct:drawSelection.x2,y2:pt?pt.yPct:drawSelection.y2,active:false};
+    const rect=normalizeSelectionRect(finalSel);
+    setDrawSelection(null);
+    if(!rect||rect.wPct<0.7||rect.hPct<0.7){
+      setLastSelection(null);
+      return;
+    }
+    setLastSelection(rect);
+    appendSelectionAsDimensions(rect);
+  }
+  async function openPreviewForRun(run){
+    if(!run){setBalloonPreview(null);return;}
+    const wo=pdfOrderById[run.orderId];
+    if(!wo){setBalloonPreview(null);return;}
+    const pdfRows=(wo.files||[]).filter(f=>f&&f.data&&isPdfFile(f)).map((f,idx)=>({...f,_pickId:String(f.id||`pdf_${idx}`)}));
+    const picked=pdfRows.find(f=>f._pickId===run.filePickId)||pdfRows[0]||null;
+    if(!picked){setBalloonPreview(null);return;}
+    setBalloonForm(f=>({...f,orderId:wo.id||f.orderId,fileId:picked._pickId,page:String(run.page||1)}));
+    setDragBalloon(null);
+    setBalloonBusy(true);
+    setBalloonError("");
+    try{
+      const result=await autoBalloonPdfDrawing(picked,{pageNumber:Math.max(1,safeNum(run.page)||1)});
+      setBalloonPreview({
+        runId:run.id||"",
+        previewDataUrl:result.previewDataUrl,
+        balloons:Array.isArray(run.dimensions)?run.dimensions:[],
+        tokens:result.tokens||[],
+        fileName:run.fileName||picked.name||"drawing.pdf",
+        page:result.page,
+      });
+      setLastSelection(null);
+    }catch{
+      setBalloonPreview(null);
+      setBalloonError("Secili run icin PDF onizleme yuklenemedi.");
+    }finally{
+      setBalloonBusy(false);
+    }
+  }
+  function removeEditableBalloonRow(idx){
+    setEditableBalloons(prev=>prev.filter((_,i)=>i!==idx).map((row,i)=>({...row,no:i+1})));
+  }
+  async function saveEditableBalloons(){
+    const rows=normalizeBalloonRows(editableBalloons);
+    if(rows.length===0){alert("Kaydedilecek olcu yok.");return;}
+    setBalloonSaveBusy(true);
+    try{
+      const runId=faiForm.balloonRunId||balloonPreview?.runId||"";
+      if(runId){
+        const patch={
+          dimensions:rows,
+          dimensionCount:rows.length,
+          updatedAt:new Date().toISOString(),
+          updatedBy:currentUser.id,
+        };
+        const ok=await window.DB.updateDoc("faiBalloonRuns",runId,patch);
+        if(!ok){alert("Balon run guncellenemedi.");return;}
+        setBalloonRuns(prev=>prev.map(r=>r.id===runId?{...r,...patch}:r));
+        setEditableBalloons(rows);
+        setBalloonPreview(prev=>prev&&prev.runId===runId?{...prev,balloons:rows}:prev);
+        return;
+      }
+      const wo=pdfOrderById[balloonForm.orderId]||orderById[faiForm.orderId];
+      if(!wo){alert("Kayit icin is emri secin.");return;}
+      const payload={
+        orderId:wo.id||"",
+        orderCode:wo.code||"",
+        partNo:wo.partNo||"",
+        filePickId:selectedPdfFile?selectedPdfFile._pickId:"manual",
+        fileName:selectedPdfFile?.name||"manual-entry",
+        page:Math.max(1,safeNum(balloonForm.page)||1),
+        pageCount:Math.max(1,safeNum(balloonForm.page)||1),
+        dimensionCount:rows.length,
+        dimensions:rows,
+        detectedTokens:Array.isArray(balloonPreview?.tokens)?balloonPreview.tokens:[],
+        source:"manual",
+        status:"draft",
+        createdBy:currentUser.id,
+        createdAt:new Date().toISOString(),
+        updatedAt:new Date().toISOString(),
+      };
+      const id=await window.DB.addDoc("faiBalloonRuns",payload);
+      if(!id){alert("Balon run kaydedilemedi.");return;}
+      setBalloonRuns(prev=>[{id,...payload},...prev]);
+      setFaiForm(f=>({...f,balloonRunId:id,orderId:f.orderId||wo.id||"",partNo:f.partNo||wo.partNo||""}));
+      setBalloonPreview(prev=>prev?{...prev,runId:id,balloons:rows}:prev);
+      setEditableBalloons(rows);
+    }finally{
+      setBalloonSaveBusy(false);
+    }
+  }
+  async function removeBalloonRun(runId){
+    const id=String(runId||"").trim();
+    if(!id) return;
+    const run=balloonRuns.find(r=>r.id===id)||null;
+    if(!run) return;
+    const linkedFai=fai.filter(r=>r.balloonRunId===id);
+    const warn=linkedFai.length>0
+      ? `Bu balon run ${linkedFai.length} FAI kaydina bagli. Baglantilar temizlenerek silinsin mi?`
+      : `Balon run silinsin mi? (${run.fileName||"PDF"} Â· ${run.dimensionCount||0} olcu)`;
+    if(!confirm(warn)) return;
+    setBalloonDeleteBusyId(id);
+    try{
+      if(linkedFai.length>0){
+        for(const rec of linkedFai){
+          const patch={
+            balloonRunId:"",
+            balloonCount:0,
+            drawingFileName:"",
+            updatedAt:new Date().toISOString(),
+            updatedBy:currentUser.id,
+          };
+          const okPatch=await window.DB.updateDoc("faiRecords",rec.id,patch);
+          if(!okPatch){
+            alert("FAI baglantisi temizlenemedi. Silme iptal edildi.");
+            return;
+          }
+        }
+        setFai(prev=>prev.map(r=>linkedFai.some(x=>x.id===r.id)?{...r,balloonRunId:"",balloonCount:0,drawingFileName:""}:r));
+      }
+      const ok=await window.DB.deleteDoc("faiBalloonRuns",id);
+      if(!ok){alert("Balon run silinemedi.");return;}
+      setBalloonRuns(prev=>prev.filter(r=>r.id!==id));
+      setFaiForm(prev=>prev.balloonRunId===id?{...prev,balloonRunId:""}:prev);
+      if((faiForm.balloonRunId||"")===id){
+        setEditableBalloons([]);
+        setLastSelection(null);
+      }
+      if(balloonPreview&&balloonPreview.runId===id){
+        setBalloonPreview(null);
+        setEditableBalloons([]);
+        setLastSelection(null);
+      }
+    }finally{
+      setBalloonDeleteBusyId("");
+    }
+  }
+
+  async function saveTrace(){
+    const wo=orderById[traceForm.orderId];
+    if(!wo){alert("Is emri secin.");return;}
+    if(!traceForm.serialNo.trim()){alert("Seri/lot no zorunlu.");return;}
+    const payload={orderId:wo.id,orderCode:wo.code||"",partNo:wo.partNo||"",revision:wo.revision||"",machine:traceForm.machine,operatorId:traceForm.operatorId||"",programVersion:traceForm.programVersion||"",serialNo:traceForm.serialNo.trim(),timestamp:new Date(traceForm.timestamp).toISOString(),complaintRef:traceForm.complaintRef.trim(),createdBy:currentUser.id,updatedAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("partTraceability",payload);
+    if(!id){alert("Iz kaydi olusturulamadi.");return;}
+    setTraces(prev=>[{id,...payload},...prev]);
+    setTraceForm(f=>({...f,serialNo:"",complaintRef:""}));
+  }
+  async function saveInspection(){
+    const tr=traces.find(t=>t.id===inspForm.traceId);
+    if(!tr){alert("Iz kaydi secin.");return;}
+    const payload={traceId:tr.id,orderId:tr.orderId,orderCode:tr.orderCode,partNo:tr.partNo||"",result:inspForm.result,measurements:inspForm.measurements.trim(),scrapQty:Math.max(0,safeNum(inspForm.scrapQty)),scrapReason:inspForm.scrapReason.trim(),scrapCost:Math.max(0,safeNum(inspForm.scrapCost)),createdBy:currentUser.id,createdAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("qualityInspections",payload);
+    if(!id){alert("Muayene kaydi eklenemedi.");return;}
+    if(payload.result==="fail"){
+      await window.DB.addDoc("notifications",{type:"quality",title:"Kalite Sapmasi",message:`${payload.orderCode} icin fail muayene kaydi olustu.`,severity:"high",status:"new",sourceKey:id,createdAt:new Date().toISOString()});
+    }
+    setInspections(prev=>[{id,...payload},...prev]);
+    setInspForm({traceId:"",result:"pass",measurements:"",scrapQty:"0",scrapReason:"",scrapCost:"0"});
+  }
+  async function runAutoBalloon(){
+    const wo=pdfOrderById[balloonForm.orderId];
+    if(!wo){alert("PDF icin is emri secin.");return;}
+    if(!selectedPdfFile){alert("PDF secin.");return;}
+    setDragBalloon(null);
+    setBalloonBusy(true);
+    setBalloonError("");
+    try{
+      const result=await autoBalloonPdfDrawing(selectedPdfFile,{pageNumber:Math.max(1,safeNum(balloonForm.page)||1)});
+      const payload={
+        orderId:wo.id||"",
+        orderCode:wo.code||"",
+        partNo:wo.partNo||"",
+        filePickId:selectedPdfFile._pickId,
+        fileName:selectedPdfFile.name||"drawing.pdf",
+        page:result.page,
+        pageCount:result.pageCount,
+        dimensionCount:(result.balloons||[]).length,
+        dimensions:(result.balloons||[]).map(d=>({
+          no:d.no,
+          text:d.text,
+          page:d.page,
+          xPct:d.xPct,
+          yPct:d.yPct,
+        })),
+        detectedTokens:result.tokens||[],
+        source:"auto_pdfjs",
+        status:"draft",
+        createdBy:currentUser.id,
+        createdAt:new Date().toISOString(),
+        updatedAt:new Date().toISOString(),
+      };
+      const id=await window.DB.addDoc("faiBalloonRuns",payload);
+      if(!id){throw new Error("Balon kaydi saklanamadi.");}
+      const saved={id,...payload};
+      setBalloonRuns(prev=>[saved,...prev]);
+      setBalloonPreview({
+        runId:id,
+        previewDataUrl:result.previewDataUrl,
+        balloons:result.balloons||[],
+        tokens:result.tokens||[],
+        fileName:payload.fileName,
+        page:payload.page,
+      });
+      setLastSelection(null);
+      setEditableBalloons((result.balloons||[]).map((row,idx)=>({
+        no:idx+1,
+        text:String(row.text||""),
+        page:Math.max(1,safeNum(row.page)||payload.page||1),
+        xPct:Math.max(0,Math.min(100,safeNum(row.xPct))),
+        yPct:Math.max(0,Math.min(100,safeNum(row.yPct))),
+      })));
+      setFaiForm(f=>({
+        ...f,
+        orderId:f.orderId||wo.id||"",
+        partNo:f.partNo||wo.partNo||"",
+        balloonRunId:id,
+      }));
+    }catch(err){
+      setBalloonError(String(err?.message||"Oto balon olusturulamadi."));
+    }finally{
+      setBalloonBusy(false);
+    }
+  }
+  function bindSelectedBalloonRunToFai(runId){
+    const run=balloonRuns.find(r=>r.id===runId)||null;
+    if(!run){
+      setEditableBalloons([]);
+      setBalloonPreview(null);
+      return;
+    }
+    loadEditableBalloonsFromRun(run);
+    if(run&&run.id) openPreviewForRun(run);
+    setFaiForm(f=>({
+      ...f,
+      orderId:f.orderId||run.orderId||"",
+      partNo:f.partNo||run.partNo||"",
+      balloonRunId:run.id||"",
+    }));
+  }
+  async function saveFai(){
+    const wo=orderById[faiForm.orderId];
+    if(!wo){alert("Is emri secin.");return;}
+    const linkedRun=balloonRuns.find(r=>r.id===faiForm.balloonRunId)||null;
+    const payload={
+      orderId:wo.id,
+      orderCode:wo.code||"",
+      partNo:faiForm.partNo||wo.partNo||"",
+      status:faiForm.status||"draft",
+      note:faiForm.note.trim(),
+      balloonRunId:linkedRun?.id||"",
+      balloonCount:Math.max(0,safeNum(linkedRun?.dimensionCount)),
+      drawingFileName:linkedRun?.fileName||"",
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser.id,
+    };
+    const id=await window.DB.addDoc("faiRecords",payload);
+    if(!id){alert("FAI kaydi olusturulamadi.");return;}
+    setFai(prev=>[{id,...payload},...prev]);
+    setFaiForm({orderId:"",partNo:"",status:"draft",note:"",balloonRunId:""});
+  }
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  const failCount=inspections.filter(i=>i.result==="fail").length;
+  const scrapCost=inspections.reduce((s,i)=>s+safeNum(i.scrapCost),0);
+  const passCount=inspections.filter(i=>i.result==="pass").length;
+  const qualityPct=(passCount+failCount)>0?Math.round((passCount/(passCount+failCount))*100):100;
+
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <button onClick={()=>setView("trace")} style={chip(view==="trace",C.accent)}>Iz Kaydi</button>
+        <button onClick={()=>setView("inspect")} style={chip(view==="inspect",C.warn)}>Muayene/Hurda</button>
+        <button onClick={()=>setView("fai")} style={chip(view==="fai",C.green)}>FAI</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Toplam Iz Kaydi</div><div style={{fontSize:23,color:C.text,fontWeight:800}}>{traces.length}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Kalite Orani</div><div style={{fontSize:23,color:qualityPct<90?C.warn:C.green,fontWeight:800}}>%{qualityPct}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Hatali Muayene</div><div style={{fontSize:23,color:failCount?C.red:C.green,fontWeight:800}}>{failCount}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Hurda Maliyeti</div><div style={{fontSize:23,color:C.red,fontWeight:800}}>{moneyFmt(scrapCost)}</div></div>
+      </div>
+
+      {view==="trace"&&(
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Parca Iz Kaydi</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
+            <div><span style={labelSt}>Is Emri</span><select style={inputSt} value={traceForm.orderId} onChange={e=>setTraceForm(f=>({...f,orderId:e.target.value}))}><option value="">Secin</option>{orders.map(o=><option key={o.id} value={o.id}>{o.code} Â· {o.partNo||o.name}</option>)}</select></div>
+            <div><span style={labelSt}>Tezgah</span><select style={inputSt} value={traceForm.machine} onChange={e=>setTraceForm(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+            <div><span style={labelSt}>Operator</span><input style={inputSt} value={traceForm.operatorId} onChange={e=>setTraceForm(f=>({...f,operatorId:e.target.value}))}/></div>
+            <div><span style={labelSt}>NC Versiyon</span><input style={inputSt} value={traceForm.programVersion} onChange={e=>setTraceForm(f=>({...f,programVersion:e.target.value}))}/></div>
+            <div><span style={labelSt}>Seri/Lot No</span><input style={inputSt} value={traceForm.serialNo} onChange={e=>setTraceForm(f=>({...f,serialNo:e.target.value}))}/></div>
+            <div><span style={labelSt}>Zaman</span><input style={inputSt} type="datetime-local" value={traceForm.timestamp} onChange={e=>setTraceForm(f=>({...f,timestamp:e.target.value}))}/></div>
+            <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Musteri Sikayet Referansi (ops.)</span><input style={inputSt} value={traceForm.complaintRef} onChange={e=>setTraceForm(f=>({...f,complaintRef:e.target.value}))}/></div>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:10,flexWrap:"wrap",gap:8}}>
+            <button onClick={saveTrace} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Iz Kaydi Olustur</button>
+            <div style={{fontSize:12,color:C.muted2}}>Son kayit: {traces[0]?.serialNo||"-"}</div>
+          </div>
+        </div>
+      )}
+
+      {view==="inspect"&&(
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Muayene ve Hurda Girisi</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            <div><span style={labelSt}>Iz Kaydi</span><select style={inputSt} value={inspForm.traceId} onChange={e=>setInspForm(f=>({...f,traceId:e.target.value}))}><option value="">Secin</option>{traces.slice(0,120).map(t=><option key={t.id} value={t.id}>{t.orderCode} Â· {t.serialNo}</option>)}</select></div>
+            <div><span style={labelSt}>Sonuc</span><select style={inputSt} value={inspForm.result} onChange={e=>setInspForm(f=>({...f,result:e.target.value}))}><option value="pass">Gecti</option><option value="fail">Kaldi</option></select></div>
+            <div><span style={labelSt}>Hurda Adedi</span><input style={inputSt} type="number" min="0" value={inspForm.scrapQty} onChange={e=>setInspForm(f=>({...f,scrapQty:e.target.value}))}/></div>
+            <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Olcumler</span><input style={inputSt} value={inspForm.measurements} onChange={e=>setInspForm(f=>({...f,measurements:e.target.value}))}/></div>
+            <div><span style={labelSt}>Hurda Nedeni</span><input style={inputSt} value={inspForm.scrapReason} onChange={e=>setInspForm(f=>({...f,scrapReason:e.target.value}))}/></div>
+            <div><span style={labelSt}>Hurda Maliyeti</span><input style={inputSt} type="number" min="0" value={inspForm.scrapCost} onChange={e=>setInspForm(f=>({...f,scrapCost:e.target.value}))}/></div>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:10,flexWrap:"wrap",gap:8}}>
+            <button onClick={saveInspection} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Muayene Kaydet</button>
+            <div style={{fontSize:12,color:C.muted2}}>Kayit: {inspections.length}</div>
+          </div>
+        </div>
+      )}
+
+      {view==="fai"&&(
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>FAI Akisi</div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10,marginBottom:10}}>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:7}}>Teknik Resim Oto Balon (Beta)</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr .4fr 1fr",gap:8}}>
+              <div>
+                <span style={labelSt}>Onayli Siparisten Gelen Is Emri</span>
+                <select style={inputSt} value={balloonForm.orderId} onChange={e=>{setBalloonForm(f=>({...f,orderId:e.target.value,page:"1"}));setBalloonPreview(null);setBalloonError("");}}>
+                  <option value="">Secin</option>
+                  {pdfOrders.map(o=><option key={o.id} value={o.id}>{o.code} Â· {o.partNo||o.name||"-"}</option>)}
+                </select>
+              </div>
+              <div>
+                <span style={labelSt}>Teknik Resim PDF</span>
+                <select style={inputSt} value={balloonForm.fileId} onChange={e=>{setBalloonForm(f=>({...f,fileId:e.target.value}));setBalloonPreview(null);setBalloonError("");}}>
+                  <option value="">Secin</option>
+                  {selectedPdfFiles.map(f=><option key={f._pickId} value={f._pickId}>{f.name||"drawing.pdf"}</option>)}
+                </select>
+              </div>
+              <div>
+                <span style={labelSt}>Sayfa</span>
+                <input style={inputSt} type="number" min="1" value={balloonForm.page} onChange={e=>setBalloonForm(f=>({...f,page:e.target.value||"1"}))}/>
+              </div>
+              <div>
+                <span style={labelSt}>Kayitli Balon Calismasi</span>
+                <select style={inputSt} value={faiForm.balloonRunId||""} onChange={e=>{const id=e.target.value;setFaiForm(f=>({...f,balloonRunId:id}));bindSelectedBalloonRunToFai(id);}}>
+                  <option value="">Secin</option>
+                  {orderBalloonRuns.map(r=><option key={r.id} value={r.id}>{r.fileName||"PDF"} Â· S{r.page||1} Â· {r.dimensionCount||0} olcu</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8,justifyContent:"space-between",marginTop:8,flexWrap:"wrap"}}>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                <button onClick={runAutoBalloon} disabled={balloonBusy||!balloonForm.orderId||!balloonForm.fileId} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,opacity:(balloonBusy||!balloonForm.orderId||!balloonForm.fileId)?0.65:1}}>
+                  {balloonBusy?"Oto BalonlanÄ±yor...":"Oto Balonla"}
+                </button>
+                <button onClick={addEditableBalloonRow} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>
+                  + Manuel Olcu
+                </button>
+                <button onClick={saveEditableBalloons} disabled={balloonSaveBusy||editableBalloons.length===0} style={{...btnSt("green"),padding:"8px 12px",fontSize:12,opacity:(balloonSaveBusy||editableBalloons.length===0)?0.65:1}}>
+                  {balloonSaveBusy?"Kaydediliyor...":"Olculeri Kaydet"}
+                </button>
+                <button onClick={()=>removeBalloonRun(faiForm.balloonRunId)} disabled={!faiForm.balloonRunId||Boolean(balloonDeleteBusyId)} style={{...btnSt("danger"),padding:"8px 12px",fontSize:12,opacity:(!faiForm.balloonRunId||Boolean(balloonDeleteBusyId))?0.65:1}}>
+                  {balloonDeleteBusyId? "Calisma Siliniyor..." : "Calismayi Sil"}
+                </button>
+              </div>
+              <div style={{fontSize:12,color:C.muted2}}>
+                {selectedBalloonRun?`Bagli calisma: ${selectedBalloonRun.fileName||"-"} Â· ${selectedBalloonRun.dimensionCount||0} olcu`:`Calisma secilmedi (manuel kayitta yeni calisma acilir)`}
+              </div>
+            </div>
+            {balloonError&&<div style={{fontSize:12,color:C.red,marginTop:7}}>{balloonError}</div>}
+            {(balloonPreview||editableBalloons.length>0)&&(
+              <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1.3fr .9fr",gap:10}}>
+                <div style={{border:`1px solid ${C.border}`,borderRadius:8,overflow:"auto",maxHeight:520,background:"#fff"}}>
+                  {balloonPreview?(
+                    <div
+                      ref={previewDrawRef}
+                      onMouseDown={onPreviewMouseDown}
+                      onMouseMove={onPreviewMouseMove}
+                      onMouseUp={finalizePreviewSelection}
+                      onMouseLeave={finalizePreviewSelection}
+                      style={{position:"relative",minWidth:420,cursor:(balloonPreview.tokens||[]).length>0?"crosshair":"default",userSelect:"none"}}
+                    >
+                      <img src={balloonPreview.previewDataUrl} alt={balloonPreview.fileName||"PDF"} style={{width:"100%",display:"block"}}/>
+                      {editableBalloons.slice(0,300).map((b,idx)=>(
+                        <span
+                          key={`bal_${b.no}_${b.page}`}
+                          title={`${b.no} Â· ${b.text}`}
+                          onMouseDown={ev=>startBalloonDrag(ev,idx)}
+                          style={{
+                            position:"absolute",
+                            left:`${b.xPct}%`,
+                            top:`${b.yPct}%`,
+                            transform:"translate(-50%,-50%)",
+                            minWidth:18,
+                            height:18,
+                            padding:"0 4px",
+                            borderRadius:999,
+                            background:"#ef4444",
+                            color:"#fff",
+                            fontSize:10,
+                            fontWeight:700,
+                            display:"inline-flex",
+                            alignItems:"center",
+                            justifyContent:"center",
+                            lineHeight:1,
+                            border:"1px solid #fff",
+                            boxShadow:"0 1px 2px rgba(0,0,0,.35)",
+                            pointerEvents:"auto",
+                            cursor:(dragBalloon&&dragBalloon.idx===idx)?"grabbing":"grab",
+                          }}
+                        >
+                          {b.no}
+                        </span>
+                      ))}
+                      {(() => {
+                        const rect=drawSelection?normalizeSelectionRect(drawSelection):lastSelection;
+                        if(!rect||rect.wPct<=0||rect.hPct<=0) return null;
+                        return (
+                          <span style={{position:"absolute",left:`${rect.xPct}%`,top:`${rect.yPct}%`,width:`${rect.wPct}%`,height:`${rect.hPct}%`,border:`2px dashed ${C.warn}`,background:"rgba(246,173,85,.15)",pointerEvents:"none"}}/>
+                        );
+                      })()}
+                    </div>
+                  ):(
+                    <div style={{padding:"14px 12px",fontSize:12,color:"#334155"}}>
+                      Bu run icin onizleme goruntusu yok. Olcu listesi yine manuel duzenlenebilir.
+                    </div>
+                  )}
+                </div>
+                <div style={{border:`1px solid ${C.border}`,borderRadius:8,padding:8,maxHeight:520,overflowY:"auto",background:C.card}}>
+                  <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase",marginBottom:6}}>Olcu Listesi ({editableBalloons.length})</div>
+                  {balloonPreview&&<div style={{fontSize:11,color:C.muted2,marginBottom:6}}>PDF ustunde kutu cizerek olcu otomatik ekleyebilirsiniz. Balon numaralarini surukleyip konumunu duzeltebilirsiniz.</div>}
+                  {editableBalloons.length===0&&<div style={{fontSize:12,color:C.muted2}}>Olcu satiri yok. "Manuel Olcu" ile ekleyin.</div>}
+                  {editableBalloons.slice(0,260).map((row,idx)=>(
+                    <div key={`dim_${row.no}_${idx}`} style={{display:"grid",gridTemplateColumns:"34px 1fr auto",gap:6,padding:"5px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,alignItems:"center"}}>
+                      <div style={{fontWeight:700,color:C.accent}}>#{row.no}</div>
+                      <input style={{...inputSt,padding:"5px 7px",fontSize:12}} value={row.text} onChange={e=>updateEditableBalloon(idx,"text",e.target.value)} placeholder="Olcu metni"/>
+                      <button onClick={()=>removeEditableBalloonRow(idx)} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Sil</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            <div><span style={labelSt}>Is Emri</span><select style={inputSt} value={faiForm.orderId} onChange={e=>setFaiForm(f=>({...f,orderId:e.target.value}))}><option value="">Secin</option>{orders.map(o=><option key={o.id} value={o.id}>{o.code}</option>)}</select></div>
+            <div><span style={labelSt}>Parca No</span><input style={inputSt} value={faiForm.partNo} onChange={e=>setFaiForm(f=>({...f,partNo:e.target.value}))}/></div>
+            <div><span style={labelSt}>Durum</span><select style={inputSt} value={faiForm.status} onChange={e=>setFaiForm(f=>({...f,status:e.target.value}))}><option value="draft">Taslak</option><option value="pending">Beklemede</option><option value="approved">Onayli</option><option value="rejected">Reddedildi</option></select></div>
+            <div><span style={labelSt}>Balon Calismasi</span><select style={inputSt} value={faiForm.balloonRunId||""} onChange={e=>{const id=e.target.value;setFaiForm(f=>({...f,balloonRunId:id}));if(id){bindSelectedBalloonRunToFai(id);}else{setEditableBalloons([]);setBalloonPreview(null);}}}><option value="">Yok</option>{balloonRuns.filter(r=>!faiForm.orderId||r.orderId===faiForm.orderId).map(r=><option key={r.id} value={r.id}>{r.orderCode||"-"} Â· {r.fileName||"PDF"} Â· {r.dimensionCount||0}</option>)}</select></div>
+            <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Not</span><textarea rows={2} style={{...inputSt,minHeight:62,resize:"vertical"}} value={faiForm.note} onChange={e=>setFaiForm(f=>({...f,note:e.target.value}))}/></div>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:10,flexWrap:"wrap",gap:8}}>
+            <button onClick={saveFai} style={{...btnSt("green"),padding:"8px 12px",fontSize:12}}>FAI Kaydet</button>
+            <div style={{fontSize:12,color:C.muted2}}>FAI kaydi: {fai.length}</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NotificationCenterModule({currentUser}){
+  const [loading,setLoading]=useState(true);
+  const [rules,setRules]=useState([]);
+  const [notifications,setNotifications]=useState([]);
+  const [orders,setOrders]=useState([]);
+  const [salesOrders,setSalesOrders]=useState([]);
+  const [materials,setMaterials]=useState([]);
+  const [telemetry,setTelemetry]=useState([]);
+  const [tools,setTools]=useState([]);
+  const [form,setForm]=useState({name:"",type:"late_work_order",threshold:"1",channels:["inapp"],active:true});
+  const load=useCallback(async()=>{
+    const [r,n,o,s,m,t,toolsRows]=await Promise.all([
+      window.DB.getAll("notificationRules"),
+      window.DB.getAll("notifications"),
+      window.DB.getAll("orders"),
+      window.DB.getAll("salesOrders"),
+      window.DB.getAll("materials"),
+      window.DB.getAll("machineTelemetryMock"),
+      window.DB.getAll("toolStock"),
+    ]);
+    setRules(r); setNotifications(n.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setOrders(o); setSalesOrders(s); setMaterials(m); setTelemetry(t); setTools(toolsRows);
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  const updateForm=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const hasRecent=(key)=>notifications.some(n=>n.sourceKey===key&&!["resolved","closed"].includes(n.status||""));
+  async function emit(n){
+    if(hasRecent(n.sourceKey)) return;
+    const id=await window.DB.addDoc("notifications",{...n,status:"new",createdAt:new Date().toISOString()});
+    if(id) setNotifications(prev=>[{id,...n,status:"new",createdAt:new Date().toISOString()},...prev]);
+  }
+  async function saveRule(){
+    if(!form.name.trim()){alert("Kural adi zorunlu.");return;}
+    const payload={name:form.name.trim(),type:form.type,threshold:safeNum(form.threshold),channels:form.channels,active:Boolean(form.active),updatedAt:new Date().toISOString(),updatedBy:currentUser.id};
+    const id=await window.DB.addDoc("notificationRules",payload);
+    if(!id){alert("Kural kaydedilemedi.");return;}
+    setRules(prev=>[{id,...payload},...prev]);
+    setForm({name:"",type:"late_work_order",threshold:"1",channels:["inapp"],active:true});
+  }
+  async function evaluate(){
+    const today=todayStr();
+    const latestByMachine={};
+    [...telemetry].sort((a,b)=>(b.collectedAtUtc||"").localeCompare(a.collectedAtUtc||"")).forEach(t=>{
+      if(!t.machineId||latestByMachine[t.machineId]) return;
+      latestByMachine[t.machineId]=t;
+    });
+    for(const r of rules.filter(x=>x.active)){
+      if(r.type==="late_work_order"){
+        const late=orders.filter(o=>isOpenOrderStatus(o.status)&&o.dueDate&&dayDiff(o.dueDate,today)>=safeNum(r.threshold));
+        for(const o of late) await emit({type:r.type,severity:"high",title:r.name,message:`${o.code} termin asimi`,sourceKey:`wo:${o.id}`,channels:r.channels||["inapp"]});
+      }
+      if(r.type==="due_sales_order"){
+        const due=salesOrders.filter(s=>!["delivered","cancelled"].includes(s.status||"")&&s.dueDate&&dayDiff(today,s.dueDate)<=safeNum(r.threshold)&&dayDiff(today,s.dueDate)>=0);
+        for(const s of due) await emit({type:r.type,severity:"medium",title:r.name,message:`${s.code||"-"} termin yaklasiyor`,sourceKey:`so:${s.id}`,channels:r.channels||["inapp"]});
+      }
+      if(r.type==="low_stock"){
+        const lows=materials.filter(m=>safeNum(m.stock)<=Math.max(safeNum(m.reorderPoint),safeNum(r.threshold)));
+        for(const m of lows) await emit({type:r.type,severity:"high",title:r.name,message:`${m.code||m.name} kritik stok`,sourceKey:`mat:${m.id}`,channels:r.channels||["inapp"]});
+      }
+      if(r.type==="tool_life"){
+        const lows=tools.filter(t=>t.remainingLifePct!==undefined&&t.remainingLifePct!==null&&safeNum(t.remainingLifePct)<=safeNum(r.threshold));
+        for(const t of lows) await emit({type:r.type,severity:"medium",title:r.name,message:`${t.code||t.name} takim omru dusuk`,sourceKey:`tool:${t.id}`,channels:r.channels||["inapp"]});
+      }
+      if(r.type==="machine_alarm"){
+        const alarms=Object.values(latestByMachine).filter(t=>(t.activeAlarms||[]).length>0);
+        for(const t of alarms) await emit({type:r.type,severity:"high",title:r.name,message:`${t.machineName||t.machineCode} alarm`,sourceKey:`alarm:${t.machineId}`,channels:r.channels||["inapp"]});
+      }
+      if(r.type==="cycle_deviation"){
+        const out=Object.values(latestByMachine).filter(t=>safeNum(t.cycleElapsedSec)>safeNum(r.threshold));
+        for(const t of out) await emit({type:r.type,severity:"medium",title:r.name,message:`${t.machineName||t.machineCode} cevrim sapmasi`,sourceKey:`cycle:${t.machineId}`,channels:r.channels||["inapp"]});
+      }
+    }
+  }
+  async function setStatus(n,status){
+    await window.DB.updateDoc("notifications",n.id,{status,updatedAt:new Date().toISOString(),updatedBy:currentUser.id});
+    setNotifications(prev=>prev.map(x=>x.id===n.id?{...x,status}:x));
+  }
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Bildirim Kurali</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr .8fr .8fr",gap:8}}>
+          <div><span style={labelSt}>Kural Adi</span><input style={inputSt} value={form.name} onChange={e=>updateForm("name",e.target.value)} placeholder="Gecikme Uyarisi"/></div>
+          <div><span style={labelSt}>Tip</span><select style={inputSt} value={form.type} onChange={e=>updateForm("type",e.target.value)}><option value="late_work_order">Is Emri Gecikme</option><option value="due_sales_order">Satis Termin Yaklasiyor</option><option value="low_stock">Kritik Stok</option><option value="tool_life">Takim Omru</option><option value="machine_alarm">Makina Alarm</option><option value="cycle_deviation">Cevrim Sapma</option></select></div>
+          <div><span style={labelSt}>Esik</span><input style={inputSt} type="number" min="0" value={form.threshold} onChange={e=>updateForm("threshold",e.target.value)}/></div>
+          <div><span style={labelSt}>Kanal</span><select style={inputSt} value={form.channels[0]||"inapp"} onChange={e=>updateForm("channels",[e.target.value])}><option value="inapp">In-App</option><option value="email">Email</option><option value="sms">SMS</option></select></div>
+        </div>
+        <div style={{display:"flex",gap:8,justifyContent:"space-between",marginTop:10,flexWrap:"wrap"}}>
+          <button onClick={saveRule} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Kural Kaydet</button>
+          <button onClick={evaluate} style={{...btnSt("green"),padding:"8px 12px",fontSize:12}}>Kurallari Calistir</button>
+        </div>
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Bildirim Akisi ({notifications.length})</div>
+        {notifications.slice(0,80).map(n=>(
+          <div key={n.id} style={{display:"grid",gridTemplateColumns:"1.4fr 1fr auto auto",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,alignItems:"center"}}>
+            <div><span style={{color:C.text,fontWeight:700}}>{n.title}</span><div style={{fontSize:11,color:C.muted2}}>{n.message}</div></div>
+            <Badge label={n.status||"new"} color={n.status==="new"?C.warn:n.status==="ack"?C.accent:C.green}/>
+            <button onClick={()=>setStatus(n,"ack")} style={{...btnSt("ghost"),padding:"6px 8px",fontSize:11}}>Ack</button>
+            <button onClick={()=>setStatus(n,"resolved")} style={{...btnSt("green"),padding:"6px 8px",fontSize:11}}>Kapat</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CostingModule(){
+  const [loading,setLoading]=useState(true);
+  const [parts,setParts]=useState([]);
+  const [orders,setOrders]=useState([]);
+  const [entries,setEntries]=useState([]);
+  const [salesOrders,setSalesOrders]=useState([]);
+  const [inspections,setInspections]=useState([]);
+  const load=useCallback(async()=>{
+    const [p,o,e,s,i]=await Promise.all([window.DB.getAll("parts"),window.DB.getAll("orders"),window.DB.getAll("entries"),window.DB.getAll("salesOrders"),window.DB.getAll("qualityInspections")]);
+    setParts(p); setOrders(o); setEntries(e); setSalesOrders(s); setInspections(i); setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  const partByNo={};
+  parts.forEach(p=>{partByNo[String(p.partNo||"").toUpperCase()]=p;});
+  const orderCostRows=orders.map(o=>{
+    const p=partByNo[String(o.partNo||"").toUpperCase()]||null;
+    const produced=entries.filter(e=>e.jobCode===o.code).reduce((s,e)=>s+safeNum(e.correct)+safeNum(e.wrong),0);
+    const qty=Math.max(0,safeNum(o.qty));
+    const planQty=qty||produced;
+    const materialUnit=p?safeNum(p.costBreakdown?.materialCost||0):0;
+    const laborUnit=p?safeNum(p.costBreakdown?.laborCost||0):0;
+    const machineUnit=p?safeNum(p.costBreakdown?.machineCost||0):0;
+    const planned=planQty*(materialUnit+laborUnit+machineUnit);
+    const actualQty=produced||planQty;
+    const actual=actualQty*(materialUnit+laborUnit+machineUnit);
+    const scrap=inspections.filter(i=>i.orderId===o.id||i.orderCode===o.code).reduce((s,i)=>s+safeNum(i.scrapCost),0);
+    return {id:o.id,code:o.code||"-",partNo:o.partNo||"-",customerName:o.customerName||"-",plannedCost:planned,actualCost:actual+scrap,produced:actualQty,scrapCost:scrap};
+  });
+  const totalActual=orderCostRows.reduce((s,r)=>s+r.actualCost,0);
+  const totalPlanned=orderCostRows.reduce((s,r)=>s+r.plannedCost,0);
+  const totalRevenue=salesOrders.reduce((s,o)=>s+safeNum(o.totalAmount),0);
+  const margin=totalRevenue-totalActual;
+  const byCustomer={};
+  salesOrders.forEach(s=>{
+    const k=s.customerName||"-";
+    if(!byCustomer[k]) byCustomer[k]={customer:k,revenue:0,orders:0};
+    byCustomer[k].revenue+=safeNum(s.totalAmount);
+    byCustomer[k].orders+=1;
+  });
+  const customerRows=Object.values(byCustomer).sort((a,b)=>b.revenue-a.revenue);
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Planlanan Maliyet</div><div style={{fontSize:23,color:C.muted2,fontWeight:800}}>{moneyFmt(totalPlanned)}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Gerceklesen Maliyet</div><div style={{fontSize:23,color:C.red,fontWeight:800}}>{moneyFmt(totalActual)}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Satis Geliri</div><div style={{fontSize:23,color:C.green,fontWeight:800}}>{moneyFmt(totalRevenue)}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Tahmini Marj</div><div style={{fontSize:23,color:margin<0?C.red:C.green,fontWeight:800}}>{moneyFmt(margin)}</div></div>
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Is Emri Bazli Maliyetler</div>
+          <button onClick={()=>downloadCsv(`costing-${todayStr()}.csv`,[{label:"Kod",key:"code"},{label:"Parca",key:"partNo"},{label:"Musteri",key:"customerName"},{label:"Uretim",key:"produced"},{label:"Plan",value:r=>r.plannedCost.toFixed(2)},{label:"Gercek",value:r=>r.actualCost.toFixed(2)},{label:"Hurda",value:r=>r.scrapCost.toFixed(2)}],orderCostRows)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>CSV Indir</button>
+        </div>
+        {orderCostRows.slice(0,80).map(r=>(
+          <div key={r.id} style={{display:"grid",gridTemplateColumns:"1.2fr 1fr .8fr .8fr .8fr .8fr",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
+            <div style={{color:C.text,fontWeight:700}}>{r.code} Â· {r.partNo}</div>
+            <div style={{color:C.muted2}}>{r.customerName}</div>
+            <div style={{color:C.muted2}}>Adet {r.produced}</div>
+            <div style={{color:C.muted2}}>Plan {moneyFmt(r.plannedCost)}</div>
+            <div style={{color:C.text}}>Gercek {moneyFmt(r.actualCost)}</div>
+            <div style={{color:C.red}}>Hurda {moneyFmt(r.scrapCost)}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Musteri Bazli Ciro</div>
+        {customerRows.map(c=>(
+          <div key={c.customer} style={{display:"grid",gridTemplateColumns:"1.5fr .8fr .8fr",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
+            <div style={{color:C.text,fontWeight:700}}>{c.customer}</div>
+            <div style={{color:C.muted2}}>Siparis {c.orders}</div>
+            <div style={{color:C.green}}>{moneyFmt(c.revenue)}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FinanceModule({currentUser,filtersVisible=true}){
+  const [loading,setLoading]=useState(true);
+  const [rows,setRows]=useState([]);
+  const [flowFilter,setFlowFilter]=useState("all");
+  const [statusFilter,setStatusFilter]=useState("all");
+  const [dateFrom,setDateFrom]=useState("");
+  const [dateTo,setDateTo]=useState("");
+  const [search,setSearch]=useState("");
+  const [sortDir,setSortDir]=useState("asc");
+
+  const load=useCallback(async()=>{
+    const list=await window.DB.getAll("financeLedger");
+    setRows(list.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="finance") return;
+      if(d.type==="refresh") load();
+      if(d.type==="sort"){
+        setSortDir(d.sortMode==="date_asc"?"asc":"desc");
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load]);
+
+  function statusBucket(row){
+    const s=String(row?.status||"planned").toLowerCase();
+    if(["collected","paid"].includes(s)) return "completed";
+    if(s==="cancelled") return "cancelled";
+    return "planned";
+  }
+  function statusLabel(row){
+    const bucket=statusBucket(row);
+    if(bucket==="completed") return row.flow==="tahsilat"?"Tahsil Edildi":"Odendi";
+    if(bucket==="cancelled") return "Iptal";
+    return "Planlandi";
+  }
+  function statusColor(row){
+    const bucket=statusBucket(row);
+    if(bucket==="completed") return C.green;
+    if(bucket==="cancelled") return C.red;
+    return C.warn;
+  }
+  function flowLabel(flow){
+    return flow==="odeme"?"Odeme":"Tahsilat";
+  }
+  function amountText(row){
+    return `${safeNum(row.amount).toFixed(2)} ${String(row.currency||"TRY").toUpperCase()}`;
+  }
+  function sumByCurrency(list){
+    const map={};
+    (Array.isArray(list)?list:[]).forEach(row=>{
+      const code=String(row?.currency||"TRY").toUpperCase();
+      if(!map[code]) map[code]=0;
+      map[code]+=safeNum(row?.amount);
+    });
+    return map;
+  }
+  function formatCurrencyMap(map){
+    const keys=Object.keys(map||{});
+    if(keys.length===0) return "0.00 TRY";
+    return keys.sort().map(code=>`${safeNum(map[code]).toFixed(2)} ${code}`).join(" + ");
+  }
+  function netCurrencyMap(inMap,outMap){
+    const keys=[...new Set([...Object.keys(inMap||{}),...Object.keys(outMap||{})])].sort();
+    if(keys.length===0) return "0.00 TRY";
+    return keys.map(code=>`${(safeNum(inMap?.[code])-safeNum(outMap?.[code])).toFixed(2)} ${code}`).join(" + ");
+  }
+  function inRange(row){
+    const ymd=String(row.dueDate||row.eventDate||"");
+    if(dateFrom&&(!ymd||ymd<dateFrom)) return false;
+    if(dateTo&&(!ymd||ymd>dateTo)) return false;
+    return true;
+  }
+  async function setLedgerStatus(row,next){
+    if((row.status||"planned")===next) return;
+    const patch={status:next,updatedAt:new Date().toISOString(),updatedBy:currentUser?.id||""};
+    const ok=await window.DB.updateDoc("financeLedger",row.id,patch);
+    if(!ok){alert("Finans satiri guncellenemedi.");return;}
+    setRows(prev=>prev.map(x=>x.id===row.id?{...x,...patch}:x));
+  }
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+
+  const q=search.trim().toLowerCase();
+  const filtered=rows.filter(row=>{
+    if(flowFilter!=="all"&&(row.flow||"tahsilat")!==flowFilter) return false;
+    if(statusFilter!=="all"&&statusBucket(row)!==statusFilter) return false;
+    if(!inRange(row)) return false;
+    if(!q) return true;
+    return (
+      (row.customerName||"").toLowerCase().includes(q)||
+      (row.supplierName||"").toLowerCase().includes(q)||
+      (row.orderCode||"").toLowerCase().includes(q)||
+      (row.poCode||"").toLowerCase().includes(q)||
+      (row.sourceCode||"").toLowerCase().includes(q)
+    );
+  });
+  const sorted=[...filtered].sort((a,b)=>{
+    const av=String(a.dueDate||a.eventDate||a.createdAt||"");
+    const bv=String(b.dueDate||b.eventDate||b.createdAt||"");
+    const cmp=av.localeCompare(bv);
+    return sortDir==="asc"?cmp:-cmp;
+  });
+  const openTahsilatMap=sumByCurrency(rows.filter(r=>(r.flow||"tahsilat")==="tahsilat"&&statusBucket(r)==="planned"));
+  const openOdemeMap=sumByCurrency(rows.filter(r=>(r.flow||"tahsilat")==="odeme"&&statusBucket(r)==="planned"));
+  const doneTahsilatMap=sumByCurrency(rows.filter(r=>(r.flow||"tahsilat")==="tahsilat"&&statusBucket(r)==="completed"));
+  const doneOdemeMap=sumByCurrency(rows.filter(r=>(r.flow||"tahsilat")==="odeme"&&statusBucket(r)==="completed"));
+  const openTahsilatText=formatCurrencyMap(openTahsilatMap);
+  const openOdemeText=formatCurrencyMap(openOdemeMap);
+  const doneTahsilatText=formatCurrencyMap(doneTahsilatMap);
+  const doneOdemeText=formatCurrencyMap(doneOdemeMap);
+  const netOpenText=netCurrencyMap(openTahsilatMap,openOdemeMap);
+
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:8}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Acik Tahsilat</div><div style={{fontSize:18,color:C.green,fontWeight:800}}>{openTahsilatText}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Acik Odeme</div><div style={{fontSize:18,color:C.red,fontWeight:800}}>{openOdemeText}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Kapanan Tahsilat</div><div style={{fontSize:18,color:C.green,fontWeight:800}}>{doneTahsilatText}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Kapanan Odeme</div><div style={{fontSize:18,color:C.red,fontWeight:800}}>{doneOdemeText}</div></div>
+      </div>
+
+      {filtersVisible&&(
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
+          <div style={{gridColumn:"1 / -1"}}>
+            <span style={labelSt}>Ara (cari / belge)</span>
+            <input style={inputSt} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Musteri, tedarikci, SIP/PO kodu"/>
+          </div>
+          <div>
+            <span style={labelSt}>Akis</span>
+            <select style={inputSt} value={flowFilter} onChange={e=>setFlowFilter(e.target.value)}>
+              <option value="all">Tum Akislar</option>
+              <option value="tahsilat">Tahsilat</option>
+              <option value="odeme">Odeme</option>
+            </select>
+          </div>
+          <div>
+            <span style={labelSt}>Durum</span>
+            <select style={inputSt} value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
+              <option value="all">Tum Durumlar</option>
+              <option value="planned">Planlandi</option>
+              <option value="completed">Tamamlandi</option>
+              <option value="cancelled">Iptal</option>
+            </select>
+          </div>
+          <div>
+            <span style={labelSt}>Vade Baslangic</span>
+            <input style={inputSt} type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value||"")}/>
+          </div>
+          <div>
+            <span style={labelSt}>Vade Bitis</span>
+            <input style={inputSt} type="date" value={dateTo} onChange={e=>setDateTo(e.target.value||"")}/>
+          </div>
+          <div style={{display:"flex",alignItems:"flex-end"}}>
+            <button onClick={()=>{setFlowFilter("all");setStatusFilter("all");setDateFrom("");setDateTo("");setSearch("");}} style={{...btnSt("ghost"),padding:"9px 10px",fontSize:12,width:"100%"}}>Filtreleri Temizle</button>
+          </div>
+        </div>
+      )}
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:8,flexWrap:"wrap"}}>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Finans Akisi ({sorted.length})</div>
+          <div style={{fontSize:12,color:C.accent,fontWeight:700}}>Acik Net: {netOpenText}</div>
+        </div>
+        {sorted.map(row=>(
+          <div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr auto",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,alignItems:"center"}}>
+            <div>
+              <div style={{color:C.text,fontWeight:700}}>{row.dueDate||"-"}</div>
+              <div style={{fontSize:11,color:C.muted2}}>Kayit: {row.eventDate||"-"}</div>
+            </div>
+            <div>
+              <Badge label={flowLabel(row.flow||"tahsilat")} color={(row.flow||"tahsilat")==="tahsilat"?C.accent:C.warn}/>
+              <div style={{fontSize:11,color:C.muted2,marginTop:3}}>Vade {Math.max(0,safeNum(row.paymentTermDays??30))} gun</div>
+            </div>
+            <div>
+              <div style={{color:C.text,fontWeight:700}}>{amountText(row)}</div>
+              <div style={{fontSize:11,color:C.muted2}}>Miktar {safeNum(row.qty)}</div>
+            </div>
+            <div style={{color:C.muted2}}>
+              <div style={{color:C.text,fontWeight:700}}>{row.customerName||row.supplierName||"-"}</div>
+              <div style={{fontSize:11}}>Kod: {(row.customerId||row.supplierId||"-")}</div>
+            </div>
+            <div style={{color:C.muted2}}>
+              <div style={{color:C.text,fontWeight:700}}>{row.sourceCode||row.orderCode||row.poCode||"-"}</div>
+              <div style={{fontSize:11}}>{row.sourceType==="purchase_receipt"?"Mal Kabul":"Teslimat"}</div>
+            </div>
+            <div style={{display:"flex",gap:6,justifyContent:"flex-end",alignItems:"center",flexWrap:"wrap"}}>
+              <Badge label={statusLabel(row)} color={statusColor(row)}/>
+              <button onClick={()=>setLedgerStatus(row,"planned")} style={{...btnSt("ghost"),padding:"5px 7px",fontSize:11,opacity:statusBucket(row)==="planned"?0.7:1}} disabled={statusBucket(row)==="planned"}>Plan</button>
+              {(row.flow||"tahsilat")==="tahsilat"
+                ? <button onClick={()=>setLedgerStatus(row,"collected")} style={{...btnSt("green"),padding:"5px 7px",fontSize:11,opacity:(row.status||"")==="collected"?0.7:1}} disabled={(row.status||"")==="collected"}>Tahsil</button>
+                : <button onClick={()=>setLedgerStatus(row,"paid")} style={{...btnSt("green"),padding:"5px 7px",fontSize:11,opacity:(row.status||"")==="paid"?0.7:1}} disabled={(row.status||"")==="paid"}>Odendi</button>}
+              <button onClick={()=>setLedgerStatus(row,"cancelled")} style={{...btnSt("danger"),padding:"5px 7px",fontSize:11,opacity:(row.status||"")==="cancelled"?0.7:1}} disabled={(row.status||"")==="cancelled"}>Iptal</button>
+            </div>
+          </div>
+        ))}
+        {sorted.length===0&&<div style={{fontSize:12,color:C.muted2,padding:"8px 2px"}}>Filtreye uygun finans satiri yok.</div>}
+      </div>
+    </div>
+  );
+}
+
+function IntegrationsReadinessModule(){
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0}}>
+        <div style={{fontWeight:700,color:C.text,fontSize:16}}>Dis Entegrasyon Hazirligi (Sonraya Birakildi)</div>
+        <div style={{fontSize:13,color:C.muted2,marginTop:8}}>Sistem disa kapali calisacak. Bu modulde sadece ileride devreye alinacak alanlarin veri modeli hazirligi tutulur.</div>
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        {[
+          "ERP: Siparis/BOM/Routing cift yon senkron endpointleri",
+          "Muhasebe: e-fatura/e-irsaliye veri cikis sozlesmesi",
+          "CAM: NC program versiyon metadata baglantisi",
+          "REST API: Core entity endpoint backlogu ve webhook event listesi"
+        ].map((it,idx)=>(
+          <div key={idx} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"8px 0",borderBottom:idx===3?"none":`1px solid ${C.border}`}}>
+            <span style={{color:C.accent,fontWeight:800,fontSize:13,minWidth:18}}>{idx+1}.</span>
+            <span style={{fontSize:13,color:C.text}}>{it}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MaterialQuoteBridgeModule(){
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <div style={{fontWeight:700,color:C.text,fontSize:16}}>Malzeme Teklif ve Maliyet Analizi</div>
+          <Badge label="Yeni Full-Stack Modul" color={C.accent}/>
+        </div>
+        <div style={{fontSize:13,color:C.muted2,marginTop:8}}>
+          STEP yukleme, stok belirleme, operasyon siniflandirma ve CNC maliyet tahmini modulu ayri servis olarak eklendi.
+        </div>
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:10}}>
+        <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>On Yuz</div>
+          <div style={{marginTop:6,fontSize:14,color:C.text,fontWeight:700}}>http://localhost:5173</div>
+          <div style={{marginTop:8,fontSize:12,color:C.muted2}}>3D goruntuleyici + teklif paneli</div>
+        </div>
+        <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>API</div>
+          <div style={{marginTop:6,fontSize:14,color:C.text,fontWeight:700}}>http://localhost:8000/api/v1</div>
+          <div style={{marginTop:8,fontSize:12,color:C.muted2}}>Yukleme, is, parca, malzeme endpointleri</div>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <button onClick={()=>window.open("http://localhost:5173","_blank")} style={{...btnSt("primary"),padding:"9px 12px",fontSize:12}}>Modulu Ac</button>
+        <button onClick={()=>window.open("http://localhost:8000/docs","_blank")} style={{...btnSt("ghost"),padding:"9px 12px",fontSize:12}}>API Dokumani</button>
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Kurulum</div>
+        <pre style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,padding:12,overflow:"auto",fontSize:12,color:C.text}}>
+{`cd cost-estimator
+docker compose up --build`}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
+function ProgramAndEnergyModule({currentUser,machines=DEFAULT_MACHINES}) {
+  const [loading,setLoading]=useState(true);
+  const [programs,setPrograms]=useState([]);
+  const [transfers,setTransfers]=useState([]);
+  const [energyRows,setEnergyRows]=useState([]);
+  const [orders,setOrders]=useState([]);
+  const [cfg,setCfg]=useState({emission:"0.43",unitCost:"5.5"});
+  const [pf,setPf]=useState({code:"",name:"",version:"V1",machine:machines[0]||"CNC-1"});
+  const [tf,setTf]=useState({programId:"",machine:machines[0]||"CNC-1",orderId:""});
+  const [ef,setEf]=useState({machine:machines[0]||"CNC-1",date:todayStr(),orderId:"",kwh:"",runtimeMin:""});
+
+  const load=useCallback(async()=>{
+    const [p,t,e,o,c]=await Promise.all([
+      window.DB.getAll("ncPrograms"),
+      window.DB.getAll("programTransfers"),
+      window.DB.getAll("energyReadings"),
+      window.DB.getAll("orders"),
+      window.DB.getDoc("config","energyConfig"),
+    ]);
+    setPrograms(p.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setTransfers(t.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setEnergyRows(e.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setOrders(o.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setCfg({emission:String(safeNum(c?.emissionFactorKgPerKwh)||0.43),unitCost:String(safeNum(c?.energyUnitCostTry)||5.5)});
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="progenergy") return;
+      if(d.type==="refresh") load();
+      if(d.type==="new") setPf({code:"",name:"",version:"V1",machine:machines[0]||"CNC-1"});
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load,machines]);
+
+  async function saveProgram(){
+    const code=String(pf.code||"").trim().toUpperCase();
+    if(!code||!String(pf.name||"").trim()){alert("Program kodu ve adi zorunlu.");return;}
+    const payload={code,name:String(pf.name||"").trim(),version:String(pf.version||"V1").trim().toUpperCase(),machine:pf.machine||machines[0]||"CNC-1",updatedAt:new Date().toISOString(),updatedBy:currentUser?.id||""};
+    const id=await window.DB.addDoc("ncPrograms",payload);
+    if(!id){alert("Program kaydedilemedi.");return;}
+    setPrograms(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
+    setPf(f=>({...f,code:"",name:"",version:"V1"}));
+  }
+  async function saveTransfer(){
+    const p=programs.find(x=>x.id===tf.programId);
+    if(!p){alert("Program secin.");return;}
+    const o=orders.find(x=>x.id===tf.orderId);
+    const payload={programId:p.id,programCode:p.code||"",programVersion:p.version||"",machine:tf.machine||machines[0]||"CNC-1",orderId:o?.id||"",orderCode:o?.code||"",status:"completed",createdBy:currentUser?.id||"",createdAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("programTransfers",payload);
+    if(!id){alert("Transfer kaydedilemedi.");return;}
+    setTransfers(prev=>[{id,...payload},...prev]);
+  }
+  async function saveCfg(){
+    const payload={emissionFactorKgPerKwh:Math.max(0,safeNum(cfg.emission)||0.43),energyUnitCostTry:Math.max(0,safeNum(cfg.unitCost)||0),updatedAt:new Date().toISOString(),updatedBy:currentUser?.id||""};
+    const ok=await window.DB.setDoc("config","energyConfig",payload);
+    if(!ok){alert("Ayar kaydedilemedi.");return;}
+  }
+  async function saveEnergy(){
+    const kwh=Math.max(0,safeNum(ef.kwh));
+    if(kwh<=0){alert("kWh zorunlu.");return;}
+    const factor=Math.max(0,safeNum(cfg.emission)||0.43);
+    const costKwh=Math.max(0,safeNum(cfg.unitCost)||0);
+    const o=orders.find(x=>x.id===ef.orderId);
+    const payload={machine:ef.machine||machines[0]||"CNC-1",date:ef.date||todayStr(),orderId:o?.id||"",orderCode:o?.code||"",kwh,runtimeMin:Math.max(0,safeNum(ef.runtimeMin)),co2Kg:kwh*factor,energyCostTry:kwh*costKwh,createdBy:currentUser?.id||"",createdAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("energyReadings",payload);
+    if(!id){alert("Enerji kaydi olusturulamadi.");return;}
+    setEnergyRows(prev=>[{id,...payload},...prev]);
+    setEf(f=>({...f,kwh:"",runtimeMin:""}));
+  }
+
+  const totalKwh=energyRows.reduce((s,r)=>s+safeNum(r.kwh),0);
+  const totalCo2=energyRows.reduce((s,r)=>s+safeNum(r.co2Kg),0);
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontWeight:700,color:C.text}}>Faz-1: Program Transfer + Enerji/Karbon</div>
+        <div style={{fontSize:12,color:C.muted2,marginTop:4}}>NC program versiyon/transfer ve enerji-karbon kayitlari.</div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Program ve Transfer</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <input style={inputSt} placeholder="Program Kodu" value={pf.code} onChange={e=>setPf(f=>({...f,code:e.target.value}))}/>
+            <input style={inputSt} placeholder="Program Adi" value={pf.name} onChange={e=>setPf(f=>({...f,name:e.target.value}))}/>
+            <input style={inputSt} placeholder="Versiyon" value={pf.version} onChange={e=>setPf(f=>({...f,version:e.target.value}))}/>
+            <select style={inputSt} value={pf.machine} onChange={e=>setPf(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}><button onClick={saveProgram} style={{...btnSt("primary"),padding:"7px 11px",fontSize:12}}>Program Kaydet</button></div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginTop:10}}>
+            <select style={inputSt} value={tf.programId} onChange={e=>setTf(f=>({...f,programId:e.target.value}))}><option value="">Program secin</option>{programs.slice(0,200).map(p=><option key={p.id} value={p.id}>{p.code} Â· {p.version}</option>)}</select>
+            <select style={inputSt} value={tf.machine} onChange={e=>setTf(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
+            <select style={inputSt} value={tf.orderId} onChange={e=>setTf(f=>({...f,orderId:e.target.value}))}><option value="">Is emri (opsiyonel)</option>{orders.slice(0,120).map(o=><option key={o.id} value={o.id}>{o.code}</option>)}</select>
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}><button onClick={saveTransfer} style={{...btnSt("green"),padding:"7px 11px",fontSize:12}}>Transfer Kaydet</button></div>
+          <div style={{fontSize:12,color:C.muted2,marginTop:8}}>Program: {programs.length} Â· Transfer: {transfers.length}</div>
+        </div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Enerji/Karbon</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <input style={inputSt} placeholder="kgCO2/kWh" value={cfg.emission} onChange={e=>setCfg(f=>({...f,emission:e.target.value}))}/>
+            <input style={inputSt} placeholder="TRY/kWh" value={cfg.unitCost} onChange={e=>setCfg(f=>({...f,unitCost:e.target.value}))}/>
+            <select style={inputSt} value={ef.machine} onChange={e=>setEf(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
+            <input style={inputSt} type="date" value={ef.date} onChange={e=>setEf(f=>({...f,date:e.target.value}))}/>
+            <input style={inputSt} type="number" min="0" placeholder="kWh" value={ef.kwh} onChange={e=>setEf(f=>({...f,kwh:e.target.value}))}/>
+            <input style={inputSt} type="number" min="0" placeholder="Calisma dk" value={ef.runtimeMin} onChange={e=>setEf(f=>({...f,runtimeMin:e.target.value}))}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:8}}>
+            <button onClick={saveCfg} style={{...btnSt("ghost"),padding:"7px 11px",fontSize:12}}>Ayar</button>
+            <button onClick={saveEnergy} style={{...btnSt("primary"),padding:"7px 11px",fontSize:12}}>Kaydet</button>
+          </div>
+          <div style={{marginTop:8,fontSize:12,color:C.muted2}}>Toplam Enerji: <b style={{color:C.text}}>{totalKwh.toFixed(2)} kWh</b> Â· Toplam Karbon: <b style={{color:C.text}}>{totalCo2.toFixed(2)} kg</b></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ToolCycleAnalyticsModule({currentUser,machines=DEFAULT_MACHINES}) {
+  const [loading,setLoading]=useState(true);
+  const [offsets,setOffsets]=useState([]);
+  const [cycles,setCycles]=useState([]);
+  const [orders,setOrders]=useState([]);
+  const [of,setOf]=useState({machine:machines[0]||"CNC-1",toolCode:"",programCode:"",geometry:"0",wear:"0"});
+  const [cf,setCf]=useState({machine:machines[0]||"CNC-1",orderId:"",plannedSec:"60",actualSec:"",idleSec:"",cutSec:""});
+
+  const load=useCallback(async()=>{
+    const [o,c,ord]=await Promise.all([window.DB.getAll("toolOffsets"),window.DB.getAll("cycleLogs"),window.DB.getAll("orders")]);
+    setOffsets(o.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setCycles(c.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setOrders(ord.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="toolcycle") return;
+      if(d.type==="refresh") load();
+      if(d.type==="new"){
+        setOf({machine:machines[0]||"CNC-1",toolCode:"",programCode:"",geometry:"0",wear:"0"});
+        setCf({machine:machines[0]||"CNC-1",orderId:"",plannedSec:"60",actualSec:"",idleSec:"",cutSec:""});
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load,machines]);
+
+  async function saveOffset(){
+    if(!of.toolCode.trim()){alert("Takim kodu zorunlu.");return;}
+    const payload={machine:of.machine||machines[0]||"CNC-1",toolCode:of.toolCode.trim().toUpperCase(),programCode:of.programCode.trim().toUpperCase(),geometryOffset:safeNum(of.geometry),wearOffset:safeNum(of.wear),reason:"manual",createdBy:currentUser?.id||"",createdAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("toolOffsets",payload);
+    if(!id){alert("Offset kaydi olusturulamadi.");return;}
+    setOffsets(prev=>[{id,...payload},...prev]);
+    setOf(f=>({...f,toolCode:"",programCode:"",geometry:"0",wear:"0"}));
+  }
+  async function saveCycle(){
+    const planned=Math.max(1,safeNum(cf.plannedSec)||1);
+    const actual=Math.max(0,safeNum(cf.actualSec));
+    if(actual<=0){alert("Gercek sure zorunlu.");return;}
+    const idle=Math.max(0,safeNum(cf.idleSec));
+    const cut=Math.max(0,safeNum(cf.cutSec));
+    const o=orders.find(x=>x.id===cf.orderId);
+    const payload={machine:cf.machine||machines[0]||"CNC-1",orderId:o?.id||"",orderCode:o?.code||"",plannedSec:planned,actualSec:actual,idleSec:idle,cutSec:cut,deviationPct:((actual-planned)/planned)*100,airCutPct:actual>0?(idle/actual)*100:0,createdBy:currentUser?.id||"",createdAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("cycleLogs",payload);
+    if(!id){alert("Cevrim kaydi olusturulamadi.");return;}
+    setCycles(prev=>[{id,...payload},...prev]);
+    setCf(f=>({...f,orderId:"",actualSec:"",idleSec:"",cutSec:""}));
+  }
+
+  const avgDev=cycles.length?cycles.reduce((s,r)=>s+safeNum(r.deviationPct),0)/cycles.length:0;
+  const avgAir=cycles.length?cycles.reduce((s,r)=>s+safeNum(r.airCutPct),0)/cycles.length:0;
+  const critical=cycles.filter(r=>Math.abs(safeNum(r.deviationPct))>10).length;
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontWeight:700,color:C.text}}>Faz-2: Takim Offset + Cevrim Analizi</div>
+        <div style={{fontSize:12,color:C.muted2,marginTop:4}}>Offset kaydi, cevrim sapmasi ve air-cut izleme.</div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(170px,1fr))",gap:8}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Offset</div><div style={{fontSize:22,color:C.text,fontWeight:800}}>{offsets.length}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Kritik Sapma</div><div style={{fontSize:22,color:critical?C.red:C.green,fontWeight:800}}>{critical}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Ort. Air-Cut</div><div style={{fontSize:22,color:C.warn,fontWeight:800}}>%{avgAir.toFixed(1)}</div></div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Offset Girisi</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <select style={inputSt} value={of.machine} onChange={e=>setOf(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
+            <input style={inputSt} placeholder="Takim Kodu" value={of.toolCode} onChange={e=>setOf(f=>({...f,toolCode:e.target.value}))}/>
+            <input style={inputSt} placeholder="Program Kodu" value={of.programCode} onChange={e=>setOf(f=>({...f,programCode:e.target.value}))}/>
+            <input style={inputSt} type="number" placeholder="Geometri" value={of.geometry} onChange={e=>setOf(f=>({...f,geometry:e.target.value}))}/>
+            <input style={inputSt} type="number" placeholder="Asinma" value={of.wear} onChange={e=>setOf(f=>({...f,wear:e.target.value}))}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}><button onClick={saveOffset} style={{...btnSt("primary"),padding:"7px 11px",fontSize:12}}>Kaydet</button></div>
+        </div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Cevrim Girisi</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <select style={inputSt} value={cf.machine} onChange={e=>setCf(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
+            <select style={inputSt} value={cf.orderId} onChange={e=>setCf(f=>({...f,orderId:e.target.value}))}><option value="">Is emri (opsiyonel)</option>{orders.slice(0,120).map(o=><option key={o.id} value={o.id}>{o.code}</option>)}</select>
+            <input style={inputSt} type="number" placeholder="Planlanan sn" value={cf.plannedSec} onChange={e=>setCf(f=>({...f,plannedSec:e.target.value}))}/>
+            <input style={inputSt} type="number" placeholder="Gercek sn" value={cf.actualSec} onChange={e=>setCf(f=>({...f,actualSec:e.target.value}))}/>
+            <input style={inputSt} type="number" placeholder="Bos sn" value={cf.idleSec} onChange={e=>setCf(f=>({...f,idleSec:e.target.value}))}/>
+            <input style={inputSt} type="number" placeholder="Kesme sn" value={cf.cutSec} onChange={e=>setCf(f=>({...f,cutSec:e.target.value}))}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}><button onClick={saveCycle} style={{...btnSt("green"),padding:"7px 11px",fontSize:12}}>Kaydet</button></div>
+          <div style={{fontSize:12,color:C.muted2,marginTop:8}}>Ort. Sapma: <b style={{color:C.text}}>%{avgDev.toFixed(1)}</b> Â· Cevrim Kaydi: {cycles.length}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ClosedLoopWarehouseModule({currentUser,machines=DEFAULT_MACHINES}) {
+  const [loading,setLoading]=useState(true);
+  const [feedbacks,setFeedbacks]=useState([]);
+  const [moves,setMoves]=useState([]);
+  const [materials,setMaterials]=useState([]);
+  const [orders,setOrders]=useState([]);
+  const [ff,setFf]=useState({orderId:"",machine:machines[0]||"CNC-1",programCode:"",toolCode:"",target:"0",actual:"0",tolerance:"0.02",wear:""});
+  const [mf,setMf]=useState({materialId:"",moveType:"in",qty:"",lotNo:"",location:""});
+
+  const load=useCallback(async()=>{
+    const [f,m,mat,o]=await Promise.all([window.DB.getAll("measurementFeedback"),window.DB.getAll("warehouseMoves"),window.DB.getAll("materials"),window.DB.getAll("orders")]);
+    setFeedbacks(f.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setMoves(m.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setMaterials(mat.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    setOrders(o.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="closedloop") return;
+      if(d.type==="refresh") load();
+      if(d.type==="new"){
+        setFf({orderId:"",machine:machines[0]||"CNC-1",programCode:"",toolCode:"",target:"0",actual:"0",tolerance:"0.02",wear:""});
+        setMf({materialId:"",moveType:"in",qty:"",lotNo:"",location:""});
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load,machines]);
+
+  async function saveFeedback(){
+    const target=safeNum(ff.target), actual=safeNum(ff.actual), tol=Math.abs(safeNum(ff.tolerance));
+    const dev=actual-target;
+    const wear=safeNum(ff.wear||(-dev).toFixed(4));
+    const o=orders.find(x=>x.id===ff.orderId);
+    const payload={orderId:o?.id||"",orderCode:o?.code||"",machine:ff.machine||machines[0]||"CNC-1",programCode:ff.programCode.trim().toUpperCase(),toolCode:ff.toolCode.trim().toUpperCase(),target,actual,tolerance:tol,deviation:dev,result:Math.abs(dev)<=tol?"pass":"fail",recommendedWear:wear,applyStatus:"pending",createdBy:currentUser?.id||"",createdAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("measurementFeedback",payload);
+    if(!id){alert("Olcum geri besleme kaydi olusturulamadi.");return;}
+    setFeedbacks(prev=>[{id,...payload},...prev]);
+    setFf(f=>({...f,orderId:"",programCode:"",toolCode:"",target:"0",actual:"0",tolerance:"0.02",wear:""}));
+  }
+  async function applyFeedback(row){
+    if((row.applyStatus||"")==="applied") return;
+    const off={machine:row.machine||machines[0]||"CNC-1",toolCode:row.toolCode||"",programCode:row.programCode||"",geometryOffset:0,wearOffset:safeNum(row.recommendedWear),reason:"closed_loop_measurement",createdBy:currentUser?.id||"",createdAt:new Date().toISOString()};
+    const offsetId=await window.DB.addDoc("toolOffsets",off);
+    if(!offsetId){alert("Offset uygulanamadi.");return;}
+    const patch={applyStatus:"applied",appliedOffsetId:offsetId,appliedAt:new Date().toISOString(),appliedBy:currentUser?.id||""};
+    const ok=await window.DB.updateDoc("measurementFeedback",row.id,patch);
+    if(!ok){alert("Olcum kaydi guncellenemedi.");return;}
+    setFeedbacks(prev=>prev.map(x=>x.id===row.id?{...x,...patch}:x));
+  }
+  async function saveMove(){
+    const qty=Math.max(0,safeNum(mf.qty));
+    if(!mf.materialId||qty<=0){alert("Malzeme ve miktar zorunlu.");return;}
+    const mat=materials.find(x=>x.id===mf.materialId);
+    if(!mat){alert("Malzeme bulunamadi.");return;}
+    const before=safeNum(mat.stock);
+    const delta=mf.moveType==="in"?qty:-qty;
+    const after=before+delta;
+    if(after<0){alert("Stok yetersiz.");return;}
+    const ok=await window.DB.updateDoc("materials",mat.id,{stock:after,updatedAt:new Date().toISOString()});
+    if(!ok){alert("Stok guncellenemedi.");return;}
+    const payload={materialId:mat.id,materialCode:mat.code||"",materialName:mat.name||"",moveType:mf.moveType||"in",qty,lotNo:mf.lotNo.trim(),location:mf.location.trim(),beforeStock:before,afterStock:after,createdBy:currentUser?.id||"",createdAt:new Date().toISOString()};
+    const id=await window.DB.addDoc("warehouseMoves",payload);
+    if(!id){alert("Hareket kaydedilemedi.");return;}
+    setMaterials(prev=>prev.map(x=>x.id===mat.id?{...x,stock:after}:x));
+    setMoves(prev=>[{id,...payload},...prev]);
+    setMf({materialId:"",moveType:"in",qty:"",lotNo:"",location:""});
+  }
+
+  const pending=feedbacks.filter(x=>(x.applyStatus||"")!=="applied").length;
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontWeight:700,color:C.text}}>Faz-3: Olcum Geri Besleme + Depo</div>
+        <div style={{fontSize:12,color:C.muted2,marginTop:4}}>Olcumden offset duzeltme ve lot bazli depo hareketleri.</div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(170px,1fr))",gap:8}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Bekleyen Geri Besleme</div><div style={{fontSize:22,color:pending?C.warn:C.green,fontWeight:800}}>{pending}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Olcum Kaydi</div><div style={{fontSize:22,color:C.text,fontWeight:800}}>{feedbacks.length}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Depo Hareketi</div><div style={{fontSize:22,color:C.text,fontWeight:800}}>{moves.length}</div></div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Olcum Geri Besleme</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <select style={inputSt} value={ff.orderId} onChange={e=>setFf(f=>({...f,orderId:e.target.value}))}><option value="">Is emri</option>{orders.slice(0,120).map(o=><option key={o.id} value={o.id}>{o.code}</option>)}</select>
+            <select style={inputSt} value={ff.machine} onChange={e=>setFf(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
+            <input style={inputSt} placeholder="Program" value={ff.programCode} onChange={e=>setFf(f=>({...f,programCode:e.target.value}))}/>
+            <input style={inputSt} placeholder="Takim" value={ff.toolCode} onChange={e=>setFf(f=>({...f,toolCode:e.target.value}))}/>
+            <input style={inputSt} type="number" placeholder="Hedef" value={ff.target} onChange={e=>setFf(f=>({...f,target:e.target.value}))}/>
+            <input style={inputSt} type="number" placeholder="Gercek" value={ff.actual} onChange={e=>setFf(f=>({...f,actual:e.target.value}))}/>
+            <input style={inputSt} type="number" placeholder="Tolerans" value={ff.tolerance} onChange={e=>setFf(f=>({...f,tolerance:e.target.value}))}/>
+            <input style={inputSt} type="number" placeholder="Wear duzeltme" value={ff.wear} onChange={e=>setFf(f=>({...f,wear:e.target.value}))}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}><button onClick={saveFeedback} style={{...btnSt("primary"),padding:"7px 11px",fontSize:12}}>Kaydet</button></div>
+          <div style={{marginTop:8,maxHeight:210,overflowY:"auto"}}>
+            {feedbacks.slice(0,20).map(f=>(
+              <div key={f.id} style={{padding:"7px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.muted2}}>
+                <span style={{color:C.text,fontWeight:700}}>{f.orderCode||"-"} Â· {f.toolCode||"-"}</span> Â· Dev {safeNum(f.deviation).toFixed(4)} Â· {f.result}
+                {(f.applyStatus||"")!=="applied"&&<button onClick={()=>applyFeedback(f)} style={{...btnSt("green"),padding:"4px 8px",fontSize:11,marginLeft:8}}>Uygula</button>}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Depo Hareketi</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <select style={inputSt} value={mf.materialId} onChange={e=>setMf(f=>({...f,materialId:e.target.value}))}><option value="">Malzeme secin</option>{materials.map(m=><option key={m.id} value={m.id}>{m.code} Â· {m.name} (Stok {safeNum(m.stock)})</option>)}</select>
+            <select style={inputSt} value={mf.moveType} onChange={e=>setMf(f=>({...f,moveType:e.target.value}))}><option value="in">Giris</option><option value="out">Cikis</option></select>
+            <input style={inputSt} type="number" placeholder="Miktar" value={mf.qty} onChange={e=>setMf(f=>({...f,qty:e.target.value}))}/>
+            <input style={inputSt} placeholder="Lot No" value={mf.lotNo} onChange={e=>setMf(f=>({...f,lotNo:e.target.value}))}/>
+            <input style={inputSt} placeholder="Lokasyon" value={mf.location} onChange={e=>setMf(f=>({...f,location:e.target.value}))}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}><button onClick={saveMove} style={{...btnSt("green"),padding:"7px 11px",fontSize:12}}>Kaydet</button></div>
+          <div style={{marginTop:8,maxHeight:210,overflowY:"auto"}}>
+            {moves.slice(0,20).map(m=>(
+              <div key={m.id} style={{padding:"7px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.muted2}}>
+                <span style={{color:C.text,fontWeight:700}}>{m.materialCode||"-"} Â· {m.lotNo||"-"}</span> Â· {m.moveType==="in"?"Giris":"Cikis"} {safeNum(m.qty)} Â· {safeNum(m.beforeStock)}â€º{safeNum(m.afterStock)}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModulePlaceholder({title,desc,items=[]}) {
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <div style={{fontWeight:700,color:C.text,fontSize:16}}>{title}</div>
+          <Badge label="MRP Roadmap" color={C.warn}/>
+        </div>
+        <div style={{fontSize:13,color:C.muted2,marginTop:8}}>{desc}</div>
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>Planlanan Ozellikler</div>
+        {items.length===0&&<div style={{fontSize:13,color:C.muted2}}>Bu modul icin backlog tanimi bekleniyor.</div>}
+        {items.map((it,idx)=>(
+          <div key={idx} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"8px 0",borderBottom:idx===items.length-1?"none":`1px solid ${C.border}`}}>
+            <span style={{color:C.accent,fontWeight:800,fontSize:13,minWidth:18}}>{idx+1}.</span>
+            <span style={{fontSize:13,color:C.text}}>{it}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+//  MAIN APP
+// ============================================================
+function App() {
+  const [currentUser,setCurrentUser]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const [tab,setTab]=useState("dashboard");
+  const [themeMode,setThemeMode]=useState("light");
+  const [menuVisibility,setMenuVisibility]=useState(()=>normalizeMenuVisibilityConfig({}));
+  const [machines,setMachines]=useState(DEFAULT_MACHINES);
+  const [logoSrc,setLogoSrc]=useState(LOGO_SRC);
+  const [isTablet,setIsTablet]=useState(()=>typeof window!=="undefined"?window.matchMedia("(min-width: 768px)").matches:false);
+  const [isDesktop,setIsDesktop]=useState(()=>typeof window!=="undefined"?window.matchMedia("(min-width: 1200px)").matches:false);
+  const [logoError,setLogoError]=useState(false);
+  const [mobileMenuOpen,setMobileMenuOpen]=useState(false);
+  const [menuQuery,setMenuQuery]=useState("");
+  const [menuGroupFilter,setMenuGroupFilter]=useState("all");
+  const [globalFilterOpen,setGlobalFilterOpen]=useState(false);
+  const [salesFilterOpen,setSalesFilterOpen]=useState(true);
+  const [ordersFilterOpen,setOrdersFilterOpen]=useState(true);
+  const [toolsFilterOpen,setToolsFilterOpen]=useState(true);
+  const [customersFilterOpen,setCustomersFilterOpen]=useState(true);
+  const [materialsFilterOpen,setMaterialsFilterOpen]=useState(true);
+  const [partsFilterOpen,setPartsFilterOpen]=useState(true);
+  const [financeFilterOpen,setFinanceFilterOpen]=useState(true);
+  const [globalSortMode,setGlobalSortMode]=useState("group");
+  const [topContentSortMode,setTopContentSortMode]=useState("date_desc");
+  const [globalViewMode,setGlobalViewMode]=useState("cards");
+  const [globalQuickDate,setGlobalQuickDate]=useState(()=>todayStr());
+  const [desktopMenuCollapsed,setDesktopMenuCollapsed]=useState(false);
+  const [kioskMachine,setKioskMachine]=useState(()=>detectLockedMachineFromUrl());
+  const tabFromUrlAppliedRef=useRef(false);
+  const machinesRef=useRef(DEFAULT_MACHINES);
+  useEffect(()=>{machinesRef.current=machines;},[machines]);
+
+  useEffect(()=>{
+    async function init() {
+      const [mc,connectorRows,branding,menuVisibilityDoc]=await Promise.all([
+        window.DB.getDoc("config","machines"),
+        window.DB.getAll("machineConnectors"),
+        window.DB.getDoc("config","branding"),
+        window.DB.getDoc("config","menuVisibility"),
+      ]);
+      const connectorMachines=machineNamesFromConnectors(connectorRows);
+      const configMachines=normalizeMachineList(mc?.list||[],[]);
+      const initialMachines=connectorMachines.length>0
+        ? connectorMachines
+        : (configMachines.length>0?configMachines:DEFAULT_MACHINES);
+      setMachines(initialMachines);
+      setMenuVisibility(normalizeMenuVisibilityConfig(menuVisibilityDoc||{}));
+      if(connectorMachines.length>0&&!sameMachineList(configMachines,connectorMachines)){
+        await window.DB.setDoc("config","machines",{
+          list:connectorMachines,
+          source:"machineprep",
+          updatedAt:new Date().toISOString(),
+        });
+      }
+      if(branding&&branding.logo) setLogoSrc(branding.logo);
+      if(branding&&["light","dark"].includes(branding.themeMode||"")) setThemeMode(branding.themeMode);
+      const session=window.Session.get();
+      if(session){
+        const u=await window.DB.getDoc("users",session.username);
+        if(u&&u.status==="active"){
+          setCurrentUser(u);
+          window.Session.touch();
+        }
+        else window.Session.clear();
+      }
+      setLoading(false);
+    }
+    if(window.FB_READY) init();
+    else window.addEventListener("fb_ready",init,{once:true});
+  },[]);
+
+  useEffect(()=>{
+    const mq=window.matchMedia("(min-width: 768px)");
+    const onChange=e=>setIsTablet(e.matches);
+    setIsTablet(mq.matches);
+    if(mq.addEventListener) mq.addEventListener("change",onChange);
+    else mq.addListener(onChange);
+    return ()=>{
+      if(mq.removeEventListener) mq.removeEventListener("change",onChange);
+      else mq.removeListener(onChange);
+    };
+  },[]);
+  useEffect(()=>{
+    const mq=window.matchMedia("(min-width: 1200px)");
+    const onChange=e=>setIsDesktop(e.matches);
+    setIsDesktop(mq.matches);
+    if(mq.addEventListener) mq.addEventListener("change",onChange);
+    else mq.addListener(onChange);
+    return ()=>{
+      if(mq.removeEventListener) mq.removeEventListener("change",onChange);
+      else mq.removeListener(onChange);
+    };
+  },[]);
+  useEffect(()=>{
+    if(typeof window==="undefined") return;
+    const onUpdated=e=>setMenuVisibility(normalizeMenuVisibilityConfig(e?.detail||{}));
+    window.addEventListener("menu_visibility_updated",onUpdated);
+    return ()=>window.removeEventListener("menu_visibility_updated",onUpdated);
+  },[]);
+  useEffect(()=>{setLogoError(false);},[logoSrc]);
+  useEffect(()=>{
+    if(typeof window==="undefined") return;
+    const syncKiosk=()=>setKioskMachine(detectLockedMachineFromUrl());
+    syncKiosk();
+    window.addEventListener("popstate",syncKiosk);
+    window.addEventListener("hashchange",syncKiosk);
+    return ()=>{
+      window.removeEventListener("popstate",syncKiosk);
+      window.removeEventListener("hashchange",syncKiosk);
+    };
+  },[]);
+  useEffect(()=>{
+    if(!currentUser) return;
+    const updateTouch=()=>window.Session.touch();
+    const evts=["click","keydown","mousemove","touchstart","scroll"];
+    evts.forEach(evt=>window.addEventListener(evt,updateTouch,{passive:true}));
+    const timer=setInterval(()=>{
+      const s=window.Session.get();
+      if(!s) return;
+      const idleMin=(Date.now()-Number(s.touchedAt||s.createdAt||Date.now()))/60000;
+      if(idleMin>=SESSION_TIMEOUT_MIN){
+        window.Session.clear();
+        setCurrentUser(null);
+        setTab("dashboard");
+      }
+    },15000);
+    return ()=>{
+      clearInterval(timer);
+      evts.forEach(evt=>window.removeEventListener(evt,updateTouch));
+    };
+  },[currentUser]);
+
+  const updateMachines=useCallback(async(list)=>{
+    const next=normalizeMachineList(list);
+    if(sameMachineList(machinesRef.current,next)) return;
+    setMachines(prev=>sameMachineList(prev,next)?prev:next);
+    await window.DB.setDoc("config","machines",{
+      list:next,
+      source:"machineprep",
+      updatedAt:new Date().toISOString(),
+    });
+  },[]);
+  async function updateLogo(logoData){
+    const next=logoData||LOGO_SRC;
+    setLogoSrc(next);
+    await window.DB.setDoc("config","branding",{logo:logoData||""});
+  }
+  async function updateTheme(mode){
+    const next=mode==="dark"?"dark":"light";
+    setThemeMode(next);
+    await window.DB.setDoc("config","branding",{themeMode:next});
+  }
+  async function logout(){window.Session.clear();setCurrentUser(null);setTab("dashboard");}
+
+  applyThemeMode(themeMode);
+  if(typeof document!=="undefined") document.body.style.background=C.bg;
+
+  const userForPerm=currentUser||{role:"viewer",permissions:[],fullName:""};
+  const isAdmin=userForPerm.role==="admin";
+  const isOperatorRole=userForPerm.role==="operator";
+  const canEntry=hasPermission(userForPerm,"data_entry");
+  const canReport=hasPermission(userForPerm,"view_reports");
+  const canOrders=hasPermission(userForPerm,"manage_orders")||isAdmin;
+  const canSales=hasPermission(userForPerm,"manage_sales")||canOrders;
+  const canPurchasing=hasPermission(userForPerm,"manage_purchasing")||canOrders;
+  const canQuality=hasPermission(userForPerm,"manage_quality")||canOrders||canReport;
+  const canDowntime=hasPermission(userForPerm,"manage_downtime")||canEntry||canReport;
+  const canNotifications=hasPermission(userForPerm,"manage_notifications")||canReport;
+  const canPlanning=canOrders;
+  const canCustomers=canOrders;
+  const canUsers=hasPermission(userForPerm,"approve_users")||isAdmin;
+  const canTools=canOrders||canPurchasing||canEntry;
+  const canMachinePrep=canOrders;
+  const canSmartFactory=canOrders||canReport||canEntry||canPurchasing||canQuality;
+  const canMonitor=canOrders||canReport||canEntry;
+  const allTabs=useMemo(()=>{
+    if(isOperatorRole){
+      return [
+        {id:"giris",icon:"giris",label:"Uretim Girisi",group:"Operasyon",enabled:canEntry},
+        {id:"assignments",icon:"tasks",label:"Gorevlerim",group:"Operasyon",enabled:true},
+      ];
+    }
+    return [
+      {id:"dashboard",icon:"dashboard",label:"GÃ¶sterge Paneli",group:"Planlama",enabled:(canEntry||canOrders||canReport||canSales||canPurchasing)},
+      {id:"planning",icon:"planning",label:"Planlama",group:"Planlama",enabled:canPlanning},
+      {id:"parts",icon:"parts",label:"ParÃ§a YÃ¶netimi",group:"Planlama",enabled:canPlanning},
+      {id:"quotes",icon:"quotes",label:"Teklif Yonetimi",group:"Planlama",enabled:canSales},
+      {id:"sales",icon:"sales",label:"Satis Siparisleri",group:"Planlama",enabled:canSales},
+      {id:"orders",icon:"orders",label:"Is Emirleri",group:"Operasyon",enabled:canOrders},
+      {id:"giris",icon:"giris",label:"Uretim Girisi",group:"Operasyon",enabled:canEntry},
+      {id:"assignments",icon:"tasks",label:"Calisan Gorevlendirme",group:"Operasyon",enabled:true},
+      {id:"cncmonitor",icon:"monitor",label:"CNC Izleme",group:"Operasyon",enabled:canMonitor},
+      {id:"downtime",icon:"downtime",label:"Durus Yonetimi",group:"Operasyon",enabled:canDowntime},
+      {id:"quality",icon:"quality",label:"Kalite ve Izlenebilirlik",group:"Operasyon",enabled:canQuality},
+      {id:"materials",icon:"materials",label:"Malzeme Kutuphanesi",group:"Tedarik ve Stok",enabled:(canOrders||canPurchasing)},
+      {id:"tools",icon:"tools",label:"Takim Yonetimi",group:"Tedarik ve Stok",enabled:canTools},
+      {id:"purchase",icon:"purchase",label:"Satin Alma Planlama",group:"Tedarik ve Stok",enabled:canPurchasing},
+      {id:"customers",icon:"customers",label:"Musteriler",group:"Tedarik ve Stok",enabled:(canCustomers||canSales)},
+      {id:"rapor",icon:"rapor",label:"Raporlar",group:"Analiz ve Yonetim",enabled:canReport},
+      {id:"notifications",icon:"notifications",label:"Bildirim Merkezi",group:"Analiz ve Yonetim",enabled:(canNotifications||canUsers||canSales||canPurchasing)},
+      {id:"finance",icon:"cost",label:"Finans",group:"Analiz ve Yonetim",enabled:(canSales||canPurchasing||canReport)},
+      {id:"cost",icon:"cost",label:"Maliyetleme",group:"Analiz ve Yonetim",enabled:(canOrders||canReport||canSales)},
+      {id:"materialquote",icon:"cost",label:"Malzeme Teklif",group:"Analiz ve Yonetim",enabled:(canOrders||canSales||canPurchasing||canReport)},
+      {id:"progenergy",icon:"integration",label:"Program ve Enerji",group:"Analiz ve Yonetim",enabled:canSmartFactory},
+      {id:"toolcycle",icon:"tools",label:"Takim ve Cevrim",group:"Operasyon",enabled:canSmartFactory},
+      {id:"closedloop",icon:"quality",label:"Olcum ve Depo",group:"Tedarik ve Stok",enabled:canSmartFactory},
+      {id:"machineprep",icon:"machines",label:"Makina Hazirlik",group:"Sistem",enabled:canMachinePrep},
+      {id:"integrations",icon:"integration",label:"Entegrasyonlar",group:"Sistem",enabled:(canUsers||isAdmin)},
+      {id:"users",icon:"users",label:"Ayarlar ve Guvenlik",group:"Sistem",enabled:canUsers},
+    ];
+  },[canEntry,canOrders,canSales,canPurchasing,canQuality,canDowntime,canNotifications,canReport,canPlanning,canTools,canCustomers,canMachinePrep,canUsers,isAdmin,canSmartFactory,isOperatorRole,canMonitor]);
+  const hiddenTabs=menuVisibility?.hiddenTabs||[];
+  const enabledTabs=useMemo(()=>{
+    const permissionTabs=allTabs.filter(t=>t.enabled);
+    const filteredTabs=permissionTabs.filter(t=>MENU_ALWAYS_VISIBLE_TAB_IDS.includes(t.id)||!hiddenTabs.includes(t.id));
+    return filteredTabs.length>0?filteredTabs:permissionTabs;
+  },[allTabs,hiddenTabs]);
+  const tabs=enabledTabs;
+  const groupOrder=["Planlama","Operasyon","Tedarik ve Stok","Analiz ve Yonetim","Sistem"];
+  const menuGroupCountMap=useMemo(()=>{
+    const map={all:tabs.length};
+    groupOrder.forEach(g=>{
+      map[g]=tabs.filter(t=>t.group===g).length;
+    });
+    return map;
+  },[tabs]);
+  const menuGroupOptions=useMemo(()=>{
+    const rows=[{id:"all",label:"Tum Menuler",count:menuGroupCountMap.all||0}];
+    groupOrder.forEach(g=>{
+      const count=menuGroupCountMap[g]||0;
+      if(count>0) rows.push({id:g,label:g,count});
+    });
+    return rows;
+  },[menuGroupCountMap]);
+  const visibleTabs=useMemo(()=>{
+    const q=(menuQuery||"").trim().toLowerCase();
+    const groupFiltered=menuGroupFilter==="all"
+      ? tabs
+      : tabs.filter(t=>String(t.group||"")===menuGroupFilter);
+    const filtered=!q
+      ? groupFiltered
+      : groupFiltered.filter(t=>(t.label||"").toLowerCase().includes(q)||(t.group||"").toLowerCase().includes(q));
+    const list=[...filtered];
+    if(globalSortMode==="name_asc"){
+      list.sort((a,b)=>(a.label||"").localeCompare(b.label||"","tr"));
+      return list;
+    }
+    if(globalSortMode==="name_desc"){
+      list.sort((a,b)=>(b.label||"").localeCompare(a.label||"","tr"));
+      return list;
+    }
+    return list;
+  },[tabs,menuQuery,menuGroupFilter,globalSortMode]);
+  const groupedTabs=useMemo(()=>{
+    const out={};
+    visibleTabs.forEach(t=>{
+      if(!out[t.group]) out[t.group]=[];
+      out[t.group].push(t);
+    });
+    return out;
+  },[visibleTabs]);
+  const visibleGroups=groupOrder.filter(g=>groupedTabs[g]&&groupedTabs[g].length>0);
+  const currentRoleLabel=(USER_ROLES.find(r=>r.id===userForPerm.role)||{label:userForPerm.role||"-"}).label;
+  const contentActionConfig={
+    orders:{
+      filterKey:"orders",
+      sortDefault:"date_desc",
+      sortChoices:[
+        {id:"date_desc",label:"Is Emri (Yeniden Eskiye)"},
+        {id:"date_asc",label:"Is Emri (Eskiden Yeniye)"},
+      ],
+    },
+    sales:{
+      filterKey:"sales",
+      sortDefault:"date_desc",
+      sortChoices:[
+        {id:"date_desc",label:"Siparis (Yeniden Eskiye)"},
+        {id:"date_asc",label:"Siparis (Eskiden Yeniye)"},
+      ],
+    },
+    quotes:{
+      filterKey:"sales",
+      sortDefault:"date_desc",
+      sortChoices:[
+        {id:"date_desc",label:"Teklif (Yeniden Eskiye)"},
+        {id:"date_asc",label:"Teklif (Eskiden Yeniye)"},
+      ],
+    },
+    tools:{
+      filterKey:"tools",
+      sortDefault:"name_asc",
+      sortChoices:[
+        {id:"name_asc",label:"Takim Adi (A-Z)"},
+        {id:"name_desc",label:"Takim Adi (Z-A)"},
+        {id:"stock_desc",label:"Stok (Yuksekten Dusuge)"},
+        {id:"stock_asc",label:"Stok (Dusukten Yuksege)"},
+      ],
+    },
+    customers:{
+      filterKey:"customers",
+      sortDefault:"name_asc",
+      sortChoices:[
+        {id:"name_asc",label:"Firma (A-Z)"},
+        {id:"name_desc",label:"Firma (Z-A)"},
+        {id:"code_asc",label:"Kod (A-Z)"},
+        {id:"code_desc",label:"Kod (Z-A)"},
+      ],
+    },
+    materials:{
+      filterKey:"materials",
+      sortDefault:"name_asc",
+      sortChoices:[
+        {id:"name_asc",label:"Malzeme (A-Z)"},
+        {id:"name_desc",label:"Malzeme (Z-A)"},
+        {id:"stock_desc",label:"Stok (Yuksekten Dusuge)"},
+        {id:"stock_asc",label:"Stok (Dusukten Yuksege)"},
+      ],
+    },
+    parts:{
+      filterKey:"parts",
+      sortDefault:"partno_asc",
+      sortChoices:[
+        {id:"partno_asc",label:"Parca No (A-Z)"},
+        {id:"partno_desc",label:"Parca No (Z-A)"},
+        {id:"name_asc",label:"Parca Adi (A-Z)"},
+        {id:"name_desc",label:"Parca Adi (Z-A)"},
+      ],
+    },
+    finance:{
+      filterKey:"finance",
+      sortDefault:"date_desc",
+      sortChoices:[
+        {id:"date_desc",label:"Vade (Yeniden Eskiye)"},
+        {id:"date_asc",label:"Vade (Eskiden Yeniye)"},
+      ],
+    },
+  };
+  const activeContentAction=contentActionConfig[tab]||null;
+  const hasContentFilters=Boolean(activeContentAction?.filterKey);
+  const hasContentSorting=Boolean(activeContentAction?.sortChoices?.length);
+  const topSortChoices=hasContentSorting
+    ? activeContentAction.sortChoices
+    : [{id:"none",label:"Bu sayfada siralama yok"}];
+  const topSortDefault=hasContentSorting
+    ? String(activeContentAction.sortDefault||topSortChoices[0]?.id||"none")
+    : "none";
+  const topSortValue=hasContentSorting&&topSortChoices.some(opt=>opt.id===topContentSortMode)
+    ? topContentSortMode
+    : topSortDefault;
+
+  useEffect(()=>{
+    if(tabFromUrlAppliedRef.current) return;
+    if(!currentUser) return;
+    if(typeof window==="undefined") return;
+    const params=new URLSearchParams(window.location.search||"");
+    const tabParam=(params.get("tab")||"").trim();
+    tabFromUrlAppliedRef.current=true;
+    if(!tabParam) return;
+    if(tabs.some(t=>t.id===tabParam)) setTab(tabParam);
+  },[currentUser,tabs]);
+
+  useEffect(()=>{
+    if(tabs.length===0) return;
+    if(!tabs.some(t=>t.id===tab)) setTab(tabs[0].id);
+  },[tabs,tab]);
+  useEffect(()=>{
+    if(menuGroupFilter==="all") return;
+    if(tabs.some(t=>String(t.group||"")===menuGroupFilter)) return;
+    setMenuGroupFilter("all");
+  },[tabs,menuGroupFilter]);
+  useEffect(()=>{
+    setMobileMenuOpen(false);
+    setGlobalFilterOpen(false);
+  },[tab]);
+  useEffect(()=>{
+    if(!hasContentSorting) return;
+    window.dispatchEvent(new CustomEvent("mrp:tab-action",{detail:{tab,type:"sort",sortMode:topSortValue}}));
+  },[tab,hasContentSorting,topSortValue]);
+
+  const layoutMode=isDesktop?"desktop":(isTablet?"tablet":"mobile");
+  const isMobile=layoutMode==="mobile";
+  const contentMaxWidth=layoutMode==="desktop"?1760:(layoutMode==="tablet"?1320:760);
+  const shellPadding=layoutMode==="desktop"?"12px 14px 20px":(layoutMode==="tablet"?"10px 12px 16px":"8px 8px 0");
+  const headerPadding=layoutMode==="desktop"?"12px 14px":(layoutMode==="tablet"?"10px 12px":"8px 8px");
+  const desktopSidebarW=312;
+  const desktopSidebarCollapsedW=86;
+  const tabletSidebarW=262;
+  const mobilePrimary=tabs.slice(0,4);
+  const activeTabMeta=tabs.find(t=>t.id===tab)||null;
+  const activeContextLabel=activeTabMeta?.label||"Modul";
+  const menuResultText=`${visibleTabs.length}/${tabs.length} modul`;
+  const desktopMenuIconOnly=layoutMode==="desktop"&&desktopMenuCollapsed;
+  const sidebarWidth=layoutMode==="desktop"
+    ? (desktopMenuCollapsed?desktopSidebarCollapsedW:desktopSidebarW)
+    : tabletSidebarW;
+  function toggleDesktopMenuCollapse(){
+    setDesktopMenuCollapsed(prev=>{
+      const next=!prev;
+      if(next) setMenuQuery("");
+      return next;
+    });
+  }
+  function SidebarToggleIcon({collapsed,size=16}){
+    return (
+      <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <rect x="1.5" y="2.5" width="13" height="11" rx="1.6" stroke="currentColor" strokeWidth="1.2"/>
+        <path d="M5.5 3.2V12.8" stroke="currentColor" strokeWidth="1.2"/>
+        {collapsed
+          ? <path d="M8.7 6.1L11.2 8L8.7 9.9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+          : <path d="M10.9 6.1L8.4 8L10.9 9.9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>}
+      </svg>
+    );
+  }
+
+  function getActiveView() {
+    if(tab==="giris") return <DataEntry currentUser={currentUser} machines={machines}/>;
+    if(tab==="assignments") return <TaskAssignmentModule currentUser={currentUser} machines={machines}/>;
+    if(tab==="planning") return <Planning currentUser={currentUser} machines={machines}/>;
+    if(tab==="machineprep") return <MachineConnectivityPrep currentUser={currentUser} machines={machines} onMachinesSync={updateMachines}/>;
+    if(tab==="customers") return <Customers filtersVisible={customersFilterOpen}/>;
+    if(tab==="materials") return <MaterialLibrary filtersVisible={materialsFilterOpen}/>;
+    if(tab==="parts") return <PartProductManagement currentUser={currentUser} machines={machines} filtersVisible={partsFilterOpen}/>;
+    if(tab==="sales") return <SalesManagement currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")} defaultView="orders" filtersVisible={salesFilterOpen}/>;
+    if(tab==="rapor") return <Report currentUser={currentUser} machines={machines}/>;
+    if(tab==="tools") return <ToolStock currentUser={currentUser} machines={machines} filtersVisible={toolsFilterOpen}/>;
+    if(tab==="orders") return <WorkOrders currentUser={currentUser} machines={machines} filtersVisible={ordersFilterOpen}/>;
+    if(tab==="users") return <AdminUsers currentUser={currentUser} machines={machines} currentLogo={logoSrc} onLogoUpdate={updateLogo} menuCatalog={allTabs} menuVisibility={menuVisibility} onMenuVisibilityChange={setMenuVisibility}/>;
+    if(tab==="dashboard") return <MRPDashboard currentUser={currentUser} machines={machines} logoSrc={logoSrc} themeMode={themeMode} onThemeToggle={()=>updateTheme(themeMode==="dark"?"light":"dark")} onLogout={logout} onQuickAction={handleTopQuickAction} roleLabel={currentRoleLabel} layoutMode={layoutMode}/>;
+    if(tab==="cncmonitor") return <CncMonitorWall currentUser={currentUser} machines={machines}/>;
+    if(tab==="mrp") return <MRPRunModule currentUser={currentUser}/>;
+    if(tab==="quotes") return <SalesManagement currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")} defaultView="quotes" filtersVisible={salesFilterOpen}/>;
+    if(tab==="purchase") return <PurchasingModule currentUser={currentUser}/>;
+    if(tab==="downtime") return <DowntimeModule currentUser={currentUser} machines={machines}/>;
+    if(tab==="quality") return <QualityTraceabilityModule currentUser={currentUser} machines={machines}/>;
+    if(tab==="notifications") return <NotificationCenterModule currentUser={currentUser}/>;
+    if(tab==="finance") return <FinanceModule currentUser={currentUser} filtersVisible={financeFilterOpen}/>;
+    if(tab==="cost") return <CostingModule/>;
+    if(tab==="materialquote") return <MaterialQuoteBridgeModule/>;
+    if(tab==="progenergy") return <ProgramAndEnergyModule currentUser={currentUser} machines={machines}/>;
+    if(tab==="toolcycle") return <ToolCycleAnalyticsModule currentUser={currentUser} machines={machines}/>;
+    if(tab==="closedloop") return <ClosedLoopWarehouseModule currentUser={currentUser} machines={machines}/>;
+    if(tab==="integrations") return <IntegrationsReadinessModule/>;
+    return <ModulePlaceholder title="Modul" desc="Secili modul tanimli degil." items={[]}/>;
+  }
+  if(loading) return <div style={{background:C.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12}}><div style={{width:40,height:40,border:`3px solid ${C.border}`,borderTop:`3px solid ${C.accent}`,borderRadius:"50%",animation:"spin 1s linear infinite"}}/><div style={{color:C.muted2,fontSize:13}}>BaÄŸlanÄ±yor...</div><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>;
+  if(!currentUser) return <AuthScreen onLogin={u=>setCurrentUser(u)} logoSrc={logoSrc} themeMode={themeMode} onThemeToggle={()=>updateTheme(themeMode==="dark"?"light":"dark")}/>;
+  if(kioskMachine){
+    return (
+      <div style={{background:C.bg,color:C.text,width:"100vw",height:"100dvh",minHeight:"100vh",overflow:"hidden"}}>
+        <DataEntry currentUser={currentUser} machines={machines} kioskMode/>
+      </div>
+    );
+  }
+  const activeView=getActiveView();
+  const leftNavColors=themeMode==="dark"
+    ? {
+      bg:"#1B2027",
+      bgSoft:"rgba(255,255,255,.06)",
+      panelBg:"rgba(255,255,255,.04)",
+      border:"rgba(255,255,255,.14)",
+      text:"#E8ECF1",
+      muted:"rgba(232,236,241,.68)",
+      icon:"rgba(232,236,241,.74)",
+      activeBg:"#3A4452",
+      activeBorder:"rgba(232,236,241,.38)",
+      activeText:"#FEFFFF",
+      toggleBg:"rgba(255,255,255,.08)",
+      shellShadow:"inset -1px 0 0 rgba(255,255,255,.05)",
+    }
+    : {
+      bg:"#17252A",
+      bgSoft:"rgba(222,242,241,.07)",
+      panelBg:"rgba(23,37,42,.30)",
+      border:"rgba(222,242,241,.20)",
+      text:"#DEF2F1",
+      muted:"rgba(222,242,241,.74)",
+      icon:"rgba(222,242,241,.78)",
+      activeBg:"#3AAFA9",
+      activeBorder:"rgba(222,242,241,.45)",
+      activeText:"#FEFFFF",
+      toggleBg:"rgba(222,242,241,.10)",
+      shellShadow:"inset -1px 0 0 rgba(255,255,255,.05)",
+    };
+
+  const menuSearch=(opts={})=>{
+    const sideTone=Boolean(opts.sideTone);
+    const includeReset=opts.includeReset!==undefined?Boolean(opts.includeReset):!sideTone;
+    const buttonBaseTone=sideTone?leftNavColors.bgSoft:C.card;
+    return (
+      <div style={{marginBottom:12,paddingBottom:10,borderBottom:`1px solid ${sideTone?leftNavColors.border:C.border}`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:8}}>
+          <div style={{fontSize:11,fontWeight:700,color:sideTone?leftNavColors.muted:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Modul Navigasyon</div>
+          <div style={{fontSize:11,color:sideTone?leftNavColors.muted:C.muted2}}>{menuResultText}</div>
+        </div>
+        <input
+          value={menuQuery}
+          onChange={e=>setMenuQuery(e.target.value)}
+          placeholder="Modul ara..."
+          style={{
+            ...inputSt,
+            padding:"9px 10px",
+            fontSize:12,
+            ...(sideTone?{
+              background:leftNavColors.bgSoft,
+              color:leftNavColors.text,
+              border:`1px solid ${leftNavColors.border}`,
+            }:{}),
+          }}
+        />
+        <div style={{fontSize:11,color:sideTone?leftNavColors.muted:C.muted2,letterSpacing:.6,textTransform:"uppercase",marginTop:9}}>Menu Grubu</div>
+        <div className="mrp-scrollbar" style={{display:"flex",flexDirection:"column",gap:6,maxHeight:sideTone?180:220,overflowY:"auto",marginTop:6,paddingRight:2}}>
+          {menuGroupOptions.map(opt=>(
+            <button
+              key={opt.id}
+              onClick={()=>setMenuGroupFilter(opt.id)}
+              style={{
+                ...btnSt("ghost"),
+                padding:"7px 9px",
+                fontSize:12,
+                justifyContent:"space-between",
+                display:"flex",
+                alignItems:"center",
+                borderColor:menuGroupFilter===opt.id
+                  ? (sideTone?leftNavColors.activeBorder:C.accent)
+                  : (sideTone?leftNavColors.border:C.border),
+                background:menuGroupFilter===opt.id
+                  ? (sideTone?leftNavColors.activeBg:C.brandTint)
+                  : buttonBaseTone,
+                color:menuGroupFilter===opt.id
+                  ? (sideTone?leftNavColors.activeText:C.accent)
+                  : (sideTone?leftNavColors.text:C.text),
+              }}
+            >
+              <span>{opt.label}</span>
+              <span style={{fontSize:11,color:sideTone?leftNavColors.muted:C.muted2}}>{opt.count}</span>
+            </button>
+          ))}
+        </div>
+        {includeReset&&(
+          <button onClick={()=>{setMenuQuery("");setMenuGroupFilter("all");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12,width:"100%",marginTop:8}}>
+            Filtreleri Temizle
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  const menuSection=(opts={})=>{
+    const compact=Boolean(opts.compact);
+    const iconOnly=Boolean(opts.iconOnly);
+    const sideTone=Boolean(opts.sideTone);
+    return (
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      {visibleGroups.length===0&&(
+        <div style={{background:sideTone?leftNavColors.panelBg:C.surface2,border:`1px dashed ${sideTone?leftNavColors.border:C.border}`,borderRadius:10,padding:"14px 10px",fontSize:12,color:sideTone?leftNavColors.muted:C.muted2,textAlign:"center"}}>
+          Arama sonucunda modul bulunamadi.
+        </div>
+      )}
+      {visibleGroups.map(g=>(
+        <div key={g}>
+          <div title={g} style={{fontSize:10,color:sideTone?leftNavColors.muted:C.muted2,letterSpacing:.5,textTransform:"uppercase",marginBottom:6,padding:compact?"0 2px":"0 6px",fontWeight:800,textAlign:iconOnly?"center":"left",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+            {iconOnly?g.split(" ").map(x=>x[0]||"").join("").slice(0,3):g}
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {groupedTabs[g].map(t=>(
+              <button
+                key={t.id}
+                title={`${g} Â· ${t.label}`}
+                onClick={()=>{setTab(t.id);setMobileMenuOpen(false);}}
+                style={{
+                  display:"flex",
+                  alignItems:"center",
+                  gap:10,
+                  textAlign:"left",
+                  padding:iconOnly?"9px 8px":(compact?"9px 10px":"10px 12px"),
+                  borderRadius:8,
+                  border:`1px solid ${
+                    sideTone
+                      ? (tab===t.id?leftNavColors.activeBorder:"transparent")
+                      : (tab===t.id?C.accent+"55":C.border)
+                  }`,
+                  background:sideTone
+                    ? (tab===t.id?leftNavColors.activeBg:"transparent")
+                    : (tab===t.id?C.brandTint:C.surface),
+                  color:sideTone
+                    ? (tab===t.id?leftNavColors.activeText:leftNavColors.text)
+                    : (tab===t.id?C.accent:C.text),
+                  cursor:"pointer",
+                  fontFamily:"inherit",
+                  justifyContent:iconOnly?"center":"flex-start",
+                  boxShadow:tab===t.id
+                    ? (sideTone
+                      ? "0 0 0 1px rgba(255,255,255,.18), 0 8px 18px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.18)"
+                      : `0 0 0 1px ${C.accent}55, 0 8px 16px ${C.accent}22`)
+                    : "none",
+                  filter:tab===t.id?"saturate(1.14) brightness(1.08)":"none",
+                  transition:"filter .16s ease, box-shadow .16s ease, transform .16s ease",
+                }}
+              >
+                <span style={{display:"inline-flex",alignItems:"center",gap:10,minWidth:0,maxWidth:iconOnly?22:"100%"}}>
+                  <span style={{width:22,display:"inline-flex",justifyContent:"center",alignItems:"center",color:sideTone?(tab===t.id?leftNavColors.activeText:leftNavColors.icon):(tab===t.id?C.accent:C.muted2)}}><NavIcon name={t.icon}/></span>
+                  {!iconOnly&&<span style={{fontSize:compact?12:13,fontWeight:tab===t.id?800:500,color:tab===t.id?(sideTone?leftNavColors.activeText:C.accent):undefined,textShadow:tab===t.id?"0 0 10px rgba(255,255,255,.14)":"none",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.label}</span>}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+    );
+  };
+  const topQuickActions=[
+    {id:"notif",label:"Bildirimler",icon:"\uD83D\uDD14"},
+    {id:"calendar",label:"Takvim",icon:"\uD83D\uDCC5"},
+    {id:"mail",label:"Mesajlar",icon:"\u2709"},
+    {id:"settings",label:"Ayarlar",icon:"\u2699"},
+  ];
+  const topViewChoices=[
+    {id:"cards",label:"Kartlar",icon:"\u25A6"},
+    {id:"compact",label:"Liste",icon:"\u2630"},
+    {id:"table",label:"Tablo",icon:"\u25A4"},
+  ];
+  const appCommandBarTone=themeMode==="dark"
+    ? {
+      heroBg:"#2A3038",
+      heroText:"#F2F4F7",
+      heroMuted:"rgba(242,244,247,.82)",
+      heroFieldBg:"rgba(255,255,255,.08)",
+      heroFieldBorder:"rgba(255,255,255,.24)",
+      heroChipBg:"rgba(255,255,255,.07)",
+      heroChipBorder:"rgba(255,255,255,.20)",
+      heroShadow:"0 16px 34px rgba(0,0,0,.42)",
+      subBg:"#232931",
+      subBorder:"rgba(255,255,255,.10)",
+    }
+    : {
+      heroBg:"#2B7A78",
+      heroText:"#FEFFFF",
+      heroMuted:"rgba(254,255,255,.90)",
+      heroFieldBg:"rgba(255,255,255,.22)",
+      heroFieldBorder:"rgba(255,255,255,.44)",
+      heroChipBg:"rgba(255,255,255,.16)",
+      heroChipBorder:"rgba(255,255,255,.38)",
+      heroShadow:"0 14px 30px rgba(23,82,73,.20)",
+      subBg:"#DEF2F1",
+      subBorder:"#CBE3E1",
+    };
+  const appLayoutBadge=layoutMode==="desktop"?"DESKTOP":(layoutMode==="tablet"?"TABLET":"MOBIL");
+  const appUserLabel=String(currentUser?.fullName||"").trim();
+  function switchToTabIfVisible(tabId){
+    if(tabs.some(t=>t.id===tabId)) setTab(tabId);
+  }
+  function triggerTopAction(type){
+    window.dispatchEvent(new CustomEvent("mrp:tab-action",{detail:{tab,type}}));
+  }
+  function applyTopSortMode(modeId){
+    if(!hasContentSorting) return;
+    const nextMode=topSortChoices.some(opt=>opt.id===modeId)?modeId:topSortDefault;
+    setTopContentSortMode(nextMode);
+    window.dispatchEvent(new CustomEvent("mrp:tab-action",{detail:{tab,type:"sort",sortMode:nextMode}}));
+  }
+  function resetTopSort(){
+    if(!hasContentSorting) return;
+    applyTopSortMode(topSortDefault);
+  }
+  function handleTopQuickAction(actionId){
+    if(actionId==="notif"){switchToTabIfVisible("notifications");return;}
+    if(actionId==="calendar"){switchToTabIfVisible("planning");return;}
+    if(actionId==="mail"){switchToTabIfVisible("sales");return;}
+    if(actionId==="settings"){switchToTabIfVisible("users");}
+  }
+  function applyTopViewMode(modeId){
+    setGlobalViewMode(modeId);
+    if(layoutMode!=="desktop") return;
+    if(modeId==="compact"&&!desktopMenuCollapsed) setDesktopMenuCollapsed(true);
+    if(modeId!=="compact"&&desktopMenuCollapsed) setDesktopMenuCollapsed(false);
+  }
+  const filterOpenByKey={
+    orders:ordersFilterOpen,
+    sales:salesFilterOpen,
+    tools:toolsFilterOpen,
+    customers:customersFilterOpen,
+    materials:materialsFilterOpen,
+    parts:partsFilterOpen,
+    finance:financeFilterOpen,
+  };
+  const topFiltersOpen=hasContentFilters
+    ? Boolean(filterOpenByKey[activeContentAction?.filterKey||""])
+    : globalFilterOpen;
+  const toggleTopFilters=()=>{
+    if(!hasContentFilters) return;
+    if(activeContentAction?.filterKey==="orders"){
+      setOrdersFilterOpen(v=>!v);
+      return;
+    }
+    if(activeContentAction?.filterKey==="sales"){
+      setSalesFilterOpen(v=>!v);
+      return;
+    }
+    if(activeContentAction?.filterKey==="tools"){
+      setToolsFilterOpen(v=>!v);
+      return;
+    }
+    if(activeContentAction?.filterKey==="customers"){
+      setCustomersFilterOpen(v=>!v);
+      return;
+    }
+    if(activeContentAction?.filterKey==="materials"){
+      setMaterialsFilterOpen(v=>!v);
+      return;
+    }
+    if(activeContentAction?.filterKey==="parts"){
+      setPartsFilterOpen(v=>!v);
+      return;
+    }
+    if(activeContentAction?.filterKey==="finance"){
+      setFinanceFilterOpen(v=>!v);
+      return;
+    }
+  };
+  const topBar=(
+    <div className="mrp-topbar" style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:appCommandBarTone.heroShadow}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",background:appCommandBarTone.heroBg}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+          <div style={{width:40,height:40,borderRadius:10,background:"rgba(255,255,255,.16)",border:`1px solid ${appCommandBarTone.heroChipBorder}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
+            {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:17,color:appCommandBarTone.heroText}}>{"\uD83C\uDFED"}</span>}
+          </div>
+          <div style={{minWidth:0}}>
+            <div style={{fontSize:11,color:appCommandBarTone.heroMuted,letterSpacing:.7,textTransform:"uppercase"}}>Canli Uretim Panosu</div>
+            <div style={{fontWeight:800,color:appCommandBarTone.heroText,fontSize:20,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{activeContextLabel}</div>
+            <div style={{fontSize:12,color:appCommandBarTone.heroMuted,marginTop:2,display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+              <span>{appUserLabel||"-"}</span>
+              <Badge label={String(currentRoleLabel||"Kullanici").toUpperCase()} color={C.accent}/>
+              <Badge label={appLayoutBadge} color={C.muted2}/>
+            </div>
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <div style={{position:"relative",minWidth:isMobile?180:250}}>
+            <span style={{position:"absolute",left:10,top:8,color:appCommandBarTone.heroMuted,fontSize:13}}>{"\uD83D\uDD0D"}</span>
+            <input value={menuQuery} onChange={e=>setMenuQuery(e.target.value)} placeholder="Modul veya kayit ara..." style={{...inputSt,padding:"8px 10px 8px 30px",fontSize:12,minWidth:isMobile?180:250,background:appCommandBarTone.heroFieldBg,borderColor:appCommandBarTone.heroFieldBorder,color:appCommandBarTone.heroText}}/>
+          </div>
+          {isMobile&&(
+            <button onClick={()=>setMobileMenuOpen(true)} style={{border:`1px solid ${appCommandBarTone.heroChipBorder}`,background:appCommandBarTone.heroChipBg,color:appCommandBarTone.heroText,padding:"7px 10px",fontSize:12,borderRadius:8,cursor:"pointer",minWidth:78}}>
+              Menu
+            </button>
+          )}
+          {topQuickActions.map(act=>(
+            <button key={act.id} onClick={()=>handleTopQuickAction(act.id)} title={act.label} style={{border:`1px solid ${appCommandBarTone.heroChipBorder}`,background:appCommandBarTone.heroChipBg,color:appCommandBarTone.heroText,padding:"7px 9px",fontSize:13,minWidth:34,borderRadius:8,cursor:"pointer"}}>
+              {act.icon}
+            </button>
+          ))}
+          <button onClick={()=>updateTheme(themeMode==="dark"?"light":"dark")} style={{border:`1px solid ${appCommandBarTone.heroChipBorder}`,background:appCommandBarTone.heroChipBg,color:appCommandBarTone.heroText,padding:"7px 10px",fontSize:12,borderRadius:8,cursor:"pointer",minWidth:98}}>
+            {themeMode==="dark"?"Acik Tema":"Koyu Tema"}
+          </button>
+          <button onClick={logout} style={{border:`1px solid ${appCommandBarTone.heroChipBorder}`,background:appCommandBarTone.heroChipBg,color:appCommandBarTone.heroText,padding:"7px 10px",fontSize:12,borderRadius:8,cursor:"pointer",minWidth:72}}>
+            Cikis
+          </button>
+        </div>
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 12px",borderTop:`1px solid ${appCommandBarTone.subBorder}`,background:appCommandBarTone.subBg}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <button
+            onClick={toggleTopFilters}
+            disabled={!hasContentFilters}
+            style={{...(topFiltersOpen?btnSt("primary"):btnSt("ghost")),padding:"7px 10px",fontSize:12,opacity:hasContentFilters?1:0.6,cursor:hasContentFilters?"pointer":"not-allowed"}}
+          >
+            {!hasContentFilters?"Filtre Yok":(topFiltersOpen?"Filtreyi Gizle":"Filtre Uygula")}
+          </button>
+          <div style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",border:`1px solid ${C.border}`,borderRadius:8,background:C.card}}>
+            <span style={{fontSize:11,color:C.muted2,fontWeight:700}}>Sirala</span>
+            <select value={topSortValue} onChange={e=>applyTopSortMode(e.target.value)} disabled={!hasContentSorting} style={{...inputSt,padding:"5px 6px",fontSize:12,minWidth:170,opacity:hasContentSorting?1:0.6,cursor:hasContentSorting?"pointer":"not-allowed"}}>
+              {topSortChoices.map(opt=><option key={opt.id} value={opt.id}>{opt.label}</option>)}
+            </select>
+            {hasContentSorting&&topSortValue!==topSortDefault&&<button onClick={resetTopSort} style={{...btnSt("ghost"),padding:"3px 6px",fontSize:11}}>Ã—</button>}
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:4,padding:"4px",border:`1px solid ${C.border}`,borderRadius:9,background:C.card}}>
+            {topViewChoices.map(mode=>(
+              <button key={mode.id} onClick={()=>applyTopViewMode(mode.id)} title={mode.label} style={{border:"none",background:globalViewMode===mode.id?C.accent:"transparent",color:globalViewMode===mode.id?"#fff":C.muted2,padding:"6px 8px",fontSize:12,borderRadius:6,cursor:"pointer"}}>
+                {mode.icon}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+          <input type="date" value={globalQuickDate} onChange={e=>setGlobalQuickDate(e.target.value||todayStr())} style={{...inputSt,padding:"7px 9px",fontSize:12,width:150}}/>
+          <button onClick={()=>{
+            setMenuQuery("");
+            setMenuGroupFilter("all");
+            if(hasContentSorting){
+              applyTopSortMode(topSortDefault);
+            } else {
+              setGlobalSortMode("group");
+            }
+            setGlobalViewMode("cards");
+            setGlobalFilterOpen(false);
+            setSalesFilterOpen(false);
+            setOrdersFilterOpen(false);
+            setToolsFilterOpen(false);
+            setCustomersFilterOpen(false);
+            setMaterialsFilterOpen(false);
+            setPartsFilterOpen(false);
+            setFinanceFilterOpen(false);
+            if(layoutMode==="desktop") setDesktopMenuCollapsed(false);
+          }} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>
+            Temizle
+          </button>
+          <button onClick={()=>triggerTopAction("new")} style={{...btnSt("primary"),padding:"7px 12px",fontSize:12,minWidth:126}}>
+            Yeni Kayit
+          </button>
+          <button onClick={()=>triggerTopAction("refresh")} style={{...btnSt("primary"),padding:"7px 10px",fontSize:12}}>
+            Yenile
+          </button>
+        </div>
+      </div>
+      {globalFilterOpen&&(
+        <div style={{padding:"10px 12px",borderTop:`1px solid ${C.border}`,background:C.card}}>
+          <div style={{maxWidth:isMobile?"100%":320,background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+            <div style={{fontSize:13,fontWeight:800,color:C.text,marginBottom:2}}>Filtreleme Menuler</div>
+            {menuSearch({includeReset:true})}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+  const showLegacyTopBar=tab!=="dashboard";
+
+  return (
+    <div style={{background:C.bg,height:"100dvh",minHeight:"100vh",overflow:"hidden",color:C.text}}>
+      {!isMobile&&(
+        <div style={{display:"grid",gridTemplateColumns:`${sidebarWidth}px minmax(0,1fr)`,height:"100%",minHeight:0,transition:"grid-template-columns .18s ease"}}>
+          <aside style={{position:"sticky",top:0,height:"100vh",backgroundColor:leftNavColors.bg,color:leftNavColors.text,borderRight:`1px solid ${leftNavColors.border}`,boxShadow:leftNavColors.shellShadow,display:"flex",flexDirection:"column"}}>
+            <div style={{padding:desktopMenuIconOnly?"12px 8px":"12px 10px",borderBottom:`1px solid ${leftNavColors.border}`}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:desktopMenuIconOnly?"center":"space-between",gap:8}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+                  <div style={{width:34,height:34,borderRadius:9,background:leftNavColors.toggleBg,border:`1px solid ${leftNavColors.border}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
+                    {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:14,color:leftNavColors.activeText}}>??</span>}
+                  </div>
+                  {!desktopMenuIconOnly&&<div style={{fontSize:15,fontWeight:800,color:leftNavColors.activeText,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>CNC Atolye MRP</div>}
+                </div>
+                {layoutMode==="desktop"&&(
+                  <button
+                    onClick={toggleDesktopMenuCollapse}
+                    title={desktopMenuIconOnly?"Menuyu Genislet":"Menuyu Daralt"}
+                    aria-label={desktopMenuIconOnly?"Menuyu Genislet":"Menuyu Daralt"}
+                    style={{width:30,height:30,padding:0,display:"inline-flex",alignItems:"center",justifyContent:"center",border:`1px solid ${leftNavColors.border}`,borderRadius:8,background:leftNavColors.toggleBg,color:leftNavColors.icon,cursor:"pointer"}}
+                  >
+                    <SidebarToggleIcon collapsed={desktopMenuCollapsed} size={14}/>
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="mrp-scrollbar" style={{flex:1,overflowY:"auto",padding:desktopMenuIconOnly?"10px 8px":"10px"}}>
+              {menuSection({compact:true,iconOnly:desktopMenuIconOnly,sideTone:true})}
+            </div>
+            {!desktopMenuIconOnly&&(
+              <div style={{padding:"10px 12px",borderTop:`1px solid ${leftNavColors.border}`,fontSize:11,color:leftNavColors.muted}}>
+                {currentUser.fullName}
+              </div>
+            )}
+          </aside>
+          <div style={{minWidth:0,minHeight:0,display:"flex",flexDirection:"column"}}>
+            {showLegacyTopBar&&(
+              <div style={{padding:headerPadding,position:"sticky",top:0,zIndex:22,background:C.bg}}>
+                {topBar}
+              </div>
+            )}
+            <div style={{padding:shellPadding,flex:1,minWidth:0,minHeight:0,overflowY:"auto",overscrollBehavior:"none"}}>
+              <div className="mrp-view-slot">
+                <div className="mrp-view-slot-inner">
+                  {activeView}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isMobile&&(
+        <div className="mrp-shell" style={{width:"100%",maxWidth:contentMaxWidth,height:"100%",margin:"0 auto",display:"flex",flexDirection:"column",overflow:"hidden",paddingBottom:isMobile?78:20}}>
+          {showLegacyTopBar&&(
+            <div style={{padding:headerPadding,position:"sticky",top:0,zIndex:22}}>
+              {topBar}
+            </div>
+          )}
+          <div style={{flex:1,minHeight:0,overflowY:"auto",overscrollBehavior:"none",paddingBottom:76}}>
+            <div className="mrp-view-slot">
+              <div className="mrp-view-slot-inner">
+                {activeView}
+              </div>
+            </div>
+          </div>
+          <div className="mrp-bottom-nav" style={{position:"fixed",left:0,right:0,bottom:0,background:`${C.surface}f0`,borderTop:`1px solid ${C.border}`,zIndex:24}}>
+            <div style={{width:"100%",maxWidth:contentMaxWidth,margin:"0 auto",display:"grid",gridTemplateColumns:`repeat(${mobilePrimary.length+1},minmax(0,1fr))`,alignItems:"stretch"}}>
+              {mobilePrimary.map(t=>(
+                <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"10px 8px 8px",border:"none",background:tab===t.id?C.brandTint:"transparent",cursor:"pointer",color:tab===t.id?C.accent:C.muted,borderTop:`2px solid ${tab===t.id?C.accent:"transparent"}`,fontFamily:"inherit",minWidth:0}}>
+                  <div style={{display:"inline-flex",justifyContent:"center",alignItems:"center",height:20}}><NavIcon name={t.icon} size={18}/></div>
+                  <div style={{fontSize:10,fontWeight:tab===t.id?700:500,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.label}</div>
+                </button>
+              ))}
+              <button onClick={()=>setMobileMenuOpen(true)} style={{padding:"10px 8px 8px",border:"none",background:mobileMenuOpen?C.brandTint:"transparent",cursor:"pointer",color:mobileMenuOpen?C.accent:C.muted,borderTop:`2px solid ${mobileMenuOpen?C.accent:"transparent"}`,fontFamily:"inherit",minWidth:0}}>
+                <div style={{display:"inline-flex",justifyContent:"center",alignItems:"center",height:20}}><NavIcon name="users" size={18}/></div>
+                <div style={{fontSize:10,fontWeight:mobileMenuOpen?700:500,marginTop:2}}>Menu</div>
+              </button>
+            </div>
+          </div>
+          {mobileMenuOpen&&(
+            <div onClick={()=>setMobileMenuOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:30,display:"flex",alignItems:"flex-end"}}>
+              <div onClick={e=>e.stopPropagation()} className="mrp-scrollbar" style={{width:"100%",maxHeight:"84vh",background:C.surface,borderTop:`1px solid ${C.border}`,borderTopLeftRadius:16,borderTopRightRadius:16,padding:12,overflowY:"auto"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <div style={{fontWeight:700,color:C.text}}>MRP Menusu</div>
+                  <button onClick={()=>setMobileMenuOpen(false)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kapat</button>
+                </div>
+                {menuSection({compact:true})}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+
