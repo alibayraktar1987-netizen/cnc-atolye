@@ -3343,6 +3343,9 @@ function ToolStock({currentUser,filtersVisible=true}) {
   const [moveOpenId,setMoveOpenId]=useState(null);
   const [moveForm,setMoveForm]=useState({type:"out",qty:"",orderId:"",note:""});
   const [sortMode,setSortMode]=useState("name_asc");
+  const [stockFilter,setStockFilter]=useState("all");
+  const [updatedDateFrom,setUpdatedDateFrom]=useState("");
+  const [updatedDateTo,setUpdatedDateTo]=useState("");
 
   const load=useCallback(async()=>{
     const [rows,ords,mvs]=await Promise.all([
@@ -3461,15 +3464,44 @@ function ToolStock({currentUser,filtersVisible=true}) {
     setMoveForm({type:"out",qty:"",orderId:"",note:""});
   }
 
-  const filtered=tools.filter(t=>{
-    const q=search.toLowerCase().trim();
-    if(!q) return true;
-    return (t.name||"").toLowerCase().includes(q)||
-      (t.code||"").toLowerCase().includes(q)||
-      (t.category||"").toLowerCase().includes(q)||
-      (t.location||"").toLowerCase().includes(q);
+  const toYmd=value=>{
+    const raw=String(value||"").trim();
+    if(!raw) return "";
+    if(/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    if(/^\d{4}-\d{2}-\d{2}T/.test(raw)) return raw.slice(0,10);
+    const d=new Date(raw);
+    if(Number.isNaN(d.getTime())) return "";
+    return ymdLocal(d);
+  };
+  const inRange=(ymd,from,to)=>{
+    if(from&&(!ymd||ymd<from)) return false;
+    if(to&&(!ymd||ymd>to)) return false;
+    return true;
+  };
+  const resolveStockStatus=row=>{
+    const qty=safeNum(row?.qty);
+    const min=Math.max(safeNum(row?.minQty),0);
+    if(qty<=0) return "out";
+    if(qty<=min) return "critical";
+    return "healthy";
+  };
+  const toolQuery=String(search||"").trim().toLowerCase();
+  const toolFilterRows=tools.filter(row=>{
+    const textOk=!toolQuery||[
+      row.name||"",
+      row.code||"",
+      row.category||"",
+      row.location||"",
+      row.geometry||"",
+      row.toolMaterial||"",
+      row.notes||"",
+    ].join(" ").toLowerCase().includes(toolQuery);
+    const statusOk=stockFilter==="all"||resolveStockStatus(row)===stockFilter;
+    const dateYmd=toYmd(row.updatedAt)||toYmd(row.createdAt);
+    const dateOk=inRange(dateYmd,updatedDateFrom,updatedDateTo);
+    return textOk&&statusOk&&dateOk;
   });
-  const sortedTools=[...filtered].sort((a,b)=>{
+  const sortedTools=[...toolFilterRows].sort((a,b)=>{
     if(sortMode==="name_desc") return String(b.name||"").localeCompare(String(a.name||""),"tr");
     if(sortMode==="stock_desc") return (Number(b.qty)||0)-(Number(a.qty)||0);
     if(sortMode==="stock_asc") return (Number(a.qty)||0)-(Number(b.qty)||0);
@@ -3477,9 +3509,37 @@ function ToolStock({currentUser,filtersVisible=true}) {
   });
   const lowCount=tools.filter(t=>(Number(t.qty)||0)<=Math.max(Number(t.minQty)||0,0)).length;
   const stockedTools=[...tools].filter(t=>(Number(t.qty)||0)>0).sort((a,b)=>(Number(b.qty)||0)-(Number(a.qty)||0));
+  const stockFilterCounts={
+    all:tools.length,
+    healthy:tools.filter(t=>resolveStockStatus(t)==="healthy").length,
+    critical:tools.filter(t=>resolveStockStatus(t)==="critical").length,
+    out:tools.filter(t=>resolveStockStatus(t)==="out").length,
+  };
+  const stockFilterOptions=[
+    {id:"all",label:"Tum Takimlar"},
+    {id:"healthy",label:"Stok Normal"},
+    {id:"critical",label:"Kritik Stok"},
+    {id:"out",label:"Stok Yok"},
+  ];
   const categoryOptions=(form.category&& !TOOL_CATEGORY_OPTIONS.includes(form.category))
     ? [...TOOL_CATEGORY_OPTIONS,form.category]
     : TOOL_CATEGORY_OPTIONS;
+  const filterPanelStyle={
+    flex:"0 0 250px",
+    width:"100%",
+    maxWidth:280,
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    padding:12,
+    display:"flex",
+    flexDirection:"column",
+    gap:10,
+    minHeight:0,
+    overflowY:"auto",
+    overscrollBehavior:"contain",
+    scrollbarGutter:"stable",
+  };
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
 
@@ -3529,12 +3589,32 @@ function ToolStock({currentUser,filtersVisible=true}) {
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:8,flexWrap:"wrap"}}>
         <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>Takim Stogu · {tools.length} kayit · {lowCount} kritik stok</div>
       </div>
-      {filtersVisible&&(
-        <div style={{marginBottom:12}}>
-          <input style={{...inputSt,padding:"9px 12px",fontSize:13}} placeholder="Takim adi, kod, kategori veya konum ara..." value={search} onChange={e=>setSearch(e.target.value)}/>
-        </div>
-      )}
-      {sortedTools.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"30px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Sonuc yok</div>}
+      <div style={{display:"flex",gap:10,alignItems:"stretch",flexWrap:"wrap"}}>
+        {filtersVisible&&(
+          <div style={filterPanelStyle}>
+            <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Takimlar</div>
+            <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Ad, kod, kategori, konum ara"/>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Stok Durumu</div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {stockFilterOptions.map(opt=>(
+                <button
+                  key={opt.id}
+                  onClick={()=>setStockFilter(opt.id)}
+                  style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:stockFilter===opt.id?C.accent:C.border,color:stockFilter===opt.id?C.accent:C.text}}
+                >
+                  <span>{opt.label}</span>
+                  <span style={{fontSize:11,color:C.muted2}}>{stockFilterCounts[opt.id]||0}</span>
+                </button>
+              ))}
+            </div>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Guncelleme Tarihi</div>
+            <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={updatedDateFrom} onChange={e=>setUpdatedDateFrom(e.target.value||"")}/>
+            <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={updatedDateTo} onChange={e=>setUpdatedDateTo(e.target.value||"")}/>
+            <button onClick={()=>{setStockFilter("all");setUpdatedDateFrom("");setUpdatedDateTo("");setSearch("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
+          </div>
+        )}
+        <div style={{flex:"1 1 760px",minWidth:0,display:"flex",flexDirection:"column",gap:8}}>
+          {sortedTools.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"30px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Sonuc yok</div>}
       {sortedTools.map(t=>{
         const qty=Number(t.qty)||0;
         const min=Math.max(Number(t.minQty)||0,0);
@@ -3559,7 +3639,7 @@ function ToolStock({currentUser,filtersVisible=true}) {
             </div>
             {t.notes&&<div style={{fontSize:12,color:C.muted2,marginBottom:8}}>{t.notes}</div>}
             {isAdmin&&(
-              <div style={{display:"flex",gap:7}}>
+              <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
                 <button onClick={()=>openMovement(t.id,"in")} style={{...btnSt("green"),padding:"6px 10px",fontSize:12}}>Stok Girisi</button>
                 <button onClick={()=>openMovement(t.id,"out")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Stok Cikisi</button>
                 <button onClick={()=>{setEditId(t.id);setForm({code:t.code||"",name:t.name||"",category:t.category||"",qty:String(qty),minQty:String(min),location:t.location||"",geometry:t.geometry||"",toolMaterial:t.toolMaterial||"",expectedLife:String(t.expectedLife??""),notes:t.notes||""});setShowForm(true);}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
@@ -3599,6 +3679,8 @@ function ToolStock({currentUser,filtersVisible=true}) {
           </div>
         );
       })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -3828,6 +3910,11 @@ function MaterialLibrary({filtersVisible=true}) {
   const [editId,setEditId]=useState(null);
   const [search,setSearch]=useState("");
   const [sortMode,setSortMode]=useState("name_asc");
+  const [stockFilter,setStockFilter]=useState("all");
+  const [typeFilter,setTypeFilter]=useState("all");
+  const [trackingFilter,setTrackingFilter]=useState("all");
+  const [updatedDateFrom,setUpdatedDateFrom]=useState("");
+  const [updatedDateTo,setUpdatedDateTo]=useState("");
   const [seedChecked,setSeedChecked]=useState(false);
   const [form,setForm]=useState({name:"",code:"",density:"",stock:"",type:"raw",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""});
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
@@ -3958,20 +4045,83 @@ function MaterialLibrary({filtersVisible=true}) {
     seedDefaultMaterials(false);
   },[loading,seedChecked]);
 
-  const q=search.trim().toLowerCase();
+  const toYmd=value=>{
+    const raw=String(value||"").trim();
+    if(!raw) return "";
+    if(/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    if(/^\d{4}-\d{2}-\d{2}T/.test(raw)) return raw.slice(0,10);
+    const d=new Date(raw);
+    if(Number.isNaN(d.getTime())) return "";
+    return ymdLocal(d);
+  };
+  const inRange=(ymd,from,to)=>{
+    if(from&&(!ymd||ymd<from)) return false;
+    if(to&&(!ymd||ymd>to)) return false;
+    return true;
+  };
+  const resolveStockStatus=row=>{
+    const stock=safeNum(row?.stock);
+    const reorder=safeNum(row?.reorderPoint);
+    const safety=safeNum(row?.safetyStock);
+    const threshold=Math.max(reorder,safety,0);
+    if(stock<=0) return "out";
+    if(stock<=threshold) return "critical";
+    return "healthy";
+  };
+  const q=String(search||"").trim().toLowerCase();
   const stockedMaterials=[...materials].filter(m=>(Number(m.stock)||0)>0).sort((a,b)=>(Number(b.stock)||0)-(Number(a.stock)||0));
-  const filtered=materials.filter(m=>{
-    if(!q) return true;
-    return (m.name||"").toLowerCase().includes(q)||
-      (m.code||"").toLowerCase().includes(q)||
-      (m.note||"").toLowerCase().includes(q);
+  const materialFilterRows=materials.filter(row=>{
+    const textOk=!q||[
+      row.name||"",
+      row.code||"",
+      row.note||"",
+      row.type||"",
+      row.trackingMode||"",
+      row.valuationMethod||"",
+    ].join(" ").toLowerCase().includes(q);
+    const stockOk=stockFilter==="all"||resolveStockStatus(row)===stockFilter;
+    const typeOk=typeFilter==="all"||String(row.type||"")===typeFilter;
+    const trackingOk=trackingFilter==="all"||String(row.trackingMode||"")===trackingFilter;
+    const dateYmd=toYmd(row.updatedAt)||toYmd(row.createdAt);
+    const dateOk=inRange(dateYmd,updatedDateFrom,updatedDateTo);
+    return textOk&&stockOk&&typeOk&&trackingOk&&dateOk;
   });
-  const sortedMaterials=[...filtered].sort((a,b)=>{
+  const sortedMaterials=[...materialFilterRows].sort((a,b)=>{
     if(sortMode==="name_desc") return String(b.name||"").localeCompare(String(a.name||""),"tr");
     if(sortMode==="stock_desc") return safeNum(b.stock)-safeNum(a.stock);
     if(sortMode==="stock_asc") return safeNum(a.stock)-safeNum(b.stock);
     return String(a.name||"").localeCompare(String(b.name||""),"tr");
   });
+  const stockFilterCounts={
+    all:materials.length,
+    healthy:materials.filter(m=>resolveStockStatus(m)==="healthy").length,
+    critical:materials.filter(m=>resolveStockStatus(m)==="critical").length,
+    out:materials.filter(m=>resolveStockStatus(m)==="out").length,
+  };
+  const stockFilterOptions=[
+    {id:"all",label:"Tum Malzemeler"},
+    {id:"healthy",label:"Stok Normal"},
+    {id:"critical",label:"Kritik Stok"},
+    {id:"out",label:"Stok Yok"},
+  ];
+  const typeFilterOptions=[["all","Tum Turler"],...MATERIAL_TYPE_OPTIONS];
+  const trackingFilterOptions=[["all","Tum Izleme Tipleri"],...TRACKING_OPTIONS];
+  const filterPanelStyle={
+    flex:"0 0 250px",
+    width:"100%",
+    maxWidth:280,
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    padding:12,
+    display:"flex",
+    flexDirection:"column",
+    gap:10,
+    minHeight:0,
+    overflowY:"auto",
+    overscrollBehavior:"contain",
+    scrollbarGutter:"stable",
+  };
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
 
@@ -4021,10 +4171,42 @@ function MaterialLibrary({filtersVisible=true}) {
           </div>
         )}
       </div>
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-        <div style={{fontSize:12,color:C.muted2}}>Malzemeler ({materials.length})</div>
-        {filtersVisible&&<input style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:220}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Malzeme adi veya kod ara..."/>}
-      </div>
+      <div style={{display:"flex",gap:10,alignItems:"stretch",flexWrap:"wrap"}}>
+        {filtersVisible&&(
+          <div style={filterPanelStyle}>
+            <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Malzemeler</div>
+            <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Ad, kod, not ara"/>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Stok Durumu</div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {stockFilterOptions.map(opt=>(
+                <button
+                  key={opt.id}
+                  onClick={()=>setStockFilter(opt.id)}
+                  style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:stockFilter===opt.id?C.accent:C.border,color:stockFilter===opt.id?C.accent:C.text}}
+                >
+                  <span>{opt.label}</span>
+                  <span style={{fontSize:11,color:C.muted2}}>{stockFilterCounts[opt.id]||0}</span>
+                </button>
+              ))}
+            </div>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Malzeme Turu</div>
+            <select style={{...inputSt,padding:"8px 10px",fontSize:12}} value={typeFilter} onChange={e=>setTypeFilter(e.target.value)}>
+              {typeFilterOptions.map(([id,label])=><option key={id} value={id}>{label}</option>)}
+            </select>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Izleme Tipi</div>
+            <select style={{...inputSt,padding:"8px 10px",fontSize:12}} value={trackingFilter} onChange={e=>setTrackingFilter(e.target.value)}>
+              {trackingFilterOptions.map(([id,label])=><option key={id} value={id}>{label}</option>)}
+            </select>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Guncelleme Tarihi</div>
+            <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={updatedDateFrom} onChange={e=>setUpdatedDateFrom(e.target.value||"")}/>
+            <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={updatedDateTo} onChange={e=>setUpdatedDateTo(e.target.value||"")}/>
+            <button onClick={()=>{setSearch("");setStockFilter("all");setTypeFilter("all");setTrackingFilter("all");setUpdatedDateFrom("");setUpdatedDateTo("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
+          </div>
+        )}
+        <div style={{flex:"1 1 760px",minWidth:0,display:"flex",flexDirection:"column",gap:8}}>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <div style={{fontSize:12,color:C.muted2}}>Malzemeler ({sortedMaterials.length}/{materials.length})</div>
+          </div>
 
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
         <div style={{display:"grid",gridTemplateColumns:"1.8fr 1.15fr 1fr auto",gap:10,padding:"10px 12px",fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700,background:C.surface,borderBottom:`1px solid ${C.border}`}}>
@@ -4033,7 +4215,7 @@ function MaterialLibrary({filtersVisible=true}) {
           <div>Tedarik</div>
           <div style={{textAlign:"right"}}>Islem</div>
         </div>
-        {sortedMaterials.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"22px 14px"}}>Malzeme bulunamadi</div>}
+        {sortedMaterials.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"22px 14px"}}>Filtreye uygun malzeme bulunamadi.</div>}
         {sortedMaterials.map(m=>{
           const stock=safeNum(m.stock);
           const reorder=safeNum(m.reorderPoint);
@@ -4057,13 +4239,15 @@ function MaterialLibrary({filtersVisible=true}) {
                 <div>Lead: {safeNum(m.leadTimeDays)} gun</div>
                 <div>{String(m.valuationMethod||"fifo").toUpperCase()}</div>
               </div>
-              <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+              <div style={{display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
                 <button onClick={()=>{setEditId(m.id);setShowForm(true);setForm({name:m.name||"",code:m.code||"",density:String(m.density??""),stock:String(m.stock??""),type:m.type||"raw",reorderPoint:String(m.reorderPoint??0),safetyStock:String(m.safetyStock??0),leadTimeDays:String(m.leadTimeDays??5),trackingMode:m.trackingMode||"lot",valuationMethod:m.valuationMethod||"fifo",note:m.note||""});}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
                 <button onClick={()=>removeMaterial(m)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
               </div>
             </div>
           );
         })}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -17083,24 +17267,24 @@ function App() {
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-          <div style={{position:"relative",minWidth:isMobile?180:250}}>
+          <div style={{position:"relative",minWidth:isMobile?0:250,flex:isMobile?"1 1 100%":"0 0 auto"}}>
             <span style={{position:"absolute",left:10,top:8,color:appCommandBarTone.heroMuted,fontSize:13}}>{"\uD83D\uDD0D"}</span>
-            <input value={menuQuery} onChange={e=>setMenuQuery(e.target.value)} placeholder="Modul veya kayit ara..." style={{...inputSt,padding:"8px 10px 8px 30px",fontSize:12,minWidth:isMobile?180:250,background:appCommandBarTone.heroFieldBg,borderColor:appCommandBarTone.heroFieldBorder,color:appCommandBarTone.heroText}}/>
+            <input value={menuQuery} onChange={e=>setMenuQuery(e.target.value)} placeholder="Modul veya kayit ara..." style={{...inputSt,padding:"8px 10px 8px 30px",fontSize:12,minWidth:isMobile?0:250,width:isMobile?"100%":undefined,background:appCommandBarTone.heroFieldBg,borderColor:appCommandBarTone.heroFieldBorder,color:appCommandBarTone.heroText}}/>
           </div>
           {isMobile&&(
-            <button onClick={()=>setMobileMenuOpen(true)} style={{border:`1px solid ${appCommandBarTone.heroChipBorder}`,background:appCommandBarTone.heroChipBg,color:appCommandBarTone.heroText,padding:"7px 10px",fontSize:12,borderRadius:8,cursor:"pointer",minWidth:78}}>
+            <button onClick={()=>setMobileMenuOpen(true)} style={{border:`1px solid ${appCommandBarTone.heroChipBorder}`,background:appCommandBarTone.heroChipBg,color:appCommandBarTone.heroText,padding:"7px 10px",fontSize:12,borderRadius:8,cursor:"pointer",minWidth:72}}>
               Menu
             </button>
           )}
-          {topQuickActions.map(act=>(
+          {!isMobile&&topQuickActions.map(act=>(
             <button key={act.id} onClick={()=>handleTopQuickAction(act.id)} title={act.label} style={{border:`1px solid ${appCommandBarTone.heroChipBorder}`,background:appCommandBarTone.heroChipBg,color:appCommandBarTone.heroText,padding:"7px 9px",fontSize:13,minWidth:34,borderRadius:8,cursor:"pointer"}}>
               {act.icon}
             </button>
           ))}
-          <button onClick={()=>updateTheme(themeMode==="dark"?"light":"dark")} style={{border:`1px solid ${appCommandBarTone.heroChipBorder}`,background:appCommandBarTone.heroChipBg,color:appCommandBarTone.heroText,padding:"7px 10px",fontSize:12,borderRadius:8,cursor:"pointer",minWidth:98}}>
-            {themeMode==="dark"?"Acik Tema":"Koyu Tema"}
+          <button onClick={()=>updateTheme(themeMode==="dark"?"light":"dark")} style={{border:`1px solid ${appCommandBarTone.heroChipBorder}`,background:appCommandBarTone.heroChipBg,color:appCommandBarTone.heroText,padding:"7px 10px",fontSize:12,borderRadius:8,cursor:"pointer",minWidth:isMobile?64:98}}>
+            {isMobile?"Tema":(themeMode==="dark"?"Acik Tema":"Koyu Tema")}
           </button>
-          <button onClick={logout} style={{border:`1px solid ${appCommandBarTone.heroChipBorder}`,background:appCommandBarTone.heroChipBg,color:appCommandBarTone.heroText,padding:"7px 10px",fontSize:12,borderRadius:8,cursor:"pointer",minWidth:72}}>
+          <button onClick={logout} style={{border:`1px solid ${appCommandBarTone.heroChipBorder}`,background:appCommandBarTone.heroChipBg,color:appCommandBarTone.heroText,padding:"7px 10px",fontSize:12,borderRadius:8,cursor:"pointer",minWidth:isMobile?58:72}}>
             Cikis
           </button>
         </div>
@@ -17116,7 +17300,7 @@ function App() {
           </button>
           <div style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",border:`1px solid ${C.border}`,borderRadius:8,background:C.card}}>
             <span style={{fontSize:11,color:C.muted2,fontWeight:700}}>Sirala</span>
-            <select value={topSortValue} onChange={e=>applyTopSortMode(e.target.value)} disabled={!hasContentSorting} style={{...inputSt,padding:"5px 6px",fontSize:12,minWidth:170,opacity:hasContentSorting?1:0.6,cursor:hasContentSorting?"pointer":"not-allowed"}}>
+            <select value={topSortValue} onChange={e=>applyTopSortMode(e.target.value)} disabled={!hasContentSorting} style={{...inputSt,padding:"5px 6px",fontSize:12,minWidth:isMobile?130:170,opacity:hasContentSorting?1:0.6,cursor:hasContentSorting?"pointer":"not-allowed"}}>
               {topSortChoices.map(opt=><option key={opt.id} value={opt.id}>{opt.label}</option>)}
             </select>
             {hasContentSorting&&topSortValue!==topSortDefault&&<button onClick={resetTopSort} style={{...btnSt("ghost"),padding:"3px 6px",fontSize:11}}>×</button>}
@@ -17130,7 +17314,7 @@ function App() {
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
-          <input type="date" value={globalQuickDate} onChange={e=>setGlobalQuickDate(e.target.value||todayStr())} style={{...inputSt,padding:"7px 9px",fontSize:12,width:150}}/>
+          <input type="date" value={globalQuickDate} onChange={e=>setGlobalQuickDate(e.target.value||todayStr())} style={{...inputSt,padding:"7px 9px",fontSize:12,width:isMobile?132:150}}/>
           <button onClick={()=>{
             setMenuQuery("");
             setMenuGroupFilter("all");
