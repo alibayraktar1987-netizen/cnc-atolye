@@ -1684,6 +1684,20 @@ function resolveOperatorBaseUrl(){
   return `${window.location.origin}${window.location.pathname}`;
 }
 
+function buildTabPageHref(tabId){
+  const id=String(tabId||"").trim();
+  return id?`${id}.html`:"index.html";
+}
+function syncTabQueryParam(tabId){
+  if(typeof window==="undefined") return;
+  const id=String(tabId||"").trim();
+  if(!id) return;
+  const url=new URL(window.location.href);
+  if(url.searchParams.get("tab")===id) return;
+  url.searchParams.set("tab",id);
+  window.history.replaceState(window.history.state||{}, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
 function buildOperatorScreenUrl(baseUrl,machine,station){
   const fallback=resolveOperatorBaseUrl();
   const raw=(baseUrl||fallback||"").trim()||fallback;
@@ -14194,7 +14208,7 @@ function MRPRunModule({currentUser}){
   );
 }
 
-function PurchasingModule({currentUser}){
+function PurchasingModule({currentUser,filtersVisible=true}){
   const [loading,setLoading]=useState(true);
   const [suppliers,setSuppliers]=useState([]);
   const [supplierGroups,setSupplierGroups]=useState(normalizeSupplierGroups({}).list||[]);
@@ -14209,6 +14223,15 @@ function PurchasingModule({currentUser}){
   const [reqForm,setReqForm]=useState({materialId:"",qty:"",needDate:todayStr(),priority:"normal",note:""});
   const [quoteForm,setQuoteForm]=useState({requestId:"",supplierId:"",unitPrice:"0",leadTimeDays:"7",paymentTermDays:"30",currency:"TRY",note:""});
   const [recvForm,setRecvForm]=useState({poId:"",acceptedQty:"",rejectedQty:"0",receiptDate:todayStr(),note:""});
+  const [search,setSearch]=useState("");
+  const [requestStatusFilter,setRequestStatusFilter]=useState("all");
+  const [orderStatusFilter,setOrderStatusFilter]=useState("all");
+  const [requestDateFrom,setRequestDateFrom]=useState("");
+  const [requestDateTo,setRequestDateTo]=useState("");
+  const [orderDateFrom,setOrderDateFrom]=useState("");
+  const [orderDateTo,setOrderDateTo]=useState("");
+  const [quoteDateFrom,setQuoteDateFrom]=useState("");
+  const [quoteDateTo,setQuoteDateTo]=useState("");
 
   const load=useCallback(async()=>{
     const [s,m,r,q,p,gr,groupDoc]=await Promise.all([
@@ -14354,7 +14377,92 @@ function PurchasingModule({currentUser}){
   }
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  const toYmd=value=>{
+    const raw=String(value||"").trim();
+    if(!raw) return "";
+    if(/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    if(/^\d{4}-\d{2}-\d{2}T/.test(raw)) return raw.slice(0,10);
+    const d=new Date(raw);
+    if(Number.isNaN(d.getTime())) return "";
+    return ymdLocal(d);
+  };
+  const inRange=(ymd,from,to)=>{
+    if(from&&(!ymd||ymd<from)) return false;
+    if(to&&(!ymd||ymd>to)) return false;
+    return true;
+  };
+  const searchQuery=search.trim().toLowerCase();
   const openReq=requests.filter(r=>!["received","cancelled","closed"].includes(r.status||""));
+  const requestStatusOptions=[
+    {id:"all",label:"Tum Talepler"},
+    {id:"pending",label:"Bekleyen"},
+    {id:"approved",label:"Onayli"},
+    {id:"ordered",label:"Siparise Donusen"},
+    {id:"cancelled",label:"Iptal"},
+    {id:"received",label:"Teslim Alinan"},
+    {id:"closed",label:"Kapali"},
+  ];
+  const orderStatusOptions=[
+    {id:"all",label:"Tum PO Kayitlari"},
+    {id:"ordered",label:"Siparis Acik"},
+    {id:"partial",label:"Kismi Kabul"},
+    {id:"received",label:"Tamamlanan"},
+    {id:"cancelled",label:"Iptal"},
+  ];
+  const requestStatusCounts={
+    all:requests.length,
+    pending:requests.filter(x=>(x.status||"")==="pending").length,
+    approved:requests.filter(x=>(x.status||"")==="approved").length,
+    ordered:requests.filter(x=>(x.status||"")==="ordered").length,
+    cancelled:requests.filter(x=>(x.status||"")==="cancelled").length,
+    received:requests.filter(x=>(x.status||"")==="received").length,
+    closed:requests.filter(x=>(x.status||"")==="closed").length,
+  };
+  const orderStatusCounts={
+    all:orders.length,
+    ordered:orders.filter(x=>(x.status||"")==="ordered").length,
+    partial:orders.filter(x=>(x.status||"")==="partial").length,
+    received:orders.filter(x=>(x.status||"")==="received").length,
+    cancelled:orders.filter(x=>(x.status||"")==="cancelled").length,
+  };
+  const filteredRequests=requests.filter(row=>{
+    const textOk=!searchQuery||
+      String(row.code||"").toLowerCase().includes(searchQuery)||
+      String(row.materialCode||"").toLowerCase().includes(searchQuery)||
+      String(row.materialName||"").toLowerCase().includes(searchQuery)||
+      String(row.status||"").toLowerCase().includes(searchQuery);
+    const statusOk=requestStatusFilter==="all"||(row.status||"")===requestStatusFilter;
+    const dateYmd=toYmd(row.needDate)||toYmd(row.updatedAt)||toYmd(row.createdAt);
+    const dateOk=inRange(dateYmd,requestDateFrom,requestDateTo);
+    return textOk&&statusOk&&dateOk;
+  });
+  const filteredOrders=orders.filter(row=>{
+    const textOk=!searchQuery||
+      String(row.code||"").toLowerCase().includes(searchQuery)||
+      String(row.materialCode||"").toLowerCase().includes(searchQuery)||
+      String(row.materialName||"").toLowerCase().includes(searchQuery)||
+      String(row.supplierName||"").toLowerCase().includes(searchQuery)||
+      String(row.status||"").toLowerCase().includes(searchQuery);
+    const statusOk=orderStatusFilter==="all"||(row.status||"")===orderStatusFilter;
+    const dateYmd=toYmd(row.expectedDate)||toYmd(row.orderDate)||toYmd(row.updatedAt)||toYmd(row.createdAt);
+    const dateOk=inRange(dateYmd,orderDateFrom,orderDateTo);
+    return textOk&&statusOk&&dateOk;
+  });
+  const receivableOrders=filteredOrders.filter(o=>o.status!=="received");
+  const quoteHasUngrouped=quotes.some(row=>(String(row.supplierGroupId||"").trim()||"ungrouped")==="ungrouped");
+  const filteredQuotes=quotes.filter(row=>{
+    const textOk=!searchQuery||
+      String(row.requestCode||"").toLowerCase().includes(searchQuery)||
+      String(row.supplierName||"").toLowerCase().includes(searchQuery)||
+      String(row.supplierGroupName||"").toLowerCase().includes(searchQuery)||
+      String(row.currency||"").toLowerCase().includes(searchQuery)||
+      String(row.note||"").toLowerCase().includes(searchQuery);
+    const groupId=String(row.supplierGroupId||"").trim()||"ungrouped";
+    const groupOk=supplierGroupFilter==="all"||groupId===supplierGroupFilter;
+    const dateYmd=toYmd(row.updatedAt)||toYmd(row.createdAt);
+    const dateOk=inRange(dateYmd,quoteDateFrom,quoteDateTo);
+    return textOk&&groupOk&&dateOk;
+  });
   const supplierPerf=suppliers.map(s=>{
     const group=resolveSupplierGroup(s);
     const pos=orders.filter(o=>o.supplierId===s.id);
@@ -14367,7 +14475,13 @@ function PurchasingModule({currentUser}){
     const total=gr.reduce((a,r)=>a+safeNum(r.acceptedQty)+safeNum(r.rejectedQty),0);
     return {id:s.id,name:s.name||"-",groupId:group.id||"ungrouped",groupName:group.name||"Grupsuz",groupColor:group.color||"#64748b",groupSort:safeNum(group.sortOrder)||99999,po:pos.length,onTimePct:gr.length?Math.round((onTime/gr.length)*100):0,qualityPct:total?Math.round((quality/total)*100):0};
   });
-  const filteredSupplierPerf=supplierGroupFilter==="all"?supplierPerf:supplierPerf.filter(row=>row.groupId===supplierGroupFilter);
+  const filteredSupplierPerf=supplierPerf.filter(row=>{
+    const groupOk=supplierGroupFilter==="all"||row.groupId===supplierGroupFilter;
+    const textOk=!searchQuery||
+      String(row.name||"").toLowerCase().includes(searchQuery)||
+      String(row.groupName||"").toLowerCase().includes(searchQuery);
+    return groupOk&&textOk;
+  });
   const supplierPerfMap={};
   filteredSupplierPerf.forEach(row=>{
     const key=row.groupId||"ungrouped";
@@ -14381,6 +14495,26 @@ function PurchasingModule({currentUser}){
     if(s!==0) return s;
     return (a.name||"").localeCompare(b.name||"","tr");
   });
+  const splitWrapStyle={display:"flex",gap:10,alignItems:"flex-start",flexWrap:"wrap"};
+  const filterPanelStyle={
+    flex:"0 0 250px",
+    width:"100%",
+    maxWidth:280,
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    padding:12,
+    display:"flex",
+    flexDirection:"column",
+    gap:10,
+  };
+  const listColumnStyle={
+    flex:"1 1 760px",
+    minWidth:0,
+    display:"flex",
+    flexDirection:"column",
+    gap:12,
+  };
 
   return (
     <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
@@ -14405,36 +14539,55 @@ function PurchasingModule({currentUser}){
             </div>
             <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}><button onClick={saveSupplier} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Kaydet</button></div>
           </div>
-          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
-              <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Tedarikci Performansi</div>
-              <select style={{...inputSt,padding:"6px 8px",fontSize:12,minWidth:220}} value={supplierGroupFilter} onChange={e=>setSupplierGroupFilter(e.target.value)}>
-                <option value="all">Tum Gruplar</option>
-                {supplierGroups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
-                {supplierPerf.some(x=>x.groupId==="ungrouped")&&<option value="ungrouped">Grupsuz</option>}
-              </select>
-            </div>
-            {supplierPerfGroups.map(group=>(
-              <div key={group.id} style={{border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden",marginBottom:8}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",background:C.surface,borderBottom:`1px solid ${C.border}`}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <span style={{width:10,height:10,borderRadius:99,background:normalizeHexColor(group.color,"#64748b"),display:"inline-block"}}/>
-                    <div style={{fontSize:12,color:C.text,fontWeight:700}}>{group.name}</div>
-                  </div>
-                  <div style={{fontSize:11,color:C.muted2}}>{group.rows.length} tedarikci</div>
+          <div style={splitWrapStyle}>
+            {filtersVisible&&(
+              <div style={filterPanelStyle}>
+                <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Tedarikciler</div>
+                <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Tedarikci veya grup ara"/>
+                <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Tedarikci Grubu</div>
+                <select style={{...inputSt,padding:"8px 10px",fontSize:12}} value={supplierGroupFilter} onChange={e=>setSupplierGroupFilter(e.target.value)}>
+                  <option value="all">Tum Gruplar</option>
+                  {supplierGroups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
+                  {supplierPerf.some(x=>x.groupId==="ungrouped")&&<option value="ungrouped">Grupsuz</option>}
+                </select>
+                <button onClick={()=>{setSearch("");setSupplierGroupFilter("all");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
+              </div>
+            )}
+            <div style={listColumnStyle}>
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+                  <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Tedarikci Performansi</div>
+                  {!filtersVisible&&(
+                    <select style={{...inputSt,padding:"6px 8px",fontSize:12,minWidth:220}} value={supplierGroupFilter} onChange={e=>setSupplierGroupFilter(e.target.value)}>
+                      <option value="all">Tum Gruplar</option>
+                      {supplierGroups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
+                      {supplierPerf.some(x=>x.groupId==="ungrouped")&&<option value="ungrouped">Grupsuz</option>}
+                    </select>
+                  )}
                 </div>
-                {group.rows.map(s=>(
-                  <div key={s.id} style={{display:"grid",gridTemplateColumns:"1.4fr repeat(3,.8fr)",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
-                    <div style={{color:C.text,fontWeight:700}}>{s.name}</div>
-                    <div style={{color:C.muted2}}>PO: {s.po}</div>
-                    <div style={{color:s.onTimePct<70?C.red:C.green}}>OTD %{s.onTimePct}</div>
-                    <div style={{color:s.qualityPct<90?C.warn:C.green}}>Kalite %{s.qualityPct}</div>
+                {supplierPerfGroups.map(group=>(
+                  <div key={group.id} style={{border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden",marginBottom:8}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",background:C.surface,borderBottom:`1px solid ${C.border}`}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{width:10,height:10,borderRadius:99,background:normalizeHexColor(group.color,"#64748b"),display:"inline-block"}}/>
+                        <div style={{fontSize:12,color:C.text,fontWeight:700}}>{group.name}</div>
+                      </div>
+                      <div style={{fontSize:11,color:C.muted2}}>{group.rows.length} tedarikci</div>
+                    </div>
+                    {group.rows.map(s=>(
+                      <div key={s.id} style={{display:"grid",gridTemplateColumns:"1.4fr repeat(3,.8fr)",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
+                        <div style={{color:C.text,fontWeight:700}}>{s.name}</div>
+                        <div style={{color:C.muted2}}>PO: {s.po}</div>
+                        <div style={{color:s.onTimePct<70?C.red:C.green}}>OTD %{s.onTimePct}</div>
+                        <div style={{color:s.qualityPct<90?C.warn:C.green}}>Kalite %{s.qualityPct}</div>
+                      </div>
+                    ))}
                   </div>
                 ))}
+                {supplierPerf.length>0&&supplierPerfGroups.length===0&&<div style={{fontSize:12,color:C.muted2}}>Filtreye uygun tedarikci kaydi yok.</div>}
+                {supplierPerf.length===0&&<div style={{fontSize:12,color:C.muted2}}>Kayitli tedarikci yok.</div>}
               </div>
-            ))}
-            {supplierPerf.length>0&&supplierPerfGroups.length===0&&<div style={{fontSize:12,color:C.muted2}}>Secilen grupte kayit yok.</div>}
-            {supplierPerf.length===0&&<div style={{fontSize:12,color:C.muted2}}>Kayitli tedarikci yok.</div>}
+            </div>
           </div>
         </>
       )}
@@ -16190,6 +16343,7 @@ function App() {
   const [toolsFilterOpen,setToolsFilterOpen]=useState(true);
   const [customersFilterOpen,setCustomersFilterOpen]=useState(true);
   const [materialsFilterOpen,setMaterialsFilterOpen]=useState(true);
+  const [purchaseFilterOpen,setPurchaseFilterOpen]=useState(true);
   const [partsFilterOpen,setPartsFilterOpen]=useState(true);
   const [financeFilterOpen,setFinanceFilterOpen]=useState(true);
   const [globalSortMode,setGlobalSortMode]=useState("group");
@@ -16458,6 +16612,9 @@ function App() {
         {id:"date_asc",label:"Teklif (Eskiden Yeniye)"},
       ],
     },
+    purchase:{
+      filterKey:"purchase",
+    },
     tools:{
       filterKey:"tools",
       sortDefault:"name_asc",
@@ -16545,6 +16702,10 @@ function App() {
     setGlobalFilterOpen(false);
   },[tab]);
   useEffect(()=>{
+    if(!currentUser) return;
+    syncTabQueryParam(tab);
+  },[currentUser,tab]);
+  useEffect(()=>{
     if(!hasContentSorting) return;
     window.dispatchEvent(new CustomEvent("mrp:tab-action",{detail:{tab,type:"sort",sortMode:topSortValue}}));
   },[tab,hasContentSorting,topSortValue]);
@@ -16601,7 +16762,7 @@ function App() {
     if(tab==="cncmonitor") return <CncMonitorWall currentUser={currentUser} machines={machines}/>;
     if(tab==="mrp") return <MRPRunModule currentUser={currentUser}/>;
     if(tab==="quotes") return <SalesManagement currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")} defaultView="quotes" filtersVisible={salesFilterOpen}/>;
-    if(tab==="purchase") return <PurchasingModule currentUser={currentUser}/>;
+    if(tab==="purchase") return <PurchasingModule currentUser={currentUser} filtersVisible={purchaseFilterOpen}/>;
     if(tab==="downtime") return <DowntimeModule currentUser={currentUser} machines={machines}/>;
     if(tab==="quality") return <QualityTraceabilityModule currentUser={currentUser} machines={machines}/>;
     if(tab==="notifications") return <NotificationCenterModule currentUser={currentUser}/>;
@@ -16735,15 +16896,17 @@ function App() {
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
             {groupedTabs[g].map(t=>(
-              <button
+              <a
                 key={t.id}
+                href={buildTabPageHref(t.id)}
                 title={`${g} · ${t.label}`}
-                onClick={()=>{setTab(t.id);setMobileMenuOpen(false);}}
+                onClick={e=>handleTabLinkClick(e,t.id,true)}
                 style={{
                   display:"flex",
                   alignItems:"center",
                   gap:10,
                   textAlign:"left",
+                  textDecoration:"none",
                   padding:iconOnly?"9px 8px":(compact?"9px 10px":"10px 12px"),
                   borderRadius:8,
                   border:`1px solid ${
@@ -16773,7 +16936,7 @@ function App() {
                   <span style={{width:22,display:"inline-flex",justifyContent:"center",alignItems:"center",color:sideTone?(tab===t.id?leftNavColors.activeText:leftNavColors.icon):(tab===t.id?C.accent:C.muted2)}}><NavIcon name={t.icon}/></span>
                   {!iconOnly&&<span style={{fontSize:compact?12:13,fontWeight:tab===t.id?800:500,color:tab===t.id?(sideTone?leftNavColors.activeText:C.accent):undefined,textShadow:tab===t.id?"0 0 10px rgba(255,255,255,.14)":"none",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.label}</span>}
                 </span>
-              </button>
+              </a>
             ))}
           </div>
         </div>
@@ -16819,6 +16982,13 @@ function App() {
     };
   const appLayoutBadge=layoutMode==="desktop"?"DESKTOP":(layoutMode==="tablet"?"TABLET":"MOBIL");
   const appUserLabel=String(currentUser?.fullName||"").trim();
+  function handleTabLinkClick(e,nextTab,closeMobile){
+    if(e.defaultPrevented) return;
+    if(e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey) return;
+    e.preventDefault();
+    setTab(nextTab);
+    if(closeMobile) setMobileMenuOpen(false);
+  }
   function switchToTabIfVisible(tabId){
     if(tabs.some(t=>t.id===tabId)) setTab(tabId);
   }
@@ -16850,6 +17020,7 @@ function App() {
   const filterOpenByKey={
     orders:ordersFilterOpen,
     sales:salesFilterOpen,
+    purchase:purchaseFilterOpen,
     tools:toolsFilterOpen,
     customers:customersFilterOpen,
     materials:materialsFilterOpen,
@@ -16867,6 +17038,10 @@ function App() {
     }
     if(activeContentAction?.filterKey==="sales"){
       setSalesFilterOpen(v=>!v);
+      return;
+    }
+    if(activeContentAction?.filterKey==="purchase"){
+      setPurchaseFilterOpen(v=>!v);
       return;
     }
     if(activeContentAction?.filterKey==="tools"){
@@ -16968,6 +17143,7 @@ function App() {
             setGlobalFilterOpen(false);
             setSalesFilterOpen(false);
             setOrdersFilterOpen(false);
+            setPurchaseFilterOpen(false);
             setToolsFilterOpen(false);
             setCustomersFilterOpen(false);
             setMaterialsFilterOpen(false);
@@ -17063,12 +17239,12 @@ function App() {
             </div>
           </div>
           <div className="mrp-bottom-nav" style={{position:"fixed",left:0,right:0,bottom:0,background:`${C.surface}f0`,borderTop:`1px solid ${C.border}`,zIndex:24}}>
-            <div style={{width:"100%",maxWidth:contentMaxWidth,margin:"0 auto",display:"grid",gridTemplateColumns:`repeat(${mobilePrimary.length+1},minmax(0,1fr))`,alignItems:"stretch"}}>
-              {mobilePrimary.map(t=>(
-                <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"10px 8px 8px",border:"none",background:tab===t.id?C.brandTint:"transparent",cursor:"pointer",color:tab===t.id?C.accent:C.muted,borderTop:`2px solid ${tab===t.id?C.accent:"transparent"}`,fontFamily:"inherit",minWidth:0}}>
+              <div style={{width:"100%",maxWidth:contentMaxWidth,margin:"0 auto",display:"grid",gridTemplateColumns:`repeat(${mobilePrimary.length+1},minmax(0,1fr))`,alignItems:"stretch"}}>
+                {mobilePrimary.map(t=>(
+                <a key={t.id} href={buildTabPageHref(t.id)} onClick={e=>handleTabLinkClick(e,t.id,false)} style={{padding:"10px 8px 8px",border:"none",background:tab===t.id?C.brandTint:"transparent",cursor:"pointer",color:tab===t.id?C.accent:C.muted,borderTop:`2px solid ${tab===t.id?C.accent:"transparent"}`,fontFamily:"inherit",minWidth:0,textDecoration:"none",textAlign:"center"}}>
                   <div style={{display:"inline-flex",justifyContent:"center",alignItems:"center",height:20}}><NavIcon name={t.icon} size={18}/></div>
                   <div style={{fontSize:10,fontWeight:tab===t.id?700:500,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.label}</div>
-                </button>
+                </a>
               ))}
               <button onClick={()=>setMobileMenuOpen(true)} style={{padding:"10px 8px 8px",border:"none",background:mobileMenuOpen?C.brandTint:"transparent",cursor:"pointer",color:mobileMenuOpen?C.accent:C.muted,borderTop:`2px solid ${mobileMenuOpen?C.accent:"transparent"}`,fontFamily:"inherit",minWidth:0}}>
                 <div style={{display:"inline-flex",justifyContent:"center",alignItems:"center",height:20}}><NavIcon name="users" size={18}/></div>
