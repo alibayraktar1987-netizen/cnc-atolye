@@ -3258,7 +3258,7 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
         border:`1px solid ${C.border}`,
         borderRadius:14,
         padding:12,
-        ...(partPage==="list"
+        ...(effectiveAssignmentPage==="list"
           ? {flex:1,minHeight:0,display:"flex",flexDirection:"column",overflow:"hidden"}
           : {}),
       }}>
