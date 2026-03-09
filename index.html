@@ -3005,7 +3005,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
   );
 }
 
-function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
+function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true}) {
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
   const [assignmentPage,setAssignmentPage]=useState("list");
@@ -3023,6 +3023,8 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
   const [filterAssignee,setFilterAssignee]=useState("all");
   const [taskRowsPerPage,setTaskRowsPerPage]=useState(10);
   const [taskListPageIdx,setTaskListPageIdx]=useState(1);
+  const [taskDetailId,setTaskDetailId]=useState("");
+  const [showTaskDetailModal,setShowTaskDetailModal]=useState(false);
   const [form,setForm]=useState({
     assigneeId:"",
     title:"",
@@ -3077,6 +3079,15 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
     }));
   },[]);
   const closeCreateTaskPage=useCallback(()=>setShowCreateTaskModal(false),[]);
+  const openTaskDetailPage=useCallback((task)=>{
+    if(!task||!task.id) return;
+    setTaskDetailId(task.id);
+    setShowTaskDetailModal(true);
+  },[]);
+  const closeTaskDetailPage=useCallback(()=>{
+    setShowTaskDetailModal(false);
+    setTaskDetailId("");
+  },[]);
   useEffect(()=>{
     function onTabAction(ev){
       const d=ev&&ev.detail?ev.detail:{};
@@ -3161,6 +3172,12 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
   },[taskTotalPages]);
   const taskListStart=(taskListPageIdx-1)*Math.max(1,taskRowsPerPage);
   const pagedTasks=filteredTasks.slice(taskListStart,taskListStart+Math.max(1,taskRowsPerPage));
+  useEffect(()=>{
+    if(!showTaskDetailModal||!taskDetailId) return;
+    if(tasks.some(t=>t.id===taskDetailId)) return;
+    setShowTaskDetailModal(false);
+    setTaskDetailId("");
+  },[showTaskDetailModal,taskDetailId,tasks]);
   useEffect(()=>{
     if(!canAssign&&calendarScope!=="me"){
       setCalendarScope("me");
@@ -3535,46 +3552,56 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
     if(col.id==="actions"){
       return (
         <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
-          {canAct&&task.status==="open"&&<button onClick={()=>updateTaskStatus(task,"in_progress")} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Basla</button>}
-          {canAct&&["open","in_progress"].includes(task.status||"")&&<button onClick={()=>updateTaskStatus(task,"done")} style={{...btnSt("green"),padding:"5px 8px",fontSize:11}}>Tamamla</button>}
-          {canAct&&task.status==="done"&&<button onClick={()=>updateTaskStatus(task,"open")} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Yeniden Ac</button>}
-          {canAssign&&task.status!=="cancelled"&&<button onClick={()=>updateTaskStatus(task,"cancelled")} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Iptal</button>}
-          {canAssign&&<button onClick={()=>deleteTask(task)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Sil</button>}
+          {canAct&&task.status==="open"&&<button onClick={e=>{e.stopPropagation();updateTaskStatus(task,"in_progress");}} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Basla</button>}
+          {canAct&&["open","in_progress"].includes(task.status||"")&&<button onClick={e=>{e.stopPropagation();updateTaskStatus(task,"done");}} style={{...btnSt("green"),padding:"5px 8px",fontSize:11}}>Tamamla</button>}
+          {canAct&&task.status==="done"&&<button onClick={e=>{e.stopPropagation();updateTaskStatus(task,"open");}} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Yeniden Ac</button>}
+          {canAssign&&task.status!=="cancelled"&&<button onClick={e=>{e.stopPropagation();updateTaskStatus(task,"cancelled");}} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Iptal</button>}
+          {canAssign&&<button onClick={e=>{e.stopPropagation();deleteTask(task);}} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Sil</button>}
         </div>
       );
     }
     return null;
   };
+  const selectedTaskDetail=tasks.find(task=>task.id===taskDetailId)||null;
+  const selectedTaskCanAct=selectedTaskDetail?(canAssign||selectedTaskDetail.assigneeId===currentUser.id):false;
+  const selectedTaskStatusMeta=selectedTaskDetail?statusMeta(selectedTaskDetail.status||"open"):null;
+  const selectedTaskPriorityMeta=selectedTaskDetail?priorityMeta(selectedTaskDetail.priority||"medium"):null;
+  const selectedTaskDue=selectedTaskDetail?String(selectedTaskDetail.dueDate||""):"";
+  const selectedTaskIsOverdue=Boolean(selectedTaskDetail&&selectedTaskDue&&selectedTaskDue<todayStr()&&!["done","cancelled"].includes(selectedTaskDetail.status||""));
+  const selectedTaskIsRecurring=Boolean(selectedTaskDetail&&(selectedTaskDetail.recurrenceMode==="weekly"||selectedTaskDetail.recurrenceMode==="monthly")&&Number(selectedTaskDetail.recurrenceCount||0)>1);
+  const selectedTaskRecurrenceLabel=selectedTaskDetail?.recurrenceMode==="weekly"?"Haftalik":"Aylik";
 
   const taskListPanel=(
     <div ref={taskListPanelRef} style={taskSplitWrapStyle}>
-      <div style={taskFilterPanelStyle}>
-        <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Gorevler</div>
-        <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Gorev, calisan, tezgah, is emri ara"/>
-        <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Gorev Durumu</div>
-        <div style={{display:"flex",flexDirection:"column",gap:6}}>
-          {taskStatusOptions.map(opt=>{
-            const active=filterStatus===opt.id;
-            const color=opt.id==="all"?C.accent:statusMeta(opt.id).color;
-            return (
-              <button key={opt.id} onClick={()=>setFilterStatus(opt.id)} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:active?color:C.border,color:active?color:C.text}}>
-                <span>{opt.label}</span>
-                <span style={{fontSize:11,color:C.muted2}}>{taskStatusCounts[opt.id]||0}</span>
-              </button>
-            );
-          })}
+      {filtersVisible&&(
+        <div style={taskFilterPanelStyle}>
+          <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Gorevler</div>
+          <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Gorev, calisan, tezgah, is emri ara"/>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Gorev Durumu</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {taskStatusOptions.map(opt=>{
+              const active=filterStatus===opt.id;
+              const color=opt.id==="all"?C.accent:statusMeta(opt.id).color;
+              return (
+                <button key={opt.id} onClick={()=>setFilterStatus(opt.id)} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:active?color:C.border,color:active?color:C.text}}>
+                  <span>{opt.label}</span>
+                  <span style={{fontSize:11,color:C.muted2}}>{taskStatusCounts[opt.id]||0}</span>
+                </button>
+              );
+            })}
+          </div>
+          {canAssign&&(
+            <>
+              <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Calisan</div>
+              <select style={{...inputSt,padding:"8px 10px",fontSize:12}} value={filterAssignee} onChange={e=>setFilterAssignee(e.target.value)}>
+                <option value="all">Tum Calisanlar</option>
+                {activeUsers.map(u=><option key={u.id} value={u.id}>{u.fullName||u.id}</option>)}
+              </select>
+            </>
+          )}
+          <button onClick={()=>{setQuery("");setFilterStatus("all");setFilterAssignee("all");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
         </div>
-        {canAssign&&(
-          <>
-            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Calisan</div>
-            <select style={{...inputSt,padding:"8px 10px",fontSize:12}} value={filterAssignee} onChange={e=>setFilterAssignee(e.target.value)}>
-              <option value="all">Tum Calisanlar</option>
-              {activeUsers.map(u=><option key={u.id} value={u.id}>{u.fullName||u.id}</option>)}
-            </select>
-          </>
-        )}
-        <button onClick={()=>{setQuery("");setFilterStatus("all");setFilterAssignee("all");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
-      </div>
+      )}
 
       <div style={taskListColumnStyle}>
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
@@ -3618,6 +3645,7 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
               {pagedTasks.map((task,idx)=>(
                 <div
                   key={task.id}
+                  onClick={()=>openTaskDetailPage(task)}
                   style={{
                     display:"grid",
                     gridTemplateColumns:taskListGridTemplate,
@@ -3627,6 +3655,7 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
                     background:((taskListStart+idx)%2===0)?C.surface:C.card,
                     color:C.text,
                     alignItems:"center",
+                    cursor:"pointer",
                   }}
                 >
                   {visibleTaskListTableColumns.map(col=>(
@@ -3659,41 +3688,43 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
         </div>
       </div>
 
-      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end",marginBottom:10}}>
-        <div style={{minWidth:220,flex:"1 1 320px"}}>
-          <span style={labelSt}>Ara</span>
-          <input style={inputSt} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Gorev, calisan, tezgah, is emri..."/>
-        </div>
-        <div style={{minWidth:170,flex:"1 1 180px"}}>
-          <span style={labelSt}>Durum</span>
-          <select style={inputSt} value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
-            <option value="all">Tum Durumlar</option>
-            <option value="open">Acilanlar</option>
-            <option value="in_progress">Devam Edenler</option>
-            <option value="done">Tamamlananlar</option>
-            <option value="cancelled">Iptal Edilenler</option>
-          </select>
-        </div>
-        {canAssign&&(
-          <div style={{minWidth:200,flex:"1 1 210px"}}>
-            <span style={labelSt}>Kapsam</span>
-            <select style={inputSt} value={effectiveCalendarScope} onChange={e=>setCalendarScope(e.target.value)}>
-              <option value="me">Sadece Bana Atanan</option>
-              <option value="team">Ekip + Ben ({teamMemberIds.length})</option>
-              <option value="all">Tum Gorevler</option>
+      {filtersVisible&&(
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end",marginBottom:10}}>
+          <div style={{minWidth:220,flex:"1 1 320px"}}>
+            <span style={labelSt}>Ara</span>
+            <input style={inputSt} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Gorev, calisan, tezgah, is emri..."/>
+          </div>
+          <div style={{minWidth:170,flex:"1 1 180px"}}>
+            <span style={labelSt}>Durum</span>
+            <select style={inputSt} value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
+              <option value="all">Tum Durumlar</option>
+              <option value="open">Acilanlar</option>
+              <option value="in_progress">Devam Edenler</option>
+              <option value="done">Tamamlananlar</option>
+              <option value="cancelled">Iptal Edilenler</option>
             </select>
           </div>
-        )}
-        {canAssign&&effectiveCalendarScope==="all"&&(
-          <div style={{minWidth:200,flex:"1 1 220px"}}>
-            <span style={labelSt}>Calisan</span>
-            <select style={inputSt} value={filterAssignee} onChange={e=>setFilterAssignee(e.target.value)}>
-              <option value="all">Tum Calisanlar</option>
-              {activeUsers.map(u=><option key={u.id} value={u.id}>{u.fullName||u.id}</option>)}
-            </select>
-          </div>
-        )}
-      </div>
+          {canAssign&&(
+            <div style={{minWidth:200,flex:"1 1 210px"}}>
+              <span style={labelSt}>Kapsam</span>
+              <select style={inputSt} value={effectiveCalendarScope} onChange={e=>setCalendarScope(e.target.value)}>
+                <option value="me">Sadece Bana Atanan</option>
+                <option value="team">Ekip + Ben ({teamMemberIds.length})</option>
+                <option value="all">Tum Gorevler</option>
+              </select>
+            </div>
+          )}
+          {canAssign&&effectiveCalendarScope==="all"&&(
+            <div style={{minWidth:200,flex:"1 1 220px"}}>
+              <span style={labelSt}>Calisan</span>
+              <select style={inputSt} value={filterAssignee} onChange={e=>setFilterAssignee(e.target.value)}>
+                <option value="all">Tum Calisanlar</option>
+                {activeUsers.map(u=><option key={u.id} value={u.id}>{u.fullName||u.id}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
         <div style={{fontSize:13,fontWeight:700,color:C.text,textTransform:"capitalize"}}>{monthYearLabel}</div>
@@ -3787,6 +3818,40 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
               <button onClick={createTask} disabled={saving} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,opacity:saving?0.7:1}}>
                 {saving?"Kaydediliyor...":"Gorev Ata"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showTaskDetailModal&&selectedTaskDetail&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.62)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:69,padding:14}} onClick={closeTaskDetailPage}>
+          <div style={{width:"100%",maxWidth:760,maxHeight:"92vh",overflowY:"auto",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+              <div style={{fontWeight:700,color:C.text,fontSize:14}}>Gorev Detayi</div>
+              <button onClick={closeTaskDetailPage} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
+            </div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+              {selectedTaskStatusMeta&&<Badge label={selectedTaskStatusMeta.label} color={selectedTaskStatusMeta.color}/>}
+              {selectedTaskPriorityMeta&&<Badge label={selectedTaskPriorityMeta.label} color={selectedTaskPriorityMeta.color}/>}
+              {selectedTaskIsOverdue&&<Badge label="Gecikmis" color={C.red}/>}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8}}>
+              <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Gorev Basligi</span><div style={{...inputSt,pointerEvents:"none",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{selectedTaskDetail.title||"-"}</div></div>
+              <div><span style={labelSt}>Calisan</span><div style={{...inputSt,pointerEvents:"none"}}>{selectedTaskDetail.assigneeName||selectedTaskDetail.assigneeId||"-"}</div></div>
+              <div><span style={labelSt}>Atayan</span><div style={{...inputSt,pointerEvents:"none"}}>{selectedTaskDetail.assignedByName||selectedTaskDetail.assignedBy||"-"}</div></div>
+              <div><span style={labelSt}>Tezgah</span><div style={{...inputSt,pointerEvents:"none"}}>{selectedTaskDetail.machine||"-"}</div></div>
+              <div><span style={labelSt}>Is Emri</span><div style={{...inputSt,pointerEvents:"none"}}>{selectedTaskDetail.orderCode||"-"}</div></div>
+              <div><span style={labelSt}>Termin</span><div style={{...inputSt,pointerEvents:"none",color:selectedTaskIsOverdue?C.red:C.text}}>{selectedTaskDue||"-"}</div></div>
+              <div><span style={labelSt}>Tekrar</span><div style={{...inputSt,pointerEvents:"none"}}>{selectedTaskIsRecurring?`${selectedTaskRecurrenceLabel}${selectedTaskDetail.recurrenceIndex&&selectedTaskDetail.recurrenceCount?` (${selectedTaskDetail.recurrenceIndex}/${selectedTaskDetail.recurrenceCount})`:""}`:"-"}</div></div>
+              <div><span style={labelSt}>Olusturma</span><div style={{...inputSt,pointerEvents:"none"}}>{selectedTaskDetail.createdAt?String(selectedTaskDetail.createdAt).slice(0,16).replace("T"," "):"-"}</div></div>
+              <div><span style={labelSt}>Guncelleme</span><div style={{...inputSt,pointerEvents:"none"}}>{selectedTaskDetail.updatedAt?String(selectedTaskDetail.updatedAt).slice(0,16).replace("T"," "):"-"}</div></div>
+              <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Aciklama</span><div style={{...inputSt,minHeight:80,pointerEvents:"none",whiteSpace:"pre-wrap"}}>{selectedTaskDetail.detail||"-"}</div></div>
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end",gap:6,flexWrap:"wrap",marginTop:10}}>
+              {selectedTaskCanAct&&selectedTaskDetail.status==="open"&&<button onClick={()=>updateTaskStatus(selectedTaskDetail,"in_progress")} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Basla</button>}
+              {selectedTaskCanAct&&["open","in_progress"].includes(selectedTaskDetail.status||"")&&<button onClick={()=>updateTaskStatus(selectedTaskDetail,"done")} style={{...btnSt("green"),padding:"7px 10px",fontSize:12}}>Tamamla</button>}
+              {selectedTaskCanAct&&selectedTaskDetail.status==="done"&&<button onClick={()=>updateTaskStatus(selectedTaskDetail,"open")} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Yeniden Ac</button>}
+              {canAssign&&selectedTaskDetail.status!=="cancelled"&&<button onClick={()=>updateTaskStatus(selectedTaskDetail,"cancelled")} style={{...btnSt("danger"),padding:"7px 10px",fontSize:12}}>Iptal</button>}
+              {canAssign&&<button onClick={()=>deleteTask(selectedTaskDetail)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Sil</button>}
             </div>
           </div>
         </div>
@@ -18428,6 +18493,7 @@ function App() {
   const [globalFilterOpen,setGlobalFilterOpen]=useState(false);
   const [salesFilterOpen,setSalesFilterOpen]=useState(true);
   const [ordersFilterOpen,setOrdersFilterOpen]=useState(true);
+  const [assignmentsFilterOpen,setAssignmentsFilterOpen]=useState(true);
   const [toolsFilterOpen,setToolsFilterOpen]=useState(true);
   const [customersFilterOpen,setCustomersFilterOpen]=useState(true);
   const [materialsFilterOpen,setMaterialsFilterOpen]=useState(true);
@@ -18556,7 +18622,7 @@ function App() {
       if(!alive) return;
       const count=(rows||[]).filter(n=>{
         const status=String(n?.status||"new").toLowerCase();
-        if(status!=="new") return false;
+        if(["resolved","closed"].includes(status)) return false;
         const target=String(n?.targetUserId||"").trim();
         if(!target) return true;
         return Boolean(uid)&&target===uid;
@@ -18720,6 +18786,9 @@ function App() {
         {id:"date_desc",label:"Is Emri (Yeniden Eskiye)"},
         {id:"date_asc",label:"Is Emri (Eskiden Yeniye)"},
       ],
+    },
+    assignments:{
+      filterKey:"assignments",
     },
     sales:{
       filterKey:"sales",
@@ -18890,7 +18959,7 @@ function App() {
 
   function getActiveView() {
     if(tab==="giris") return <DataEntry currentUser={currentUser} machines={machines}/>;
-    if(tab==="assignments") return <TaskAssignmentModule currentUser={currentUser} machines={machines}/>;
+    if(tab==="assignments") return <TaskAssignmentModule currentUser={currentUser} machines={machines} filtersVisible={assignmentsFilterOpen}/>;
     if(tab==="planning") return <Planning currentUser={currentUser} machines={machines}/>;
     if(tab==="machineprep") return <MachineConnectivityPrep currentUser={currentUser} machines={machines} onMachinesSync={updateMachines}/>;
     if(tab==="customers") return <Customers filtersVisible={customersFilterOpen}/>;
@@ -19171,6 +19240,7 @@ function App() {
   }
   const filterOpenByKey={
     orders:ordersFilterOpen,
+    assignments:assignmentsFilterOpen,
     sales:salesFilterOpen,
     purchase:purchaseFilterOpen,
     tools:toolsFilterOpen,
@@ -19186,6 +19256,10 @@ function App() {
     if(!hasContentFilters) return;
     if(activeContentAction?.filterKey==="orders"){
       setOrdersFilterOpen(v=>!v);
+      return;
+    }
+    if(activeContentAction?.filterKey==="assignments"){
+      setAssignmentsFilterOpen(v=>!v);
       return;
     }
     if(activeContentAction?.filterKey==="sales"){
@@ -19297,6 +19371,7 @@ function App() {
             setGlobalFilterOpen(false);
             setSalesFilterOpen(false);
             setOrdersFilterOpen(false);
+            setAssignmentsFilterOpen(false);
             setPurchaseFilterOpen(false);
             setToolsFilterOpen(false);
             setCustomersFilterOpen(false);
