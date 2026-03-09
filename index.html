@@ -1427,12 +1427,19 @@ function findScrollParent(node){
   return null;
 }
 function useViewportPanelMetrics(ref,{minHeight=320,bottomGap=14,narrowWidth=1180}={}){
-  const [state,setState]=useState({height:560,isNarrow:false});
+  const [state,setState]=useState(()=>{
+    if(typeof window==="undefined") return {height:Math.max(minHeight,560),isNarrow:false};
+    return {
+      height:Math.max(minHeight,Math.floor(window.innerHeight-bottomGap)),
+      isNarrow:window.innerWidth<narrowWidth,
+    };
+  });
   useEffect(()=>{
     let raf=0;
     let scrollParent=null;
     let resizeObserver=null;
     let observedParent=null;
+    let pollTimer=0;
     function schedule(){
       if(raf) cancelAnimationFrame(raf);
       raf=requestAnimationFrame(update);
@@ -1457,7 +1464,11 @@ function useViewportPanelMetrics(ref,{minHeight=320,bottomGap=14,narrowWidth=118
     }
     function update(){
       const node=ref&&ref.current?ref.current:null;
-      if(!node) return;
+      if(!node){
+        const isNarrow=window.innerWidth<narrowWidth;
+        setState(prev=>prev.isNarrow===isNarrow?prev:{...prev,isNarrow});
+        return;
+      }
       bindScrollParent(findScrollParent(node));
       let height=minHeight;
       if(scrollParent&&typeof scrollParent.getBoundingClientRect==="function"){
@@ -1485,10 +1496,14 @@ function useViewportPanelMetrics(ref,{minHeight=320,bottomGap=14,narrowWidth=118
     bindScrollParent(findScrollParent(ref&&ref.current?ref.current:null));
     schedule();
     window.addEventListener("resize",schedule);
+    window.addEventListener("orientationchange",schedule);
+    pollTimer=window.setInterval(schedule,450);
     return ()=>{
       if(raf) cancelAnimationFrame(raf);
       window.removeEventListener("resize",schedule);
+      window.removeEventListener("orientationchange",schedule);
       if(scrollParent) scrollParent.removeEventListener("scroll",schedule);
+      if(pollTimer) clearInterval(pollTimer);
       if(resizeObserver) resizeObserver.disconnect();
     };
   },[ref,minHeight,bottomGap,narrowWidth]);
