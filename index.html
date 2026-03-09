@@ -5725,11 +5725,16 @@ function ToolStock({currentUser,filtersVisible=true}) {
 // ============================================================
 //  CUSTOMERS
 // ============================================================
-function Customers({filtersVisible=true}) {
+function Customers({filtersVisible=true,availableTabIds=[],onOpenRelatedRecord=()=>{}}) {
   const emptyForm={name:"",code:"",contact:"",phone:"",email:"",notes:""};
   const [customers,setCustomers]=useState([]);
+  const [parts,setParts]=useState([]);
+  const [salesQuotes,setSalesQuotes]=useState([]);
+  const [salesOrders,setSalesOrders]=useState([]);
+  const [workOrders,setWorkOrders]=useState([]);
   const [form,setForm]=useState(emptyForm);
   const [editId,setEditId]=useState(null);
+  const [selectedCustomerId,setSelectedCustomerId]=useState("");
   const [showCustomerModal,setShowCustomerModal]=useState(false);
   const [search,setSearch]=useState("");
   const [sortMode,setSortMode]=useState("name_asc");
@@ -5746,8 +5751,18 @@ function Customers({filtersVisible=true}) {
   }=useViewportPanelMetrics(customerListPanelRef,{minHeight:340,bottomGap:14,narrowWidth:1180});
 
   const load=useCallback(async()=>{
-    const list=await window.DB.getAll("customers");
-    setCustomers(list.sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
+    const [customerRows,partRows,quoteRows,salesRows,orderRows]=await Promise.all([
+      window.DB.getAll("customers"),
+      window.DB.getAll("parts"),
+      window.DB.getAll("salesQuotes"),
+      window.DB.getAll("salesOrders"),
+      window.DB.getAll("orders"),
+    ]);
+    setCustomers(customerRows.sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
+    setParts(partRows.sort((a,b)=>(a.partNo||"").localeCompare(b.partNo||"","tr")));
+    setSalesQuotes(quoteRows.sort((a,b)=>(b.updatedAt||b.createdAt||"").localeCompare(a.updatedAt||a.createdAt||"")));
+    setSalesOrders(salesRows.sort((a,b)=>(b.updatedAt||b.createdAt||"").localeCompare(a.updatedAt||a.createdAt||"")));
+    setWorkOrders(orderRows.sort((a,b)=>(b.updatedAt||b.createdAt||"").localeCompare(a.updatedAt||a.createdAt||"")));
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
@@ -5784,6 +5799,24 @@ function Customers({filtersVisible=true}) {
   },[customers,load]);
 
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const availableTabSet=useMemo(()=>new Set(Array.isArray(availableTabIds)?availableTabIds:[]),[availableTabIds]);
+  const normalizeCustomerKey=value=>String(value||"").trim().toLocaleLowerCase("tr");
+  const customerRecordMatches=(customer,row)=>{
+    if(!customer||!row) return false;
+    const customerId=String(customer.id||"").trim();
+    const rowCustomerId=String(row.customerId||"").trim();
+    if(customerId&&rowCustomerId&&customerId===rowCustomerId) return true;
+    const rowCustomerName=normalizeCustomerKey(row.customerName||row.companyName||"");
+    return Boolean(rowCustomerName)&&rowCustomerName===normalizeCustomerKey(customer.name||"");
+  };
+  const customerPartDimensionLabel=part=>{
+    const dia=safeNum(part?.partDiameterMm);
+    const len=safeNum(part?.partLengthMm);
+    const chunks=[];
+    if(dia>0) chunks.push(`Cap ${dia} mm`);
+    if(len>0) chunks.push(`Boy ${len} mm`);
+    return chunks.join(" · ");
+  };
   const toYmd=value=>{
     const raw=String(value||"").trim();
     if(!raw) return "";
@@ -5827,8 +5860,67 @@ function Customers({filtersVisible=true}) {
   useEffect(()=>{
     setCustomerListPageIdx(prev=>Math.max(1,Math.min(prev,customerTotalPages)));
   },[customerTotalPages]);
+  useEffect(()=>{
+    if(selectedCustomerId&&!customers.some(c=>c.id===selectedCustomerId)){
+      setSelectedCustomerId("");
+    }
+  },[customers,selectedCustomerId]);
   const customerListStart=(customerListPageIdx-1)*Math.max(1,customerRowsPerPage);
   const pagedCustomers=sortedCustomers.slice(customerListStart,customerListStart+Math.max(1,customerRowsPerPage));
+  const selectedCustomer=customers.find(c=>c.id===selectedCustomerId)||null;
+  const selectedCustomerParts=useMemo(()=>{
+    if(!selectedCustomer) return [];
+    return parts.filter(row=>customerRecordMatches(selectedCustomer,row));
+  },[parts,selectedCustomer]);
+  const selectedCustomerQuotes=useMemo(()=>{
+    if(!selectedCustomer) return [];
+    return salesQuotes.filter(row=>customerRecordMatches(selectedCustomer,row));
+  },[salesQuotes,selectedCustomer]);
+  const selectedCustomerSalesOrders=useMemo(()=>{
+    if(!selectedCustomer) return [];
+    return salesOrders.filter(row=>customerRecordMatches(selectedCustomer,row));
+  },[salesOrders,selectedCustomer]);
+  const selectedCustomerWorkOrders=useMemo(()=>{
+    if(!selectedCustomer) return [];
+    return workOrders.filter(row=>customerRecordMatches(selectedCustomer,row));
+  },[workOrders,selectedCustomer]);
+  const selectedCustomerSalesRows=useMemo(()=>{
+    if(!selectedCustomer) return [];
+    const quoteRows=selectedCustomerQuotes.map(row=>({
+      id:row.id,
+      kind:"quote",
+      tabId:"quotes",
+      code:row.code||"-",
+      title:row.name||row.customerName||"Teklif",
+      subtitle:[row.validUntil?`Gecerlilik: ${row.validUntil}`:"",`Durum: ${getSalesStatusMeta(row.status).label}`].filter(Boolean).join(" · "),
+      tone:getSalesStatusMeta(row.status).color||C.muted2,
+      sortDate:row.updatedAt||row.createdAt||"",
+      searchValue:row.code||row.customerName||"",
+      raw:row,
+    }));
+    const orderRows=selectedCustomerSalesOrders.map(row=>({
+      id:row.id,
+      kind:"sales_order",
+      tabId:"sales",
+      code:row.code||"-",
+      title:row.customerName||"Satis Siparisi",
+      subtitle:[row.dueDate?`Termin: ${row.dueDate}`:"",`Durum: ${getSalesStatusMeta(row.status).label}`].filter(Boolean).join(" · "),
+      tone:getSalesStatusMeta(row.status).color||C.muted2,
+      sortDate:row.updatedAt||row.createdAt||"",
+      searchValue:row.code||row.customerName||"",
+      raw:row,
+    }));
+    return [...quoteRows,...orderRows].sort((a,b)=>String(b.sortDate||"").localeCompare(String(a.sortDate||"")));
+  },[selectedCustomer,selectedCustomerQuotes,selectedCustomerSalesOrders]);
+  const openCustomerDetail=customer=>{
+    if(!customer?.id) return;
+    setSelectedCustomerId(customer.id);
+  };
+  const openRelatedRecord=payload=>{
+    if(!payload?.tabId) return;
+    setSelectedCustomerId("");
+    onOpenRelatedRecord(payload);
+  };
   const contactFilterCounts={
     all:customers.length,
     with_contact:customers.filter(row=>hasContactInfo(row)).length,
@@ -6027,6 +6119,124 @@ function Customers({filtersVisible=true}) {
           </div>
         </div>
       )}
+      {selectedCustomer&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(8,12,18,.40)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:53,padding:14}} onClick={()=>setSelectedCustomerId("")}>
+          <div style={{width:"100%",maxWidth:1120,maxHeight:"92vh",overflowY:"auto",background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:14,boxShadow:"0 24px 56px rgba(0,0,0,.34)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap",marginBottom:12}}>
+              <div>
+                <div style={{fontWeight:800,color:C.text,fontSize:18}}>{selectedCustomer.name||"Firma"}</div>
+                <div style={{fontSize:12,color:C.muted2,marginTop:3}}>
+                  {selectedCustomer.code||"-"}{selectedCustomer.contact?` · Yetkili: ${selectedCustomer.contact}`:""}{selectedCustomer.phone?` · ${selectedCustomer.phone}`:""}{selectedCustomer.email?` · ${selectedCustomer.email}`:""}
+                </div>
+                {selectedCustomer.notes&&<div style={{fontSize:12,color:C.muted2,marginTop:6,maxWidth:760}}>{selectedCustomer.notes}</div>}
+              </div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <button onClick={()=>{setSelectedCustomerId("");startEdit(selectedCustomer);}} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Duzenle</button>
+                <button onClick={()=>setSelectedCustomerId("")} style={{...btnSt("primary"),padding:"7px 10px",fontSize:12}}>Kapat</button>
+              </div>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:8,marginBottom:12}}>
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Projeler / Parcalar</div><div style={{fontSize:24,fontWeight:800,color:C.text,marginTop:3}}>{selectedCustomerParts.length}</div></div>
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Satis Kayitlari</div><div style={{fontSize:24,fontWeight:800,color:C.text,marginTop:3}}>{selectedCustomerSalesRows.length}</div></div>
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Is Emirleri</div><div style={{fontSize:24,fontWeight:800,color:C.text,marginTop:3}}>{selectedCustomerWorkOrders.length}</div></div>
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Acik Isler</div><div style={{fontSize:24,fontWeight:800,color:C.text,marginTop:3}}>{selectedCustomerWorkOrders.filter(row=>isOpenOrderStatus(row.status)).length}</div></div>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12}}>
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8}}>
+                  <div>
+                    <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase"}}>Projeler</div>
+                    <div style={{fontWeight:700,color:C.text}}>Parca Kartlari</div>
+                  </div>
+                  <Badge label={`${selectedCustomerParts.length} Kayit`} color={C.accent}/>
+                </div>
+                {selectedCustomerParts.length===0&&<div style={{fontSize:12,color:C.muted2,padding:"8px 2px"}}>Bu firmaya bagli parca karti bulunamadi.</div>}
+                <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                  {selectedCustomerParts.map(part=>{
+                    const canOpen=availableTabSet.has("parts");
+                    return (
+                      <button
+                        key={part.id}
+                        onClick={()=>canOpen&&openRelatedRecord({tabId:"parts",recordId:part.id,recordCode:part.partNo||"",recordKind:"part",customerId:selectedCustomer.id,customerName:selectedCustomer.name,search:part.partNo||selectedCustomer.name})}
+                        disabled={!canOpen}
+                        style={{...btnSt("ghost"),padding:"10px 11px",textAlign:"left",display:"flex",flexDirection:"column",alignItems:"stretch",gap:3,opacity:canOpen?1:0.6,cursor:canOpen?"pointer":"not-allowed"}}
+                      >
+                        <span style={{fontSize:12,fontWeight:800,color:C.text}}>{part.partNo||"-"} {part.name?`· ${part.name}`:""}</span>
+                        <span style={{fontSize:11,color:C.muted2}}>{[part.material||"",part.revision?`Rev ${part.revision}`:"",customerPartDimensionLabel(part)].filter(Boolean).join(" · ")||"Parca karti"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8}}>
+                  <div>
+                    <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase"}}>Satislar</div>
+                    <div style={{fontWeight:700,color:C.text}}>Teklif ve Siparisler</div>
+                  </div>
+                  <Badge label={`${selectedCustomerSalesRows.length} Kayit`} color={C.green}/>
+                </div>
+                {selectedCustomerSalesRows.length===0&&<div style={{fontSize:12,color:C.muted2,padding:"8px 2px"}}>Bu firmaya bagli satis kaydi bulunamadi.</div>}
+                <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                  {selectedCustomerSalesRows.map(item=>{
+                    const canOpen=availableTabSet.has(item.tabId);
+                    return (
+                      <button
+                        key={`${item.kind}_${item.id}`}
+                        onClick={()=>canOpen&&openRelatedRecord({tabId:item.tabId,recordId:item.id,recordCode:item.code,recordKind:item.kind,customerId:selectedCustomer.id,customerName:selectedCustomer.name,search:item.searchValue})}
+                        disabled={!canOpen}
+                        style={{...btnSt("ghost"),padding:"10px 11px",textAlign:"left",display:"flex",flexDirection:"column",alignItems:"stretch",gap:4,opacity:canOpen?1:0.6,cursor:canOpen?"pointer":"not-allowed"}}
+                      >
+                        <span style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+                          <span style={{fontSize:12,fontWeight:800,color:C.text}}>{item.code}</span>
+                          <span style={{display:"inline-flex",alignItems:"center",padding:"2px 8px",borderRadius:999,background:item.tone+"18",border:`1px solid ${item.tone}44`,fontSize:10,fontWeight:700,color:item.tone}}>{item.kind==="quote"?"Teklif":"Siparis"}</span>
+                        </span>
+                        <span style={{fontSize:11,color:C.text}}>{item.title||"-"}</span>
+                        <span style={{fontSize:11,color:C.muted2}}>{item.subtitle||"-"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12,gridColumn:"1 / -1"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+                  <div>
+                    <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase"}}>Operasyon</div>
+                    <div style={{fontWeight:700,color:C.text}}>Is Emirleri</div>
+                  </div>
+                  <Badge label={`${selectedCustomerWorkOrders.length} Kayit`} color={C.warn}/>
+                </div>
+                {selectedCustomerWorkOrders.length===0&&<div style={{fontSize:12,color:C.muted2,padding:"8px 2px"}}>Bu firmaya bagli is emri bulunamadi.</div>}
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:8}}>
+                  {selectedCustomerWorkOrders.map(order=>{
+                    const meta=getOrderStatusMeta(order.status);
+                    const canOpen=availableTabSet.has("orders");
+                    return (
+                      <button
+                        key={order.id}
+                        onClick={()=>canOpen&&openRelatedRecord({tabId:"orders",recordId:order.id,recordCode:order.code||"",recordKind:"work_order",customerId:selectedCustomer.id,customerName:selectedCustomer.name,search:order.code||selectedCustomer.name})}
+                        disabled={!canOpen}
+                        style={{...btnSt("ghost"),padding:"10px 11px",textAlign:"left",display:"flex",flexDirection:"column",alignItems:"stretch",gap:4,opacity:canOpen?1:0.6,cursor:canOpen?"pointer":"not-allowed"}}
+                      >
+                        <span style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                          <span style={{fontSize:12,fontWeight:800,color:C.text}}>{order.code||"-"}</span>
+                          <span style={{display:"inline-flex",alignItems:"center",padding:"2px 8px",borderRadius:999,background:(meta.color||C.muted2)+"18",border:`1px solid ${(meta.color||C.muted2)}44`,fontSize:10,fontWeight:700,color:meta.color||C.muted2}}>{meta.label||order.status||"-"}</span>
+                        </span>
+                        <span style={{fontSize:11,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{order.name||"-"}</span>
+                        <span style={{fontSize:11,color:C.muted2}}>{[order.partNo||"",order.material||"",order.dueDate?`Termin: ${order.dueDate}`:""].filter(Boolean).join(" · ")||"Is emri"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div ref={customerListPanelRef} style={customerSplitWrapStyle}>
         {filtersVisible&&(
@@ -6097,11 +6307,11 @@ function Customers({filtersVisible=true}) {
                   )}
                   {pagedCustomers.map((c,idx)=>{
                     const rowNo=customerListStart+idx+1;
-                    const isActive=showCustomerModal&&editId===c.id;
+                    const isActive=selectedCustomerId===c.id;
                     return (
                       <tr
                         key={c.id}
-                        onClick={()=>startEdit(c)}
+                        onClick={()=>openCustomerDetail(c)}
                         title="Kaydi ac"
                         style={{borderBottom:`1px solid ${C.border}`,background:isActive?(C.accent+"14"):(idx%2===0?C.card:C.surface),cursor:"pointer"}}
                       >
@@ -6690,6 +6900,25 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
         }
         return;
       }
+      if(d.type==="open_record"){
+        const targetId=String(d.recordId||"").trim();
+        const targetCode=String(d.recordCode||"").trim().toUpperCase();
+        const searchText=String(d.search||d.customerName||targetCode||"").trim();
+        setShowPartModal(false);
+        setPartStatusFilter("all");
+        setPartDateFrom("");
+        setPartDateTo("");
+        if(searchText) setSearch(searchText);
+        const targetPart=parts.find(row=>String(row.id||"")===targetId)
+          || parts.find(row=>String(row.partNo||"").trim().toUpperCase()===targetCode);
+        if(targetPart){
+          setSelectedPartId(targetPart.id||"");
+          setPartPage("detail");
+        }else{
+          setPartPage("list");
+        }
+        return;
+      }
       if(d.type==="new"){
         setPartPage("list");
         setSelectedPartId("");
@@ -6705,7 +6934,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     }
     window.addEventListener("mrp:tab-action",onTabAction);
     return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
-  },[load,nextPartNo]);
+  },[load,nextPartNo,parts]);
   useEffect(()=>{
     if(partPage==="detail"&&!selectedPartId) setPartPage("list");
   },[partPage,selectedPartId]);
@@ -8147,6 +8376,35 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
         } else {
           setView("orders");
           setOrderSortDir(nextDir);
+        }
+        return;
+      }
+      if(d.type==="open_record"){
+        const targetId=String(d.recordId||"").trim();
+        const targetCode=String(d.recordCode||"").trim().toUpperCase();
+        const searchText=String(d.search||d.customerName||targetCode||"").trim();
+        if(d.tab==="quotes"){
+          setView("quotes");
+          setQuoteStatusFilter("all");
+          setQuoteDateFrom("");
+          setQuoteDateTo("");
+          setSearch(searchText);
+          const targetQuote=quotes.find(row=>String(row.id||"")===targetId)
+            || quotes.find(row=>String(row.code||"").trim().toUpperCase()===targetCode);
+          if(targetQuote){
+            openEditQuoteModal(targetQuote);
+          }else{
+            setQuoteEditId("");
+            setShowQuoteModal(false);
+          }
+        }else{
+          setView("orders");
+          setOrderStatusFilter("all");
+          setOrderDateFrom("");
+          setOrderDateTo("");
+          setSearch(searchText);
+          setShowQuoteModal(false);
+          setShowOrderModal(false);
         }
         return;
       }
@@ -10188,6 +10446,23 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
         setSortDir(d.sortMode==="date_asc"?"asc":"desc");
         return;
       }
+      if(d.type==="open_record"){
+        const targetId=String(d.recordId||"").trim();
+        const targetCode=String(d.recordCode||"").trim().toUpperCase();
+        const searchText=String(d.search||d.customerName||targetCode||"").trim();
+        setShowForm(false);
+        setStatusFilters([]);
+        setDueDateFrom("");
+        setDueDateTo("");
+        if(searchText) setSearch(searchText);
+        const targetOrder=orders.find(row=>String(row.id||"")===targetId)
+          || orders.find(row=>String(row.code||"").trim().toUpperCase()===targetCode);
+        if(targetOrder){
+          setPreviewFile(null);
+          setViewOrder(targetOrder);
+        }
+        return;
+      }
       if(d.type==="new"){
         setPreviewFile(null);
         setViewOrder(null);
@@ -10199,7 +10474,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
     }
     window.addEventListener("mrp:tab-action",onTabAction);
     return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
-  },[load,nextOrderCode]);
+  },[load,nextOrderCode,orders]);
   const entryToolChanges=entries
     .filter(e=>(Number(e.machineToolQty??e.machineToolChange??0)>0)&&(e.jobCode||""))
     .map(e=>({
@@ -21528,6 +21803,28 @@ function App() {
   const currentRoleLabel=(USER_ROLES.find(r=>r.id===userForPerm.role)||{label:userForPerm.role||"-"}).label;
   const tabLabelById=useMemo(()=>Object.fromEntries(tabs.map(t=>[t.id,t.label||t.id])),[tabs]);
   const tabOrderById=useMemo(()=>Object.fromEntries(tabs.map((t,idx)=>[t.id,idx])),[tabs]);
+  const handleCustomerRelatedOpen=useCallback((payload)=>{
+    const nextTab=String(payload?.tabId||"").trim();
+    if(!nextTab||!tabs.some(t=>t.id===nextTab)) return;
+    setTab(nextTab);
+    setMobileMenuOpen(false);
+    setGlobalSearchOpen(false);
+    setGlobalSearchQuery("");
+    if(typeof window!=="undefined"){
+      window.setTimeout(()=>{
+        window.dispatchEvent(new CustomEvent("mrp:tab-action",{detail:{
+          tab:nextTab,
+          type:"open_record",
+          recordId:String(payload?.recordId||""),
+          recordCode:String(payload?.recordCode||""),
+          recordKind:String(payload?.recordKind||""),
+          customerId:String(payload?.customerId||""),
+          customerName:String(payload?.customerName||""),
+          search:String(payload?.search||payload?.recordCode||payload?.customerName||""),
+        }}));
+      },0);
+    }
+  },[tabs]);
   const ensureGlobalSearchIndex=useCallback(async(force=false)=>{
     const now=Date.now();
     const cacheFresh=(now-safeNum(globalSearchLoadedAtRef.current))<45000;
@@ -21863,7 +22160,7 @@ function App() {
     if(tab==="assignments") return <TaskAssignmentModule currentUser={currentUser} machines={machines} filtersVisible={assignmentsFilterOpen}/>;
     if(tab==="planning") return <Planning currentUser={currentUser} machines={machines}/>;
     if(tab==="machineprep") return <MachineConnectivityPrep currentUser={currentUser} machines={machines} onMachinesSync={updateMachines}/>;
-    if(tab==="customers") return <Customers filtersVisible={customersFilterOpen}/>;
+    if(tab==="customers") return <Customers filtersVisible={customersFilterOpen} availableTabIds={tabs.map(t=>t.id)} onOpenRelatedRecord={handleCustomerRelatedOpen}/>;
     if(tab==="materials") return <MaterialLibrary filtersVisible={materialsFilterOpen}/>;
     if(tab==="parts") return <PartProductManagement currentUser={currentUser} machines={machines} filtersVisible={partsFilterOpen}/>;
     if(tab==="sales") return <SalesManagement currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")} defaultView="orders" filtersVisible={salesFilterOpen}/>;
