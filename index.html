@@ -658,8 +658,43 @@ const CORPORATE_CHART_PALETTE = [
   "#2B7A73",
   "#D9E0E6",
 ];
-function applyThemeMode(mode){
+function buildAppTheme(mode="light",baseColor=DEFAULT_BRANDING_SETTINGS.menuAccentColor){
   const next=THEME_PRESETS[mode]||THEME_PRESETS.light;
+  const accent=normalizeHexColor(baseColor,DEFAULT_BRANDING_SETTINGS.menuAccentColor);
+  const darkMode=mode==="dark";
+  const accentDim=darkMode
+    ? mixHexColors(next.surface,accent,0.28)
+    : mixHexColors("#FEFFFF",accent,0.82);
+  const brandTint=darkMode
+    ? mixHexColors(next.bgAlt,accent,0.22)
+    : mixHexColors("#FEFFFF",accent,0.9);
+  const green=accent;
+  const greenDim=accentDim;
+  const warn=mixHexColors(next.warn,accent,darkMode?0.34:0.42);
+  const warnDim=darkMode
+    ? mixHexColors(next.surface,warn,0.24)
+    : mixHexColors("#FEFFFF",warn,0.84);
+  const red=mixHexColors(next.red,accent,darkMode?0.18:0.22);
+  const redDim=darkMode
+    ? mixHexColors(next.surface,red,0.24)
+    : mixHexColors("#FEFFFF",red,0.86);
+  const purple=mixHexColors(next.purple,accent,darkMode?0.32:0.4);
+  return {
+    ...next,
+    accent,
+    accentDim,
+    brandTint,
+    green,
+    greenDim,
+    warn,
+    warnDim,
+    red,
+    redDim,
+    purple,
+  };
+}
+function applyThemeMode(mode,baseColor=DEFAULT_BRANDING_SETTINGS.menuAccentColor){
+  const next=buildAppTheme(mode,baseColor);
   Object.assign(C,next);
 }
 const GLOBAL_TOP_SEARCH_SOURCES = [
@@ -20916,6 +20951,7 @@ function App() {
   const [mobileMenuOpen,setMobileMenuOpen]=useState(false);
   const [menuQuery,setMenuQuery]=useState("");
   const [menuGroupFilter,setMenuGroupFilter]=useState("all");
+  const [hoveredSidebarTabId,setHoveredSidebarTabId]=useState("");
   const [globalFilterOpen,setGlobalFilterOpen]=useState(false);
   const [salesFilterOpen,setSalesFilterOpen]=useState(true);
   const [ordersFilterOpen,setOrdersFilterOpen]=useState(true);
@@ -21123,7 +21159,7 @@ function App() {
   }
   async function logout(){window.Session.clear();setCurrentUser(null);setTab("dashboard");}
 
-  applyThemeMode(themeMode);
+  applyThemeMode(themeMode,menuAccentColor);
   if(typeof document!=="undefined") document.body.style.background=C.bg;
 
   const userForPerm=currentUser||{role:"viewer",permissions:[],fullName:""};
@@ -21506,6 +21542,7 @@ function App() {
     setMobileMenuOpen(false);
     setGlobalFilterOpen(false);
     setGlobalSearchOpen(false);
+    setHoveredSidebarTabId("");
   },[tab]);
   useEffect(()=>{
     if(!globalSearchOpen) return;
@@ -21720,49 +21757,67 @@ function App() {
             {iconOnly?g.split(" ").map(x=>x[0]||"").join("").slice(0,3):g}
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            {groupedTabs[g].map(t=>(
-              <a
-                key={t.id}
-                href={buildTabPageHref(t.id)}
-                title={`${g} · ${t.label}`}
-                onClick={e=>handleTabLinkClick(e,t.id,true)}
-                style={{
-                  display:"flex",
-                  alignItems:"center",
-                  gap:10,
-                  textAlign:"left",
-                  textDecoration:"none",
-                  padding:iconOnly?"9px 8px":(compact?"9px 10px":"10px 12px"),
-                  borderRadius:8,
-                  border:`1px solid ${
-                    sideTone
-                      ? (tab===t.id?leftNavColors.activeBorder:"transparent")
-                      : (tab===t.id?leftNavColors.accentBorder:C.border)
-                  }`,
-                  background:sideTone
-                    ? (tab===t.id?leftNavColors.activeBg:"transparent")
-                    : (tab===t.id?leftNavColors.accentSoft:C.surface),
-                  color:sideTone
-                    ? (tab===t.id?leftNavColors.activeText:leftNavColors.text)
-                    : (tab===t.id?leftNavColors.accent:C.text),
-                  cursor:"pointer",
-                  fontFamily:"inherit",
-                  justifyContent:iconOnly?"center":"flex-start",
-                  boxShadow:tab===t.id
-                    ? (sideTone
-                      ? "0 0 0 1px rgba(255,255,255,.18), 0 8px 18px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.18)"
-                      : `0 0 0 1px ${leftNavColors.accentBorder}, 0 8px 16px ${leftNavColors.accentShadow}`)
-                    : "none",
-                  filter:tab===t.id?"saturate(1.14) brightness(1.08)":"none",
-                  transition:"filter .16s ease, box-shadow .16s ease, transform .16s ease",
-                }}
-              >
-                <span style={{display:"inline-flex",alignItems:"center",gap:10,minWidth:0,maxWidth:iconOnly?22:"100%"}}>
-                  <span style={{width:22,display:"inline-flex",justifyContent:"center",alignItems:"center",color:sideTone?(tab===t.id?leftNavColors.activeText:leftNavColors.icon):(tab===t.id?leftNavColors.accent:C.muted2)}}><NavIcon name={t.icon}/></span>
-                  {!iconOnly&&<span style={{fontSize:compact?12:13,fontWeight:tab===t.id?800:500,color:tab===t.id?(sideTone?leftNavColors.activeText:leftNavColors.accent):undefined,textShadow:tab===t.id?"0 0 10px rgba(255,255,255,.14)":"none",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.label}</span>}
-                </span>
-              </a>
-            ))}
+            {groupedTabs[g].map(t=>{
+              const isActive=tab===t.id;
+              const isHovered=hoveredSidebarTabId===t.id;
+              const hoverBorder=sideTone?leftNavColors.accentBorder:leftNavColors.accentBorder;
+              const hoverBackground=sideTone
+                ? rgbaFromHex(leftNavColors.accent,isHovered?0.18:0)
+                : (isHovered?mixHexColors(C.surface,leftNavColors.accent,0.12):C.surface);
+              const hoverGlow=sideTone
+                ? `0 0 0 1px ${hoverBorder}, 0 0 18px ${rgbaFromHex(leftNavColors.accent,0.18)}, 0 10px 24px rgba(0,0,0,.22), inset 0 0 18px ${rgbaFromHex(leftNavColors.accent,0.12)}`
+                : `0 0 0 1px ${hoverBorder}, 0 0 18px ${rgbaFromHex(leftNavColors.accent,0.14)}, 0 10px 20px ${leftNavColors.accentShadow}`;
+              return (
+                <a
+                  key={t.id}
+                  href={buildTabPageHref(t.id)}
+                  title={`${g} · ${t.label}`}
+                  onClick={e=>{setHoveredSidebarTabId("");handleTabLinkClick(e,t.id,true);}}
+                  onMouseEnter={()=>setHoveredSidebarTabId(t.id)}
+                  onMouseLeave={()=>setHoveredSidebarTabId(prev=>prev===t.id?"":prev)}
+                  onFocus={()=>setHoveredSidebarTabId(t.id)}
+                  onBlur={()=>setHoveredSidebarTabId(prev=>prev===t.id?"":prev)}
+                  style={{
+                    display:"flex",
+                    alignItems:"center",
+                    gap:10,
+                    textAlign:"left",
+                    textDecoration:"none",
+                    padding:iconOnly?"9px 8px":(compact?"9px 10px":"10px 12px"),
+                    borderRadius:8,
+                    border:`1px solid ${
+                      isActive
+                        ? (sideTone?leftNavColors.activeBorder:leftNavColors.accentBorder)
+                        : (isHovered?hoverBorder:(sideTone?"transparent":C.border))
+                    }`,
+                    background:isActive
+                      ? (sideTone?leftNavColors.activeBg:leftNavColors.accentSoft)
+                      : hoverBackground,
+                    color:sideTone
+                      ? (isActive?leftNavColors.activeText:(isHovered?"#F7FFFE":leftNavColors.text))
+                      : (isActive?leftNavColors.accent:(isHovered?leftNavColors.accent:C.text)),
+                    cursor:"pointer",
+                    fontFamily:"inherit",
+                    justifyContent:iconOnly?"center":"flex-start",
+                    boxShadow:isActive
+                      ? (sideTone
+                        ? "0 0 0 1px rgba(255,255,255,.18), 0 8px 18px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.18)"
+                        : `0 0 0 1px ${leftNavColors.accentBorder}, 0 8px 16px ${leftNavColors.accentShadow}`)
+                      : (isHovered?hoverGlow:"none"),
+                    filter:isActive
+                      ? "saturate(1.14) brightness(1.08)"
+                      : (isHovered?"saturate(1.12) brightness(1.05)":"none"),
+                    transform:isHovered&&!isActive?"translateX(2px) scale(1.01)":"none",
+                    transition:"background .16s ease, color .16s ease, border-color .16s ease, filter .16s ease, box-shadow .16s ease, transform .16s ease",
+                  }}
+                >
+                  <span style={{display:"inline-flex",alignItems:"center",gap:10,minWidth:0,maxWidth:iconOnly?22:"100%"}}>
+                    <span style={{width:22,display:"inline-flex",justifyContent:"center",alignItems:"center",color:sideTone?(isActive?leftNavColors.activeText:(isHovered?"#F7FFFE":leftNavColors.icon)):(isActive||isHovered?leftNavColors.accent:C.muted2),filter:isHovered?"drop-shadow(0 0 8px rgba(255,255,255,.18))":"none",transition:"color .16s ease, filter .16s ease"}}><NavIcon name={t.icon}/></span>
+                    {!iconOnly&&<span style={{fontSize:compact?12:13,fontWeight:isActive?800:(isHovered?700:500),color:isActive?(sideTone?leftNavColors.activeText:leftNavColors.accent):(isHovered?(sideTone?"#F7FFFE":leftNavColors.accent):undefined),textShadow:isActive?"0 0 10px rgba(255,255,255,.14)":(isHovered?`0 0 14px ${rgbaFromHex(leftNavColors.accent,0.24)}`:"none"),whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",transition:"color .16s ease, text-shadow .16s ease, font-weight .16s ease"}}>{t.label}</span>}
+                  </span>
+                </a>
+              );
+            })}
           </div>
         </div>
       ))}
