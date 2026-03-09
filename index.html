@@ -3536,6 +3536,17 @@ function ToolStock({currentUser,filtersVisible=true}) {
     {id:"critical",label:"Kritik Stok"},
     {id:"out",label:"Stok Yok"},
   ];
+  const movementMap=useMemo(()=>{
+    const out={};
+    movements.forEach(m=>{
+      const toolId=String(m?.toolId||"").trim();
+      if(!toolId) return;
+      if(!out[toolId]) out[toolId]=[];
+      out[toolId].push(m);
+    });
+    return out;
+  },[movements]);
+  const tableColCount=isAdmin?12:11;
   const categoryOptions=(form.category&& !TOOL_CATEGORY_OPTIONS.includes(form.category))
     ? [...TOOL_CATEGORY_OPTIONS,form.category]
     : TOOL_CATEGORY_OPTIONS;
@@ -3560,9 +3571,8 @@ function ToolStock({currentUser,filtersVisible=true}) {
 
   return (
     <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:8,flexWrap:"wrap"}}>
+      <div style={{display:"flex",justifyContent:"flex-start",alignItems:"center",marginBottom:12,gap:8,flexWrap:"wrap"}}>
         <div style={{fontWeight:700,color:C.text}}>Takim Stogu</div>
-        {isAdmin&&<button onClick={()=>{if(showForm){setShowForm(false);setEditId(null);resetForm();}else{resetForm();setEditId(null);setForm(p=>({...p,code:nextToolCode()}));setShowForm(true);}}} style={{...btnSt("primary"),padding:"8px 14px",fontSize:12}}>{showForm?"Kapat":"+ Yeni Ekle"}</button>}
       </div>
 
       {showForm&&isAdmin&&(
@@ -3630,70 +3640,113 @@ function ToolStock({currentUser,filtersVisible=true}) {
         )}
         <div style={{flex:"1 1 760px",minWidth:0,display:"flex",flexDirection:"column",gap:8}}>
           {sortedTools.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"30px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Sonuc yok</div>}
-      {sortedTools.map(t=>{
-        const qty=Number(t.qty)||0;
-        const min=Math.max(Number(t.minQty)||0,0);
-        const critical=qty<=min;
-        return (
-          <div key={t.id} style={{background:C.card,border:`1px solid ${critical?C.red+"66":C.border}`,borderRadius:14,padding:"12px 14px",marginBottom:9}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,marginBottom:8}}>
-              <div>
-                <div style={{fontSize:14,fontWeight:700,color:C.text}}>{t.name||"-"}</div>
-                <div style={{fontSize:12,color:C.muted2,marginTop:2}}>{t.code?`${t.code} · `:""}{t.category||"Kategori yok"}</div>
-              </div>
-              <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                <Badge label={`Stok ${qty}`} color={critical?C.red:C.green}/>
-                <Badge label={`Min ${min}`} color={C.muted2}/>
+          {sortedTools.length>0&&(
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden"}}>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",minWidth:isAdmin?1280:1140}}>
+                  <thead>
+                    <tr style={{background:C.surface2,borderBottom:`1px solid ${C.border}`}}>
+                      <th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"center",textTransform:"uppercase",letterSpacing:.6,width:46}}>#</th>
+                      <th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"left",textTransform:"uppercase",letterSpacing:.6}}>Takim</th>
+                      <th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"left",textTransform:"uppercase",letterSpacing:.6}}>Kategori</th>
+                      <th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"left",textTransform:"uppercase",letterSpacing:.6}}>Geometri</th>
+                      <th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"left",textTransform:"uppercase",letterSpacing:.6}}>Malzeme</th>
+                      <th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"left",textTransform:"uppercase",letterSpacing:.6}}>Konum</th>
+                      <th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"right",textTransform:"uppercase",letterSpacing:.6}}>Stok</th>
+                      <th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"right",textTransform:"uppercase",letterSpacing:.6}}>Min</th>
+                      <th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"right",textTransform:"uppercase",letterSpacing:.6}}>Omur</th>
+                      <th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"center",textTransform:"uppercase",letterSpacing:.6}}>Durum</th>
+                      <th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"left",textTransform:"uppercase",letterSpacing:.6}}>Son Hareket</th>
+                      {isAdmin&&<th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"right",textTransform:"uppercase",letterSpacing:.6,width:290}}>Islemler</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedTools.map((t,idx)=>{
+                      const qty=Number(t.qty)||0;
+                      const min=Math.max(Number(t.minQty)||0,0);
+                      const status=resolveStockStatus(t);
+                      const critical=status!=="healthy";
+                      const tone=status==="out"?C.muted2:(status==="critical"?C.red:C.green);
+                      const toolMoves=movementMap[t.id]||[];
+                      const latestMove=toolMoves[0]||null;
+                      return (
+                        <React.Fragment key={t.id}>
+                          <tr style={{borderBottom:`1px solid ${C.border}`,background:critical?C.redDim:C.card}}>
+                            <td style={{padding:"9px 8px",textAlign:"center",fontSize:12,color:C.muted2}}>{idx+1}</td>
+                            <td style={{padding:"9px 8px"}}>
+                              <div style={{display:"flex",alignItems:"center",gap:8,minWidth:210}}>
+                                <span style={{width:30,height:12,borderRadius:99,background:`linear-gradient(90deg,${tone} 0%,${tone} 68%,${C.surface2} 68%,${C.surface2} 100%)`,border:`1px solid ${tone}66`,display:"inline-block"}}/>
+                                <div style={{minWidth:0}}>
+                                  <div style={{fontSize:12,color:C.text,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.code||"-"}</div>
+                                  <div style={{fontSize:12,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.name||"-"}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td style={{padding:"9px 8px",fontSize:12,color:C.text}}>{t.category||"-"}</td>
+                            <td style={{padding:"9px 8px",fontSize:12,color:C.text}}>{t.geometry||"-"}</td>
+                            <td style={{padding:"9px 8px",fontSize:12,color:C.text}}>{t.toolMaterial||"-"}</td>
+                            <td style={{padding:"9px 8px",fontSize:12,color:C.text}}>{t.location||"-"}</td>
+                            <td style={{padding:"9px 8px",fontSize:12,color:C.text,fontWeight:700,textAlign:"right"}}>{qty}</td>
+                            <td style={{padding:"9px 8px",fontSize:12,color:C.muted2,textAlign:"right"}}>{min}</td>
+                            <td style={{padding:"9px 8px",fontSize:12,color:C.muted2,textAlign:"right"}}>{Math.max(Number(t.expectedLife)||0,0)}</td>
+                            <td style={{padding:"9px 8px",textAlign:"center"}}>
+                              <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",borderRadius:999,padding:"3px 8px",fontSize:11,fontWeight:700,color:critical?C.red:C.green,background:critical?C.redDim:C.greenDim,border:`1px solid ${critical?C.red+"55":C.green+"55"}`}}>
+                                {status==="out"?"Stok Yok":(status==="critical"?"Kritik":"Normal")}
+                              </span>
+                            </td>
+                            <td style={{padding:"9px 8px",fontSize:11,color:C.muted2,minWidth:170}}>
+                              {latestMove?`${latestMove.type==="in"?"Giris":"Cikis"} · ${latestMove.qty}${latestMove.orderCode?` · ${latestMove.orderCode}`:""} · ${(latestMove.createdAt||"").slice(0,10)}`:"Hareket yok"}
+                            </td>
+                            {isAdmin&&(
+                              <td style={{padding:"9px 8px",textAlign:"right"}}>
+                                <div style={{display:"inline-flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                                  <button onClick={()=>openMovement(t.id,"in")} style={{...btnSt("green"),padding:"5px 8px",fontSize:11}}>Giris</button>
+                                  <button onClick={()=>openMovement(t.id,"out")} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Cikis</button>
+                                  <button onClick={()=>{setEditId(t.id);setForm({code:t.code||"",name:t.name||"",category:t.category||"",qty:String(qty),minQty:String(min),location:t.location||"",geometry:t.geometry||"",toolMaterial:t.toolMaterial||"",expectedLife:String(t.expectedLife??""),notes:t.notes||""});setShowForm(true);}} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Duzenle</button>
+                                  <button onClick={()=>removeTool(t.id,t.name||"Takim")} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Sil</button>
+                                </div>
+                              </td>
+                            )}
+                          </tr>
+                          {t.notes&&(
+                            <tr style={{borderBottom:`1px solid ${C.border}`,background:C.surface}}>
+                              <td style={{padding:"7px 8px"}}/>
+                              <td colSpan={tableColCount-1} style={{padding:"7px 8px",fontSize:11,color:C.muted2}}>
+                                Not: {t.notes}
+                              </td>
+                            </tr>
+                          )}
+                          {isAdmin&&moveOpenId===t.id&&(
+                            <tr style={{borderBottom:`1px solid ${C.border}`,background:C.surface}}>
+                              <td style={{padding:"9px 8px"}}/>
+                              <td colSpan={tableColCount-1} style={{padding:"9px 8px"}}>
+                                <div style={{display:"grid",gridTemplateColumns:"120px 1fr 1fr",gap:8}}>
+                                  <select style={{...inputSt,padding:"7px 10px",fontSize:12}} value={moveForm.type} onChange={e=>setMoveForm(f=>({...f,type:e.target.value}))}>
+                                    <option value="in">Giris</option>
+                                    <option value="out">Cikis</option>
+                                  </select>
+                                  <input style={{...inputSt,padding:"7px 10px",fontSize:12}} type="number" min="1" placeholder="Miktar" value={moveForm.qty} onChange={e=>setMoveForm(f=>({...f,qty:e.target.value}))}/>
+                                  <select style={{...inputSt,padding:"7px 10px",fontSize:12}} value={moveForm.orderId} onChange={e=>setMoveForm(f=>({...f,orderId:e.target.value}))}>
+                                    <option value="">Is emri sec (opsiyonel)</option>
+                                    {orders.map(o=><option key={o.id} value={o.id}>{o.code} - {o.name}</option>)}
+                                  </select>
+                                  <input style={{...inputSt,padding:"7px 10px",fontSize:12,gridColumn:"1 / span 2"}} placeholder="Not (opsiyonel)" value={moveForm.note} onChange={e=>setMoveForm(f=>({...f,note:e.target.value}))}/>
+                                  <div style={{display:"flex",gap:7}}>
+                                    <button onClick={()=>saveMovement(t)} style={{...btnSt("primary"),padding:"7px 10px",fontSize:12}}>Hareket Kaydet</button>
+                                    <button onClick={()=>setMoveOpenId(null)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Kapat</button>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
-            <div style={{display:"flex",gap:7,flexWrap:"wrap",fontSize:11,color:C.muted2,marginBottom:8}}>
-              {t.location&&<span style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"3px 8px"}}>Konum: {t.location}</span>}
-              {t.geometry&&<span style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"3px 8px"}}>Geo: {t.geometry}</span>}
-              {t.toolMaterial&&<span style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"3px 8px"}}>{t.toolMaterial}</span>}
-              {critical&&<span style={{background:C.redDim,border:`1px solid ${C.red}44`,borderRadius:8,padding:"3px 8px",color:C.red}}>Stok kritik</span>}
-            </div>
-            {t.notes&&<div style={{fontSize:12,color:C.muted2,marginBottom:8}}>{t.notes}</div>}
-            {isAdmin&&(
-              <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-                <button onClick={()=>openMovement(t.id,"in")} style={{...btnSt("green"),padding:"6px 10px",fontSize:12}}>Stok Girisi</button>
-                <button onClick={()=>openMovement(t.id,"out")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Stok Cikisi</button>
-                <button onClick={()=>{setEditId(t.id);setForm({code:t.code||"",name:t.name||"",category:t.category||"",qty:String(qty),minQty:String(min),location:t.location||"",geometry:t.geometry||"",toolMaterial:t.toolMaterial||"",expectedLife:String(t.expectedLife??""),notes:t.notes||""});setShowForm(true);}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
-                <button onClick={()=>removeTool(t.id,t.name||"Takim")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
-              </div>
-            )}
-            {isAdmin&&moveOpenId===t.id&&(
-              <div style={{marginTop:10,padding:10,background:C.surface,border:`1px solid ${C.border}`,borderRadius:10}}>
-                <div style={{display:"grid",gridTemplateColumns:"120px 1fr",gap:8}}>
-                  <select style={{...inputSt,padding:"7px 10px",fontSize:12}} value={moveForm.type} onChange={e=>setMoveForm(f=>({...f,type:e.target.value}))}>
-                    <option value="in">Giris</option>
-                    <option value="out">Cikis</option>
-                  </select>
-                  <input style={{...inputSt,padding:"7px 10px",fontSize:12}} type="number" min="1" placeholder="Miktar" value={moveForm.qty} onChange={e=>setMoveForm(f=>({...f,qty:e.target.value}))}/>
-                  <select style={{...inputSt,padding:"7px 10px",fontSize:12,gridColumn:"1 / -1"}} value={moveForm.orderId} onChange={e=>setMoveForm(f=>({...f,orderId:e.target.value}))}>
-                    <option value="">Is emri sec (opsiyonel)</option>
-                    {orders.map(o=><option key={o.id} value={o.id}>{o.code} - {o.name}</option>)}
-                  </select>
-                  <input style={{...inputSt,padding:"7px 10px",fontSize:12,gridColumn:"1 / -1"}} placeholder="Not (opsiyonel)" value={moveForm.note} onChange={e=>setMoveForm(f=>({...f,note:e.target.value}))}/>
-                </div>
-                <div style={{display:"flex",gap:7,marginTop:8}}>
-                  <button onClick={()=>saveMovement(t)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}>Hareket Kaydet</button>
-                  <button onClick={()=>setMoveOpenId(null)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kapat</button>
-                </div>
-              </div>
-            )}
-            <div style={{marginTop:10}}>
-              <div style={{color:C.muted2,fontSize:10,letterSpacing:.7,textTransform:"uppercase",marginBottom:6}}>Son Hareketler</div>
-              {movements.filter(m=>m.toolId===t.id).slice(0,3).map((m,i)=>(
-                <div key={m.id||i} style={{display:"flex",justifyContent:"space-between",fontSize:11,color:C.muted2,marginBottom:4}}>
-                  <span>{m.type==="in"?"Giris":"Cikis"} · {m.qty} {m.orderCode?`· ${m.orderCode}`:""}</span>
-                  <span>{(m.createdAt||"").slice(0,10)}</span>
-                </div>
-              ))}
-              {movements.filter(m=>m.toolId===t.id).length===0&&<div style={{fontSize:11,color:C.muted}}>Hareket yok</div>}
-            </div>
-          </div>
-        );
-      })}
+          )}
         </div>
       </div>
     </div>
