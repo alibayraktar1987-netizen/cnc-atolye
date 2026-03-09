@@ -5806,114 +5806,106 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
 
   return (
     <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
-      <div style={{
-        background:C.card,
-        border:`1px solid ${C.border}`,
-        borderRadius:14,
-        padding:12,
-        ...(partPage==="list"?{flex:1,minHeight:0,display:"flex",flexDirection:"column",overflow:"hidden"}:{}),
-      }}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8}}>
-          <div style={{fontWeight:700,color:C.text}}>Parca Kutuphanesi</div>
-          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            {selectedPart&&<Badge label={`Secili: ${selectedPart.partNo}`} color={C.accent}/>}
-            {selectedPart&&<button onClick={()=>openEditPartModal(selectedPart)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11}}>Seciliyi Duzenle</button>}
+      {partPage==="list"&&(
+        <>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <div style={{fontWeight:700,color:C.text}}>Parca Kutuphanesi</div>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              {selectedPart&&<Badge label={`Secili: ${selectedPart.partNo}`} color={C.accent}/>}
+              {selectedPart&&<button onClick={()=>openEditPartModal(selectedPart)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11}}>Seciliyi Duzenle</button>}
+            </div>
           </div>
-        </div>
-        {partPage==="list"&&(
-          <>
-        <div ref={partListPanelRef} style={partSplitWrapStyle}>
-          {filtersVisible&&(
-            <div style={partFilterPanelStyle}>
-              <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Parcalar</div>
-              <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod, musteri, ad, malzeme ara"/>
-              <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Parca Durumu</div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                {partStatusOptions.map(opt=>(
-                  <button key={opt.id} onClick={()=>setPartStatusFilter(opt.id)} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:partStatusFilter===opt.id?C.accent:C.border,color:partStatusFilter===opt.id?C.accent:C.text}}>
-                    <span>{opt.label}</span>
-                    <span style={{fontSize:11,color:C.muted2}}>{partStatusCounts[opt.id]||0}</span>
-                  </button>
-                ))}
+          <div ref={partListPanelRef} style={partSplitWrapStyle}>
+            {filtersVisible&&(
+              <div style={partFilterPanelStyle}>
+                <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Parcalar</div>
+                <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Kod, musteri, ad, malzeme ara"/>
+                <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Parca Durumu</div>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {partStatusOptions.map(opt=>(
+                    <button key={opt.id} onClick={()=>setPartStatusFilter(opt.id)} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:partStatusFilter===opt.id?C.accent:C.border,color:partStatusFilter===opt.id?C.accent:C.text}}>
+                      <span>{opt.label}</span>
+                      <span style={{fontSize:11,color:C.muted2}}>{partStatusCounts[opt.id]||0}</span>
+                    </button>
+                  ))}
+                </div>
+                <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Guncelleme Tarihi</div>
+                <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={partDateFrom} onChange={e=>setPartDateFrom(e.target.value||"")}/>
+                <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={partDateTo} onChange={e=>setPartDateTo(e.target.value||"")}/>
+                <button onClick={()=>{setPartDateFrom("");setPartDateTo("");setPartStatusFilter("all");setSearch("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
               </div>
-              <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Guncelleme Tarihi</div>
-              <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={partDateFrom} onChange={e=>setPartDateFrom(e.target.value||"")}/>
-              <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={partDateTo} onChange={e=>setPartDateTo(e.target.value||"")}/>
-              <button onClick={()=>{setPartDateFrom("");setPartDateTo("");setPartStatusFilter("all");setSearch("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
-            </div>
-          )}
-          <div style={partListColumnStyle}>
-            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-              <TableColumnEditor
-                title="Parca Kutuphanesi"
-                columns={partListTableColumns}
-                onToggle={togglePartListTableColumn}
-                onMove={movePartListTableColumn}
-                onReset={resetPartListTableColumns}
-              />
-              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginLeft:"auto"}}>
-                <div style={{fontSize:12,color:C.muted2}}>Gosterilen Kayit: {pagedParts.length} / {filteredParts.length}</div>
-                <ListRowPager
-                  rowsPerPage={partRowsPerPage}
-                  page={partListPageIdx}
-                  pageCount={partTotalPages}
-                  onRowsPerPageChange={setPartRowsPerPage}
-                  onPrev={()=>setPartListPageIdx(p=>Math.max(1,p-1))}
-                  onNext={()=>setPartListPageIdx(p=>Math.min(partTotalPages,p+1))}
-                  options={[10,20]}
+            )}
+            <div style={partListColumnStyle}>
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <TableColumnEditor
+                  title="Parca Kutuphanesi"
+                  columns={partListTableColumns}
+                  onToggle={togglePartListTableColumn}
+                  onMove={movePartListTableColumn}
+                  onReset={resetPartListTableColumns}
                 />
+                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginLeft:"auto"}}>
+                  <div style={{fontSize:12,color:C.muted2}}>Gosterilen Kayit: {pagedParts.length} / {filteredParts.length}</div>
+                  <ListRowPager
+                    rowsPerPage={partRowsPerPage}
+                    page={partListPageIdx}
+                    pageCount={partTotalPages}
+                    onRowsPerPageChange={setPartRowsPerPage}
+                    onPrev={()=>setPartListPageIdx(p=>Math.max(1,p-1))}
+                    onNext={()=>setPartListPageIdx(p=>Math.min(partTotalPages,p+1))}
+                    options={[10,20]}
+                  />
+                </div>
               </div>
-            </div>
-            <div style={partTableCardStyle}>
-              <div style={partTableScrollStyle}>
-                <div style={{minWidth:partListTableMinWidth}}>
-                  <div style={{display:"grid",gridTemplateColumns:partListGridTemplate,gap:8,padding:"9px 10px",borderBottom:`1px solid ${C.border}`,background:C.surface,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700,position:"sticky",top:0,zIndex:2}}>
-                    {visiblePartListTableColumns.map(col=>(
-                      <div key={col.id} style={{textAlign:col.align||"left",whiteSpace:"nowrap"}}>
-                        {col.label}
-                      </div>
-                    ))}
+              <div style={partTableCardStyle}>
+                <div style={partTableScrollStyle}>
+                  <div style={{minWidth:partListTableMinWidth}}>
+                    <div style={{display:"grid",gridTemplateColumns:partListGridTemplate,gap:8,padding:"9px 10px",borderBottom:`1px solid ${C.border}`,background:C.surface,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700,position:"sticky",top:0,zIndex:2}}>
+                      {visiblePartListTableColumns.map(col=>(
+                        <div key={col.id} style={{textAlign:col.align||"left",whiteSpace:"nowrap"}}>
+                          {col.label}
+                        </div>
+                      ))}
+                    </div>
+                    {pagedParts.map((p,idx)=>{
+                      const selected=selectedPartId===p.id;
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={()=>openPartDetailPage(p)}
+                          style={{
+                            width:"100%",
+                            textAlign:"left",
+                            display:"grid",
+                            gridTemplateColumns:partListGridTemplate,
+                            gap:8,
+                            padding:"10px 10px",
+                            border:"none",
+                            borderBottom:`1px solid ${C.border}`,
+                            background:selected?C.accent+"1a":(idx%2===0?C.surface:C.card),
+                            color:C.text,
+                            cursor:"pointer",
+                            fontFamily:"inherit",
+                            alignItems:"center",
+                            boxShadow:selected?`inset 3px 0 0 ${C.accent}`:"none",
+                          }}
+                        >
+                          {visiblePartListTableColumns.map(col=>(
+                            <div key={col.id} style={{minWidth:0,textAlign:col.align||"left"}}>
+                              {renderPartListCell(p,col)}
+                            </div>
+                          ))}
+                        </button>
+                      );
+                    })}
+                    {filteredParts.length===0&&<div style={{fontSize:12,color:C.muted2,padding:"12px 10px"}}>Filtreye uygun parca bulunamadi.</div>}
                   </div>
-                  {pagedParts.map((p,idx)=>{
-                    const selected=selectedPartId===p.id;
-                    return (
-                      <button
-                        key={p.id}
-                        onClick={()=>openPartDetailPage(p)}
-                        style={{
-                          width:"100%",
-                          textAlign:"left",
-                          display:"grid",
-                          gridTemplateColumns:partListGridTemplate,
-                          gap:8,
-                          padding:"10px 10px",
-                          border:"none",
-                          borderBottom:`1px solid ${C.border}`,
-                          background:selected?C.accent+"1a":(idx%2===0?C.surface:C.card),
-                          color:C.text,
-                          cursor:"pointer",
-                          fontFamily:"inherit",
-                          alignItems:"center",
-                          boxShadow:selected?`inset 3px 0 0 ${C.accent}`:"none",
-                        }}
-                      >
-                        {visiblePartListTableColumns.map(col=>(
-                          <div key={col.id} style={{minWidth:0,textAlign:col.align||"left"}}>
-                            {renderPartListCell(p,col)}
-                          </div>
-                        ))}
-                      </button>
-                    );
-                  })}
-                  {filteredParts.length===0&&<div style={{fontSize:12,color:C.muted2,padding:"12px 10px"}}>Filtreye uygun parca bulunamadi.</div>}
                 </div>
               </div>
             </div>
           </div>
-        </div>
-          </>
-        )}
-      </div>
+        </>
+      )}
 
       {showPartModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.68)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:54,padding:14}} onClick={()=>setShowPartModal(false)}>
