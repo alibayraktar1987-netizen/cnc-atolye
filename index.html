@@ -586,6 +586,10 @@ const USER_ROLES = [
   { id:"quality", label:"Kalite" },
   { id:"viewer", label:"Izleyici" },
 ];
+function isKnownUserRole(roleId){
+  const key=String(roleId||"").trim();
+  return !!key&&USER_ROLES.some(r=>r.id===key);
+}
 const PERMISSIONS = [
   { id:"data_entry", label:"Veri Girişi", icon:"VG", desc:"Üretim verisi girebilir" },
   { id:"view_reports", label:"Rapor Görüntüleme", icon:"RP", desc:"Tüm raporları görebilir" },
@@ -2538,6 +2542,7 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
     if(u.password!==hashPass(form.password)){setErr("Şifre hatalı.");setLoading(false);return;}
     if(u.status==="pending"){setErr("Hesabınız onay bekliyor.");setLoading(false);return;}
     if(u.status==="rejected"){setErr("Hesabınız reddedildi.");setLoading(false);return;}
+    if(!isKnownUserRole(u.role)){setErr("Hesabiniz icin henuz yetki tipi atanamamis.");setLoading(false);return;}
     window.Session.set({username:u.id},{remember:rememberMe});
     onLogin(u);
     setLoading(false);
@@ -2556,16 +2561,16 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
     if(existing){setErr("Bu kullanıcı adı alınmış.");setLoading(false);return;}
     const allUsers=await window.DB.getAll("users");
     const isFirst=allUsers.length===0;
-    const role=isFirst?"admin":"operator";
+    const role=isFirst?"admin":"";
     const saved=await window.DB.setDoc("users",key,{
       username:key, fullName:form.fullName, password:hashPass(form.password),
       role, status:isFirst?"active":"pending",
-      permissions:[...(ROLE_PERMISSION_DEFAULTS[role]||[])],
+      permissions:isFirst?[...(ROLE_PERMISSION_DEFAULTS[role]||[])]:[],
       createdAt:new Date().toISOString(),
       updatedAt:new Date().toISOString(),
     });
     if(!saved){setErr("Kullanici kaydi olusturulamadi. Veritabani yetkilerini (Firestore Rules) kontrol edin.");setLoading(false);return;}
-    setOk(isFirst?"İlk kullanıcı › otomatik Yönetici! Giriş yapabilirsiniz.":"Kayıt başarılı! Yönetici onayını bekleyin.");
+    setOk(isFirst?"İlk kullanıcı › otomatik Yönetici! Giriş yapabilirsiniz.":"Kayit basarili. Yonetici hesabi onaylayip yetki tipini belirledikten sonra giris acilir.");
     setMode("login"); setForm({username:"",password:"",confirm:"",fullName:""}); setLoading(false);
   }
 
@@ -2804,14 +2809,32 @@ function GlobalSearchHero({
   layoutMode="desktop",
   helperText="Tum moduller ve kayitlar burada aranir.",
 }){
+  const overlayInputRef=useRef(null);
   const isMobile=layoutMode==="mobile";
   const isTablet=layoutMode==="tablet";
   const normalizedQuery=normalizeSearchKeyword(query);
-  const shellMaxWidth=isMobile?null:(isTablet?720:860);
-  const resultPanelWidth=isMobile
-    ? "100%"
-    : (isTablet?"min(calc(100vw - 72px), 860px)":"min(calc(100vw - 220px), 1040px)");
+  const shellMaxWidth=isMobile?null:(isTablet?400:460);
+  const overlayWidth=isMobile
+    ? "min(calc(100vw - 20px), 100%)"
+    : (isTablet?"min(760px, calc(100vw - 48px))":"min(920px, calc(100vw - 72px))");
   const groupGridColumns=isMobile?"1fr":(isTablet?"1fr":"repeat(2,minmax(0,1fr))");
+  useEffect(()=>{
+    if(!open) return;
+    const prevOverflow=typeof document!=="undefined"?document.body.style.overflow:"";
+    const raf=typeof window!=="undefined"
+      ? window.requestAnimationFrame(()=>{
+        if(overlayInputRef.current){
+          overlayInputRef.current.focus();
+          overlayInputRef.current.select();
+        }
+      })
+      : 0;
+    if(typeof document!=="undefined") document.body.style.overflow="hidden";
+    return ()=>{
+      if(typeof window!=="undefined"&&raf) window.cancelAnimationFrame(raf);
+      if(typeof document!=="undefined") document.body.style.overflow=prevOverflow;
+    };
+  },[open]);
   return (
     <div ref={containerRef} style={{position:"relative",width:"100%",maxWidth:shellMaxWidth||undefined,margin:isMobile?undefined:"0 auto"}}>
       <div style={{position:"relative"}}>
@@ -2838,18 +2861,21 @@ function GlobalSearchHero({
           autoComplete="off"
           style={{
             width:"100%",
-            height:isMobile?48:54,
-            borderRadius:isMobile?14:18,
-            padding:"0 54px 0 44px",
-            border:"1px solid rgba(226,232,240,.92)",
+            height:isMobile?42:44,
+            borderRadius:isMobile?12:14,
+            padding:"0 48px 0 42px",
+            border:open?"1px solid rgba(87,190,144,.48)":"1px solid rgba(226,232,240,.88)",
             background:"rgba(255,255,255,.97)",
             color:"#0F172A",
-            boxShadow:isMobile?"0 8px 20px rgba(15,23,42,.12)":"0 14px 30px rgba(15,23,42,.14)",
-            fontSize:isMobile?14:15,
+            boxShadow:open
+              ? "0 0 0 3px rgba(87,190,144,.14), 0 10px 24px rgba(15,23,42,.16)"
+              : (isMobile?"0 6px 16px rgba(15,23,42,.10)":"0 8px 18px rgba(15,23,42,.12)"),
+            fontSize:isMobile?13:14,
             fontWeight:500,
             outline:"none",
             boxSizing:"border-box",
             fontFamily:"inherit",
+            transition:"border-color .18s ease, box-shadow .18s ease",
           }}
         />
         <button
@@ -2866,11 +2892,11 @@ function GlobalSearchHero({
             right:8,
             top:"50%",
             transform:"translateY(-50%)",
-            width:isMobile?32:36,
-            height:isMobile?32:36,
+            width:isMobile?28:30,
+            height:isMobile?28:30,
             borderRadius:999,
             border:"none",
-            background:"rgba(148,163,184,.16)",
+            background:open?"rgba(87,190,144,.16)":"rgba(148,163,184,.16)",
             color:"#475569",
             cursor:"pointer",
             display:"inline-flex",
@@ -2883,82 +2909,136 @@ function GlobalSearchHero({
           <NavIcon name="search" size={14}/>
         </button>
       </div>
-      {!isMobile&&(
-        <div style={{marginTop:7,fontSize:11,color:"rgba(255,255,255,.82)",textAlign:"center",letterSpacing:.2}}>
-          {helperText}
-        </div>
-      )}
       {open&&(
         <div
           style={{
-            position:"absolute",
-            top:isMobile?"calc(100% + 8px)":"calc(100% + 12px)",
-            left:isMobile?0:"50%",
-            transform:isMobile?"none":"translateX(-50%)",
-            width:resultPanelWidth,
-            zIndex:42,
-            background:C.card,
-            border:`1px solid ${C.border}`,
-            borderRadius:18,
-            boxShadow:"0 24px 54px rgba(15,23,42,.22)",
-            overflow:"hidden",
+            position:"fixed",
+            inset:0,
+            zIndex:72,
+            background:"rgba(15,23,42,.30)",
+            display:"flex",
+            alignItems:isMobile?"flex-start":"center",
+            justifyContent:"center",
+            padding:isMobile?"8vh 10px 14px":"24px",
           }}
+          onClick={()=>onOpenChange(false)}
         >
-          <div style={{padding:"11px 14px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,background:C.surface2}}>
-            <div style={{fontSize:11,color:C.muted2,fontWeight:700,letterSpacing:.6,textTransform:"uppercase"}}>Global Arama</div>
-            <div style={{fontSize:11,color:C.muted2}}>{Math.max(0,Math.floor(safeNum(total)))} sonuc</div>
-          </div>
-          <div className="mrp-scrollbar" style={{maxHeight:isMobile?360:430,overflowY:"auto",padding:12}}>
-            {normalizedQuery.length<2&&(
-              <div style={{padding:"14px 12px",fontSize:13,color:C.muted2,textAlign:"center"}}>
-                Aramak icin en az 2 karakter yazin.
+          <div
+            onClick={e=>e.stopPropagation()}
+            style={{
+              width:overlayWidth,
+              maxHeight:isMobile?"80vh":"min(78vh,760px)",
+              background:C.card,
+              border:`1px solid ${C.border}`,
+              borderRadius:isMobile?18:22,
+              boxShadow:"0 28px 80px rgba(15,23,42,.28)",
+              overflow:"hidden",
+              display:"flex",
+              flexDirection:"column",
+            }}
+          >
+            <div style={{padding:isMobile?12:16,borderBottom:`1px solid ${C.border}`,background:C.surface2}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:10}}>
+                <div>
+                  <div style={{fontSize:11,color:C.muted2,fontWeight:700,letterSpacing:.7,textTransform:"uppercase"}}>Global Arama</div>
+                  <div style={{fontSize:12,color:C.muted2,marginTop:2}}>{helperText}</div>
+                </div>
+                <button onClick={()=>onOpenChange(false)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11}}>Kapat</button>
               </div>
-            )}
-            {normalizedQuery.length>=2&&loading&&(
-              <div style={{padding:"14px 12px",fontSize:13,color:C.muted2,textAlign:"center"}}>
-                Kayitlar taraniyor...
+              <div style={{position:"relative"}}>
+                <span style={{position:"absolute",left:16,top:"50%",transform:"translateY(-50%)",width:18,height:18,color:C.muted2,display:"inline-flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
+                  <NavIcon name="search" size={17}/>
+                </span>
+                <input
+                  ref={overlayInputRef}
+                  value={query}
+                  onChange={e=>onChange(e.target.value)}
+                  onKeyDown={e=>{
+                    if(e.key==="Escape"){
+                      e.preventDefault();
+                      onOpenChange(false);
+                      return;
+                    }
+                    if(e.key==="Enter"&&firstResult){
+                      e.preventDefault();
+                      onSelect(firstResult);
+                    }
+                  }}
+                  placeholder={placeholder}
+                  autoComplete="off"
+                  style={{
+                    width:"100%",
+                    height:isMobile?50:56,
+                    borderRadius:16,
+                    padding:"0 50px 0 46px",
+                    border:`1px solid ${C.accent}55`,
+                    background:C.card,
+                    color:C.text,
+                    boxShadow:`0 0 0 3px ${rgbaFromHex(C.accent,0.12)}`,
+                    fontSize:isMobile?15:16,
+                    fontWeight:600,
+                    outline:"none",
+                    boxSizing:"border-box",
+                    fontFamily:"inherit",
+                  }}
+                />
+                <div style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",fontSize:11,color:C.muted2}}>
+                  {Math.max(0,Math.floor(safeNum(total)))} sonuc
+                </div>
               </div>
-            )}
-            {normalizedQuery.length>=2&&!loading&&groups.length===0&&(
-              <div style={{padding:"14px 12px",fontSize:13,color:C.muted2,textAlign:"center"}}>
-                Sonuc bulunamadi.
-              </div>
-            )}
-            {normalizedQuery.length>=2&&!loading&&groups.length>0&&(
-              <div style={{display:"grid",gridTemplateColumns:groupGridColumns,gap:10}}>
-                {groups.map(group=>(
-                  <div key={group.tabId} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:10}}>
-                    <div style={{fontSize:11,color:C.muted2,fontWeight:800,letterSpacing:.6,textTransform:"uppercase",padding:"2px 2px 8px"}}>
-                      {group.moduleLabel}
+            </div>
+            <div className="mrp-scrollbar" style={{maxHeight:isMobile?420:520,overflowY:"auto",padding:12}}>
+              {normalizedQuery.length<2&&(
+                <div style={{padding:"24px 12px",fontSize:13,color:C.muted2,textAlign:"center"}}>
+                  Aramak icin en az 2 karakter yazin.
+                </div>
+              )}
+              {normalizedQuery.length>=2&&loading&&(
+                <div style={{padding:"24px 12px",fontSize:13,color:C.muted2,textAlign:"center"}}>
+                  Kayitlar taraniyor...
+                </div>
+              )}
+              {normalizedQuery.length>=2&&!loading&&groups.length===0&&(
+                <div style={{padding:"24px 12px",fontSize:13,color:C.muted2,textAlign:"center"}}>
+                  Sonuc bulunamadi.
+                </div>
+              )}
+              {normalizedQuery.length>=2&&!loading&&groups.length>0&&(
+                <div style={{display:"grid",gridTemplateColumns:groupGridColumns,gap:10}}>
+                  {groups.map(group=>(
+                    <div key={group.tabId} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:10}}>
+                      <div style={{fontSize:11,color:C.muted2,fontWeight:800,letterSpacing:.6,textTransform:"uppercase",padding:"2px 2px 8px"}}>
+                        {group.moduleLabel}
+                      </div>
+                      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                        {group.items.map(item=>(
+                          <button
+                            key={item.uid}
+                            onClick={()=>onSelect(item)}
+                            style={{
+                              ...btnSt("ghost"),
+                              width:"100%",
+                              padding:"9px 10px",
+                              textAlign:"left",
+                              display:"flex",
+                              flexDirection:"column",
+                              alignItems:"stretch",
+                              gap:3,
+                              background:C.card,
+                              borderColor:C.border,
+                              borderRadius:10,
+                            }}
+                          >
+                            <span style={{fontSize:12,color:C.text,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.title||"-"}</span>
+                            {item.subtitle&&<span style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.subtitle}</span>}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                      {group.items.map(item=>(
-                        <button
-                          key={item.uid}
-                          onClick={()=>onSelect(item)}
-                          style={{
-                            ...btnSt("ghost"),
-                            width:"100%",
-                            padding:"9px 10px",
-                            textAlign:"left",
-                            display:"flex",
-                            flexDirection:"column",
-                            alignItems:"stretch",
-                            gap:3,
-                            background:C.card,
-                            borderColor:C.border,
-                            borderRadius:10,
-                          }}
-                        >
-                          <span style={{fontSize:12,color:C.text,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.title||"-"}</span>
-                          {item.subtitle&&<span style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.subtitle}</span>}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -3657,17 +3737,38 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
     const perms=[...(u.permissions||[])];
     const idx=perms.indexOf(permId);
     if(idx>=0) perms.splice(idx,1); else perms.push(permId);
-    await update(id,{permissions:perms});
+    await update(id,{permissions:perms,updatedAt:new Date().toISOString()});
   }
   async function changeRole(user,newRole){
+    const nextRole=isKnownUserRole(newRole)?newRole:"";
     const patch={
-      role:newRole,
-      permissions:[...(ROLE_PERMISSION_DEFAULTS[newRole]||[])],
+      role:nextRole,
+      permissions:nextRole?[...(ROLE_PERMISSION_DEFAULTS[nextRole]||[])]:[],
       updatedAt:new Date().toISOString(),
     };
     await update(user.id,patch);
   }
-  const roleLabel=roleId=>(USER_ROLES.find(r=>r.id===roleId)||{label:roleId||"-"}).label;
+  async function approveUser(user){
+    const nextRole=String(user?.role||"").trim();
+    if(!isKnownUserRole(nextRole)){
+      alert("Onaydan once yetki tipi secin.");
+      return;
+    }
+    const nextPerms=(Array.isArray(user?.permissions)&&user.permissions.length>0)
+      ? [...user.permissions]
+      : [...(ROLE_PERMISSION_DEFAULTS[nextRole]||[])];
+    await update(user.id,{
+      status:"active",
+      role:nextRole,
+      permissions:nextPerms,
+      updatedAt:new Date().toISOString(),
+    });
+  }
+  const roleLabel=roleId=>{
+    const key=String(roleId||"").trim();
+    if(!key) return "Yetki Atanacak";
+    return (USER_ROLES.find(r=>r.id===key)||{label:key}).label;
+  };
 
   const list=[...users].sort((a,b)=>{const o={pending:0,active:1,rejected:2};return(o[a.status]??3)-(o[b.status]??3);});
   const pendingCount=list.filter(u=>u.status==="pending").length;
@@ -4148,24 +4249,30 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
                 <div><div style={{fontWeight:700,fontSize:14}}>{u.fullName}</div><div style={{color:C.muted2,fontSize:12,marginTop:1}}>@{u.username||u.id}</div></div>
                 <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                  <Badge label={u.role==="admin"?"Yönetici":roleLabel(u.role)} color={u.role==="admin"?C.accent:C.muted2}/>
+                  <Badge label={u.role==="admin"?"Yönetici":roleLabel(u.role)} color={u.role==="admin"?C.accent:(u.role?C.muted2:C.warn)}/>
                   <Badge label={u.status==="active"?"Aktif":u.status==="pending"?"Bekliyor":"Askıda"} color={u.status==="active"?C.green:u.status==="pending"?C.warn:C.red}/>
                 </div>
               </div>
               {u.id!==currentUser.id&&(
                 <>
                   <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:8}}>
-                    {u.status==="pending"&&<><button onClick={()=>update(u.id,{status:"active"})} style={{...btnSt("green"),padding:"7px 13px",fontSize:12}}>Onayla</button><button onClick={()=>update(u.id,{status:"rejected"})} style={{...btnSt("danger"),padding:"7px 13px",fontSize:12}}>Reddet</button></>}
-                    {u.status==="active"&&<>
-                      <select value={u.role||"operator"} onChange={e=>changeRole(u,e.target.value)} style={{...inputSt,padding:"7px 10px",fontSize:12,maxWidth:190}}>
+                    {(u.status==="pending"||u.status==="active"||u.status==="rejected")&&(
+                      <select value={u.role||""} onChange={e=>changeRole(u,e.target.value)} style={{...inputSt,padding:"7px 10px",fontSize:12,maxWidth:190}}>
+                        <option value="">Yetki tipi secin</option>
                         {USER_ROLES.map(r=><option key={r.id} value={r.id}>{r.label}</option>)}
                       </select>
-                      <button onClick={()=>update(u.id,{status:"rejected"})} style={{...btnSt("danger"),padding:"7px 13px",fontSize:12}}>Askıya Al</button>
-                    </>}
-                    {u.status==="rejected"&&<button onClick={()=>update(u.id,{status:"active"})} style={{...btnSt("green"),padding:"7px 13px",fontSize:12}}>Aktifleştir</button>}
-                    {u.role!=="admin"&&<button onClick={()=>setExpanded(expanded===u.id?null:u.id)} style={{...btnSt("ghost"),padding:"7px 13px",fontSize:12}}>{expanded===u.id?"^ Gizle":"Yetkiler"}</button>}
+                    )}
+                    {u.status==="pending"&&<><button onClick={()=>approveUser(u)} style={{...btnSt("green"),padding:"7px 13px",fontSize:12,opacity:isKnownUserRole(u.role)?1:0.6,cursor:isKnownUserRole(u.role)?"pointer":"not-allowed"}} disabled={!isKnownUserRole(u.role)}>Onayla</button><button onClick={()=>update(u.id,{status:"rejected",updatedAt:new Date().toISOString()})} style={{...btnSt("danger"),padding:"7px 13px",fontSize:12}}>Reddet</button></>}
+                    {u.status==="active"&&<button onClick={()=>update(u.id,{status:"rejected",updatedAt:new Date().toISOString()})} style={{...btnSt("danger"),padding:"7px 13px",fontSize:12}}>Askıya Al</button>}
+                    {u.status==="rejected"&&<button onClick={()=>approveUser(u)} style={{...btnSt("green"),padding:"7px 13px",fontSize:12,opacity:isKnownUserRole(u.role)?1:0.6,cursor:isKnownUserRole(u.role)?"pointer":"not-allowed"}} disabled={!isKnownUserRole(u.role)}>Aktifleştir</button>}
+                    {u.role&&u.role!=="admin"&&<button onClick={()=>setExpanded(expanded===u.id?null:u.id)} style={{...btnSt("ghost"),padding:"7px 13px",fontSize:12}}>{expanded===u.id?"^ Gizle":"Yetkiler"}</button>}
                   </div>
-                  {expanded===u.id&&u.role!=="admin"&&(
+                  {(u.status==="pending"||u.status==="rejected")&&!u.role&&(
+                    <div style={{fontSize:11,color:C.warn,marginBottom:8}}>
+                      Bu hesabin girisi kapali. Yonetici once yetki tipini secip sonra onay vermelidir.
+                    </div>
+                  )}
+                  {expanded===u.id&&u.role&&u.role!=="admin"&&(
                     <div style={{background:C.surface,borderRadius:10,padding:12,border:`1px solid ${C.border}`}}>
                       <div style={{color:C.muted2,fontSize:11,letterSpacing:.8,textTransform:"uppercase",marginBottom:10,fontWeight:600}}>Kullanıcı Yetkileri</div>
                       {PERMISSIONS.map(p=>{
@@ -5878,7 +5985,7 @@ function Customers({filtersVisible=true}) {
     }
     if(col.id==="actions"){
       return (
-        <td key={col.id} style={{padding:"11px 12px",textAlign:"right"}}>
+        <td key={col.id} onClick={e=>e.stopPropagation()} style={{padding:"11px 12px",textAlign:"right"}}>
           <div style={{display:"inline-flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
             <button onClick={()=>startEdit(c)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
             <button onClick={()=>removeCustomer(c)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
@@ -5990,8 +6097,14 @@ function Customers({filtersVisible=true}) {
                   )}
                   {pagedCustomers.map((c,idx)=>{
                     const rowNo=customerListStart+idx+1;
+                    const isActive=showCustomerModal&&editId===c.id;
                     return (
-                      <tr key={c.id} style={{borderBottom:`1px solid ${C.border}`,background:idx%2===0?C.card:C.surface}}>
+                      <tr
+                        key={c.id}
+                        onClick={()=>startEdit(c)}
+                        title="Kaydi ac"
+                        style={{borderBottom:`1px solid ${C.border}`,background:isActive?(C.accent+"14"):(idx%2===0?C.card:C.surface),cursor:"pointer"}}
+                      >
                         {visibleCustomerTableColumns.map(col=>renderCustomerTableCell(c,col,rowNo))}
                       </tr>
                     );
@@ -6140,6 +6253,23 @@ function MaterialLibrary({filtersVisible=true}) {
       setEditId(null);
       setForm({name:"",code:nextMaterialCode(materials.filter(x=>x.id!==m.id)),density:"",stock:"",type:"raw",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""});
     }
+  }
+  function openMaterialEditor(m){
+    setEditId(m.id);
+    setShowForm(true);
+    setForm({
+      name:m.name||"",
+      code:m.code||"",
+      density:String(m.density??""),
+      stock:String(m.stock??""),
+      type:m.type||"raw",
+      reorderPoint:String(m.reorderPoint??0),
+      safetyStock:String(m.safetyStock??0),
+      leadTimeDays:String(m.leadTimeDays??5),
+      trackingMode:m.trackingMode||"lot",
+      valuationMethod:m.valuationMethod||"fifo",
+      note:m.note||"",
+    });
   }
   async function seedDefaultMaterials(showMessage=true){
     const existing=await window.DB.getAll("materials");
@@ -6316,9 +6446,9 @@ function MaterialLibrary({filtersVisible=true}) {
     }
     if(col.id==="actions"){
       return (
-        <td key={col.id} style={{padding:"11px 12px",textAlign:"right"}}>
+        <td key={col.id} onClick={e=>e.stopPropagation()} style={{padding:"11px 12px",textAlign:"right"}}>
           <div style={{display:"inline-flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
-            <button onClick={()=>{setEditId(m.id);setShowForm(true);setForm({name:m.name||"",code:m.code||"",density:String(m.density??""),stock:String(m.stock??""),type:m.type||"raw",reorderPoint:String(m.reorderPoint??0),safetyStock:String(m.safetyStock??0),leadTimeDays:String(m.leadTimeDays??5),trackingMode:m.trackingMode||"lot",valuationMethod:m.valuationMethod||"fifo",note:m.note||""});}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
+            <button onClick={()=>openMaterialEditor(m)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
             <button onClick={()=>removeMaterial(m)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
           </div>
         </td>
@@ -6437,8 +6567,14 @@ function MaterialLibrary({filtersVisible=true}) {
                   )}
                   {pagedMaterials.map((m,idx)=>{
                     const rowNo=materialListStart+idx+1;
+                    const isActive=showForm&&editId===m.id;
                     return (
-                      <tr key={m.id} style={{borderBottom:`1px solid ${C.border}`,background:idx%2===0?C.card:C.surface}}>
+                      <tr
+                        key={m.id}
+                        onClick={()=>openMaterialEditor(m)}
+                        title="Kaydi ac"
+                        style={{borderBottom:`1px solid ${C.border}`,background:isActive?(C.accent+"14"):(idx%2===0?C.card:C.surface),cursor:"pointer"}}
+                      >
                         {visibleMaterialTableColumns.map(col=>renderMaterialTableCell(m,col,rowNo))}
                       </tr>
                     );
@@ -9201,7 +9337,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     }
     if(col.id==="actions"){
       return (
-        <td key={col.id} style={{padding:"10px 12px"}}>
+        <td key={col.id} onClick={e=>e.stopPropagation()} style={{padding:"10px 12px"}}>
           <div style={{display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
             <button onClick={()=>openEditQuoteModal(qr)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Duzenle</button>
             <button onClick={()=>printQuote(qr)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>PDF</button>
@@ -9468,8 +9604,14 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                     {pagedQuoteRows.map((qr,idx)=>{
                       const rowNo=quoteListStart+idx+1;
                       const quoteNet=(qr.lines||[]).reduce((sum,line)=>sum+lineTotal(line).net,0);
+                      const isActive=showQuoteModal&&quoteEditId===qr.id;
                       return (
-                        <tr key={qr.id} style={{borderBottom:`1px solid ${C.border}`}}>
+                        <tr
+                          key={qr.id}
+                          onClick={()=>openEditQuoteModal(qr)}
+                          title="Kaydi ac"
+                          style={{borderBottom:`1px solid ${C.border}`,background:isActive?(C.accent+"14"):(idx%2===0?C.card:C.surface),cursor:"pointer"}}
+                        >
                           {visibleQuoteTableColumns.map(col=>renderQuoteTableCell(qr,quoteNet,col,rowNo))}
                         </tr>
                       );
@@ -10083,6 +10225,10 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
   const toggleMachine=m=>fv("machines",form.machines.includes(m)?form.machines.filter(x=>x!==m):[...form.machines,m]);
   const canPreview=f=>canFilePreview(f);
+  function openWorkOrderView(order){
+    setPreviewFile(null);
+    setViewOrder(order);
+  }
 
   async function handleFiles(fileList) {
     setUploading(true);
@@ -10311,9 +10457,9 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
     }
     if(col.id==="actions"){
       return (
-        <td key={col.id} style={{padding:"10px 12px"}}>
+        <td key={col.id} onClick={e=>e.stopPropagation()} style={{padding:"10px 12px"}}>
           <div style={{display:"flex",gap:6,justifyContent:"flex-end",alignItems:"center",flexWrap:"wrap"}}>
-            <button onClick={()=>setViewOrder(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Goruntule</button>
+            <button onClick={()=>openWorkOrderView(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Goruntule</button>
             <button onClick={()=>{setForm({code:o.code,name:o.name,partId:o.partId||"",partNo:o.partNo||"",revision:o.revision||"A",customerPartCode:o.customerPartCode||"",partSnapshot:(o.partSnapshot&&typeof o.partSnapshot==="object")?o.partSnapshot:null,customerId:o.customerId||"",material:o.material||"",qty:String(o.qty??"1"),dueDate:o.dueDate||todayStr(),priority:o.priority||"normal",dependencies:o.dependencies||[],partSec:o.partSec,machines:o.machines||[],notes:o.notes||"",files:o.files||[],status:o.status||"planned",sourceType:o.sourceType||"manual"});setEditId(o.id);setShowForm(true);}} style={{...btnSt(),padding:"5px 8px",fontSize:11}}>Duzenle</button>
             <button onClick={()=>duplicateWorkOrder(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Kopyala</button>
             <select style={{...inputSt,width:130,padding:"5px 8px",fontSize:11}} value={o.status||"passive"} onChange={e=>setOrderStatus(o,e.target.value)}>
@@ -10612,8 +10758,14 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
                     const usage=safeNum(usageCountByOrder[o.id]||usageCountByOrder[o.code]);
                     const produced=safeNum(productionByOrder[o.code]?.total);
                     const priorityLabel=(PRIORITY_OPTIONS.find(p=>p.id===o.priority)||{}).label||"Normal";
+                    const isActive=viewOrder?.id===o.id;
                     return (
-                      <tr key={o.id} style={{borderBottom:`1px solid ${C.border}`,opacity:(o.status==="passive"||o.status==="liquidation")?0.6:1}}>
+                      <tr
+                        key={o.id}
+                        onClick={()=>openWorkOrderView(o)}
+                        title="Kaydi goruntule"
+                        style={{borderBottom:`1px solid ${C.border}`,opacity:(o.status==="passive"||o.status==="liquidation")?0.6:1,background:isActive?(C.accent+"14"):"transparent",cursor:"pointer"}}
+                      >
                         {visibleWorkOrderTableColumns.map(col=>renderWorkOrderTableCell(o,usage,produced,priorityLabel,col,rowNo))}
                       </tr>
                     );
@@ -13717,14 +13869,19 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
                 {customReports.map(rep=>{
                   const isActive=rep.id===selectedCustomReportId;
                   return (
-                    <div key={rep.id} style={{display:"grid",gridTemplateColumns:"1fr auto",gap:8,alignItems:"center",padding:"8px 10px",border:`1px solid ${isActive?C.accent+"66":C.border}`,borderRadius:10,background:isActive?C.brandTint:C.surface}}>
+                    <div
+                      key={rep.id}
+                      onClick={()=>openReportDetailPage(rep.id)}
+                      title="Raporu ac"
+                      style={{display:"grid",gridTemplateColumns:"1fr auto",gap:8,alignItems:"center",padding:"8px 10px",border:`1px solid ${isActive?C.accent+"66":C.border}`,borderRadius:10,background:isActive?C.brandTint:C.surface,cursor:"pointer"}}
+                    >
                       <div style={{minWidth:0}}>
                         <div style={{fontWeight:700,fontSize:13,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{rep.name||"Adsiz Rapor"}</div>
                         <div style={{fontSize:11,color:C.muted2,marginTop:2}}>
                           {(REPORT_SOURCE_DEFS[rep.source]?.label)||rep.source||"-"} · {CHART_TYPE_LABELS[rep.chartType]||rep.chartType||"-"} · {String(rep.aggregation||"").toUpperCase()||"-"}
                         </div>
                       </div>
-                      <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                      <div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
                         <button onClick={()=>openReportDetailPage(rep.id)} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11}}>Ac</button>
                         <button onClick={()=>startEditCustomReport(rep)} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11}}>Duzenle</button>
                         <button onClick={()=>addReportToDashboard(rep)} style={{...btnSt("primary"),padding:"6px 9px",fontSize:11}}>Panele Ekle</button>
@@ -17192,7 +17349,7 @@ function MRPDashboard({
   const userLabel=String(currentUser?.fullName||"").trim();
   const layoutBadge=layoutMode==="desktop"?"DESKTOP":(layoutMode==="tablet"?"TABLET":"MOBIL");
   const dashboardHeroGridColumns=layoutMode==="desktop"
-    ? "minmax(240px,1fr) minmax(520px,860px) auto"
+    ? "minmax(240px,1fr) minmax(280px,500px) auto"
     : (layoutMode==="tablet"?"minmax(0,1fr) auto":"1fr");
   const dashboardSearchCellStyle=layoutMode==="desktop"
     ? {gridColumn:"2"}
@@ -17205,7 +17362,7 @@ function MRPDashboard({
 
   return (
     <div style={{padding:"0 0 12px",display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{position:"sticky",top:8,zIndex:24,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:dashboardSearchOpen?"visible":"hidden",boxShadow:commandBarTone.heroShadow}}>
+      <div style={{position:"sticky",top:8,zIndex:24,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:commandBarTone.heroShadow}}>
         <div style={{display:"grid",gridTemplateColumns:dashboardHeroGridColumns,alignItems:"center",gap:12,padding:"12px 14px",background:commandBarTone.heroBg}}>
           <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
             <div style={{width:40,height:40,borderRadius:10,background:"rgba(255,255,255,.16)",border:`1px solid ${commandBarTone.heroChipBorder}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
@@ -21081,7 +21238,7 @@ function App() {
       const session=window.Session.get();
       if(session){
         const u=await window.DB.getDoc("users",session.username);
-        if(u&&u.status==="active"){
+        if(u&&u.status==="active"&&isKnownUserRole(u.role)){
           setCurrentUser(u);
           window.Session.touch();
         }
@@ -21916,7 +22073,7 @@ function App() {
   ];
   const appCommandBarTone=buildTopBarTone(topBarAccentColor,themeMode);
   const appHeroGridColumns=layoutMode==="desktop"
-    ? "minmax(220px,1fr) minmax(520px,860px) auto"
+    ? "minmax(220px,1fr) minmax(280px,500px) auto"
     : (layoutMode==="tablet"?"minmax(0,1fr) auto":"1fr");
   const appSearchCellStyle=layoutMode==="desktop"
     ? {gridColumn:"2"}
@@ -22041,7 +22198,7 @@ function App() {
     }
   };
   const topBar=(
-    <div className="mrp-topbar" style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:globalSearchOpen?"visible":"hidden",boxShadow:appCommandBarTone.heroShadow}}>
+    <div className="mrp-topbar" style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:appCommandBarTone.heroShadow}}>
       <div style={{display:"grid",gridTemplateColumns:appHeroGridColumns,alignItems:"center",gap:12,padding:"12px 14px",background:appCommandBarTone.heroBg}}>
         <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
           <div style={{width:40,height:40,borderRadius:10,background:"rgba(255,255,255,.16)",border:`1px solid ${appCommandBarTone.heroChipBorder}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
