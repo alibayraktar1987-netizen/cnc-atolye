@@ -13947,7 +13947,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
           onDragOver={e=>{if(boardDragActive) e.preventDefault();}}
           onDrop={e=>handleBoardDrop(e,{targetMachine})}
           style={{
-            minHeight:compact?118:142,
+            minHeight:compact?98:120,
             display:"flex",
             alignItems:"center",
             justifyContent:"center",
@@ -13984,7 +13984,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
         onClick={()=>setSelectedPlan(card.seedPlan||segment)}
         style={{background:card.tone.bg,border:`1px solid ${isSelected?card.tone.text:card.tone.border}`,borderRadius:12,overflow:"hidden",cursor:"pointer",boxShadow:isSelected?`0 0 0 1px ${card.tone.text}66`:"none",display:"flex",flexDirection:"column",opacity:isDragging?0.56:1}}
       >
-        <div style={{background:card.tone.header,color:"#fff",padding:"8px 10px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+        <div style={{background:card.tone.header,color:"#fff",padding:"6px 9px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:7}}>
           <div style={{minWidth:0}}>
             <div style={{fontWeight:800,fontSize:13,fontFamily:"monospace",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.orderCode||"-"}</div>
             <div style={{fontSize:11,opacity:.95,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.op?.code||"Operasyon"}{card.op?.name?` · ${card.op.name}`:""}</div>
@@ -13993,25 +13993,25 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
             {segment?segmentDurationLabel(segment):"-"}
           </div>
         </div>
-        <div style={{padding:"10px 10px 9px"}}>
+        <div style={{padding:"7px 9px 7px"}}>
           <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.orderName||"-"}</div>
           <div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.customer||"-"}</div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginTop:8}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:7,marginTop:6}}>
             <div style={{fontSize:19,fontWeight:800,color:card.tone.text,lineHeight:1}}>{card.qty}</div>
             <div style={{fontSize:11,color:dueTone,fontWeight:700}}>Termin: {card.due||"-"}</div>
           </div>
-          <div style={{fontSize:11,color:C.muted2,marginTop:4}}>{card.spanLabel}</div>
+          <div style={{fontSize:11,color:C.muted2,marginTop:3}}>{card.spanLabel}</div>
           {card.op&&(
-            <div style={{marginTop:6}}>
+            <div style={{marginTop:5}}>
               <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"2px 8px",borderRadius:999,border:`1px solid ${card.op.color}66`,background:card.op.color+"22",color:card.op.color,fontSize:10,fontWeight:700}}>
                 {card.op.icon||"KS"} {card.op.code?`${card.op.code} - `:""}{card.op.name}
               </span>
             </div>
           )}
           {!compact&&segment&&(
-            <div style={{display:"flex",gap:6,marginTop:8}}>
-              <button onClick={e=>{e.stopPropagation();startEdit(segment);}} style={{...btnSt("ghost"),padding:"4px 8px",fontSize:11}}>Duzenle</button>
-              <button onClick={e=>{e.stopPropagation();removePlan(segment);}} style={{...btnSt("danger"),padding:"4px 8px",fontSize:11}}>Sil</button>
+            <div style={{display:"flex",gap:6,marginTop:6}}>
+              <button onClick={e=>{e.stopPropagation();startEdit(segment);}} style={{...btnSt("ghost"),padding:"3px 7px",fontSize:11}}>Duzenle</button>
+              <button onClick={e=>{e.stopPropagation();removePlan(segment);}} style={{...btnSt("danger"),padding:"3px 7px",fontSize:11}}>Sil</button>
             </div>
           )}
         </div>
@@ -14242,7 +14242,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
               </div>
             )}
             {ordersToPlan.length>0&&(
-              <div style={{display:"flex",flexDirection:"column",gap:7,maxHeight:190,overflowY:"auto",paddingRight:2}}>
+              <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:190,overflowY:"auto",paddingRight:2}}>
                 {ordersToPlan.map(order=>{
                   const pMeta=PRIORITY_OPTIONS.find(p=>p.id===order.priority)||{label:(order.priority||"Normal"),color:C.muted2};
                   const statusMeta=getOrderStatusMeta(order.status||"planned");
@@ -14262,7 +14262,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                         setDragBoardSegmentId("");
                       }}
                       onDragEnd={()=>{if(dragEnabled) setDragBoardOrderId("");}}
-                      style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 9px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",cursor:dragEnabled?"grab":"default",opacity:dragBoardOrderId===order.id?0.58:1}}
+                      style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"6px 8px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:7,flexWrap:"wrap",cursor:dragEnabled?"grab":"default",opacity:dragBoardOrderId===order.id?0.58:1}}
                     >
                       <div style={{minWidth:210,flex:1}}>
                         <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
@@ -14271,10 +14271,10 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                           <Badge label={statusMeta.label||"-"} color={statusMeta.color||C.muted2}/>
                           <Badge label={isPlanned?"Planli":"Planlanmamis"} color={isPlanned?C.accent:C.warn}/>
                         </div>
-                        <div style={{fontSize:12,color:C.text,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                        <div style={{fontSize:12,color:C.text,marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
                           {order.name||"-"}{order.customerName?` · ${order.customerName}`:""}
                         </div>
-                        <div style={{fontSize:11,color:C.muted2,marginTop:2}}>
+                        <div style={{fontSize:11,color:C.muted2,marginTop:1}}>
                           Termin: {order.dueDate||"-"} · Tezgah: {Array.isArray(order.machines)&&order.machines.length>0?order.machines.join(", "):"-"}
                         </div>
                       </div>
@@ -14282,21 +14282,21 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                         <button
                           onClick={()=>quickPlanToday(order)}
                           disabled={isPlanned}
-                          style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,opacity:isPlanned?0.5:1,cursor:isPlanned?"not-allowed":"pointer"}}
+                          style={{...btnSt("ghost"),padding:"4px 8px",fontSize:12,opacity:isPlanned?0.5:1,cursor:isPlanned?"not-allowed":"pointer"}}
                         >
                           Bugun
                         </button>
                         <button
                           onClick={()=>openWeekPlanModalForOrder(order)}
                           disabled={isPlanned}
-                          style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,opacity:isPlanned?0.5:1,cursor:isPlanned?"not-allowed":"pointer"}}
+                          style={{...btnSt("ghost"),padding:"4px 8px",fontSize:12,opacity:isPlanned?0.5:1,cursor:isPlanned?"not-allowed":"pointer"}}
                         >
                           Bu Hafta
                         </button>
                         <button
                           onClick={()=>openPlanModalForOrder(order)}
                           disabled={isPlanned}
-                          style={{...btnSt("primary"),padding:"6px 10px",fontSize:12,opacity:isPlanned?0.5:1,cursor:isPlanned?"not-allowed":"pointer"}}
+                          style={{...btnSt("primary"),padding:"4px 8px",fontSize:12,opacity:isPlanned?0.5:1,cursor:isPlanned?"not-allowed":"pointer"}}
                         >
                           Planla
                         </button>
