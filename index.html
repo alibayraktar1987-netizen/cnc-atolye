@@ -4291,10 +4291,6 @@ function ToolStock({currentUser,filtersVisible=true}) {
 
   return (
     <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
-      <div style={{display:"flex",justifyContent:"flex-start",alignItems:"center",marginBottom:12,gap:8,flexWrap:"wrap"}}>
-        <div style={{fontWeight:700,color:C.text}}>Takim Stogu</div>
-      </div>
-
       {showForm&&isAdmin&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.62)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:70,padding:14}} onClick={closeToolForm}>
           <div style={{width:"100%",maxWidth:980,maxHeight:"92vh",overflowY:"auto",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}} onClick={e=>e.stopPropagation()}>
@@ -4460,6 +4456,8 @@ function Customers({filtersVisible=true}) {
   const [contactFilter,setContactFilter]=useState("all");
   const [updatedDateFrom,setUpdatedDateFrom]=useState("");
   const [updatedDateTo,setUpdatedDateTo]=useState("");
+  const [customerRowsPerPage,setCustomerRowsPerPage]=useState(10);
+  const [customerListPageIdx,setCustomerListPageIdx]=useState(1);
   const [loading,setLoading]=useState(true);
   const customerListPanelRef=useRef(null);
   const {
@@ -4542,6 +4540,14 @@ function Customers({filtersVisible=true}) {
     if(sortMode==="code_desc") return String(b.code||"").localeCompare(String(a.code||""),"tr");
     return String(a.name||"").localeCompare(String(b.name||""),"tr");
   });
+  const customerTotalPages=Math.max(1,Math.ceil(sortedCustomers.length/Math.max(1,customerRowsPerPage)));
+  useEffect(()=>{
+    setCustomerListPageIdx(1);
+  },[search,contactFilter,updatedDateFrom,updatedDateTo,sortMode,customerRowsPerPage]);
+  useEffect(()=>{
+    setCustomerListPageIdx(prev=>Math.max(1,Math.min(prev,customerTotalPages)));
+  },[customerTotalPages]);
+  const pagedCustomers=sortedCustomers.slice((customerListPageIdx-1)*Math.max(1,customerRowsPerPage),(customerListPageIdx-1)*Math.max(1,customerRowsPerPage)+Math.max(1,customerRowsPerPage));
   const contactFilterCounts={
     all:customers.length,
     with_contact:customers.filter(row=>hasContactInfo(row)).length,
@@ -4763,7 +4769,7 @@ function Customers({filtersVisible=true}) {
           </div>
         )}
         <div style={customerListColumnStyle}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"flex-start"}}>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <TableColumnEditor
               title="Musteri Listesi"
               columns={customerTableColumns}
@@ -4771,6 +4777,18 @@ function Customers({filtersVisible=true}) {
               onMove={moveCustomerTableColumn}
               onReset={resetCustomerTableColumns}
             />
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginLeft:"auto"}}>
+              <div style={{fontSize:12,color:C.muted2}}>Gosterilen Kayit: {pagedCustomers.length} / {sortedCustomers.length}</div>
+              <ListRowPager
+                rowsPerPage={customerRowsPerPage}
+                page={customerListPageIdx}
+                pageCount={customerTotalPages}
+                onRowsPerPageChange={setCustomerRowsPerPage}
+                onPrev={()=>setCustomerListPageIdx(p=>Math.max(1,p-1))}
+                onNext={()=>setCustomerListPageIdx(p=>Math.min(customerTotalPages,p+1))}
+                options={[10,20]}
+              />
+            </div>
           </div>
 
           <div style={customerTableCardStyle}>
@@ -4793,7 +4811,7 @@ function Customers({filtersVisible=true}) {
                       </td>
                     </tr>
                   )}
-                  {sortedCustomers.map((c,idx)=>(
+                  {pagedCustomers.map((c,idx)=>(
                     <tr key={c.id} style={{borderBottom:`1px solid ${C.border}`,background:idx%2===0?C.card:C.surface}}>
                       {visibleCustomerTableColumns.map(col=>renderCustomerTableCell(c,col))}
                     </tr>
@@ -5129,13 +5147,6 @@ function MaterialLibrary({filtersVisible=true}) {
 
   return (
     <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-        <div style={{fontWeight:700,color:C.text}}>Malzeme Kutuphanesi</div>
-        <div style={{display:"flex",gap:8}}>
-          <button onClick={()=>{if(showForm){setShowForm(false);setEditId(null);setForm({name:"",code:nextMaterialCode(),density:"",stock:"",type:"raw",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""});}else{setEditId(null);setForm({name:"",code:nextMaterialCode(),density:"",stock:"",type:"raw",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""});setShowForm(true);}}} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>{showForm?"Kapat":"+ Yeni Ekle"}</button>
-        </div>
-      </div>
-
       {showForm&&(
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
@@ -5808,12 +5819,14 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
       {partPage==="list"&&(
         <>
-          <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-              {selectedPart&&<Badge label={`Secili: ${selectedPart.partNo}`} color={C.accent}/>}
-              {selectedPart&&<button onClick={()=>openEditPartModal(selectedPart)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11}}>Seciliyi Duzenle</button>}
+          {selectedPart&&(
+            <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <Badge label={`Secili: ${selectedPart.partNo}`} color={C.accent}/>
+                <button onClick={()=>openEditPartModal(selectedPart)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11}}>Seciliyi Duzenle</button>
+              </div>
             </div>
-          </div>
+          )}
           <div ref={partListPanelRef} style={partSplitWrapStyle}>
             {filtersVisible&&(
               <div style={partFilterPanelStyle}>
@@ -19141,7 +19154,13 @@ function App() {
   const layoutMode=isDesktop?"desktop":(isTablet?"tablet":"mobile");
   const isMobile=layoutMode==="mobile";
   const contentMaxWidth=layoutMode==="desktop"?1760:(layoutMode==="tablet"?1320:760);
-  const shellPadding=layoutMode==="desktop"?"12px 14px 20px":(layoutMode==="tablet"?"10px 12px 16px":"8px 8px 0");
+  const contentTopGap=12;
+  const shellPadding=layoutMode==="desktop"
+    ? `${contentTopGap}px 14px 20px`
+    : (layoutMode==="tablet"
+      ? `${contentTopGap}px 12px 16px`
+      : `${contentTopGap}px 8px 0`);
+  const mobileContentPadding=`${contentTopGap}px 8px 76px`;
   const headerPadding=layoutMode==="desktop"?"12px 14px":(layoutMode==="tablet"?"10px 12px":"8px 8px");
   const desktopSidebarW=312;
   const desktopSidebarCollapsedW=86;
@@ -19686,7 +19705,7 @@ function App() {
               {topBar}
             </div>
           )}
-          <div style={{flex:1,minHeight:0,overflowY:"auto",overscrollBehavior:"none",paddingBottom:76}}>
+          <div style={{flex:1,minHeight:0,overflowY:"auto",overscrollBehavior:"none",padding:mobileContentPadding}}>
             <div className="mrp-view-slot">
               <div className="mrp-view-slot-inner">
                 {activeView}
