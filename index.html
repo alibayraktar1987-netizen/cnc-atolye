@@ -15743,8 +15743,9 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       status:"planned",
       createdBy:currentUser.id,
     };
-    if(targetSegmentId){
-      const targetSeg=allSegmentById[targetSegmentId]||null;
+    const targetSegId=targetSegmentId||(getMachineTailSegment(targetMachine)?.id||"");
+    if(targetSegId){
+      const targetSeg=allSegmentById[targetSegId]||null;
       if(targetSeg&&targetSeg.machine===targetMachine){
         const machineSpecs=buildMachineQueueSpecs(targetMachine);
         const targetToken=getSegmentToken(targetSeg);
@@ -15771,8 +15772,8 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       }
     }
     let desiredDate=todayStr();
-    if(targetSegmentId){
-      const targetSeg=allSegmentById[targetSegmentId]||null;
+    if(targetSegId){
+      const targetSeg=allSegmentById[targetSegId]||null;
       if(targetSeg){
         desiredDate=addDays(targetSeg.endDate||targetSeg.startDate||todayStr(),1);
       }
@@ -16291,9 +16292,26 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                             {renderBoardSegmentCard(card,{compact:true,targetMachine:row.machine})}
                           </div>
                         ))}
-                        {row.nextCards.length===0&&(
-                          <div>{renderBoardSegmentCard(null,{compact:true,targetMachine:row.machine})}</div>
-                        )}
+                        <div
+                          onDragOver={allowBoardDrop}
+                          onDrop={e=>handleBoardDrop(e,{targetMachine:row.machine})}
+                          style={{
+                            minHeight:82,
+                            display:"flex",
+                            alignItems:"center",
+                            justifyContent:"center",
+                            border:`1px dashed ${boardDragActive?C.accent:C.border}`,
+                            borderRadius:11,
+                            background:boardDragActive?(C.accent+"11"):C.surface,
+                            color:boardDragActive?C.accent:C.muted2,
+                            fontSize:11,
+                            fontWeight:700,
+                            textAlign:"center",
+                            padding:"8px 10px",
+                          }}
+                        >
+                          {boardDragActive?"Siradaki kuyruga birak":"Siraya eklemek icin buraya surukle"}
+                        </div>
                       </div>
                     </div>
                   );
