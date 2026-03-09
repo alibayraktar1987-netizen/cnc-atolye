@@ -2,20 +2,20 @@
   --bg:#F4F7F8;
   --card:#FEFFFF;
   --surface:#FEFFFF;
-  --accent:#57BE90;
-  --text:#015249;
-  --muted:#5F8B91;
+  --accent:#f05a00;
+  --text:#0b0f1c;
+  --muted:#5f6b7c;
   --border:#D9E0E3;
   --input-border:#C8D3D8;
-  --hover:#EEF4F6;
-  --shadow:0 10px 26px #0152491A;
+  --hover:#FFF1E8;
+  --shadow:0 10px 26px #f05a0024;
 }
 @media (prefers-color-scheme: dark){
   :root{
     --bg:#16181C;
     --card:#272D35;
     --surface:#232830;
-    --accent:#8FA2B6;
+    --accent:#f05a00;
     --text:#ECEFF3;
     --muted:#B9C0CA;
     --border:#3A414C;

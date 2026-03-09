@@ -578,19 +578,19 @@ const THEME_PRESETS = {
   light:{
     bg:"#F4F7F8", bgAlt:"#FEFFFF",
     surface:"#FEFFFF", surface2:"#F0F4F6", card:"#FEFFFF", border:"#D9E0E3",
-    accent:"#57BE90", accentDim:"#E4F4EE", brandTint:"#E8F6F8",
-    green:"#57BE90", greenDim:"#E4F4EE",
-    red:"#015249", redDim:"#DDEAE8",
+    accent:"#f05a00", accentDim:"#FFE7DA", brandTint:"#FFF1E8",
+    green:"#f05a00", greenDim:"#FFE7DA",
+    red:"#dc2626", redDim:"#fee2e2",
     warn:"#79C9D4", warnDim:"#E6F4F7",
     purple:"#79C9D4",
-    text:"#015249", muted:"#5F8B91", muted2:"#A5A5AF",
+    text:"#0b0f1c", muted:"#5f6b7c", muted2:"#98a2b3",
   },
   dark:{
     bg:"#16181C", bgAlt:"#1C2025",
     surface:"#232830", surface2:"#1E232A", card:"#272D35", border:"#3A414C",
-    accent:"#57BE90", accentDim:"#E4F4EE", brandTint:"#E8F6F8",
-    green:"#57BE90", greenDim:"#E4F4EE",
-    red:"#015249", redDim:"#DDEAE8",
+    accent:"#f05a00", accentDim:"#FFE7DA", brandTint:"#FFF1E8",
+    green:"#f05a00", greenDim:"#FFE7DA",
+    red:"#ef4444", redDim:"#3d1d1d",
     warn:"#79C9D4", warnDim:"#E6F4F7",
     purple:"#79C9D4",
     text:"#ECEFF3", muted:"#B9C0CA", muted2:"#8D95A1",
@@ -599,16 +599,16 @@ const THEME_PRESETS = {
 const C = { ...THEME_PRESETS.light };
 const CORPORATE_CHART_PALETTE = [
   "#79C9D4",
-  "#57BE90",
-  "#015249",
+  "#f05a00",
+  "#0b0f1c",
   "#A5A5AF",
   "#66C4CF",
-  "#4AB587",
-  "#0C6B60",
+  "#f47a2f",
+  "#9a3a00",
   "#B6BDC5",
   "#8FD6DE",
-  "#6EC9A0",
-  "#2B7A73",
+  "#f8a267",
+  "#7a2f00",
   "#D9E0E6",
 ];
 function applyThemeMode(mode){
@@ -792,7 +792,7 @@ const DEFAULT_QUOTE_TEMPLATE = {
   documentTitleQuote:"Proforma Teklif",
   documentTitleOrder:"Siparis Onay Formu",
   footerNote:"Bu teklif belirtilen sure boyunca gecerlidir.",
-  accentColor:"#57BE90",
+  accentColor:"#f05a00",
   showLogo:false,
 };
 const DEFAULT_SALES_CURRENCIES = {
@@ -826,8 +826,8 @@ function normalizeSalesCurrencies(raw){
 }
 const DEFAULT_SUPPLIER_GROUPS = {
   list:[
-    {id:"malzeme",name:"Malzeme Satanlar",color:"#57BE90",sortOrder:10},
-    {id:"takim",name:"Takim Satanlar",color:"#015249",sortOrder:20},
+    {id:"malzeme",name:"Malzeme Satanlar",color:"#f05a00",sortOrder:10},
+    {id:"takim",name:"Takim Satanlar",color:"#9a3a00",sortOrder:20},
   ],
 };
 function normalizeSupplierGroups(raw){
@@ -849,7 +849,7 @@ function normalizeSupplierGroups(raw){
     return {
       id,
       name,
-      color:normalizeHexColor(row?.color,fallback?.color||"#57BE90"),
+      color:normalizeHexColor(row?.color,fallback?.color||"#f05a00"),
       sortOrder:Math.max(1,safeNum(row?.sortOrder)||((idx+1)*10)),
     };
   }).sort((a,b)=>{
@@ -921,18 +921,18 @@ function normalizeMenuVisibilityConfig(raw){
   return {hiddenTabs};
 }
 const DEFAULT_ROUTING_OPERATION_TYPES = [
-  { id:"op10", code:"OP-10", name:"Kesim ve Hazırlık", icon:"KS", color:"#57BE90", defaultSetupSec:300, defaultCycleSec:60, sortOrder:10 },
+  { id:"op10", code:"OP-10", name:"Kesim ve Hazırlık", icon:"KS", color:"#f05a00", defaultSetupSec:300, defaultCycleSec:60, sortOrder:10 },
   { id:"op20", code:"OP-20", name:"Kaba İşleme", icon:"KB", color:"#79C9D4", defaultSetupSec:240, defaultCycleSec:90, sortOrder:20 },
-  { id:"op30", code:"OP-30", name:"Finiş İşleme", icon:"FN", color:"#015249", defaultSetupSec:180, defaultCycleSec:80, sortOrder:30 },
+  { id:"op30", code:"OP-30", name:"Finiş İşleme", icon:"FN", color:"#9a3a00", defaultSetupSec:180, defaultCycleSec:80, sortOrder:30 },
   { id:"op40", code:"OP-40", name:"Delik Delme ve Kılavuz", icon:"DL", color:"#A5A5AF", defaultSetupSec:120, defaultCycleSec:45, sortOrder:40 },
-  { id:"op50", code:"OP-50", name:"Ölçüm ve Kontrol", icon:"QC", color:"#4AB587", defaultSetupSec:90, defaultCycleSec:30, sortOrder:50 },
+  { id:"op50", code:"OP-50", name:"Ölçüm ve Kontrol", icon:"QC", color:"#f47a2f", defaultSetupSec:90, defaultCycleSec:30, sortOrder:50 },
 ];
 const OPERATION_ICON_OPTIONS = ["KS","KB","FN","DL","QC","TR","FR","MZ","PN","AS"];
 const LEGACY_OPERATION_ICON_MAP = {
   "?":"KS",
   "??":"KS",
 };
-function normalizeHexColor(value,fallback="#57BE90"){
+function normalizeHexColor(value,fallback="#f05a00"){
   const raw=String(value||"").trim();
   if(/^#?[0-9a-fA-F]{6}$/.test(raw)) return raw.startsWith("#")?raw:`#${raw}`;
   return fallback;
@@ -956,7 +956,7 @@ function normalizeRoutingOperationTypes(raw){
       code,
       name,
       icon:normalizeOperationIcon(row?.icon,fallback?.icon||"KS"),
-      color:normalizeHexColor(row?.color,fallback?.color||"#57BE90"),
+      color:normalizeHexColor(row?.color,fallback?.color||"#f05a00"),
       defaultSetupSec:Math.max(0,safeNum(row?.defaultSetupSec)),
       defaultCycleSec:Math.max(0,safeNum(row?.defaultCycleSec)),
       sortOrder:Math.max(1,safeNum(row?.sortOrder)||((idx+1)*10)),
@@ -2614,7 +2614,7 @@ function RoutingOperationTypeSettings({currentUser}) {
     code:"",
     name:"",
     icon:DEFAULT_ROUTING_OPERATION_TYPES[0]?.icon||"KS",
-    color:DEFAULT_ROUTING_OPERATION_TYPES[0]?.color||"#57BE90",
+    color:DEFAULT_ROUTING_OPERATION_TYPES[0]?.color||"#f05a00",
     defaultSetupSec:"0",
     defaultCycleSec:"0",
   });
@@ -2632,7 +2632,7 @@ function RoutingOperationTypeSettings({currentUser}) {
       code:"",
       name:"",
       icon:DEFAULT_ROUTING_OPERATION_TYPES[0]?.icon||"KS",
-      color:DEFAULT_ROUTING_OPERATION_TYPES[0]?.color||"#57BE90",
+      color:DEFAULT_ROUTING_OPERATION_TYPES[0]?.color||"#f05a00",
       defaultSetupSec:"0",
       defaultCycleSec:"0",
     });
@@ -2729,7 +2729,7 @@ function RoutingOperationTypeSettings({currentUser}) {
             <span style={labelSt}>Renk</span>
             <div style={{display:"flex",gap:6,alignItems:"center"}}>
               <input style={{...inputSt,padding:0,width:40,height:36,flex:"0 0 auto"}} type="color" value={normalizeHexColor(form.color)} onChange={e=>setForm(f=>({...f,color:e.target.value}))}/>
-              <input style={{...inputSt,padding:"9px 8px",fontSize:12}} value={form.color} onChange={e=>setForm(f=>({...f,color:e.target.value}))} placeholder="#57BE90"/>
+              <input style={{...inputSt,padding:"9px 8px",fontSize:12}} value={form.color} onChange={e=>setForm(f=>({...f,color:e.target.value}))} placeholder="#f05a00"/>
             </div>
           </div>
           <div><span style={labelSt}>Vars. Kurulum(sn)</span><input style={inputSt} type="number" min="0" value={form.defaultSetupSec} onChange={e=>setForm(f=>({...f,defaultSetupSec:e.target.value}))}/></div>
@@ -2859,7 +2859,7 @@ function SupplierGroupSettings({currentUser}) {
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
   const [newName,setNewName]=useState("");
-  const [newColor,setNewColor]=useState("#57BE90");
+  const [newColor,setNewColor]=useState("#f05a00");
 
   const load=useCallback(async()=>{
     const doc=await window.DB.getDoc("config","supplierGroups");
@@ -2905,7 +2905,7 @@ function SupplierGroupSettings({currentUser}) {
         id=`${base}_${seq}`;
         seq+=1;
       }
-      return [...prev,{id,name,color:normalizeHexColor(newColor,"#57BE90"),sortOrder:(prev.length+1)*10}];
+      return [...prev,{id,name,color:normalizeHexColor(newColor,"#f05a00"),sortOrder:(prev.length+1)*10}];
     });
     setNewName("");
   }
@@ -2913,7 +2913,7 @@ function SupplierGroupSettings({currentUser}) {
     const normalized=normalizeSupplierGroups({list:rows.map((row,idx)=>({
       ...row,
       name:String(row.name||"").trim()||`Grup ${idx+1}`,
-      color:normalizeHexColor(row.color,"#57BE90"),
+      color:normalizeHexColor(row.color,"#f05a00"),
       sortOrder:(idx+1)*10,
     }))});
     setSaving(true);
@@ -2935,7 +2935,7 @@ function SupplierGroupSettings({currentUser}) {
         <div style={{fontSize:12,color:C.muted2,marginBottom:10}}>Satin alma modulu icin grup tanimlari (ornek: malzeme, takim).</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 140px auto",gap:8,marginBottom:10}}>
           <input style={inputSt} value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Yeni grup adi"/>
-          <input style={{...inputSt,padding:0,height:38}} type="color" value={normalizeHexColor(newColor,"#57BE90")} onChange={e=>setNewColor(e.target.value)}/>
+          <input style={{...inputSt,padding:0,height:38}} type="color" value={normalizeHexColor(newColor,"#f05a00")} onChange={e=>setNewColor(e.target.value)}/>
           <button onClick={addRow} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>+ Ekle</button>
         </div>
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
@@ -2947,8 +2947,8 @@ function SupplierGroupSettings({currentUser}) {
             <div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 140px 180px",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
               <input style={{...inputSt,padding:"7px 8px",fontSize:12}} value={row.name||""} onChange={e=>updateRow(row.id,"name",e.target.value)} placeholder="Grup adi"/>
               <div style={{display:"grid",gridTemplateColumns:"40px 1fr",gap:6}}>
-                <input style={{...inputSt,padding:0,height:34}} type="color" value={normalizeHexColor(row.color,"#57BE90")} onChange={e=>updateRow(row.id,"color",e.target.value)}/>
-                <input style={{...inputSt,padding:"7px 8px",fontSize:12}} value={row.color||"#57BE90"} onChange={e=>updateRow(row.id,"color",e.target.value)} placeholder="#57BE90"/>
+                <input style={{...inputSt,padding:0,height:34}} type="color" value={normalizeHexColor(row.color,"#f05a00")} onChange={e=>updateRow(row.id,"color",e.target.value)}/>
+                <input style={{...inputSt,padding:"7px 8px",fontSize:12}} value={row.color||"#f05a00"} onChange={e=>updateRow(row.id,"color",e.target.value)} placeholder="#f05a00"/>
               </div>
               <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
                 <button onClick={()=>moveRow(row.id,-1)} style={{...btnSt("ghost"),padding:"4px 7px",fontSize:11}} disabled={saving||idx===0}>^</button>
@@ -3272,7 +3272,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
             <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:8}}>
                 <div><span style={labelSt}>Sirket Adi</span><input style={inputSt} value={quoteTemplate.companyName} onChange={e=>setTemplateField("companyName",e.target.value)} placeholder="Firma adi"/></div>
-                <div><span style={labelSt}>Renk</span><div style={{display:"flex",gap:8}}><input style={{...inputSt,padding:0,width:48,height:36}} type="color" value={normalizeQuoteTemplate(quoteTemplate).accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)}/><input style={{...inputSt,flex:1}} value={quoteTemplate.accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)} placeholder="#57BE90"/></div></div>
+                <div><span style={labelSt}>Renk</span><div style={{display:"flex",gap:8}}><input style={{...inputSt,padding:0,width:48,height:36}} type="color" value={normalizeQuoteTemplate(quoteTemplate).accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)}/><input style={{...inputSt,flex:1}} value={quoteTemplate.accentColor} onChange={e=>setTemplateField("accentColor",e.target.value)} placeholder="#f05a00"/></div></div>
                 <div><span style={labelSt}>Adres</span><input style={inputSt} value={quoteTemplate.companyAddress} onChange={e=>setTemplateField("companyAddress",e.target.value)} placeholder="Adres"/></div>
                 <div><span style={labelSt}>Telefon</span><input style={inputSt} value={quoteTemplate.companyPhone} onChange={e=>setTemplateField("companyPhone",e.target.value)} placeholder="+90 ..."/></div>
                 <div><span style={labelSt}>E-Posta</span><input style={inputSt} value={quoteTemplate.companyEmail} onChange={e=>setTemplateField("companyEmail",e.target.value)} placeholder="mail@firma.com"/></div>
@@ -13051,7 +13051,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     if(!firstOp) return null;
     const type=firstOp.operationTypeId?operationTypeById[firstOp.operationTypeId]:null;
     const icon=String(firstOp.operationIcon||type?.icon||"KS").trim()||"KS";
-    const color=normalizeHexColor(firstOp.operationColor||type?.color||"#57BE90");
+    const color=normalizeHexColor(firstOp.operationColor||type?.color||"#f05a00");
     const code=String(firstOp.operationCode||type?.code||"").trim();
     const name=String(firstOp.operationName||type?.name||firstOp.operation||"Operasyon").trim()||"Operasyon";
     return {icon,color,code,name,machine:firstOp.machine||""};
@@ -20836,6 +20836,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
 </body>
 </html>
+
 
 
 
