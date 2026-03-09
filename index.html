@@ -726,6 +726,53 @@ function normalizeSupplierGroups(raw){
   });
   return {list:rows.length>0?rows:DEFAULT_SUPPLIER_GROUPS.list.map((x,idx)=>({...x,sortOrder:(idx+1)*10}))};
 }
+const DEFAULT_NOTIFICATION_DELIVERY_SETTINGS = {
+  email:{
+    enabled:false,
+    host:"",
+    port:"587",
+    secure:false,
+    username:"",
+    password:"",
+    fromName:"",
+    fromEmail:"",
+    replyTo:"",
+  },
+  sms:{
+    enabled:false,
+    provider:"",
+    apiKey:"",
+    senderId:"",
+  },
+};
+function normalizeNotificationDeliverySettings(raw){
+  const src=(raw&&typeof raw==="object")?raw:{};
+  const email=(src.email&&typeof src.email==="object")?src.email:{};
+  const sms=(src.sms&&typeof src.sms==="object")?src.sms:{};
+  const portNum=Math.max(1,Math.min(65535,Math.round(safeNum(email.port)||587)));
+  const pick=(obj,key,fallback)=>String(obj?.[key]??fallback).trim();
+  return {
+    email:{
+      enabled:Boolean(email.enabled),
+      host:pick(email,"host",""),
+      port:String(portNum),
+      secure:Boolean(email.secure),
+      username:pick(email,"username",""),
+      password:pick(email,"password",""),
+      fromName:pick(email,"fromName",""),
+      fromEmail:pick(email,"fromEmail",""),
+      replyTo:pick(email,"replyTo",""),
+    },
+    sms:{
+      enabled:Boolean(sms.enabled),
+      provider:pick(sms,"provider",""),
+      apiKey:pick(sms,"apiKey",""),
+      senderId:pick(sms,"senderId",""),
+    },
+    updatedAt:pick(src,"updatedAt",""),
+    updatedBy:pick(src,"updatedBy",""),
+  };
+}
 const MENU_ALWAYS_VISIBLE_TAB_IDS = ["users"];
 function normalizeMenuVisibilityConfig(raw){
   const src=(raw&&typeof raw==="object")?raw:{};
@@ -1504,17 +1551,54 @@ function ListRowPager({
   onRowsPerPageChange=()=>{},
   onPrev=()=>{},
   onNext=()=>{},
-  options=[10,20],
+  options=[5,10,15,20],
 }) {
+  const parsedRows=Math.max(1,Number(rowsPerPage)||10);
+  const [fitRows,setFitRows]=useState(10);
+
+  useEffect(()=>{
+    function recalcFitRows(){
+      const vh=(typeof window!=="undefined"&&window.innerHeight)?window.innerHeight:900;
+      const reservedHeight=460;
+      const rowHeight=42;
+      const calc=Math.floor((vh-reservedHeight)/rowHeight);
+      setFitRows(Math.max(5,Math.min(60,calc||10)));
+    }
+    recalcFitRows();
+    if(typeof window==="undefined") return;
+    window.addEventListener("resize",recalcFitRows);
+    return ()=>window.removeEventListener("resize",recalcFitRows);
+  },[]);
+
+  const optionList=useMemo(()=>{
+    const merged=[...(Array.isArray(options)?options:[]),fitRows,parsedRows]
+      .map(n=>Math.max(1,Number(n)||0))
+      .filter(Boolean);
+    const uniq=Array.from(new Set(merged));
+    uniq.sort((a,b)=>a-b);
+    return uniq;
+  },[options,fitRows,parsedRows]);
+
+  const clampedRows=useMemo(()=>{
+    const maxRows=Math.max(1,fitRows);
+    return Math.min(parsedRows,maxRows);
+  },[fitRows,parsedRows]);
+
+  useEffect(()=>{
+    if(parsedRows!==clampedRows){
+      onRowsPerPageChange(clampedRows);
+    }
+  },[parsedRows,clampedRows,onRowsPerPageChange]);
+
   return (
     <div style={{display:"flex",alignItems:"center",gap:6}}>
       <span style={{fontSize:11,color:C.muted2}}>Satir</span>
       <select
         style={{...inputSt,width:78,padding:"5px 6px",fontSize:12}}
-        value={rowsPerPage}
+        value={parsedRows}
         onChange={e=>onRowsPerPageChange(Math.max(1,Number(e.target.value)||10))}
       >
-        {options.map(opt=>(
+        {optionList.map(opt=>(
           <option key={opt} value={opt}>{opt}</option>
         ))}
       </select>
@@ -2467,15 +2551,19 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
   const [templateSaving,setTemplateSaving]=useState(false);
   const [menuConfig,setMenuConfig]=useState(()=>normalizeMenuVisibilityConfig(menuVisibility||{}));
   const [menuSaving,setMenuSaving]=useState(false);
+  const [notificationDeliverySettings,setNotificationDeliverySettings]=useState(()=>normalizeNotificationDeliverySettings({}));
+  const [notificationSaving,setNotificationSaving]=useState(false);
   const logoInputRef=useRef(null);
 
   const load=useCallback(async()=>{
-    const [u,templateDoc]=await Promise.all([
+    const [u,templateDoc,notifDoc]=await Promise.all([
       window.DB.getAll("users"),
       window.DB.getDoc("config","quoteTemplate"),
+      window.DB.getDoc("config","notificationDeliverySettings"),
     ]);
     setUsers(u);
     setQuoteTemplate(normalizeQuoteTemplate(templateDoc||{}));
+    setNotificationDeliverySettings(normalizeNotificationDeliverySettings(notifDoc||{}));
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
@@ -2539,6 +2627,35 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
   }
   function resetQuoteTemplate(){
     setQuoteTemplate({...DEFAULT_QUOTE_TEMPLATE});
+  }
+  function setNotificationField(group,key,value){
+    setNotificationDeliverySettings(prev=>({
+      ...prev,
+      [group]:{
+        ...(prev?.[group]||{}),
+        [key]:value,
+      },
+    }));
+  }
+  function resetNotificationSettings(){
+    setNotificationDeliverySettings(normalizeNotificationDeliverySettings({}));
+  }
+  async function saveNotificationSettings(){
+    const normalized=normalizeNotificationDeliverySettings(notificationDeliverySettings||{});
+    const payload={
+      ...normalized,
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser?.id||"",
+    };
+    setNotificationSaving(true);
+    const ok=await window.DB.setDoc("config","notificationDeliverySettings",payload);
+    setNotificationSaving(false);
+    if(!ok){alert("Bildirim kanal ayarlari kaydedilemedi.");return;}
+    setNotificationDeliverySettings(payload);
+    if(typeof window!=="undefined"){
+      window.dispatchEvent(new CustomEvent("notification_channel_settings_updated",{detail:payload}));
+    }
+    alert("Bildirim kanal ayarlari kaydedildi.");
   }
   function toggleMenuVisibility(tabId){
     const id=String(tabId||"").trim();
@@ -2605,6 +2722,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
     {id:"ticari",label:"Ticari",desc:"Teklif sablonu ve para birimi"},
     {id:"uretim",label:"Uretim",desc:"Operator, kiosk ve rota ayarlari"},
     {id:"tedarik",label:"Tedarik",desc:"Tedarikci grup ayarlari"},
+    {id:"bildirim",label:"Bildirim",desc:"Email/SMS kanal ve sunucu ayarlari"},
     {id:"kullanicilar",label:"Kullanicilar",desc:"Yetki, rol ve hesap onaylari"},
   ];
 
@@ -2765,6 +2883,53 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
         <>
           <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Tedarik Ayarlari</div>
           <SupplierGroupSettings currentUser={currentUser}/>
+        </>
+      )}
+      {settingsView==="bildirim"&&(
+        <>
+          <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Bildirim Kanal Ayarlari</div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12,marginBottom:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+              <div style={{fontWeight:700,color:C.text}}>Email Sunucu (SMTP)</div>
+              <label style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:12,color:C.text,cursor:"pointer"}}>
+                <input type="checkbox" checked={Boolean(notificationDeliverySettings.email?.enabled)} onChange={e=>setNotificationField("email","enabled",e.target.checked)}/>
+                Aktif
+              </label>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8}}>
+              <div><span style={labelSt}>Sunucu</span><input style={inputSt} value={notificationDeliverySettings.email?.host||""} onChange={e=>setNotificationField("email","host",e.target.value)} placeholder="smtp.example.com"/></div>
+              <div><span style={labelSt}>Port</span><input style={inputSt} type="number" min="1" max="65535" value={notificationDeliverySettings.email?.port||"587"} onChange={e=>setNotificationField("email","port",e.target.value)}/></div>
+              <div><span style={labelSt}>Kullanici</span><input style={inputSt} value={notificationDeliverySettings.email?.username||""} onChange={e=>setNotificationField("email","username",e.target.value)} placeholder="kullanici@mail.com"/></div>
+              <div><span style={labelSt}>Sifre / Token</span><input style={inputSt} type="password" value={notificationDeliverySettings.email?.password||""} onChange={e=>setNotificationField("email","password",e.target.value)} placeholder="********"/></div>
+              <div><span style={labelSt}>Gonderen Adi</span><input style={inputSt} value={notificationDeliverySettings.email?.fromName||""} onChange={e=>setNotificationField("email","fromName",e.target.value)} placeholder="CNC Atolye"/></div>
+              <div><span style={labelSt}>Gonderen E-Posta</span><input style={inputSt} value={notificationDeliverySettings.email?.fromEmail||""} onChange={e=>setNotificationField("email","fromEmail",e.target.value)} placeholder="noreply@firma.com"/></div>
+              <div><span style={labelSt}>Reply-To</span><input style={inputSt} value={notificationDeliverySettings.email?.replyTo||""} onChange={e=>setNotificationField("email","replyTo",e.target.value)} placeholder="destek@firma.com"/></div>
+              <div style={{display:"flex",alignItems:"flex-end"}}>
+                <label style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:12,color:C.text,cursor:"pointer"}}>
+                  <input type="checkbox" checked={Boolean(notificationDeliverySettings.email?.secure)} onChange={e=>setNotificationField("email","secure",e.target.checked)}/>
+                  TLS / SSL (Secure)
+                </label>
+              </div>
+            </div>
+          </div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+              <div style={{fontWeight:700,color:C.text}}>SMS Kanal Ayarlari</div>
+              <label style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:12,color:C.text,cursor:"pointer"}}>
+                <input type="checkbox" checked={Boolean(notificationDeliverySettings.sms?.enabled)} onChange={e=>setNotificationField("sms","enabled",e.target.checked)}/>
+                Aktif
+              </label>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8}}>
+              <div><span style={labelSt}>Saglayici</span><input style={inputSt} value={notificationDeliverySettings.sms?.provider||""} onChange={e=>setNotificationField("sms","provider",e.target.value)} placeholder="Twilio, NetGSM vb."/></div>
+              <div><span style={labelSt}>API Key</span><input style={inputSt} type="password" value={notificationDeliverySettings.sms?.apiKey||""} onChange={e=>setNotificationField("sms","apiKey",e.target.value)} placeholder="********"/></div>
+              <div><span style={labelSt}>Gonderici ID</span><input style={inputSt} value={notificationDeliverySettings.sms?.senderId||""} onChange={e=>setNotificationField("sms","senderId",e.target.value)} placeholder="CNCATOLYE"/></div>
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10,flexWrap:"wrap"}}>
+              <button onClick={resetNotificationSettings} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}} disabled={notificationSaving}>Varsayilan</button>
+              <button onClick={saveNotificationSettings} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={notificationSaving}>{notificationSaving?"Kaydediliyor...":"Bildirim Ayarlarini Kaydet"}</button>
+            </div>
+          </div>
         </>
       )}
 
@@ -15359,6 +15524,7 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
   const [supplierForm,setSupplierForm]=useState({name:"",code:"",groupId:"",leadTimeDays:"7",email:"",phone:"",currency:"TRY"});
   const [reqForm,setReqForm]=useState({materialId:"",qty:"",needDate:todayStr(),priority:"normal",note:""});
   const [quoteForm,setQuoteForm]=useState({requestId:"",supplierId:"",unitPrice:"0",leadTimeDays:"7",paymentTermDays:"30",currency:"TRY",note:""});
+  const [showSupplierModal,setShowSupplierModal]=useState(false);
   const [showQuoteModal,setShowQuoteModal]=useState(false);
   const [recvForm,setRecvForm]=useState({poId:"",acceptedQty:"",rejectedQty:"0",receiptDate:todayStr(),note:""});
   const [search,setSearch]=useState("");
@@ -15410,6 +15576,11 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
     });
   },[supplierGroups]);
   useEffect(()=>{
+    if(view!=="suppliers"&&showSupplierModal){
+      setShowSupplierModal(false);
+    }
+  },[view,showSupplierModal]);
+  useEffect(()=>{
     if(view!=="quotes"&&showQuoteModal){
       setShowQuoteModal(false);
     }
@@ -15440,6 +15611,22 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
     setQuoteForm(buildDefaultQuoteForm());
     setShowQuoteModal(true);
   }
+  function openSupplierModal(){
+    setView("suppliers");
+    setSupplierForm({
+      name:"",
+      code:"",
+      groupId:supplierGroups[0]?.id||"",
+      leadTimeDays:"7",
+      email:"",
+      phone:"",
+      currency:"TRY",
+    });
+    setShowSupplierModal(true);
+  }
+  function closeSupplierModal(){
+    setShowSupplierModal(false);
+  }
   function closeQuoteModal(){
     setShowQuoteModal(false);
   }
@@ -15449,13 +15636,16 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
       const d=ev&&ev.detail?ev.detail:{};
       if(d.tab!=="purchase"&&d.tab!=="purchase_requests"&&d.tab!=="purchase_suppliers"&&d.tab!=="purchase_quotes") return;
       if(d.type==="refresh"){load();return;}
+      if(d.type==="new"&&d.tab==="purchase_suppliers"){
+        openSupplierModal();
+      }
       if(d.type==="new"&&d.tab==="purchase_quotes"){
         openQuoteModal();
       }
     }
     window.addEventListener("mrp:tab-action",onTabAction);
     return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
-  },[load,requests,suppliers]);
+  },[load,requests,supplierGroups,suppliers]);
 
   function resolveSupplierGroup(row){
     const match=row?.groupId?supplierGroupById[row.groupId]:null;
@@ -15476,6 +15666,7 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
     if(!id){alert("Tedarikci kaydedilemedi.");return;}
     setSuppliers(prev=>[{id,...payload},...prev]);
     setSupplierForm({name:"",code:"",groupId:supplierGroups[0]?.id||"",leadTimeDays:"7",email:"",phone:"",currency:"TRY"});
+    setShowSupplierModal(false);
   }
   async function saveRequest(){
     if(!reqForm.materialId||safeNum(reqForm.qty)<=0){alert("Malzeme ve miktar zorunlu.");return;}
@@ -15842,19 +16033,6 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
     <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
       {view==="suppliers"&&(
         <>
-          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-            <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Tedarikci Karti</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
-              <div><span style={labelSt}>Unvan</span><input style={inputSt} value={supplierForm.name} onChange={e=>setSupplierForm(f=>({...f,name:e.target.value}))}/></div>
-              <div><span style={labelSt}>Kod</span><input style={inputSt} value={supplierForm.code} onChange={e=>setSupplierForm(f=>({...f,code:e.target.value}))}/></div>
-              <div><span style={labelSt}>Grup</span><select style={inputSt} value={supplierForm.groupId} onChange={e=>setSupplierForm(f=>({...f,groupId:e.target.value}))}>{supplierGroups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
-              <div><span style={labelSt}>Lead-Time</span><input style={inputSt} type="number" min="0" value={supplierForm.leadTimeDays} onChange={e=>setSupplierForm(f=>({...f,leadTimeDays:e.target.value}))}/></div>
-              <div><span style={labelSt}>E-Posta</span><input style={inputSt} value={supplierForm.email} onChange={e=>setSupplierForm(f=>({...f,email:e.target.value}))}/></div>
-              <div><span style={labelSt}>Telefon</span><input style={inputSt} value={supplierForm.phone} onChange={e=>setSupplierForm(f=>({...f,phone:e.target.value}))}/></div>
-              <div><span style={labelSt}>Para Birimi</span><select style={inputSt} value={supplierForm.currency} onChange={e=>setSupplierForm(f=>({...f,currency:e.target.value}))}><option value="TRY">TRY</option><option value="EUR">EUR</option><option value="USD">USD</option></select></div>
-            </div>
-            <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}><button onClick={saveSupplier} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Kaydet</button></div>
-          </div>
           <div style={splitWrapStyle}>
             {filtersVisible&&(
               <div style={filterPanelStyle}>
@@ -15933,6 +16111,32 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
             </div>
           </div>
         </>
+      )}
+      {view==="suppliers"&&showSupplierModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.62)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:70,padding:14}} onClick={closeSupplierModal}>
+          <div style={{width:"100%",maxWidth:980,maxHeight:"92vh",overflowY:"auto",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+              <div>
+                <div style={{fontWeight:800,color:C.text,fontSize:16}}>Yeni Tedarikci</div>
+                <div style={{fontSize:12,color:C.muted2}}>Tedarikci kart bilgilerini girerek kaydi olusturun.</div>
+              </div>
+              <button onClick={closeSupplierModal} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
+              <div><span style={labelSt}>Unvan</span><input style={inputSt} value={supplierForm.name} onChange={e=>setSupplierForm(f=>({...f,name:e.target.value}))}/></div>
+              <div><span style={labelSt}>Kod</span><input style={inputSt} value={supplierForm.code} onChange={e=>setSupplierForm(f=>({...f,code:e.target.value}))}/></div>
+              <div><span style={labelSt}>Grup</span><select style={inputSt} value={supplierForm.groupId} onChange={e=>setSupplierForm(f=>({...f,groupId:e.target.value}))}>{supplierGroups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
+              <div><span style={labelSt}>Lead-Time</span><input style={inputSt} type="number" min="0" value={supplierForm.leadTimeDays} onChange={e=>setSupplierForm(f=>({...f,leadTimeDays:e.target.value}))}/></div>
+              <div><span style={labelSt}>E-Posta</span><input style={inputSt} value={supplierForm.email} onChange={e=>setSupplierForm(f=>({...f,email:e.target.value}))}/></div>
+              <div><span style={labelSt}>Telefon</span><input style={inputSt} value={supplierForm.phone} onChange={e=>setSupplierForm(f=>({...f,phone:e.target.value}))}/></div>
+              <div><span style={labelSt}>Para Birimi</span><select style={inputSt} value={supplierForm.currency} onChange={e=>setSupplierForm(f=>({...f,currency:e.target.value}))}><option value="TRY">TRY</option><option value="EUR">EUR</option><option value="USD">USD</option></select></div>
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:12}}>
+              <button onClick={closeSupplierModal} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Iptal</button>
+              <button onClick={saveSupplier} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Kaydet</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {view==="quotes"&&(
@@ -16935,8 +17139,9 @@ function NotificationCenterModule({currentUser}){
   const [telemetry,setTelemetry]=useState([]);
   const [tools,setTools]=useState([]);
   const [form,setForm]=useState({name:"",type:"late_work_order",threshold:"1",channels:["inapp"],active:true});
+  const [deliverySettings,setDeliverySettings]=useState(()=>normalizeNotificationDeliverySettings({}));
   const load=useCallback(async()=>{
-    const [r,n,o,s,m,t,toolsRows]=await Promise.all([
+    const [r,n,o,s,m,t,toolsRows,deliveryDoc]=await Promise.all([
       window.DB.getAll("notificationRules"),
       window.DB.getAll("notifications"),
       window.DB.getAll("orders"),
@@ -16944,13 +17149,41 @@ function NotificationCenterModule({currentUser}){
       window.DB.getAll("materials"),
       window.DB.getAll("machineTelemetryMock"),
       window.DB.getAll("toolStock"),
+      window.DB.getDoc("config","notificationDeliverySettings"),
     ]);
     setRules(r); setNotifications(n.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
     setOrders(o); setSalesOrders(s); setMaterials(m); setTelemetry(t); setTools(toolsRows);
+    setDeliverySettings(normalizeNotificationDeliverySettings(deliveryDoc||{}));
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    function onSettingsUpdated(e){
+      setDeliverySettings(normalizeNotificationDeliverySettings(e?.detail||{}));
+    }
+    if(typeof window!=="undefined"){
+      window.addEventListener("notification_channel_settings_updated",onSettingsUpdated);
+    }
+    return ()=>{
+      if(typeof window!=="undefined"){
+        window.removeEventListener("notification_channel_settings_updated",onSettingsUpdated);
+      }
+    };
+  },[]);
   const updateForm=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const emailReady=Boolean(
+    deliverySettings?.email?.enabled &&
+    String(deliverySettings?.email?.host||"").trim() &&
+    String(deliverySettings?.email?.fromEmail||"").trim() &&
+    String(deliverySettings?.email?.username||"").trim() &&
+    String(deliverySettings?.email?.password||"").trim()
+  );
+  const smsReady=Boolean(
+    deliverySettings?.sms?.enabled &&
+    String(deliverySettings?.sms?.provider||"").trim() &&
+    String(deliverySettings?.sms?.apiKey||"").trim() &&
+    String(deliverySettings?.sms?.senderId||"").trim()
+  );
   const hasRecent=(key)=>notifications.some(n=>n.sourceKey===key&&!["resolved","closed"].includes(n.status||""));
   async function emit(n){
     if(hasRecent(n.sourceKey)) return;
@@ -16959,6 +17192,9 @@ function NotificationCenterModule({currentUser}){
   }
   async function saveRule(){
     if(!form.name.trim()){alert("Kural adi zorunlu.");return;}
+    const channel=form.channels[0]||"inapp";
+    if(channel==="email"&&!emailReady){alert("Email kanali icin Ayarlar Merkezi > Bildirim alaninda SMTP ayarlari tamamlanmali.");return;}
+    if(channel==="sms"&&!smsReady){alert("SMS kanali icin Ayarlar Merkezi > Bildirim alaninda saglayici ayarlari tamamlanmali.");return;}
     const payload={name:form.name.trim(),type:form.type,threshold:safeNum(form.threshold),channels:form.channels,active:Boolean(form.active),updatedAt:new Date().toISOString(),updatedBy:currentUser.id};
     const id=await window.DB.addDoc("notificationRules",payload);
     if(!id){alert("Kural kaydedilemedi.");return;}
@@ -17008,12 +17244,24 @@ function NotificationCenterModule({currentUser}){
     <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Bildirim Kurali</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
+          <Badge label={`Email ${emailReady?"Hazir":"Eksik"}`} color={emailReady?C.green:C.warn}/>
+          <Badge label={`SMS ${smsReady?"Hazir":"Eksik"}`} color={smsReady?C.green:C.warn}/>
+        </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr .8fr .8fr",gap:8}}>
           <div><span style={labelSt}>Kural Adi</span><input style={inputSt} value={form.name} onChange={e=>updateForm("name",e.target.value)} placeholder="Gecikme Uyarisi"/></div>
           <div><span style={labelSt}>Tip</span><select style={inputSt} value={form.type} onChange={e=>updateForm("type",e.target.value)}><option value="late_work_order">Is Emri Gecikme</option><option value="due_sales_order">Satis Termin Yaklasiyor</option><option value="low_stock">Kritik Stok</option><option value="tool_life">Takim Omru</option><option value="machine_alarm">Makina Alarm</option><option value="cycle_deviation">Cevrim Sapma</option></select></div>
           <div><span style={labelSt}>Esik</span><input style={inputSt} type="number" min="0" value={form.threshold} onChange={e=>updateForm("threshold",e.target.value)}/></div>
-          <div><span style={labelSt}>Kanal</span><select style={inputSt} value={form.channels[0]||"inapp"} onChange={e=>updateForm("channels",[e.target.value])}><option value="inapp">In-App</option><option value="email">Email</option><option value="sms">SMS</option></select></div>
+          <div>
+            <span style={labelSt}>Kanal</span>
+            <select style={inputSt} value={form.channels[0]||"inapp"} onChange={e=>updateForm("channels",[e.target.value])}>
+              <option value="inapp">In-App</option>
+              <option value="email" disabled={!emailReady}>Email{emailReady?"":" (Ayar Gerekli)"}</option>
+              <option value="sms" disabled={!smsReady}>SMS{smsReady?"":" (Ayar Gerekli)"}</option>
+            </select>
+          </div>
         </div>
+        {!emailReady&&<div style={{fontSize:11,color:C.muted2,marginTop:8}}>Email kanali pasif: Ayarlar Merkezi > Bildirim sekmesinden SMTP ayarlarini tamamlayin.</div>}
         <div style={{display:"flex",gap:8,justifyContent:"space-between",marginTop:10,flexWrap:"wrap"}}>
           <button onClick={saveRule} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Kural Kaydet</button>
           <button onClick={evaluate} style={{...btnSt("green"),padding:"8px 12px",fontSize:12}}>Kurallari Calistir</button>
