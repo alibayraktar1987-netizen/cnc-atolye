@@ -4,6 +4,8 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
 <title>Factorab</title>
+<link id="factorab-favicon" rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20rx%3D'14'%20fill%3D'%23f05a00'%2F%3E%3Cpath%20d%3D'M17%2015h30v8H26v9h18v8H26v16h-9z'%20fill%3D'%23fff'%2F%3E%3C%2Fsvg%3E"/>
+<link id="factorab-favicon-shortcut" rel="shortcut icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20rx%3D'14'%20fill%3D'%23f05a00'%2F%3E%3Cpath%20d%3D'M17%2015h30v8H26v9h18v8H26v16h-9z'%20fill%3D'%23fff'%2F%3E%3C%2Fsvg%3E"/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -534,6 +536,45 @@ const LOGO_SRC = "./logo.png";
 const FACTORAB_ORANGE = "#f05a00";
 const FACTORAB_WHITE = "#eef2ff";
 const FACTORAB_INK = "#0b0f1c";
+const FACTORAB_FAVICON_SVG = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='#f05a00'/><path d='M17 15h30v8H26v9h18v8H26v16h-9z' fill='#fff'/></svg>";
+const FACTORAB_FAVICON_FALLBACK = `data:image/svg+xml,${encodeURIComponent(FACTORAB_FAVICON_SVG)}`;
+function getFaviconMime(href){
+  const value=String(href||"").trim();
+  if(!value) return "";
+  const dataMatch=/^data:([^;,]+)/i.exec(value);
+  if(dataMatch&&dataMatch[1]) return dataMatch[1];
+  if(/\.svg(?:\?|#|$)/i.test(value)) return "image/svg+xml";
+  if(/\.png(?:\?|#|$)/i.test(value)) return "image/png";
+  if(/\.ico(?:\?|#|$)/i.test(value)) return "image/x-icon";
+  if(/\.jpe?g(?:\?|#|$)/i.test(value)) return "image/jpeg";
+  return "";
+}
+function resolveFaviconSrc(src){
+  const value=String(src||"").trim();
+  if(!value||value===LOGO_SRC) return FACTORAB_FAVICON_FALLBACK;
+  return value;
+}
+function applyAppFavicon(src){
+  if(typeof document==="undefined") return;
+  const head=document.head||document.querySelector("head");
+  if(!head) return;
+  const href=resolveFaviconSrc(src);
+  const mime=getFaviconMime(href);
+  const applyLink=(id,rel)=>{
+    let link=document.getElementById(id);
+    if(!link||String(link.tagName||"").toUpperCase()!=="LINK"){
+      link=document.createElement("link");
+      link.id=id;
+      head.appendChild(link);
+    }
+    link.setAttribute("rel",rel);
+    if(mime) link.setAttribute("type",mime);
+    else link.removeAttribute("type");
+    link.setAttribute("href",href);
+  };
+  applyLink("factorab-favicon","icon");
+  applyLink("factorab-favicon-shortcut","shortcut icon");
+}
 function isCustomBrandLogo(src){
   const value=String(src||"").trim();
   if(!value) return false;
@@ -19825,6 +19866,7 @@ function App() {
     return ()=>window.removeEventListener("menu_visibility_updated",onUpdated);
   },[]);
   useEffect(()=>{setLogoError(false);},[logoSrc]);
+  useEffect(()=>{applyAppFavicon(logoSrc);},[logoSrc]);
   useEffect(()=>{
     if(typeof window==="undefined") return;
     const syncKiosk=()=>setKioskMachine(detectLockedMachineFromUrl());
