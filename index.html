@@ -1425,32 +1425,54 @@ const btnSt=(v="primary")=>({border:`1px solid ${v==="primary"?C.accent:v==="dan
 
 function TableColumnEditor({title="Sutun Duzenle",columns,onToggle,onMove,onReset}) {
   const rows=Array.isArray(columns)?columns:[];
+  const [open,setOpen]=useState(false);
   return (
-    <details style={{position:"relative"}}>
-      <summary style={{listStyle:"none",cursor:"pointer",userSelect:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:600,color:C.text,background:C.surface}}>
+    <>
+      <button
+        type="button"
+        onClick={()=>setOpen(true)}
+        style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,whiteSpace:"nowrap"}}
+      >
         Sutun Duzenle
-      </summary>
-      <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",minWidth:270,maxWidth:320,padding:10,background:C.card,border:`1px solid ${C.border}`,borderRadius:10,boxShadow:"0 12px 32px rgba(15,23,42,.18)",zIndex:60}}>
-        <div style={{fontSize:11,color:C.muted2,letterSpacing:.5,textTransform:"uppercase"}}>{title}</div>
-        <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:6,maxHeight:250,overflowY:"auto"}}>
-          {rows.map((col,idx)=>(
-            <div key={col.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"5px 6px",border:`1px solid ${C.border}`,borderRadius:8,background:C.surface}}>
-              <label style={{display:"flex",alignItems:"center",gap:8,minWidth:0,flex:1,cursor:col.required?"default":"pointer"}}>
-                <input type="checkbox" checked={col.required?true:Boolean(col.visible)} disabled={col.required} onChange={()=>onToggle(col.id)}/>
-                <span style={{fontSize:12,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{col.label}</span>
-              </label>
-              <div style={{display:"flex",gap:4}}>
-                <button type="button" onClick={()=>onMove(col.id,"up")} disabled={idx===0} style={{...btnSt("ghost"),padding:"2px 7px",fontSize:11,opacity:idx===0?0.45:1}}>^</button>
-                <button type="button" onClick={()=>onMove(col.id,"down")} disabled={idx===rows.length-1} style={{...btnSt("ghost"),padding:"2px 7px",fontSize:11,opacity:idx===rows.length-1?0.45:1}}>v</button>
+      </button>
+      {open&&(
+        <div
+          style={{position:"fixed",inset:0,zIndex:4500,background:"rgba(15,23,42,.45)",display:"flex",justifyContent:"flex-end"}}
+          onClick={()=>setOpen(false)}
+        >
+          <div
+            style={{width:"min(420px,100vw)",height:"100%",background:C.card,borderLeft:`1px solid ${C.border}`,boxShadow:"-12px 0 32px rgba(15,23,42,.22)",display:"flex",flexDirection:"column"}}
+            onClick={e=>e.stopPropagation()}
+          >
+            <div style={{padding:"12px 14px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+              <div>
+                <div style={{fontSize:11,color:C.muted2,letterSpacing:.5,textTransform:"uppercase"}}>Sutun Duzeni</div>
+                <div style={{fontSize:14,fontWeight:700,color:C.text,marginTop:2}}>{title}</div>
               </div>
+              <button type="button" onClick={()=>setOpen(false)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kapat</button>
             </div>
-          ))}
+            <div style={{padding:12,display:"flex",flexDirection:"column",gap:6,overflowY:"auto",flex:1}}>
+              {rows.map((col,idx)=>(
+                <div key={col.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"6px 7px",border:`1px solid ${C.border}`,borderRadius:8,background:C.surface}}>
+                  <label style={{display:"flex",alignItems:"center",gap:8,minWidth:0,flex:1,cursor:col.required?"default":"pointer"}}>
+                    <input type="checkbox" checked={col.required?true:Boolean(col.visible)} disabled={col.required} onChange={()=>onToggle(col.id)}/>
+                    <span style={{fontSize:12,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{col.label}</span>
+                  </label>
+                  <div style={{display:"flex",gap:4}}>
+                    <button type="button" onClick={()=>onMove(col.id,"up")} disabled={idx===0} style={{...btnSt("ghost"),padding:"2px 7px",fontSize:11,opacity:idx===0?0.45:1}}>^</button>
+                    <button type="button" onClick={()=>onMove(col.id,"down")} disabled={idx===rows.length-1} style={{...btnSt("ghost"),padding:"2px 7px",fontSize:11,opacity:idx===rows.length-1?0.45:1}}>v</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{padding:"10px 12px",borderTop:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",gap:8}}>
+              <button type="button" onClick={onReset} style={{...btnSt("ghost"),padding:"7px 11px",fontSize:12}}>Varsayilan</button>
+              <button type="button" onClick={()=>setOpen(false)} style={{...btnSt("primary"),padding:"7px 11px",fontSize:12}}>Tamam</button>
+            </div>
+          </div>
         </div>
-        <div style={{marginTop:9,display:"flex",justifyContent:"flex-end"}}>
-          <button type="button" onClick={onReset} style={{...btnSt("ghost"),padding:"5px 10px",fontSize:11}}>Varsayilan</button>
-        </div>
-      </div>
-    </details>
+      )}
+    </>
   );
 }
 function ListRowPager({
