@@ -635,6 +635,7 @@ const DEFAULT_BRANDING_SETTINGS = {
   logo:"",
   themeMode:"light",
   menuAccentColor:"#3AAFA9",
+  topBarAccentColor:"#2B7A78",
 };
 const MENU_COLOR_PRESETS = [
   { id:"teal", label:"Turkuaz", color:"#3AAFA9" },
@@ -1134,6 +1135,7 @@ function normalizeBrandingSettings(raw){
     logo:typeof src.logo==="string"?src.logo:"",
     themeMode:["light","dark"].includes(src.themeMode)?src.themeMode:DEFAULT_BRANDING_SETTINGS.themeMode,
     menuAccentColor:normalizeHexColor(src.menuAccentColor,DEFAULT_BRANDING_SETTINGS.menuAccentColor),
+    topBarAccentColor:normalizeHexColor(src.topBarAccentColor||src.menuAccentColor,DEFAULT_BRANDING_SETTINGS.topBarAccentColor),
   };
 }
 function normalizeOperationIcon(icon,fallback){
@@ -1243,6 +1245,32 @@ function buildMenuColorTheme(baseColor,mode="light"){
     activeText:readableTextFor(activeBg),
     toggleBg:rgbaFromHex(accent,darkMode?0.16:0.13),
     shellShadow:"inset -1px 0 0 rgba(255,255,255,.05)",
+  };
+}
+function buildTopBarTone(baseColor,mode="light"){
+  const accent=normalizeHexColor(baseColor,DEFAULT_BRANDING_SETTINGS.topBarAccentColor);
+  const darkMode=mode==="dark";
+  const heroBg=darkMode
+    ? mixHexColors("#20252D",accent,0.34)
+    : mixHexColors("#133635",accent,0.84);
+  const heroText=readableTextFor(heroBg,"#10211D","#FEFFFF");
+  const textIsLight=heroText.toUpperCase()==="#FEFFFF";
+  return {
+    accent,
+    heroBg,
+    heroText,
+    heroMuted:rgbaFromHex(heroText,darkMode?0.82:0.88),
+    heroFieldBg:rgbaFromHex(heroText,textIsLight?(darkMode?0.08:0.18):(darkMode?0.08:0.10)),
+    heroFieldBorder:rgbaFromHex(heroText,textIsLight?(darkMode?0.24:0.42):0.18),
+    heroChipBg:rgbaFromHex(heroText,textIsLight?(darkMode?0.07:0.14):(darkMode?0.08:0.10)),
+    heroChipBorder:rgbaFromHex(heroText,textIsLight?(darkMode?0.20:0.34):0.18),
+    heroShadow:darkMode
+      ? `0 16px 34px ${rgbaFromHex(accent,0.18)}`
+      : `0 14px 30px ${rgbaFromHex(accent,0.24)}`,
+    subBg:darkMode
+      ? mixHexColors("#1D232B",accent,0.22)
+      : mixHexColors("#FEFFFF",accent,0.84),
+    subBorder:darkMode?rgbaFromHex(heroText,0.10):rgbaFromHex(accent,0.22),
   };
 }
 async function ensureExternalScript(src,checkFn){
@@ -3580,7 +3608,7 @@ function SupplierGroupSettings({currentUser}) {
 // ============================================================
 //  ADMIN USERS
 // ============================================================
-function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="light",onThemeModeChange=()=>{},menuAccentColor=DEFAULT_BRANDING_SETTINGS.menuAccentColor,onMenuAccentColorChange=()=>{},menuCatalog=[],menuVisibility,onMenuVisibilityChange}) {
+function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="light",menuAccentColor=DEFAULT_BRANDING_SETTINGS.menuAccentColor,onMenuAccentColorChange=()=>{},topBarAccentColor=DEFAULT_BRANDING_SETTINGS.topBarAccentColor,onTopBarAccentColorChange=()=>{},onThemeModeChange=()=>{},menuCatalog=[],menuVisibility,onMenuVisibilityChange}) {
   const [users,setUsers]=useState([]);
   const [loading,setLoading]=useState(true);
   const [expanded,setExpanded]=useState(null);
@@ -3588,6 +3616,8 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
   const [logoLoading,setLogoLoading]=useState(false);
   const [brandingMenuColor,setBrandingMenuColor]=useState(()=>normalizeHexColor(menuAccentColor,DEFAULT_BRANDING_SETTINGS.menuAccentColor));
   const [brandingMenuSaving,setBrandingMenuSaving]=useState(false);
+  const [brandingTopBarColor,setBrandingTopBarColor]=useState(()=>normalizeHexColor(topBarAccentColor,DEFAULT_BRANDING_SETTINGS.topBarAccentColor));
+  const [brandingTopBarSaving,setBrandingTopBarSaving]=useState(false);
   const [quoteTemplate,setQuoteTemplate]=useState(DEFAULT_QUOTE_TEMPLATE);
   const [templateSaving,setTemplateSaving]=useState(false);
   const [menuConfig,setMenuConfig]=useState(()=>normalizeMenuVisibilityConfig(menuVisibility||{}));
@@ -3614,6 +3644,9 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
   useEffect(()=>{
     setBrandingMenuColor(normalizeHexColor(menuAccentColor,DEFAULT_BRANDING_SETTINGS.menuAccentColor));
   },[menuAccentColor]);
+  useEffect(()=>{
+    setBrandingTopBarColor(normalizeHexColor(topBarAccentColor,DEFAULT_BRANDING_SETTINGS.topBarAccentColor));
+  },[topBarAccentColor]);
 
   async function update(id,patch) {
     await window.DB.updateDoc("users",id,patch);
@@ -3663,6 +3696,15 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
     if(ok===false){alert("Tema rengi kaydedilemedi.");return;}
     setBrandingMenuColor(normalized);
     alert("Tema rengi kaydedildi.");
+  }
+  async function saveTopBarAccent(){
+    const normalized=normalizeHexColor(brandingTopBarColor,DEFAULT_BRANDING_SETTINGS.topBarAccentColor);
+    setBrandingTopBarSaving(true);
+    const ok=await onTopBarAccentColorChange(normalized);
+    setBrandingTopBarSaving(false);
+    if(ok===false){alert("Ust menu rengi kaydedilemedi.");return;}
+    setBrandingTopBarColor(normalized);
+    alert("Ust menu rengi kaydedildi.");
   }
   async function saveQuoteTemplate(){
     setTemplateSaving(true);
@@ -3769,8 +3811,10 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
   const hiddenMenuSet=useMemo(()=>new Set((menuConfig&&Array.isArray(menuConfig.hiddenTabs))?menuConfig.hiddenTabs:[]),[menuConfig]);
   const menuVisibleCount=menuRows.filter(row=>MENU_ALWAYS_VISIBLE_TAB_IDS.includes(row.id)||!hiddenMenuSet.has(row.id)).length;
   const normalizedMenuAccentColor=normalizeHexColor(brandingMenuColor,DEFAULT_BRANDING_SETTINGS.menuAccentColor);
+  const normalizedTopBarAccentColor=normalizeHexColor(brandingTopBarColor,DEFAULT_BRANDING_SETTINGS.topBarAccentColor);
   const appPreviewTone=buildAppTheme(themeMode,normalizedMenuAccentColor);
   const menuPreviewTone=buildMenuColorTheme(normalizedMenuAccentColor,themeMode);
+  const topBarPreviewTone=buildTopBarTone(normalizedTopBarAccentColor,themeMode);
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
 
   const settingsTabs=[
@@ -3867,6 +3911,38 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
                     <button onClick={saveMenuAccent} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={brandingMenuSaving}>{brandingMenuSaving?"Kaydediliyor...":"Tema Rengini Kaydet"}</button>
                     <button onClick={()=>setBrandingMenuColor(DEFAULT_BRANDING_SETTINGS.menuAccentColor)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}} disabled={brandingMenuSaving}>Varsayilan</button>
                   </div>
+                  <div style={{marginTop:14,paddingTop:12,borderTop:`1px solid ${C.border}`}}>
+                    <span style={labelSt}>Ust Menu Rengi</span>
+                    <div style={{display:"flex",gap:8}}>
+                      <input style={{...inputSt,padding:0,width:50,height:38,flex:"0 0 auto"}} type="color" value={normalizedTopBarAccentColor} onChange={e=>setBrandingTopBarColor(e.target.value)}/>
+                      <input style={{...inputSt,flex:1}} value={brandingTopBarColor} onChange={e=>setBrandingTopBarColor(e.target.value)} placeholder="#2B7A78"/>
+                    </div>
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}>
+                      {MENU_COLOR_PRESETS.map(opt=>(
+                        <button
+                          key={`topbar_${opt.id}`}
+                          onClick={()=>setBrandingTopBarColor(opt.color)}
+                          style={{
+                            ...btnSt("ghost"),
+                            padding:"7px 10px",
+                            fontSize:12,
+                            display:"inline-flex",
+                            alignItems:"center",
+                            gap:7,
+                            borderColor:normalizedTopBarAccentColor===opt.color?C.accent:C.border,
+                            color:normalizedTopBarAccentColor===opt.color?C.accent:C.text,
+                          }}
+                        >
+                          <span style={{width:12,height:12,borderRadius:99,background:opt.color,display:"inline-block",border:`1px solid ${C.border}`}}/>
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}>
+                      <button onClick={saveTopBarAccent} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={brandingTopBarSaving}>{brandingTopBarSaving?"Kaydediliyor...":"Ust Menu Rengini Kaydet"}</button>
+                      <button onClick={()=>setBrandingTopBarColor(DEFAULT_BRANDING_SETTINGS.topBarAccentColor)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}} disabled={brandingTopBarSaving}>Varsayilan</button>
+                    </div>
+                  </div>
                 </div>
                 <div style={{background:appPreviewTone.card,border:`1px solid ${appPreviewTone.border}`,borderRadius:12,padding:12,color:appPreviewTone.text,boxShadow:themeMode==="dark"?"0 18px 36px rgba(0,0,0,.26)":"0 16px 30px rgba(15,23,42,.08)"}}>
                   <div style={{fontSize:11,color:appPreviewTone.muted,letterSpacing:.7,textTransform:"uppercase",fontWeight:700,marginBottom:8}}>Tema Onizleme</div>
@@ -3880,7 +3956,22 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
                     <div style={{display:"flex",flexDirection:"column",gap:8}}>
                       <div style={{padding:"9px 10px",borderRadius:8,background:menuPreviewTone.activeBg,border:`1px solid ${menuPreviewTone.activeBorder}`,color:menuPreviewTone.activeText,fontWeight:700}}>Dashboard</div>
                       <div style={{padding:"9px 10px",borderRadius:8,background:menuPreviewTone.bgSoft,border:`1px solid ${menuPreviewTone.border}`,color:menuPreviewTone.text}}>Planlama</div>
-                      <div style={{padding:"9px 10px",borderRadius:8,border:`1px dashed ${menuPreviewTone.border}`,color:menuPreviewTone.muted}}>Secilen ton uygulama genelinde kullanilir.</div>
+                    <div style={{padding:"9px 10px",borderRadius:8,border:`1px dashed ${menuPreviewTone.border}`,color:menuPreviewTone.muted}}>Secilen ton uygulama genelinde kullanilir.</div>
+                    </div>
+                  </div>
+                  <div style={{marginTop:10,borderRadius:10,overflow:"hidden",border:`1px solid ${topBarPreviewTone.subBorder}`}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,padding:"10px 11px",background:topBarPreviewTone.heroBg,color:topBarPreviewTone.heroText}}>
+                      <div>
+                        <div style={{fontSize:10,letterSpacing:.7,textTransform:"uppercase",color:topBarPreviewTone.heroMuted}}>Ust Menu</div>
+                        <div style={{fontSize:13,fontWeight:800}}>Canli Uretim Panosu</div>
+                      </div>
+                      <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                        <span style={{padding:"5px 8px",borderRadius:999,background:topBarPreviewTone.heroChipBg,border:`1px solid ${topBarPreviewTone.heroChipBorder}`,fontSize:10}}>Bildirim</span>
+                        <span style={{padding:"5px 8px",borderRadius:999,background:topBarPreviewTone.heroChipBg,border:`1px solid ${topBarPreviewTone.heroChipBorder}`,fontSize:10}}>Cikis</span>
+                      </div>
+                    </div>
+                    <div style={{padding:"8px 11px",background:topBarPreviewTone.subBg,borderTop:`1px solid ${topBarPreviewTone.subBorder}`,fontSize:11,color:appPreviewTone.text}}>
+                      Acik mod ust bandi bu renkten uretilir.
                     </div>
                   </div>
                 </div>
@@ -6923,15 +7014,15 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
       const pdfInfo=await extractPdfTextFromDocument(doc,{maxPages:3});
       const parsed=guessPartFieldsFromPdf({text:pdfInfo.text,lines:pdfInfo.lines,fileName:file.name});
       const summary=buildPartPdfImportSummary(file,parsed,pdfInfo);
+      const matchedCustomer=parsed.customerName
+        ? customers.find(c=>normalizeCustomerKey(c.name)===normalizeCustomerKey(parsed.customerName))||null
+        : null;
       setPartForm(prev=>{
-        const matchedCustomer=parsed.customerName
-          ? customers.find(c=>normalizeCustomerKey(c.name)===normalizeCustomerKey(parsed.customerName))||null
-          : null;
         return {
           ...prev,
           customerPartCode:parsed.customerPartCode||prev.customerPartCode,
           customerId:matchedCustomer?.id||prev.customerId||"",
-          customerName:parsed.customerName||prev.customerName,
+          customerName:matchedCustomer?.name||prev.customerName,
           name:parsed.name||prev.name,
           material:parsed.material||prev.material,
           revision:parsed.revision||prev.revision,
@@ -6941,9 +7032,10 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
         };
       });
       setPartPdfImportSummary(summary);
-      if(summary.fields.length===0){
-        setPartPdfImportError("PDF eklendi ancak otomatik doldurulabilecek net alan bulunamadi. Formu manuel tamamlayabilirsiniz.");
-      }
+      const importNotes=[];
+      if(summary.fields.length===0) importNotes.push("PDF eklendi ancak otomatik doldurulabilecek net alan bulunamadi. Formu manuel tamamlayabilirsiniz.");
+      if(parsed.customerName&&!matchedCustomer) importNotes.push(`"${parsed.customerName}" musterisi listede bulunamadi. Musteriyi secim alanindan secin.`);
+      setPartPdfImportError(importNotes.join(" "));
     }catch(err){
       setPartPdfImportError(err?.message||"PDF okunamadi.");
     }finally{
@@ -7135,37 +7227,9 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     if(!partForm.name.trim()){alert("Parca adi zorunlu.");return;}
     const computedPartNo=(String(partForm.partNo||"").trim().toUpperCase()||nextPartNo());
     const existing=parts.find(p=>(p.partNo||"").toUpperCase()===computedPartNo);
-    const typedCustomerName=String(partForm.customerName||"").trim();
-    let pickedCustomer=customers.find(c=>c.id===partForm.customerId)||null;
-    if(!pickedCustomer&&typedCustomerName){
-      pickedCustomer=customers.find(c=>normalizeCustomerKey(c.name)===normalizeCustomerKey(typedCustomerName))||null;
-    }
-    let resolvedCustomerId=pickedCustomer?.id||"";
-    let resolvedCustomerName=pickedCustomer?.name||typedCustomerName;
-    if(!pickedCustomer&&typedCustomerName){
-      const shouldCreate=confirm(`"${typedCustomerName}" musterisi kayitli degil. Yeni musteri kaydi olusturulsun mu?`);
-      if(shouldCreate){
-        const customerPayload={
-          name:typedCustomerName,
-          code:nextCustomerCode(),
-          contact:"",
-          phone:"",
-          email:"",
-          notes:"Parca yonetimi ekranindan otomatik olusturuldu.",
-          updatedAt:new Date().toISOString(),
-        };
-        const customerId=await window.DB.addDoc("customers",customerPayload);
-        if(!customerId){
-          alert("Musteri kaydi olusturulamadi. Parca kaydi iptal edildi.");
-          return;
-        }
-        const createdCustomer={id:customerId,...customerPayload,createdAt:new Date().toISOString()};
-        setCustomers(prev=>[...prev,createdCustomer].sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
-        resolvedCustomerId=customerId;
-        resolvedCustomerName=createdCustomer.name;
-        setPartForm(f=>({...f,customerId:customerId,customerName:createdCustomer.name}));
-      }
-    }
+    const pickedCustomer=customers.find(c=>c.id===partForm.customerId)||null;
+    const resolvedCustomerId=pickedCustomer?.id||"";
+    const resolvedCustomerName=pickedCustomer?.name||String(partForm.customerName||existing?.customerName||"").trim();
     const payload=buildPartPayload({
       source:{...partForm,partNo:computedPartNo},
       existing,
@@ -7592,25 +7656,11 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
                       value={partForm.customerId||""}
                       onChange={id=>{
                         const picked=customers.find(c=>c.id===id)||null;
-                        setPartForm(f=>({...f,customerId:id,customerName:picked?.name||f.customerName||""}));
+                        setPartForm(f=>({...f,customerId:id,customerName:picked?.name||""}));
                       }}
                       placeholder="Musteri secin..."
                       options={customers.map(c=>({value:c.id,label:`${c.name}${c.code?` (${c.code})`:""}`}))}
                     />
-                  </div>
-                  <div>
-                    <span style={labelSt}>Musteri Adi</span>
-                    <input
-                      style={inputSt}
-                      value={partForm.customerName}
-                      onChange={e=>{
-                        const typed=e.target.value;
-                        const matched=customers.find(c=>normalizeCustomerKey(c.name)===normalizeCustomerKey(typed))||null;
-                        setPartForm(f=>({...f,customerName:typed,customerId:matched?.id||""}));
-                      }}
-                      placeholder="Listede yoksa yazin"
-                    />
-                    <div style={{fontSize:10,color:C.muted2,marginTop:3}}>Kaydetmede listede yoksa yeni musteri olusturma onayi sorulur.</div>
                   </div>
                   <div><span style={labelSt}>Revizyon</span><input style={inputSt} value={partForm.revision} onChange={e=>fv("revision",e.target.value)}/></div>
                   <div>
@@ -15032,29 +15082,36 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   }
   function segmentTone(seg){
     const risk=segmentRiskType(seg);
-    if(risk==="critical") return {
-      header:"#eb3b3b",
-      border:"#e55d5d",
-      bg:"#fff7f7",
-      text:"#7f1d1d",
-      badge:"#ffe1e1",
-      badgeText:"#b42323",
-    };
-    if(risk==="warning") return {
-      header:"#f59e0b",
-      border:"#efb351",
-      bg:"#fffaf0",
-      text:"#8a4b08",
-      badge:"#ffedd1",
-      badgeText:"#a76200",
-    };
+    if(risk==="critical"){
+      const header=mixHexColors(C.accent,C.text,0.18);
+      return {
+        header,
+        border:rgbaFromHex(header,0.3),
+        bg:mixHexColors(C.surface,C.accent,0.18),
+        text:mixHexColors(C.text,C.accent,0.28),
+        badge:mixHexColors(C.surface,header,0.24),
+        badgeText:mixHexColors(C.text,header,0.34),
+      };
+    }
+    if(risk==="warning"){
+      const header=mixHexColors(C.warn,C.accent,0.4);
+      return {
+        header,
+        border:rgbaFromHex(header,0.28),
+        bg:mixHexColors(C.surface,header,0.14),
+        text:mixHexColors(C.text,header,0.22),
+        badge:mixHexColors(C.surface,header,0.22),
+        badgeText:mixHexColors(C.text,header,0.3),
+      };
+    }
+    const header=mixHexColors(C.purple,C.accent,0.42);
     return {
-      header:"#5a6fdb",
-      border:"#97a7ea",
-      bg:"#f8f9ff",
-      text:"#2b3a8a",
-      badge:"#e8edff",
-      badgeText:"#445ac7",
+      header,
+      border:rgbaFromHex(header,0.24),
+      bg:mixHexColors(C.surface,header,0.12),
+      text:mixHexColors(C.text,header,0.18),
+      badge:mixHexColors(C.surface,header,0.2),
+      badgeText:mixHexColors(C.text,header,0.26),
     };
   }
   function buildSegmentCard(seg,{active=false}={}){
@@ -15116,7 +15173,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     {label:"Aktif",value:String(activeCount),sub:"Degisim Yok"},
     {label:"Planli",value:String(scheduledCount),sub:"Degisim Yok"},
     {label:"Bugun Terminli",value:String(dueTodayCount),sub:"Degisim Yok"},
-    {label:"Geciken",value:String(overdueCount),sub:"Degisim Yok",tone:overdueCount>0?C.red:C.text},
+    {label:"Geciken",value:String(overdueCount),sub:"Degisim Yok",tone:overdueCount>0?C.accent:C.text},
     {label:"Geride",value:String(behindCount),sub:"Degisim Yok",tone:behindCount>0?C.warn:C.text},
     {label:"Zamaninda",value:`%${onTimePct}`,sub:"Izleniyor"},
     {label:"Kurulumlar",value:String(setupCount),sub:"Bu ay"},
@@ -15132,15 +15189,15 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
           onDragOver={e=>{if(boardDragActive) e.preventDefault();}}
           onDrop={e=>handleBoardDrop(e,{targetMachine})}
           style={{
-            minHeight:compact?98:120,
+            minHeight:compact?82:102,
             display:"flex",
             alignItems:"center",
             justifyContent:"center",
             border:`1px dashed ${boardDragActive?C.accent:C.border}`,
-            borderRadius:12,
+            borderRadius:11,
             background:boardDragActive?(C.accent+"11"):C.surface,
             color:C.muted2,
-            fontSize:12,
+            fontSize:11,
           }}
         >
           {boardDragActive?"Buraya Birak":"Atanmis operasyon yok"}
@@ -15152,7 +15209,8 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     const isDragging=dragBoardSegmentId===card.id;
     const duePast=card.due&&card.due!=="-"&&card.due<planningToday;
     const dueSoon=card.due&&card.due!=="-"&&card.due>=planningToday&&dayDiff(planningToday,card.due)<=2;
-    const dueTone=duePast?C.red:(dueSoon?C.warn:C.green);
+    const dueTone=duePast?card.tone.text:(dueSoon?C.warn:C.green);
+    const headerText=readableTextFor(card.tone.header);
     return (
       <div
         draggable
@@ -15167,36 +15225,36 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
         onDragOver={e=>{if(boardDragActive) e.preventDefault();}}
         onDrop={e=>handleBoardDrop(e,{targetSegmentId:card.id,targetMachine:segment?.machine||targetMachine})}
         onClick={()=>setSelectedPlan(card.seedPlan||segment)}
-        style={{background:card.tone.bg,border:`1px solid ${isSelected?card.tone.text:card.tone.border}`,borderRadius:12,overflow:"hidden",cursor:"pointer",boxShadow:isSelected?`0 0 0 1px ${card.tone.text}66`:"none",display:"flex",flexDirection:"column",opacity:isDragging?0.56:1}}
+        style={{background:card.tone.bg,border:`1px solid ${isSelected?card.tone.text:card.tone.border}`,borderRadius:11,overflow:"hidden",cursor:"pointer",boxShadow:isSelected?`0 0 0 1px ${card.tone.text}66`:"none",display:"flex",flexDirection:"column",opacity:isDragging?0.56:1,lineHeight:1.2}}
       >
-        <div style={{background:card.tone.header,color:"#fff",padding:"6px 9px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:7}}>
+        <div style={{background:card.tone.header,color:headerText,padding:compact?"5px 7px":"5px 8px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:6}}>
           <div style={{minWidth:0}}>
-            <div style={{fontWeight:800,fontSize:13,fontFamily:"monospace",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.orderCode||"-"}</div>
-            <div style={{fontSize:11,opacity:.95,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.op?.code||"Operasyon"}{card.op?.name?` · ${card.op.name}`:""}</div>
+            <div style={{fontWeight:800,fontSize:12,fontFamily:"monospace",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.orderCode||"-"}</div>
+            <div style={{fontSize:10,opacity:.92,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.op?.code||"Operasyon"}{card.op?.name?` · ${card.op.name}`:""}</div>
           </div>
-          <div style={{fontSize:11,fontWeight:700,padding:"3px 7px",borderRadius:999,background:"rgba(255,255,255,.2)",whiteSpace:"nowrap"}}>
+          <div style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:999,background:card.tone.badge,color:card.tone.badgeText,border:`1px solid ${card.tone.border}`,whiteSpace:"nowrap"}}>
             {segment?segmentDurationLabel(segment):"-"}
           </div>
         </div>
-        <div style={{padding:"7px 9px 7px"}}>
-          <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.orderName||"-"}</div>
-          <div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.customer||"-"}</div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:7,marginTop:6}}>
-            <div style={{fontSize:19,fontWeight:800,color:card.tone.text,lineHeight:1}}>{card.qty}</div>
-            <div style={{fontSize:11,color:dueTone,fontWeight:700}}>Termin: {card.due||"-"}</div>
+        <div style={{padding:compact?"6px 7px":"6px 8px"}}>
+          <div style={{fontSize:11,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.orderName||"-"}</div>
+          <div style={{fontSize:10.5,color:C.muted2,marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.customer||"-"}</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:6,marginTop:4}}>
+            <div style={{fontSize:compact?16:17,fontWeight:800,color:card.tone.text,lineHeight:1}}>{card.qty}</div>
+            <div style={{fontSize:10.5,color:dueTone,fontWeight:700}}>Termin: {card.due||"-"}</div>
           </div>
-          <div style={{fontSize:11,color:C.muted2,marginTop:3}}>{card.spanLabel}</div>
+          <div style={{fontSize:10.5,color:C.muted2,marginTop:2}}>{card.spanLabel}</div>
           {card.op&&(
-            <div style={{marginTop:5}}>
-              <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"2px 8px",borderRadius:999,border:`1px solid ${card.op.color}66`,background:card.op.color+"22",color:card.op.color,fontSize:10,fontWeight:700}}>
+            <div style={{marginTop:4}}>
+              <span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"2px 7px",borderRadius:999,border:`1px solid ${card.op.color}55`,background:card.op.color+"1c",color:card.op.color,fontSize:9.5,fontWeight:700}}>
                 {card.op.icon||"KS"} {card.op.code?`${card.op.code} - `:""}{card.op.name}
               </span>
             </div>
           )}
           {!compact&&segment&&(
-            <div style={{display:"flex",gap:6,marginTop:6}}>
-              <button onClick={e=>{e.stopPropagation();startEdit(segment);}} style={{...btnSt("ghost"),padding:"3px 7px",fontSize:11}}>Duzenle</button>
-              <button onClick={e=>{e.stopPropagation();removePlan(segment);}} style={{...btnSt("danger"),padding:"3px 7px",fontSize:11}}>Sil</button>
+            <div style={{display:"flex",gap:6,marginTop:5}}>
+              <button onClick={e=>{e.stopPropagation();startEdit(segment);}} style={{...btnSt("ghost"),padding:"2px 6px",fontSize:10.5}}>Duzenle</button>
+              <button onClick={e=>{e.stopPropagation();removePlan(segment);}} style={{...btnSt("danger"),padding:"2px 6px",fontSize:10.5}}>Sil</button>
             </div>
           )}
         </div>
@@ -15427,7 +15485,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
               </div>
             )}
             {ordersToPlan.length>0&&(
-              <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:190,overflowY:"auto",paddingRight:2}}>
+              <div style={{display:"flex",flexDirection:"column",gap:5,maxHeight:180,overflowY:"auto",paddingRight:2}}>
                 {ordersToPlan.map(order=>{
                   const pMeta=PRIORITY_OPTIONS.find(p=>p.id===order.priority)||{label:(order.priority||"Normal"),color:C.muted2};
                   const statusMeta=getOrderStatusMeta(order.status||"planned");
@@ -15447,19 +15505,19 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                         setDragBoardSegmentId("");
                       }}
                       onDragEnd={()=>{if(dragEnabled) setDragBoardOrderId("");}}
-                      style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"6px 8px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:7,flexWrap:"wrap",cursor:dragEnabled?"grab":"default",opacity:dragBoardOrderId===order.id?0.58:1}}
+                      style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"5px 7px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:6,flexWrap:"wrap",cursor:dragEnabled?"grab":"default",opacity:dragBoardOrderId===order.id?0.58:1}}
                     >
-                      <div style={{minWidth:210,flex:1}}>
-                        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                          <span style={{fontWeight:800,color:C.text,fontFamily:"monospace",fontSize:12}}>{order.code||"-"}</span>
+                      <div style={{minWidth:190,flex:1}}>
+                        <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+                          <span style={{fontWeight:800,color:C.text,fontFamily:"monospace",fontSize:11.5}}>{order.code||"-"}</span>
                           <Badge label={pMeta.label||"-"} color={pMeta.color||C.muted2}/>
                           <Badge label={statusMeta.label||"-"} color={statusMeta.color||C.muted2}/>
                           <Badge label={isPlanned?"Planli":"Planlanmamis"} color={isPlanned?C.accent:C.warn}/>
                         </div>
-                        <div style={{fontSize:12,color:C.text,marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                        <div style={{fontSize:11.5,color:C.text,marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",lineHeight:1.2}}>
                           {order.name||"-"}{order.customerName?` · ${order.customerName}`:""}
                         </div>
-                        <div style={{fontSize:11,color:C.muted2,marginTop:1}}>
+                        <div style={{fontSize:10.5,color:C.muted2,marginTop:1,lineHeight:1.2}}>
                           Termin: {order.dueDate||"-"} · Tezgah: {Array.isArray(order.machines)&&order.machines.length>0?order.machines.join(", "):"-"}
                         </div>
                       </div>
@@ -15467,21 +15525,21 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                         <button
                           onClick={()=>quickPlanToday(order)}
                           disabled={isPlanned}
-                          style={{...btnSt("ghost"),padding:"4px 8px",fontSize:12,opacity:isPlanned?0.5:1,cursor:isPlanned?"not-allowed":"pointer"}}
+                          style={{...btnSt("ghost"),padding:"3px 7px",fontSize:11,opacity:isPlanned?0.5:1,cursor:isPlanned?"not-allowed":"pointer"}}
                         >
                           Bugun
                         </button>
                         <button
                           onClick={()=>openWeekPlanModalForOrder(order)}
                           disabled={isPlanned}
-                          style={{...btnSt("ghost"),padding:"4px 8px",fontSize:12,opacity:isPlanned?0.5:1,cursor:isPlanned?"not-allowed":"pointer"}}
+                          style={{...btnSt("ghost"),padding:"3px 7px",fontSize:11,opacity:isPlanned?0.5:1,cursor:isPlanned?"not-allowed":"pointer"}}
                         >
                           Bu Hafta
                         </button>
                         <button
                           onClick={()=>openPlanModalForOrder(order)}
                           disabled={isPlanned}
-                          style={{...btnSt("primary"),padding:"4px 8px",fontSize:12,opacity:isPlanned?0.5:1,cursor:isPlanned?"not-allowed":"pointer"}}
+                          style={{...btnSt("primary"),padding:"3px 7px",fontSize:11,opacity:isPlanned?0.5:1,cursor:isPlanned?"not-allowed":"pointer"}}
                         >
                           Planla
                         </button>
@@ -20952,6 +21010,7 @@ function App() {
   const [tab,setTab]=useState("dashboard");
   const [themeMode,setThemeMode]=useState("light");
   const [menuAccentColor,setMenuAccentColor]=useState(DEFAULT_BRANDING_SETTINGS.menuAccentColor);
+  const [topBarAccentColor,setTopBarAccentColor]=useState(DEFAULT_BRANDING_SETTINGS.topBarAccentColor);
   const [menuVisibility,setMenuVisibility]=useState(()=>normalizeMenuVisibilityConfig({}));
   const [machines,setMachines]=useState(DEFAULT_MACHINES);
   const [logoSrc,setLogoSrc]=useState(LOGO_SRC);
@@ -21018,6 +21077,7 @@ function App() {
       setLogoSrc(brandingConfig.logo||LOGO_SRC);
       setThemeMode(brandingConfig.themeMode);
       setMenuAccentColor(brandingConfig.menuAccentColor);
+      setTopBarAccentColor(brandingConfig.topBarAccentColor);
       const session=window.Session.get();
       if(session){
         const u=await window.DB.getDoc("users",session.username);
@@ -21162,6 +21222,17 @@ function App() {
     const ok=await window.DB.setDoc("config","branding",{menuAccentColor:normalized});
     if(!ok){
       setMenuAccentColor(previous);
+      return false;
+    }
+    return true;
+  }
+  async function updateTopBarAccentColor(color){
+    const normalized=normalizeHexColor(color,DEFAULT_BRANDING_SETTINGS.topBarAccentColor);
+    const previous=topBarAccentColor;
+    setTopBarAccentColor(normalized);
+    const ok=await window.DB.setDoc("config","branding",{topBarAccentColor:normalized});
+    if(!ok){
+      setTopBarAccentColor(previous);
       return false;
     }
     return true;
@@ -21642,7 +21713,7 @@ function App() {
     if(tab==="rapor") return <Report currentUser={currentUser} machines={machines}/>;
     if(tab==="tools") return <ToolStock currentUser={currentUser} machines={machines} filtersVisible={toolsFilterOpen}/>;
     if(tab==="orders") return <WorkOrders currentUser={currentUser} machines={machines} filtersVisible={ordersFilterOpen}/>;
-    if(tab==="users") return <AdminUsers currentUser={currentUser} machines={machines} currentLogo={logoSrc} onLogoUpdate={updateLogo} themeMode={themeMode} onThemeModeChange={updateTheme} menuAccentColor={menuAccentColor} onMenuAccentColorChange={updateMenuAccentColor} menuCatalog={allTabs} menuVisibility={menuVisibility} onMenuVisibilityChange={setMenuVisibility}/>;
+    if(tab==="users") return <AdminUsers currentUser={currentUser} machines={machines} currentLogo={logoSrc} onLogoUpdate={updateLogo} themeMode={themeMode} onThemeModeChange={updateTheme} menuAccentColor={menuAccentColor} onMenuAccentColorChange={updateMenuAccentColor} topBarAccentColor={topBarAccentColor} onTopBarAccentColorChange={updateTopBarAccentColor} menuCatalog={allTabs} menuVisibility={menuVisibility} onMenuVisibilityChange={setMenuVisibility}/>;
     if(tab==="dashboard") return <MRPDashboard currentUser={currentUser} machines={machines} logoSrc={logoSrc} themeMode={themeMode} onLogout={logout} onQuickAction={handleTopQuickAction} onCreateNewRecord={handleDashboardCreateRecord} roleLabel={currentRoleLabel} layoutMode={layoutMode} globalSearch={{
       query:globalSearchQuery,
       open:globalSearchOpen,
@@ -21843,31 +21914,7 @@ function App() {
     {id:"compact",label:"Liste",icon:"\u2630"},
     {id:"table",label:"Tablo",icon:"\u25A4"},
   ];
-  const appCommandBarTone=themeMode==="dark"
-    ? {
-      heroBg:"#2A3038",
-      heroText:"#F2F4F7",
-      heroMuted:"rgba(242,244,247,.82)",
-      heroFieldBg:"rgba(255,255,255,.08)",
-      heroFieldBorder:"rgba(255,255,255,.24)",
-      heroChipBg:"rgba(255,255,255,.07)",
-      heroChipBorder:"rgba(255,255,255,.20)",
-      heroShadow:"0 16px 34px rgba(0,0,0,.42)",
-      subBg:"#232931",
-      subBorder:"rgba(255,255,255,.10)",
-    }
-    : {
-      heroBg:"#2B7A78",
-      heroText:"#FEFFFF",
-      heroMuted:"rgba(254,255,255,.90)",
-      heroFieldBg:"rgba(255,255,255,.22)",
-      heroFieldBorder:"rgba(255,255,255,.44)",
-      heroChipBg:"rgba(255,255,255,.16)",
-      heroChipBorder:"rgba(255,255,255,.38)",
-      heroShadow:"0 14px 30px rgba(23,82,73,.20)",
-      subBg:"#DEF2F1",
-      subBorder:"#CBE3E1",
-    };
+  const appCommandBarTone=buildTopBarTone(topBarAccentColor,themeMode);
   const appHeroGridColumns=layoutMode==="desktop"
     ? "minmax(220px,1fr) minmax(520px,860px) auto"
     : (layoutMode==="tablet"?"minmax(0,1fr) auto":"1fr");
@@ -21949,6 +21996,7 @@ function App() {
   const topFiltersOpen=hasContentFilters
     ? Boolean(filterOpenByKey[activeContentAction?.filterKey||""])
     : globalFilterOpen;
+  const showTopActionStrip=tab!=="users";
   const toggleTopFilters=()=>{
     if(!hasContentFilters) return;
     if(activeContentAction?.filterKey==="orders"){
@@ -22048,7 +22096,7 @@ function App() {
           </button>
         </div>
       </div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 12px",borderTop:`1px solid ${appCommandBarTone.subBorder}`,background:appCommandBarTone.subBg}}>
+      {showTopActionStrip&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 12px",borderTop:`1px solid ${appCommandBarTone.subBorder}`,background:appCommandBarTone.subBg}}>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
           <button
             onClick={toggleTopFilters}
@@ -22107,7 +22155,7 @@ function App() {
             Yenile
           </button>
         </div>
-      </div>
+      </div>}
       {globalFilterOpen&&(
         <div style={{padding:"10px 12px",borderTop:`1px solid ${C.border}`,background:C.card}}>
           <div style={{maxWidth:isMobile?"100%":320,background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
