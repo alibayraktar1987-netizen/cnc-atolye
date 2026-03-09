@@ -5455,16 +5455,8 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
               onMove={movePartListTableColumn}
               onReset={resetPartListTableColumns}
             />
-            <div style={{fontSize:11,color:C.muted2,letterSpacing:.5,textTransform:"uppercase"}}>
-              Toplam {parts.length} parca - Filtrelenen {filteredParts.length}
-            </div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
-            {selectedPart&&(
-              <div style={{fontSize:11,color:C.muted2}}>
-                Aktif parca: <strong style={{color:C.text}}>{selectedPart.partNo||"-"}</strong> {selectedPart.name?` - ${selectedPart.name}`:""}
-              </div>
-            )}
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               <span style={{fontSize:11,color:C.muted2}}>Satir</span>
               <select style={{...inputSt,width:78,padding:"5px 6px",fontSize:12}} value={partRowsPerPage} onChange={e=>setPartRowsPerPage(Math.max(1,Number(e.target.value)||10))}>
