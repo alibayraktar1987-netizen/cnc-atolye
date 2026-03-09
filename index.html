@@ -5558,7 +5558,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
       }),
   };
   const partTableCardStyle={
-    background:C.surface,
+    background:C.card,
     border:`1px solid ${C.border}`,
     borderRadius:12,
     overflow:"hidden",
@@ -5822,27 +5822,6 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
         </div>
         {partPage==="list"&&(
           <>
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
-          <TableColumnEditor
-            title="Parca Kutuphanesi"
-            columns={partListTableColumns}
-            onToggle={togglePartListTableColumn}
-            onMove={movePartListTableColumn}
-            onReset={resetPartListTableColumns}
-          />
-          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginLeft:"auto"}}>
-            <div style={{fontSize:12,color:C.muted2}}>Gosterilen Kayit: {pagedParts.length} / {filteredParts.length}</div>
-            <ListRowPager
-              rowsPerPage={partRowsPerPage}
-              page={partListPageIdx}
-              pageCount={partTotalPages}
-              onRowsPerPageChange={setPartRowsPerPage}
-              onPrev={()=>setPartListPageIdx(p=>Math.max(1,p-1))}
-              onNext={()=>setPartListPageIdx(p=>Math.min(partTotalPages,p+1))}
-              options={[10,20]}
-            />
-          </div>
-        </div>
         <div ref={partListPanelRef} style={partSplitWrapStyle}>
           {filtersVisible&&(
             <div style={partFilterPanelStyle}>
@@ -5864,10 +5843,31 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
             </div>
           )}
           <div style={partListColumnStyle}>
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <TableColumnEditor
+                title="Parca Kutuphanesi"
+                columns={partListTableColumns}
+                onToggle={togglePartListTableColumn}
+                onMove={movePartListTableColumn}
+                onReset={resetPartListTableColumns}
+              />
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginLeft:"auto"}}>
+                <div style={{fontSize:12,color:C.muted2}}>Gosterilen Kayit: {pagedParts.length} / {filteredParts.length}</div>
+                <ListRowPager
+                  rowsPerPage={partRowsPerPage}
+                  page={partListPageIdx}
+                  pageCount={partTotalPages}
+                  onRowsPerPageChange={setPartRowsPerPage}
+                  onPrev={()=>setPartListPageIdx(p=>Math.max(1,p-1))}
+                  onNext={()=>setPartListPageIdx(p=>Math.min(partTotalPages,p+1))}
+                  options={[10,20]}
+                />
+              </div>
+            </div>
             <div style={partTableCardStyle}>
               <div style={partTableScrollStyle}>
                 <div style={{minWidth:partListTableMinWidth}}>
-                  <div style={{display:"grid",gridTemplateColumns:partListGridTemplate,gap:8,padding:"9px 10px",borderBottom:`1px solid ${C.border}`,background:C.card,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700,position:"sticky",top:0,zIndex:2}}>
+                  <div style={{display:"grid",gridTemplateColumns:partListGridTemplate,gap:8,padding:"9px 10px",borderBottom:`1px solid ${C.border}`,background:C.surface,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700,position:"sticky",top:0,zIndex:2}}>
                     {visiblePartListTableColumns.map(col=>(
                       <div key={col.id} style={{textAlign:col.align||"left",whiteSpace:"nowrap"}}>
                         {col.label}
