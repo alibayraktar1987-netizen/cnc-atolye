@@ -18522,6 +18522,7 @@ function App() {
   const [globalQuickDate,setGlobalQuickDate]=useState(()=>todayStr());
   const [desktopMenuCollapsed,setDesktopMenuCollapsed]=useState(false);
   const [kioskMachine,setKioskMachine]=useState(()=>detectLockedMachineFromUrl());
+  const [dashboardCreateModalOpen,setDashboardCreateModalOpen]=useState(false);
   const tabFromUrlAppliedRef=useRef(false);
   const machinesRef=useRef(DEFAULT_MACHINES);
   useEffect(()=>{machinesRef.current=machines;},[machines]);
@@ -18746,6 +18747,27 @@ function App() {
     return filteredTabs.length>0?filteredTabs:permissionTabs;
   },[allTabs,hiddenTabs]);
   const tabs=enabledTabs;
+  const dashboardCreateCatalog=useMemo(()=>([
+    {id:"orders",tabId:"orders",eventTab:"orders",label:"Is Emri",hint:"Operasyon kaydi"},
+    {id:"quotes",tabId:"quotes",eventTab:"quotes",label:"Teklif",hint:"Satis teklifi"},
+    {id:"sales",tabId:"sales",eventTab:"sales",label:"Satis Siparisi",hint:"Musteri siparisi"},
+    {id:"planning",tabId:"planning",eventTab:"planning",label:"Planlama",hint:"Plan kaydi"},
+    {id:"parts",tabId:"parts",eventTab:"parts",label:"Parca",hint:"Parca kutuphanesi"},
+    {id:"materials",tabId:"materials",eventTab:"materials",label:"Malzeme",hint:"Malzeme karti"},
+    {id:"tools",tabId:"tools",eventTab:"tools",label:"Takim",hint:"Takim kaydi"},
+    {id:"customers",tabId:"customers",eventTab:"customers",label:"Musteri",hint:"Musteri karti"},
+    {id:"assignments",tabId:"assignments",eventTab:"assignments",label:"Gorev",hint:"Calisan gorevlendirme"},
+    {id:"purchase_suppliers",tabId:"purchase_suppliers",eventTab:"purchase_suppliers",label:"Tedarikci",hint:"Tedarikci karti"},
+    {id:"purchase_quotes",tabId:"purchase_quotes",eventTab:"purchase_quotes",label:"Tedarikci Teklifi",hint:"Tedarikci teklif kaydi"},
+  ]),[]);
+  const dashboardCreateOptions=useMemo(()=>{
+    return dashboardCreateCatalog
+      .filter(row=>tabs.some(t=>t.id===row.tabId))
+      .map(row=>{
+        const tabMeta=tabs.find(t=>t.id===row.tabId);
+        return {...row,moduleLabel:tabMeta?.label||row.label};
+      });
+  },[dashboardCreateCatalog,tabs]);
   const groupOrder=["Planlama","Operasyon","Tedarik ve Stok","Satin Alma","Analiz ve Yonetim","Sistem"];
   const menuGroupCountMap=useMemo(()=>{
     const map={all:tabs.length};
