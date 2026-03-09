@@ -631,6 +631,18 @@ const THEME_PRESETS = {
     text:"#ECEFF3", muted:"#B9C0CA", muted2:"#8D95A1",
   },
 };
+const DEFAULT_BRANDING_SETTINGS = {
+  logo:"",
+  themeMode:"light",
+  menuAccentColor:"#3AAFA9",
+};
+const MENU_COLOR_PRESETS = [
+  { id:"teal", label:"Turkuaz", color:"#3AAFA9" },
+  { id:"green", label:"Yesil", color:"#57BE90" },
+  { id:"forest", label:"Orman", color:"#2F855A" },
+  { id:"blue", label:"Mavi", color:"#4F86C6" },
+  { id:"slate", label:"Antrasit", color:"#475569" },
+];
 const C = { ...THEME_PRESETS.light };
 const CORPORATE_CHART_PALETTE = [
   "#79C9D4",
@@ -1078,8 +1090,16 @@ const LEGACY_OPERATION_ICON_MAP = {
 };
 function normalizeHexColor(value,fallback="#57BE90"){
   const raw=String(value||"").trim();
-  if(/^#?[0-9a-fA-F]{6}$/.test(raw)) return raw.startsWith("#")?raw:`#${raw}`;
+  if(/^#?[0-9a-fA-F]{6}$/.test(raw)) return (raw.startsWith("#")?raw:`#${raw}`).toUpperCase();
   return fallback;
+}
+function normalizeBrandingSettings(raw){
+  const src=raw||{};
+  return {
+    logo:typeof src.logo==="string"?src.logo:"",
+    themeMode:["light","dark"].includes(src.themeMode)?src.themeMode:DEFAULT_BRANDING_SETTINGS.themeMode,
+    menuAccentColor:normalizeHexColor(src.menuAccentColor,DEFAULT_BRANDING_SETTINGS.menuAccentColor),
+  };
 }
 function normalizeOperationIcon(icon,fallback){
   const base=String(icon||"").trim();
@@ -1135,6 +1155,59 @@ function hexToRgb(hex,fallback={r:87,g:190,b:144}){
     r:parseInt(clean.slice(0,2),16),
     g:parseInt(clean.slice(2,4),16),
     b:parseInt(clean.slice(4,6),16),
+  };
+}
+function clampColorChannel(value){
+  return Math.max(0,Math.min(255,Math.round(safeNum(value))));
+}
+function rgbToHex(rgb){
+  const toHex=value=>clampColorChannel(value).toString(16).padStart(2,"0");
+  return `#${toHex(rgb?.r)}${toHex(rgb?.g)}${toHex(rgb?.b)}`.toUpperCase();
+}
+function mixHexColors(colorA,colorB,weight=0.5){
+  const ratio=Math.max(0,Math.min(1,safeNum(weight)));
+  const a=hexToRgb(colorA);
+  const b=hexToRgb(colorB);
+  return rgbToHex({
+    r:a.r+((b.r-a.r)*ratio),
+    g:a.g+((b.g-a.g)*ratio),
+    b:a.b+((b.b-a.b)*ratio),
+  });
+}
+function rgbaFromHex(color,alpha=1){
+  const a=Math.max(0,Math.min(1,safeNum(alpha)));
+  const rgb=hexToRgb(color);
+  return `rgba(${rgb.r},${rgb.g},${rgb.b},${a})`;
+}
+function readableTextFor(color,dark="#10211D",light="#FEFFFF"){
+  const {r,g,b}=hexToRgb(color);
+  const brightness=((r*299)+(g*587)+(b*114))/1000;
+  return brightness>=150?dark:light;
+}
+function buildMenuColorTheme(baseColor,mode="light"){
+  const accent=normalizeHexColor(baseColor,DEFAULT_BRANDING_SETTINGS.menuAccentColor);
+  const darkMode=mode==="dark";
+  const bg=mixHexColors(darkMode?"#16181C":"#17252A",accent,darkMode?0.14:0.18);
+  const panelBg=mixHexColors(darkMode?"#1E232A":"#203238",accent,darkMode?0.12:0.16);
+  const activeBg=mixHexColors(darkMode?"#27303A":"#23383D",accent,darkMode?0.42:0.66);
+  const text=mixHexColors(darkMode?"#EEF2F6":"#DEF2F1",accent,darkMode?0.05:0.08);
+  return {
+    accent,
+    accentSoft:darkMode?mixHexColors("#232830",accent,0.22):mixHexColors("#FEFFFF",accent,0.86),
+    accentBorder:rgbaFromHex(accent,darkMode?0.5:0.38),
+    accentShadow:rgbaFromHex(accent,darkMode?0.24:0.18),
+    bg,
+    bgSoft:rgbaFromHex(accent,darkMode?0.12:0.11),
+    panelBg,
+    border:rgbaFromHex(accent,darkMode?0.24:0.22),
+    text,
+    muted:rgbaFromHex(text,darkMode?0.72:0.74),
+    icon:rgbaFromHex(text,darkMode?0.8:0.78),
+    activeBg,
+    activeBorder:rgbaFromHex(accent,darkMode?0.48:0.44),
+    activeText:readableTextFor(activeBg),
+    toggleBg:rgbaFromHex(accent,darkMode?0.16:0.13),
+    shellShadow:"inset -1px 0 0 rgba(255,255,255,.05)",
   };
 }
 async function ensureExternalScript(src,checkFn){
@@ -2462,6 +2535,184 @@ function NavIcon({name,size=18}) {
   return null;
 }
 
+function GlobalSearchHero({
+  containerRef=null,
+  query="",
+  open=false,
+  loading=false,
+  groups=[],
+  total=0,
+  firstResult=null,
+  onChange=()=>{},
+  onFocus=()=>{},
+  onSelect=()=>{},
+  onOpenChange=()=>{},
+  placeholder="Tum kayitlarda ara...",
+  layoutMode="desktop",
+  helperText="Tum moduller ve kayitlar burada aranir.",
+}){
+  const isMobile=layoutMode==="mobile";
+  const isTablet=layoutMode==="tablet";
+  const normalizedQuery=normalizeSearchKeyword(query);
+  const shellMaxWidth=isMobile?null:(isTablet?720:860);
+  const resultPanelWidth=isMobile
+    ? "100%"
+    : (isTablet?"min(calc(100vw - 72px), 860px)":"min(calc(100vw - 220px), 1040px)");
+  const groupGridColumns=isMobile?"1fr":(isTablet?"1fr":"repeat(2,minmax(0,1fr))");
+  return (
+    <div ref={containerRef} style={{position:"relative",width:"100%",maxWidth:shellMaxWidth||undefined,margin:isMobile?undefined:"0 auto"}}>
+      <div style={{position:"relative"}}>
+        <span style={{position:"absolute",left:15,top:"50%",transform:"translateY(-50%)",width:18,height:18,color:"#64748B",display:"inline-flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
+          <NavIcon name="search" size={16}/>
+        </span>
+        <input
+          value={query}
+          onChange={e=>onChange(e.target.value)}
+          onFocus={onFocus}
+          onClick={onFocus}
+          onKeyDown={e=>{
+            if(e.key==="Escape"){
+              e.preventDefault();
+              onOpenChange(false);
+              return;
+            }
+            if(e.key==="Enter"&&firstResult){
+              e.preventDefault();
+              onSelect(firstResult);
+            }
+          }}
+          placeholder={placeholder}
+          autoComplete="off"
+          style={{
+            width:"100%",
+            height:isMobile?48:54,
+            borderRadius:isMobile?14:18,
+            padding:"0 54px 0 44px",
+            border:"1px solid rgba(226,232,240,.92)",
+            background:"rgba(255,255,255,.97)",
+            color:"#0F172A",
+            boxShadow:isMobile?"0 8px 20px rgba(15,23,42,.12)":"0 14px 30px rgba(15,23,42,.14)",
+            fontSize:isMobile?14:15,
+            fontWeight:500,
+            outline:"none",
+            boxSizing:"border-box",
+            fontFamily:"inherit",
+          }}
+        />
+        <button
+          type="button"
+          onClick={()=>{
+            if(normalizedQuery.length>=2&&firstResult){
+              onSelect(firstResult);
+              return;
+            }
+            onFocus();
+          }}
+          style={{
+            position:"absolute",
+            right:8,
+            top:"50%",
+            transform:"translateY(-50%)",
+            width:isMobile?32:36,
+            height:isMobile?32:36,
+            borderRadius:999,
+            border:"none",
+            background:"rgba(148,163,184,.16)",
+            color:"#475569",
+            cursor:"pointer",
+            display:"inline-flex",
+            alignItems:"center",
+            justifyContent:"center",
+            padding:0,
+          }}
+          aria-label="Arama"
+        >
+          <NavIcon name="search" size={14}/>
+        </button>
+      </div>
+      {!isMobile&&(
+        <div style={{marginTop:7,fontSize:11,color:"rgba(255,255,255,.82)",textAlign:"center",letterSpacing:.2}}>
+          {helperText}
+        </div>
+      )}
+      {open&&(
+        <div
+          style={{
+            position:"absolute",
+            top:isMobile?"calc(100% + 8px)":"calc(100% + 12px)",
+            left:isMobile?0:"50%",
+            transform:isMobile?"none":"translateX(-50%)",
+            width:resultPanelWidth,
+            zIndex:42,
+            background:C.card,
+            border:`1px solid ${C.border}`,
+            borderRadius:18,
+            boxShadow:"0 24px 54px rgba(15,23,42,.22)",
+            overflow:"hidden",
+          }}
+        >
+          <div style={{padding:"11px 14px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,background:C.surface2}}>
+            <div style={{fontSize:11,color:C.muted2,fontWeight:700,letterSpacing:.6,textTransform:"uppercase"}}>Global Arama</div>
+            <div style={{fontSize:11,color:C.muted2}}>{Math.max(0,Math.floor(safeNum(total)))} sonuc</div>
+          </div>
+          <div className="mrp-scrollbar" style={{maxHeight:isMobile?360:430,overflowY:"auto",padding:12}}>
+            {normalizedQuery.length<2&&(
+              <div style={{padding:"14px 12px",fontSize:13,color:C.muted2,textAlign:"center"}}>
+                Aramak icin en az 2 karakter yazin.
+              </div>
+            )}
+            {normalizedQuery.length>=2&&loading&&(
+              <div style={{padding:"14px 12px",fontSize:13,color:C.muted2,textAlign:"center"}}>
+                Kayitlar taraniyor...
+              </div>
+            )}
+            {normalizedQuery.length>=2&&!loading&&groups.length===0&&(
+              <div style={{padding:"14px 12px",fontSize:13,color:C.muted2,textAlign:"center"}}>
+                Sonuc bulunamadi.
+              </div>
+            )}
+            {normalizedQuery.length>=2&&!loading&&groups.length>0&&(
+              <div style={{display:"grid",gridTemplateColumns:groupGridColumns,gap:10}}>
+                {groups.map(group=>(
+                  <div key={group.tabId} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:10}}>
+                    <div style={{fontSize:11,color:C.muted2,fontWeight:800,letterSpacing:.6,textTransform:"uppercase",padding:"2px 2px 8px"}}>
+                      {group.moduleLabel}
+                    </div>
+                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                      {group.items.map(item=>(
+                        <button
+                          key={item.uid}
+                          onClick={()=>onSelect(item)}
+                          style={{
+                            ...btnSt("ghost"),
+                            width:"100%",
+                            padding:"9px 10px",
+                            textAlign:"left",
+                            display:"flex",
+                            flexDirection:"column",
+                            alignItems:"stretch",
+                            gap:3,
+                            background:C.card,
+                            borderColor:C.border,
+                            borderRadius:10,
+                          }}
+                        >
+                          <span style={{fontSize:12,color:C.text,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.title||"-"}</span>
+                          {item.subtitle&&<span style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.subtitle}</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function resolveOperatorBaseUrl(){
   if(typeof window==="undefined") return "";
   return `${window.location.origin}${window.location.pathname}`;
@@ -3104,12 +3355,14 @@ function SupplierGroupSettings({currentUser}) {
 // ============================================================
 //  ADMIN USERS
 // ============================================================
-function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="light",onThemeModeChange=()=>{},menuCatalog=[],menuVisibility,onMenuVisibilityChange}) {
+function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="light",onThemeModeChange=()=>{},menuAccentColor=DEFAULT_BRANDING_SETTINGS.menuAccentColor,onMenuAccentColorChange=()=>{},menuCatalog=[],menuVisibility,onMenuVisibilityChange}) {
   const [users,setUsers]=useState([]);
   const [loading,setLoading]=useState(true);
   const [expanded,setExpanded]=useState(null);
   const [settingsView,setSettingsView]=useState("genel");
   const [logoLoading,setLogoLoading]=useState(false);
+  const [brandingMenuColor,setBrandingMenuColor]=useState(()=>normalizeHexColor(menuAccentColor,DEFAULT_BRANDING_SETTINGS.menuAccentColor));
+  const [brandingMenuSaving,setBrandingMenuSaving]=useState(false);
   const [quoteTemplate,setQuoteTemplate]=useState(DEFAULT_QUOTE_TEMPLATE);
   const [templateSaving,setTemplateSaving]=useState(false);
   const [menuConfig,setMenuConfig]=useState(()=>normalizeMenuVisibilityConfig(menuVisibility||{}));
@@ -3133,6 +3386,9 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
   useEffect(()=>{
     setMenuConfig(normalizeMenuVisibilityConfig(menuVisibility||{}));
   },[menuVisibility]);
+  useEffect(()=>{
+    setBrandingMenuColor(normalizeHexColor(menuAccentColor,DEFAULT_BRANDING_SETTINGS.menuAccentColor));
+  },[menuAccentColor]);
 
   async function update(id,patch) {
     await window.DB.updateDoc("users",id,patch);
@@ -3173,6 +3429,15 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
   }
   function setTemplateField(key,value){
     setQuoteTemplate(prev=>({...prev,[key]:value}));
+  }
+  async function saveMenuAccent(){
+    const normalized=normalizeHexColor(brandingMenuColor,DEFAULT_BRANDING_SETTINGS.menuAccentColor);
+    setBrandingMenuSaving(true);
+    const ok=await onMenuAccentColorChange(normalized);
+    setBrandingMenuSaving(false);
+    if(ok===false){alert("Menu rengi kaydedilemedi.");return;}
+    setBrandingMenuColor(normalized);
+    alert("Menu rengi kaydedildi.");
   }
   async function saveQuoteTemplate(){
     setTemplateSaving(true);
@@ -3278,6 +3543,8 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
   },[menuCatalog]);
   const hiddenMenuSet=useMemo(()=>new Set((menuConfig&&Array.isArray(menuConfig.hiddenTabs))?menuConfig.hiddenTabs:[]),[menuConfig]);
   const menuVisibleCount=menuRows.filter(row=>MENU_ALWAYS_VISIBLE_TAB_IDS.includes(row.id)||!hiddenMenuSet.has(row.id)).length;
+  const normalizedMenuAccentColor=normalizeHexColor(brandingMenuColor,DEFAULT_BRANDING_SETTINGS.menuAccentColor);
+  const menuPreviewTone=buildMenuColorTheme(normalizedMenuAccentColor,themeMode);
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
 
   const settingsTabs=[
@@ -3339,6 +3606,51 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
               <button onClick={()=>onThemeModeChange("dark")} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,borderColor:themeMode==="dark"?C.accent:C.border,color:themeMode==="dark"?C.accent:C.text}} disabled={themeMode==="dark"}>
                 Koyu Tema
               </button>
+            </div>
+            <div style={{marginTop:14,paddingTop:12,borderTop:`1px solid ${C.border}`}}>
+              <div style={{fontSize:12,color:C.muted2,marginBottom:10}}>Sol menunun ana rengini secin. Aktif satir, kenarlik ve arka plan tonlari bu renkten otomatik uretilir.</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:12,alignItems:"start"}}>
+                <div>
+                  <span style={labelSt}>Menu Ana Rengi</span>
+                  <div style={{display:"flex",gap:8}}>
+                    <input style={{...inputSt,padding:0,width:50,height:38,flex:"0 0 auto"}} type="color" value={normalizedMenuAccentColor} onChange={e=>setBrandingMenuColor(e.target.value)}/>
+                    <input style={{...inputSt,flex:1}} value={brandingMenuColor} onChange={e=>setBrandingMenuColor(e.target.value)} placeholder="#3AAFA9"/>
+                  </div>
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}>
+                    {MENU_COLOR_PRESETS.map(opt=>(
+                      <button
+                        key={opt.id}
+                        onClick={()=>setBrandingMenuColor(opt.color)}
+                        style={{
+                          ...btnSt("ghost"),
+                          padding:"7px 10px",
+                          fontSize:12,
+                          display:"inline-flex",
+                          alignItems:"center",
+                          gap:7,
+                          borderColor:normalizedMenuAccentColor===opt.color?C.accent:C.border,
+                          color:normalizedMenuAccentColor===opt.color?C.accent:C.text,
+                        }}
+                      >
+                        <span style={{width:12,height:12,borderRadius:99,background:opt.color,display:"inline-block",border:`1px solid ${C.border}`}}/>
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}>
+                    <button onClick={saveMenuAccent} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={brandingMenuSaving}>{brandingMenuSaving?"Kaydediliyor...":"Menu Rengini Kaydet"}</button>
+                    <button onClick={()=>setBrandingMenuColor(DEFAULT_BRANDING_SETTINGS.menuAccentColor)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}} disabled={brandingMenuSaving}>Varsayilan</button>
+                  </div>
+                </div>
+                <div style={{background:menuPreviewTone.bg,border:`1px solid ${menuPreviewTone.border}`,borderRadius:12,padding:12,color:menuPreviewTone.text,boxShadow:menuPreviewTone.shellShadow}}>
+                  <div style={{fontSize:11,color:menuPreviewTone.muted,letterSpacing:.7,textTransform:"uppercase",fontWeight:700,marginBottom:8}}>Menu Onizleme</div>
+                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                    <div style={{padding:"9px 10px",borderRadius:8,background:menuPreviewTone.activeBg,border:`1px solid ${menuPreviewTone.activeBorder}`,color:menuPreviewTone.activeText,fontWeight:700}}>Dashboard</div>
+                    <div style={{padding:"9px 10px",borderRadius:8,background:menuPreviewTone.bgSoft,border:`1px solid ${menuPreviewTone.border}`,color:menuPreviewTone.text}}>Planlama</div>
+                    <div style={{padding:"9px 10px",borderRadius:8,border:`1px dashed ${menuPreviewTone.border}`,color:menuPreviewTone.muted}}>Secilen tonla baglantili ara renkler otomatik ayarlanir.</div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
           <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Genel Ayarlar · Logo</div>
@@ -5830,7 +6142,8 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     revision:"A",
     setupSec:"300",
     cycleSec:"60",
-    qtyPerRaw:"1",
+    partDiameterMm:"",
+    partLengthMm:"",
     ncProgramVersion:"V1",
     documents:[],
     notes:"",
@@ -6016,6 +6329,20 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
   const pagedParts=filteredParts.slice(partListStart,partListStart+Math.max(1,partRowsPerPage));
   const BAR_LENGTH_MM=3000;
   const normalized=s=>String(s||"").trim().toUpperCase();
+  const formatMmValue=value=>{
+    const n=safeNum(value);
+    if(n<=0) return "";
+    const rounded=Math.round(n*100)/100;
+    return Number.isInteger(rounded)?String(rounded):String(rounded).replace(/\.?0+$/,"");
+  };
+  const partDimensionSummary=part=>{
+    const chips=[];
+    const diameterText=formatMmValue(part?.partDiameterMm);
+    const lengthText=formatMmValue(part?.partLengthMm);
+    if(diameterText) chips.push(`Cap ${diameterText} mm`);
+    if(lengthText) chips.push(`Uzunluk ${lengthText} mm`);
+    return chips.join(" · ");
+  };
   const findMaterialForBom=(code,name)=>{
     const codeKey=normalized(code);
     const nameKey=normalized(name);
@@ -6153,6 +6480,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
   const renderPartListCell=(p,col,rowNo)=>{
     const docsCount=(Array.isArray(p.documents)?p.documents.length:0)+(p.drawingFile?1:0);
     const companyName=getPartCompanyName(p)||"-";
+    const dimensionMeta=partDimensionSummary(p);
     if(col.id==="row_no"){
       return <div style={{fontSize:11,color:C.muted2,textAlign:"center",fontWeight:700}}>{rowNo}</div>;
     }
@@ -6164,7 +6492,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
         <div style={{minWidth:0}}>
           <div style={{fontSize:12,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name||"-"}</div>
           <div style={{fontSize:10,color:C.muted2,marginTop:2}}>
-            Kurulum {safeNum(p.setupSec)} sn - Cevrim {safeNum(p.cycleSec)} sn
+            {[dimensionMeta,`Cevrim ${safeNum(p.cycleSec)} sn`].filter(Boolean).join(" · ")}
           </div>
         </div>
       );
@@ -6258,7 +6586,8 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
       revision:(partForm.revision||"A").trim().toUpperCase(),
       setupSec:Math.max(0,safeNum(partForm.setupSec)),
       cycleSec:Math.max(0,safeNum(partForm.cycleSec)),
-      qtyPerRaw:Math.max(0,safeNum(partForm.qtyPerRaw)),
+      partDiameterMm:Math.max(0,safeNum(partForm.partDiameterMm)),
+      partLengthMm:Math.max(0,safeNum(partForm.partLengthMm)),
       rawUnitCost:preservedRawUnitCost,
       laborRateHour:preservedLaborRateHour,
       machineRateHour:preservedMachineRateHour,
@@ -6318,7 +6647,8 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
       revision:p.revision||"A",
       setupSec:String(p.setupSec??300),
       cycleSec:String(p.cycleSec??60),
-      qtyPerRaw:String(p.qtyPerRaw??1),
+      partDiameterMm:p.partDiameterMm!==undefined&&p.partDiameterMm!==null?String(p.partDiameterMm):"",
+      partLengthMm:p.partLengthMm!==undefined&&p.partLengthMm!==null?String(p.partLengthMm):"",
       ncProgramVersion:p.ncProgramVersion||"V1",
       documents:docs,
       notes:p.notes||"",
@@ -6575,9 +6905,9 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
                   options={materials.map(m=>({value:m.name||"",label:`${m.code?`${m.code} - `:""}${m.name||""}`}))}
                 />
               </div>
-              <div><span style={labelSt}>Kurulum (sn)</span><input style={inputSt} type="number" min="0" value={partForm.setupSec} onChange={e=>fv("setupSec",e.target.value)}/></div>
               <div><span style={labelSt}>Cevrim (sn)</span><input style={inputSt} type="number" min="0" value={partForm.cycleSec} onChange={e=>fv("cycleSec",e.target.value)}/></div>
-              <div><span style={labelSt}>Hammadde Miktar</span><input style={inputSt} type="number" min="0" value={partForm.qtyPerRaw} onChange={e=>fv("qtyPerRaw",e.target.value)}/></div>
+              <div><span style={labelSt}>Parca Capi (mm)</span><input style={inputSt} type="number" min="0" step="0.01" value={partForm.partDiameterMm} onChange={e=>fv("partDiameterMm",e.target.value)}/></div>
+              <div><span style={labelSt}>Parca Uzunlugu (mm)</span><input style={inputSt} type="number" min="0" step="0.01" value={partForm.partLengthMm} onChange={e=>fv("partLengthMm",e.target.value)}/></div>
               <div><span style={labelSt}>NC Program Versiyon</span><input style={inputSt} value={partForm.ncProgramVersion} onChange={e=>fv("ncProgramVersion",e.target.value)} placeholder="V1"/></div>
               <div>
                 <span style={labelSt}>Dosyalar</span>
@@ -6650,6 +6980,9 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
                 <div style={{fontWeight:800,color:C.text,fontSize:16}}>Parca Detay</div>
                 <div style={{fontSize:12,color:C.muted2,marginTop:2}}>
                   <strong style={{color:C.text}}>{selectedPart.partNo||"-"}</strong> {selectedPart.name?` - ${selectedPart.name}`:""}
+                </div>
+                <div style={{fontSize:11,color:C.muted2,marginTop:4}}>
+                  {[selectedPart.material||"",selectedPart.revision?`Rev ${selectedPart.revision}`:"",partDimensionSummary(selectedPart)].filter(Boolean).join(" · ")}
                 </div>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
@@ -16000,9 +16333,6 @@ function MRPDashboard({
   const hasGlobalSearch=Boolean(globalSearch&&typeof globalSearch.onChange==="function");
   const dashboardSearchQuery=hasGlobalSearch?String(globalSearch.query||""):String(machineQuery||"");
   const dashboardSearchOpen=hasGlobalSearch?Boolean(globalSearch.open):false;
-  const dashboardSearchExpanded=hasGlobalSearch
-    ? Boolean(globalSearch.expanded||dashboardSearchOpen||dashboardSearchQuery.trim()!=="")
-    : dashboardSearchQuery.trim()!=="";
   const dashboardSearchGroups=hasGlobalSearch&&Array.isArray(globalSearch.groups)?globalSearch.groups:[];
   const dashboardSearchLoading=hasGlobalSearch?Boolean(globalSearch.loading):false;
   const dashboardSearchTotal=hasGlobalSearch?Math.max(0,Math.floor(safeNum(globalSearch.total))):0;
@@ -16082,11 +16412,22 @@ function MRPDashboard({
   const lastLoadText=lastLoadedAt?new Intl.DateTimeFormat("tr-TR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(new Date(lastLoadedAt)):"-";
   const userLabel=String(currentUser?.fullName||"").trim();
   const layoutBadge=layoutMode==="desktop"?"DESKTOP":(layoutMode==="tablet"?"TABLET":"MOBIL");
+  const dashboardHeroGridColumns=layoutMode==="desktop"
+    ? "minmax(240px,1fr) minmax(520px,860px) auto"
+    : (layoutMode==="tablet"?"minmax(0,1fr) auto":"1fr");
+  const dashboardSearchCellStyle=layoutMode==="desktop"
+    ? {gridColumn:"2"}
+    : {gridColumn:"1 / -1"};
+  const dashboardActionsCellStyle=layoutMode==="desktop"
+    ? {gridColumn:"3",justifySelf:"end"}
+    : (layoutMode==="tablet"
+      ? {gridColumn:"2",justifySelf:"end"}
+      : {gridColumn:"1"});
 
   return (
     <div style={{padding:"0 0 12px",display:"flex",flexDirection:"column",gap:12}}>
       <div style={{position:"sticky",top:8,zIndex:24,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:dashboardSearchOpen?"visible":"hidden",boxShadow:commandBarTone.heroShadow}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",background:commandBarTone.heroBg}}>
+        <div style={{display:"grid",gridTemplateColumns:dashboardHeroGridColumns,alignItems:"center",gap:12,padding:"12px 14px",background:commandBarTone.heroBg}}>
           <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
             <div style={{width:40,height:40,borderRadius:10,background:"rgba(255,255,255,.16)",border:`1px solid ${commandBarTone.heroChipBorder}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
               <FactorabMark size={24} variant="dark"/>
@@ -16103,69 +16444,28 @@ function MRPDashboard({
               </div>
             </div>
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <div
-              ref={hasGlobalSearch?globalSearch.containerRef:null}
-              style={{position:"relative",minWidth:isNarrow?190:(dashboardSearchExpanded?420:250),transition:"min-width .18s ease"}}
-            >
-              <span style={{position:"absolute",left:10,top:7,width:15,height:15,color:commandBarTone.heroMuted,display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon name="search" size={14}/></span>
-              <input
-                value={dashboardSearchQuery}
-                onChange={e=>{
-                  const next=e.target.value;
-                  if(hasGlobalSearch) globalSearch.onChange(next);
-                  else setMachineQuery(next);
-                }}
-                onFocus={()=>{if(hasGlobalSearch) globalSearch.onFocus();}}
-                onClick={()=>{if(hasGlobalSearch) globalSearch.onFocus();}}
-                onKeyDown={e=>{
-                  if(!hasGlobalSearch) return;
-                  if(e.key==="Escape"){
-                    e.preventDefault();
-                    globalSearch.onOpenChange(false);
-                    return;
-                  }
-                  if(e.key==="Enter"&&dashboardSearchFirstResult){
-                    e.preventDefault();
-                    globalSearch.onSelect(dashboardSearchFirstResult);
-                  }
-                }}
-                placeholder={hasGlobalSearch?"Tum kayitlarda ara...":"Kayitlarda ara..."}
-                style={{...inputSt,padding:"8px 10px 8px 30px",fontSize:12,minWidth:isNarrow?190:(dashboardSearchExpanded?420:250),background:commandBarTone.heroFieldBg,borderColor:commandBarTone.heroFieldBorder,color:commandBarTone.heroText,transition:"min-width .18s ease"}}
-              />
-              {hasGlobalSearch&&dashboardSearchOpen&&(
-                <div style={{position:"absolute",left:0,right:0,top:"calc(100% + 7px)",zIndex:42,background:C.card,border:`1px solid ${C.border}`,borderRadius:12,boxShadow:"0 16px 34px rgba(0,0,0,.24)",maxHeight:420,overflow:"hidden"}}>
-                  <div style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,background:C.surface2}}>
-                    <div style={{fontSize:11,color:C.muted2,fontWeight:700,letterSpacing:.5,textTransform:"uppercase"}}>Global Arama</div>
-                    <div style={{fontSize:11,color:C.muted2}}>{dashboardSearchTotal} sonuc</div>
-                  </div>
-                  <div className="mrp-scrollbar" style={{maxHeight:366,overflowY:"auto",padding:"8px"}}>
-                    {normalizeSearchKeyword(dashboardSearchQuery).length<2&&(
-                      <div style={{padding:"10px 8px",fontSize:12,color:C.muted2}}>Aramak icin en az 2 karakter yazin.</div>
-                    )}
-                    {normalizeSearchKeyword(dashboardSearchQuery).length>=2&&dashboardSearchLoading&&(
-                      <div style={{padding:"10px 8px",fontSize:12,color:C.muted2}}>Kayitlar taraniyor...</div>
-                    )}
-                    {normalizeSearchKeyword(dashboardSearchQuery).length>=2&&!dashboardSearchLoading&&dashboardSearchGroups.length===0&&(
-                      <div style={{padding:"10px 8px",fontSize:12,color:C.muted2}}>Sonuc bulunamadi.</div>
-                    )}
-                    {normalizeSearchKeyword(dashboardSearchQuery).length>=2&&!dashboardSearchLoading&&dashboardSearchGroups.map(group=>(
-                      <div key={group.tabId} style={{marginBottom:8}}>
-                        <div style={{fontSize:11,color:C.muted2,fontWeight:800,letterSpacing:.6,textTransform:"uppercase",padding:"4px 6px"}}>{group.moduleLabel}</div>
-                        <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                          {group.items.map(item=>(
-                            <button key={item.uid} onClick={()=>globalSearch.onSelect(item)} style={{...btnSt("ghost"),width:"100%",padding:"7px 8px",textAlign:"left",display:"flex",flexDirection:"column",alignItems:"stretch",gap:2}}>
-                              <span style={{fontSize:12,color:C.text,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.title||"-"}</span>
-                              {item.subtitle&&<span style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.subtitle}</span>}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+          <div style={{...dashboardSearchCellStyle,minWidth:0}}>
+            <GlobalSearchHero
+              containerRef={hasGlobalSearch?globalSearch.containerRef:null}
+              query={dashboardSearchQuery}
+              open={hasGlobalSearch?dashboardSearchOpen:false}
+              loading={dashboardSearchLoading}
+              groups={dashboardSearchGroups}
+              total={dashboardSearchTotal}
+              firstResult={dashboardSearchFirstResult}
+              onChange={next=>{
+                if(hasGlobalSearch) globalSearch.onChange(next);
+                else setMachineQuery(next);
+              }}
+              onFocus={()=>{if(hasGlobalSearch) globalSearch.onFocus();}}
+              onSelect={item=>{if(hasGlobalSearch) globalSearch.onSelect(item);}}
+              onOpenChange={value=>{if(hasGlobalSearch) globalSearch.onOpenChange(value);}}
+              placeholder={hasGlobalSearch?"Tum kayitlarda ara...":"Kayitlarda ara..."}
+              layoutMode={layoutMode}
+              helperText="Tum uygulama kayitlarini tek alandan tarayin."
+            />
+          </div>
+          <div style={{...dashboardActionsCellStyle,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:layoutMode==="mobile"?"flex-end":"flex-end"}}>
             <button onClick={()=>setDashboardEditMode(v=>!v)} title="Yeni aksiyon" style={{border:`1px solid ${commandBarTone.heroChipBorder}`,background:commandBarTone.heroChipBg,color:commandBarTone.heroText,padding:"8px 10px",fontSize:14,minWidth:34,borderRadius:8,cursor:"pointer"}}>{dashboardEditMode?"×":"+"}</button>
             {quickActions.map(act=>(
               <button key={act.id} onClick={()=>onQuickAction(act.id)} title={act.label} style={{position:"relative",border:`1px solid ${commandBarTone.heroChipBorder}`,background:commandBarTone.heroChipBg,color:commandBarTone.heroText,padding:"7px 9px",fontSize:13,minWidth:34,borderRadius:8,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center"}}>
@@ -19930,6 +20230,7 @@ function App() {
   const [loading,setLoading]=useState(true);
   const [tab,setTab]=useState("dashboard");
   const [themeMode,setThemeMode]=useState("light");
+  const [menuAccentColor,setMenuAccentColor]=useState(DEFAULT_BRANDING_SETTINGS.menuAccentColor);
   const [menuVisibility,setMenuVisibility]=useState(()=>normalizeMenuVisibilityConfig({}));
   const [machines,setMachines]=useState(DEFAULT_MACHINES);
   const [logoSrc,setLogoSrc]=useState(LOGO_SRC);
@@ -19982,6 +20283,7 @@ function App() {
       const initialMachines=connectorMachines.length>0
         ? connectorMachines
         : (configMachines.length>0?configMachines:DEFAULT_MACHINES);
+      const brandingConfig=normalizeBrandingSettings(branding||{});
       setMachines(initialMachines);
       setMenuVisibility(normalizeMenuVisibilityConfig(menuVisibilityDoc||{}));
       if(connectorMachines.length>0&&!sameMachineList(configMachines,connectorMachines)){
@@ -19991,8 +20293,9 @@ function App() {
           updatedAt:new Date().toISOString(),
         });
       }
-      if(branding&&branding.logo) setLogoSrc(branding.logo);
-      if(branding&&["light","dark"].includes(branding.themeMode||"")) setThemeMode(branding.themeMode);
+      setLogoSrc(brandingConfig.logo||LOGO_SRC);
+      setThemeMode(brandingConfig.themeMode);
+      setMenuAccentColor(brandingConfig.menuAccentColor);
       const session=window.Session.get();
       if(session){
         const u=await window.DB.getDoc("users",session.username);
@@ -20129,6 +20432,17 @@ function App() {
     const next=mode==="dark"?"dark":"light";
     setThemeMode(next);
     await window.DB.setDoc("config","branding",{themeMode:next});
+  }
+  async function updateMenuAccentColor(color){
+    const normalized=normalizeHexColor(color,DEFAULT_BRANDING_SETTINGS.menuAccentColor);
+    const previous=menuAccentColor;
+    setMenuAccentColor(normalized);
+    const ok=await window.DB.setDoc("config","branding",{menuAccentColor:normalized});
+    if(!ok){
+      setMenuAccentColor(previous);
+      return false;
+    }
+    return true;
   }
   async function logout(){window.Session.clear();setCurrentUser(null);setTab("dashboard");}
 
@@ -20353,7 +20667,6 @@ function App() {
     return Object.values(grouped).sort((a,b)=>(tabOrderById[a.tabId]??999)-(tabOrderById[b.tabId]??999));
   },[globalSearchResults,tabOrderById]);
   const globalSearchFirstResult=globalSearchGroups[0]?.items?.[0]||null;
-  const globalSearchExpanded=globalSearchOpen||String(globalSearchQuery||"").trim()!=="";
   const handleGlobalSearchFocus=useCallback(()=>{
     setGlobalSearchOpen(true);
     ensureGlobalSearchIndex(false);
@@ -20606,14 +20919,13 @@ function App() {
     if(tab==="rapor") return <Report currentUser={currentUser} machines={machines}/>;
     if(tab==="tools") return <ToolStock currentUser={currentUser} machines={machines} filtersVisible={toolsFilterOpen}/>;
     if(tab==="orders") return <WorkOrders currentUser={currentUser} machines={machines} filtersVisible={ordersFilterOpen}/>;
-    if(tab==="users") return <AdminUsers currentUser={currentUser} machines={machines} currentLogo={logoSrc} onLogoUpdate={updateLogo} themeMode={themeMode} onThemeModeChange={updateTheme} menuCatalog={allTabs} menuVisibility={menuVisibility} onMenuVisibilityChange={setMenuVisibility}/>;
+    if(tab==="users") return <AdminUsers currentUser={currentUser} machines={machines} currentLogo={logoSrc} onLogoUpdate={updateLogo} themeMode={themeMode} onThemeModeChange={updateTheme} menuAccentColor={menuAccentColor} onMenuAccentColorChange={updateMenuAccentColor} menuCatalog={allTabs} menuVisibility={menuVisibility} onMenuVisibilityChange={setMenuVisibility}/>;
     if(tab==="dashboard") return <MRPDashboard currentUser={currentUser} machines={machines} logoSrc={logoSrc} themeMode={themeMode} onLogout={logout} onQuickAction={handleTopQuickAction} onCreateNewRecord={handleDashboardCreateRecord} roleLabel={currentRoleLabel} layoutMode={layoutMode} globalSearch={{
       query:globalSearchQuery,
       open:globalSearchOpen,
       loading:globalSearchLoading,
       groups:globalSearchGroups,
       total:globalSearchResults.length,
-      expanded:globalSearchExpanded,
       firstResult:globalSearchFirstResult,
       containerRef:globalSearchContainerRef,
       onFocus:handleGlobalSearchFocus,
@@ -20649,35 +20961,7 @@ function App() {
     );
   }
   const activeView=getActiveView();
-  const leftNavColors=themeMode==="dark"
-    ? {
-      bg:"#1B2027",
-      bgSoft:"rgba(255,255,255,.06)",
-      panelBg:"rgba(255,255,255,.04)",
-      border:"rgba(255,255,255,.14)",
-      text:"#E8ECF1",
-      muted:"rgba(232,236,241,.68)",
-      icon:"rgba(232,236,241,.74)",
-      activeBg:"#3A4452",
-      activeBorder:"rgba(232,236,241,.38)",
-      activeText:"#FEFFFF",
-      toggleBg:"rgba(255,255,255,.08)",
-      shellShadow:"inset -1px 0 0 rgba(255,255,255,.05)",
-    }
-    : {
-      bg:"#17252A",
-      bgSoft:"rgba(222,242,241,.07)",
-      panelBg:"rgba(23,37,42,.30)",
-      border:"rgba(222,242,241,.20)",
-      text:"#DEF2F1",
-      muted:"rgba(222,242,241,.74)",
-      icon:"rgba(222,242,241,.78)",
-      activeBg:"#3AAFA9",
-      activeBorder:"rgba(222,242,241,.45)",
-      activeText:"#FEFFFF",
-      toggleBg:"rgba(222,242,241,.10)",
-      shellShadow:"inset -1px 0 0 rgba(255,255,255,.05)",
-    };
+  const leftNavColors=buildMenuColorTheme(menuAccentColor,themeMode);
 
   const menuSearch=(opts={})=>{
     const sideTone=Boolean(opts.sideTone);
@@ -20718,13 +21002,13 @@ function App() {
                 display:"flex",
                 alignItems:"center",
                 borderColor:menuGroupFilter===opt.id
-                  ? (sideTone?leftNavColors.activeBorder:C.accent)
+                  ? (sideTone?leftNavColors.activeBorder:leftNavColors.accentBorder)
                   : (sideTone?leftNavColors.border:C.border),
                 background:menuGroupFilter===opt.id
-                  ? (sideTone?leftNavColors.activeBg:C.brandTint)
+                  ? (sideTone?leftNavColors.activeBg:leftNavColors.accentSoft)
                   : buttonBaseTone,
                 color:menuGroupFilter===opt.id
-                  ? (sideTone?leftNavColors.activeText:C.accent)
+                  ? (sideTone?leftNavColors.activeText:leftNavColors.accent)
                   : (sideTone?leftNavColors.text:C.text),
               }}
             >
@@ -20776,29 +21060,29 @@ function App() {
                   border:`1px solid ${
                     sideTone
                       ? (tab===t.id?leftNavColors.activeBorder:"transparent")
-                      : (tab===t.id?C.accent+"55":C.border)
+                      : (tab===t.id?leftNavColors.accentBorder:C.border)
                   }`,
                   background:sideTone
                     ? (tab===t.id?leftNavColors.activeBg:"transparent")
-                    : (tab===t.id?C.brandTint:C.surface),
+                    : (tab===t.id?leftNavColors.accentSoft:C.surface),
                   color:sideTone
                     ? (tab===t.id?leftNavColors.activeText:leftNavColors.text)
-                    : (tab===t.id?C.accent:C.text),
+                    : (tab===t.id?leftNavColors.accent:C.text),
                   cursor:"pointer",
                   fontFamily:"inherit",
                   justifyContent:iconOnly?"center":"flex-start",
                   boxShadow:tab===t.id
                     ? (sideTone
                       ? "0 0 0 1px rgba(255,255,255,.18), 0 8px 18px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.18)"
-                      : `0 0 0 1px ${C.accent}55, 0 8px 16px ${C.accent}22`)
+                      : `0 0 0 1px ${leftNavColors.accentBorder}, 0 8px 16px ${leftNavColors.accentShadow}`)
                     : "none",
                   filter:tab===t.id?"saturate(1.14) brightness(1.08)":"none",
                   transition:"filter .16s ease, box-shadow .16s ease, transform .16s ease",
                 }}
               >
                 <span style={{display:"inline-flex",alignItems:"center",gap:10,minWidth:0,maxWidth:iconOnly?22:"100%"}}>
-                  <span style={{width:22,display:"inline-flex",justifyContent:"center",alignItems:"center",color:sideTone?(tab===t.id?leftNavColors.activeText:leftNavColors.icon):(tab===t.id?C.accent:C.muted2)}}><NavIcon name={t.icon}/></span>
-                  {!iconOnly&&<span style={{fontSize:compact?12:13,fontWeight:tab===t.id?800:500,color:tab===t.id?(sideTone?leftNavColors.activeText:C.accent):undefined,textShadow:tab===t.id?"0 0 10px rgba(255,255,255,.14)":"none",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.label}</span>}
+                  <span style={{width:22,display:"inline-flex",justifyContent:"center",alignItems:"center",color:sideTone?(tab===t.id?leftNavColors.activeText:leftNavColors.icon):(tab===t.id?leftNavColors.accent:C.muted2)}}><NavIcon name={t.icon}/></span>
+                  {!iconOnly&&<span style={{fontSize:compact?12:13,fontWeight:tab===t.id?800:500,color:tab===t.id?(sideTone?leftNavColors.activeText:leftNavColors.accent):undefined,textShadow:tab===t.id?"0 0 10px rgba(255,255,255,.14)":"none",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.label}</span>}
                 </span>
               </a>
             ))}
@@ -20843,6 +21127,17 @@ function App() {
       subBg:"#DEF2F1",
       subBorder:"#CBE3E1",
     };
+  const appHeroGridColumns=layoutMode==="desktop"
+    ? "minmax(220px,1fr) minmax(520px,860px) auto"
+    : (layoutMode==="tablet"?"minmax(0,1fr) auto":"1fr");
+  const appSearchCellStyle=layoutMode==="desktop"
+    ? {gridColumn:"2"}
+    : {gridColumn:"1 / -1"};
+  const appActionsCellStyle=layoutMode==="desktop"
+    ? {gridColumn:"3",justifySelf:"end"}
+    : (layoutMode==="tablet"
+      ? {gridColumn:"2",justifySelf:"end"}
+      : {gridColumn:"1"});
   const appLayoutBadge=layoutMode==="desktop"?"DESKTOP":(layoutMode==="tablet"?"TABLET":"MOBIL");
   const appUserLabel=String(currentUser?.fullName||"").trim();
   function handleTabLinkClick(e,nextTab,closeMobile){
@@ -20958,7 +21253,7 @@ function App() {
   };
   const topBar=(
     <div className="mrp-topbar" style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:globalSearchOpen?"visible":"hidden",boxShadow:appCommandBarTone.heroShadow}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",background:appCommandBarTone.heroBg}}>
+      <div style={{display:"grid",gridTemplateColumns:appHeroGridColumns,alignItems:"center",gap:12,padding:"12px 14px",background:appCommandBarTone.heroBg}}>
         <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
           <div style={{width:40,height:40,borderRadius:10,background:"rgba(255,255,255,.16)",border:`1px solid ${appCommandBarTone.heroChipBorder}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
             <FactorabMark size={24} variant="dark"/>
@@ -20973,70 +21268,25 @@ function App() {
             </div>
           </div>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-          <div
-            ref={globalSearchContainerRef}
-            style={{
-              position:"relative",
-              minWidth:isMobile?0:(globalSearchExpanded?420:250),
-              width:isMobile?"100%":undefined,
-              flex:isMobile?"1 1 100%":"0 0 auto",
-              transition:"min-width .18s ease",
-            }}
-          >
-            <span style={{position:"absolute",left:10,top:7,width:15,height:15,color:appCommandBarTone.heroMuted,display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon name="search" size={14}/></span>
-            <input
-              value={globalSearchQuery}
-              onChange={e=>handleGlobalSearchChange(e.target.value)}
-              onFocus={handleGlobalSearchFocus}
-              onClick={handleGlobalSearchFocus}
-              onKeyDown={e=>{
-                if(e.key==="Escape"){
-                  e.preventDefault();
-                  setGlobalSearchOpen(false);
-                  return;
-                }
-                if(e.key==="Enter"&&globalSearchFirstResult){
-                  e.preventDefault();
-                  handleGlobalSearchSelect(globalSearchFirstResult);
-                }
-              }}
-              placeholder="Tum kayitlarda ara..."
-              style={{...inputSt,padding:"8px 10px 8px 30px",fontSize:12,minWidth:isMobile?0:(globalSearchExpanded?420:250),width:isMobile?"100%":undefined,background:appCommandBarTone.heroFieldBg,borderColor:appCommandBarTone.heroFieldBorder,color:appCommandBarTone.heroText,transition:"min-width .18s ease"}}
-            />
-            {globalSearchOpen&&(
-              <div style={{position:"absolute",left:0,right:0,top:"calc(100% + 7px)",zIndex:42,background:C.card,border:`1px solid ${C.border}`,borderRadius:12,boxShadow:"0 16px 34px rgba(0,0,0,.24)",maxHeight:420,overflow:"hidden"}}>
-                <div style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,background:C.surface2}}>
-                  <div style={{fontSize:11,color:C.muted2,fontWeight:700,letterSpacing:.5,textTransform:"uppercase"}}>Global Arama</div>
-                  <div style={{fontSize:11,color:C.muted2}}>{globalSearchResults.length} sonuc</div>
-                </div>
-                <div className="mrp-scrollbar" style={{maxHeight:366,overflowY:"auto",padding:"8px"}}>
-                  {normalizeSearchKeyword(globalSearchQuery).length<2&&(
-                    <div style={{padding:"10px 8px",fontSize:12,color:C.muted2}}>Aramak icin en az 2 karakter yazin.</div>
-                  )}
-                  {normalizeSearchKeyword(globalSearchQuery).length>=2&&globalSearchLoading&&(
-                    <div style={{padding:"10px 8px",fontSize:12,color:C.muted2}}>Kayitlar taraniyor...</div>
-                  )}
-                  {normalizeSearchKeyword(globalSearchQuery).length>=2&&!globalSearchLoading&&globalSearchGroups.length===0&&(
-                    <div style={{padding:"10px 8px",fontSize:12,color:C.muted2}}>Sonuc bulunamadi.</div>
-                  )}
-                  {normalizeSearchKeyword(globalSearchQuery).length>=2&&!globalSearchLoading&&globalSearchGroups.map(group=>(
-                    <div key={group.tabId} style={{marginBottom:8}}>
-                      <div style={{fontSize:11,color:C.muted2,fontWeight:800,letterSpacing:.6,textTransform:"uppercase",padding:"4px 6px"}}>{group.moduleLabel}</div>
-                      <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                        {group.items.map(item=>(
-                          <button key={item.uid} onClick={()=>handleGlobalSearchSelect(item)} style={{...btnSt("ghost"),width:"100%",padding:"7px 8px",textAlign:"left",display:"flex",flexDirection:"column",alignItems:"stretch",gap:2}}>
-                            <span style={{fontSize:12,color:C.text,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.title||"-"}</span>
-                            {item.subtitle&&<span style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.subtitle}</span>}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+        <div style={{...appSearchCellStyle,minWidth:0}}>
+          <GlobalSearchHero
+            containerRef={globalSearchContainerRef}
+            query={globalSearchQuery}
+            open={globalSearchOpen}
+            loading={globalSearchLoading}
+            groups={globalSearchGroups}
+            total={globalSearchResults.length}
+            firstResult={globalSearchFirstResult}
+            onChange={handleGlobalSearchChange}
+            onFocus={handleGlobalSearchFocus}
+            onSelect={handleGlobalSearchSelect}
+            onOpenChange={setGlobalSearchOpen}
+            placeholder="Tum kayitlarda ara..."
+            layoutMode={layoutMode}
+            helperText="Tum sayfalarda ve modullerde aramayi buradan yonetin."
+          />
+        </div>
+        <div style={{...appActionsCellStyle,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:layoutMode==="mobile"?"flex-end":"flex-end"}}>
           {isMobile&&(
             <button onClick={()=>setMobileMenuOpen(true)} style={{border:`1px solid ${appCommandBarTone.heroChipBorder}`,background:appCommandBarTone.heroChipBg,color:appCommandBarTone.heroText,padding:"7px 10px",fontSize:12,borderRadius:8,cursor:"pointer",minWidth:72}}>
               Menu
@@ -21197,12 +21447,12 @@ function App() {
           <div className="mrp-bottom-nav" style={{position:"fixed",left:0,right:0,bottom:0,background:`${C.surface}f0`,borderTop:`1px solid ${C.border}`,zIndex:24}}>
               <div style={{width:"100%",maxWidth:contentMaxWidth,margin:"0 auto",display:"grid",gridTemplateColumns:`repeat(${mobilePrimary.length+1},minmax(0,1fr))`,alignItems:"stretch"}}>
                 {mobilePrimary.map(t=>(
-                <a key={t.id} href={buildTabPageHref(t.id)} onClick={e=>handleTabLinkClick(e,t.id,false)} style={{padding:"10px 8px 8px",border:"none",background:tab===t.id?C.brandTint:"transparent",cursor:"pointer",color:tab===t.id?C.accent:C.muted,borderTop:`2px solid ${tab===t.id?C.accent:"transparent"}`,fontFamily:"inherit",minWidth:0,textDecoration:"none",textAlign:"center"}}>
+                <a key={t.id} href={buildTabPageHref(t.id)} onClick={e=>handleTabLinkClick(e,t.id,false)} style={{padding:"10px 8px 8px",border:"none",background:tab===t.id?leftNavColors.accentSoft:"transparent",cursor:"pointer",color:tab===t.id?leftNavColors.accent:C.muted,borderTop:`2px solid ${tab===t.id?leftNavColors.accent:"transparent"}`,fontFamily:"inherit",minWidth:0,textDecoration:"none",textAlign:"center"}}>
                   <div style={{display:"inline-flex",justifyContent:"center",alignItems:"center",height:20}}><NavIcon name={t.icon} size={18}/></div>
                   <div style={{fontSize:10,fontWeight:tab===t.id?700:500,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.label}</div>
                 </a>
               ))}
-              <button onClick={()=>setMobileMenuOpen(true)} style={{padding:"10px 8px 8px",border:"none",background:mobileMenuOpen?C.brandTint:"transparent",cursor:"pointer",color:mobileMenuOpen?C.accent:C.muted,borderTop:`2px solid ${mobileMenuOpen?C.accent:"transparent"}`,fontFamily:"inherit",minWidth:0}}>
+              <button onClick={()=>setMobileMenuOpen(true)} style={{padding:"10px 8px 8px",border:"none",background:mobileMenuOpen?leftNavColors.accentSoft:"transparent",cursor:"pointer",color:mobileMenuOpen?leftNavColors.accent:C.muted,borderTop:`2px solid ${mobileMenuOpen?leftNavColors.accent:"transparent"}`,fontFamily:"inherit",minWidth:0}}>
                 <div style={{display:"inline-flex",justifyContent:"center",alignItems:"center",height:20}}><NavIcon name="users" size={18}/></div>
                 <div style={{fontSize:10,fontWeight:mobileMenuOpen?700:500,marginTop:2}}>Menu</div>
               </button>
