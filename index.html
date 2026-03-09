@@ -445,16 +445,16 @@ const USER_ROLES = [
   { id:"viewer", label:"Izleyici" },
 ];
 const PERMISSIONS = [
-  { id:"data_entry", label:"Veri Girişi", icon:"??", desc:"Üretim verisi girebilir" },
-  { id:"view_reports", label:"Rapor Görüntüleme", icon:"??", desc:"Tüm raporları görebilir" },
-  { id:"manage_orders", label:"İş Emri Oluşturma", icon:"??", desc:"İş emri ekleyip düzenleyebilir" },
-  { id:"assign_tasks", label:"Calisan Gorevlendirme", icon:"??", desc:"Calisanlara gorev atayabilir" },
-  { id:"approve_users", label:"Kullanıcı Onaylama", icon:"??", desc:"Kullanıcıları onaylayabilir" },
-  { id:"manage_sales", label:"Satis ve Teklif", icon:"??", desc:"Teklif ve siparis yonetebilir" },
-  { id:"manage_purchasing", label:"Satin Alma", icon:"??", desc:"Talep ve PO yonetebilir" },
-  { id:"manage_quality", label:"Kalite", icon:"??", desc:"Muayene ve FAI kayitlari girebilir" },
-  { id:"manage_downtime", label:"Durus Yonetimi", icon:"??", desc:"Durus nedeni ve kaydi girebilir" },
-  { id:"manage_notifications", label:"Bildirim Kurallari", icon:"??", desc:"Uyari kurallari duzenleyebilir" },
+  { id:"data_entry", label:"Veri Girişi", icon:"VG", desc:"Üretim verisi girebilir" },
+  { id:"view_reports", label:"Rapor Görüntüleme", icon:"RP", desc:"Tüm raporları görebilir" },
+  { id:"manage_orders", label:"İş Emri Oluşturma", icon:"IE", desc:"İş emri ekleyip düzenleyebilir" },
+  { id:"assign_tasks", label:"Calisan Gorevlendirme", icon:"GV", desc:"Calisanlara gorev atayabilir" },
+  { id:"approve_users", label:"Kullanıcı Onaylama", icon:"ON", desc:"Kullanıcıları onaylayabilir" },
+  { id:"manage_sales", label:"Satis ve Teklif", icon:"ST", desc:"Teklif ve siparis yonetebilir" },
+  { id:"manage_purchasing", label:"Satin Alma", icon:"SA", desc:"Talep ve PO yonetebilir" },
+  { id:"manage_quality", label:"Kalite", icon:"KL", desc:"Muayene ve FAI kayitlari girebilir" },
+  { id:"manage_downtime", label:"Durus Yonetimi", icon:"DR", desc:"Durus nedeni ve kaydi girebilir" },
+  { id:"manage_notifications", label:"Bildirim Kurallari", icon:"BD", desc:"Uyari kurallari duzenleyebilir" },
 ];
 const ROLE_PERMISSION_DEFAULTS = {
   admin: PERMISSIONS.map(p=>p.id),
@@ -572,6 +572,28 @@ const TOOL_STOCK_LIST_COLUMNS = [
   {id:"status",label:"Durum",width:120},
   {id:"latest_move",label:"Son Hareket",width:220},
   {id:"actions",label:"Islemler",width:304,align:"right"},
+];
+const CUSTOMER_LIST_COLUMNS = [
+  {id:"customer",label:"Musteri",width:300,required:true},
+  {id:"contact",label:"Iletisim",width:340},
+  {id:"code",label:"Kod",width:130},
+  {id:"actions",label:"Islem",width:180,align:"right",required:true},
+];
+const MATERIAL_LIBRARY_LIST_COLUMNS = [
+  {id:"material",label:"Malzeme",width:340,required:true},
+  {id:"stock_policy",label:"Stok Politikasi",width:200},
+  {id:"supply",label:"Tedarik",width:150},
+  {id:"actions",label:"Islem",width:170,align:"right",required:true},
+];
+const PART_LIBRARY_LIST_COLUMNS = [
+  {id:"part_no",label:"Parca No",width:160,required:true},
+  {id:"part_name",label:"Parca Adi",width:260,required:true},
+  {id:"company",label:"Firma",width:180},
+  {id:"customer_code",label:"Musteri Kodu",width:150},
+  {id:"revision",label:"Rev",width:80},
+  {id:"material",label:"Malzeme",width:160},
+  {id:"unit_cost",label:"Birim Maliyet",width:150,align:"right"},
+  {id:"files",label:"Dosya",width:90,align:"right"},
 ];
 const PURCHASE_REQUEST_LIST_COLUMNS = [
   {id:"request",label:"Talep",width:320,required:true},
@@ -719,16 +741,16 @@ function normalizeMenuVisibilityConfig(raw){
   return {hiddenTabs};
 }
 const DEFAULT_ROUTING_OPERATION_TYPES = [
-  { id:"op10", code:"OP-10", name:"Kesim ve Hazirlik", icon:"??", color:"#57BE90", defaultSetupSec:300, defaultCycleSec:60, sortOrder:10 },
-  { id:"op20", code:"OP-20", name:"Kaba Isleme", icon:"??", color:"#79C9D4", defaultSetupSec:240, defaultCycleSec:90, sortOrder:20 },
-  { id:"op30", code:"OP-30", name:"Finis Isleme", icon:"??", color:"#015249", defaultSetupSec:180, defaultCycleSec:80, sortOrder:30 },
-  { id:"op40", code:"OP-40", name:"Delik Delme ve Klavuz", icon:"??", color:"#A5A5AF", defaultSetupSec:120, defaultCycleSec:45, sortOrder:40 },
-  { id:"op50", code:"OP-50", name:"Olcum ve Kontrol", icon:"??", color:"#4AB587", defaultSetupSec:90, defaultCycleSec:30, sortOrder:50 },
+  { id:"op10", code:"OP-10", name:"Kesim ve Hazirlik", icon:"KS", color:"#57BE90", defaultSetupSec:300, defaultCycleSec:60, sortOrder:10 },
+  { id:"op20", code:"OP-20", name:"Kaba Isleme", icon:"KB", color:"#79C9D4", defaultSetupSec:240, defaultCycleSec:90, sortOrder:20 },
+  { id:"op30", code:"OP-30", name:"Finis Isleme", icon:"FN", color:"#015249", defaultSetupSec:180, defaultCycleSec:80, sortOrder:30 },
+  { id:"op40", code:"OP-40", name:"Delik Delme ve Klavuz", icon:"DL", color:"#A5A5AF", defaultSetupSec:120, defaultCycleSec:45, sortOrder:40 },
+  { id:"op50", code:"OP-50", name:"Olcum ve Kontrol", icon:"QC", color:"#4AB587", defaultSetupSec:90, defaultCycleSec:30, sortOrder:50 },
 ];
-const OPERATION_ICON_OPTIONS = ["??","???","??","??","??","??","??","??","??","??"];
+const OPERATION_ICON_OPTIONS = ["KS","KB","FN","DL","QC","TR","FR","MZ","PN","AS"];
 const LEGACY_OPERATION_ICON_MAP = {
-  "?":"??",
-  "??":"??",
+  "?":"KS",
+  "??":"KS",
 };
 function normalizeHexColor(value,fallback="#57BE90"){
   const raw=String(value||"").trim();
@@ -738,9 +760,9 @@ function normalizeHexColor(value,fallback="#57BE90"){
 function normalizeOperationIcon(icon,fallback){
   const base=String(icon||"").trim();
   const remapped=LEGACY_OPERATION_ICON_MAP[base]||base;
-  const pick=String(fallback||"??").trim()||"??";
+  const pick=String(fallback||"KS").trim()||"KS";
   if(OPERATION_ICON_OPTIONS.includes(remapped)) return remapped;
-  return OPERATION_ICON_OPTIONS.includes(pick)?pick:"??";
+  return OPERATION_ICON_OPTIONS.includes(pick)?pick:"KS";
 }
 function normalizeRoutingOperationTypes(raw){
   const list=Array.isArray(raw?.list)?raw.list:[];
@@ -753,7 +775,7 @@ function normalizeRoutingOperationTypes(raw){
       id:String(row?.id||`op_${Date.now().toString(36)}_${idx}`),
       code,
       name,
-      icon:normalizeOperationIcon(row?.icon,fallback?.icon||"??"),
+      icon:normalizeOperationIcon(row?.icon,fallback?.icon||"KS"),
       color:normalizeHexColor(row?.color,fallback?.color||"#57BE90"),
       defaultSetupSec:Math.max(0,safeNum(row?.defaultSetupSec)),
       defaultCycleSec:Math.max(0,safeNum(row?.defaultCycleSec)),
@@ -898,11 +920,11 @@ function canFilePreview(file) {
 }
 function getFileIcon(name) {
   const ext=getFileExt(name);
-  if(["jpg","jpeg","png","gif","webp"].includes(ext)) return "???";
-  if(ext==="pdf") return "??";
-  if(["dxf","dwg"].includes(ext)) return "??";
-  if(isStepExtension(ext)) return "??";
-  return "??";
+  if(["jpg","jpeg","png","gif","webp"].includes(ext)) return "IMG";
+  if(ext==="pdf") return "PDF";
+  if(["dxf","dwg"].includes(ext)) return "CAD";
+  if(isStepExtension(ext)) return "STEP";
+  return "DOC";
 }
 function formatBytes(b) {
   if(b<1024) return b+" B";
@@ -1636,7 +1658,7 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
           <div style={{width:"100%",maxWidth:380,margin:"0 auto"}}>
             <div style={{textAlign:"center",marginBottom:28}}>
               <div style={{width:60,height:60,borderRadius:18,background:C.accent,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 10px",overflow:"hidden"}}>
-                {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:28}}>??</span>}
+                {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:28}}>LOGO</span>}
               </div>
               <div style={{fontWeight:800,fontSize:22,color:C.text,letterSpacing:-.5}}>CNC Atölye</div>
               <div style={{color:C.muted2,fontSize:13,marginTop:2}}>İş Takip Sistemi</div>
@@ -1666,7 +1688,7 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
             <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:16,padding:22}}>
               <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:18}}>
                 <div style={{width:42,height:42,borderRadius:12,background:C.accent,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
-                  {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:18}}>??</span>}
+                  {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:18}}>LOGO</span>}
                 </div>
                 <div>
                   <div style={{fontWeight:800,fontSize:18,color:C.text,letterSpacing:-.3}}>Yönetici Paneli</div>
@@ -2079,7 +2101,7 @@ function RoutingOperationTypeSettings({currentUser}) {
   const [form,setForm]=useState({
     code:"",
     name:"",
-    icon:DEFAULT_ROUTING_OPERATION_TYPES[0]?.icon||"??",
+    icon:DEFAULT_ROUTING_OPERATION_TYPES[0]?.icon||"KS",
     color:DEFAULT_ROUTING_OPERATION_TYPES[0]?.color||"#57BE90",
     defaultSetupSec:"0",
     defaultCycleSec:"0",
@@ -2097,7 +2119,7 @@ function RoutingOperationTypeSettings({currentUser}) {
     setForm({
       code:"",
       name:"",
-      icon:DEFAULT_ROUTING_OPERATION_TYPES[0]?.icon||"??",
+      icon:DEFAULT_ROUTING_OPERATION_TYPES[0]?.icon||"KS",
       color:DEFAULT_ROUTING_OPERATION_TYPES[0]?.color||"#57BE90",
       defaultSetupSec:"0",
       defaultCycleSec:"0",
@@ -2108,7 +2130,7 @@ function RoutingOperationTypeSettings({currentUser}) {
     setForm({
       code:row.code||"",
       name:row.name||"",
-      icon:row.icon||"??",
+      icon:row.icon||"KS",
       color:normalizeHexColor(row.color),
       defaultSetupSec:String(Math.max(0,safeNum(row.defaultSetupSec))),
       defaultCycleSec:String(Math.max(0,safeNum(row.defaultCycleSec))),
@@ -2133,7 +2155,7 @@ function RoutingOperationTypeSettings({currentUser}) {
     const code=String(form.code||"").trim().toUpperCase();
     const name=String(form.name||"").trim();
     if(!code||!name){alert("Kod ve ad zorunlu.");return;}
-    const icon=String(form.icon||"??").trim()||"??";
+    const icon=String(form.icon||"KS").trim()||"KS";
     const color=normalizeHexColor(form.color);
     const setup=Math.max(0,safeNum(form.defaultSetupSec));
     const cycle=Math.max(0,safeNum(form.defaultCycleSec));
@@ -2213,7 +2235,7 @@ function RoutingOperationTypeSettings({currentUser}) {
               <div>{idx+1}</div>
               <div style={{fontFamily:"monospace",fontWeight:700}}>{row.code}</div>
               <div style={{minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{row.name}</div>
-              <div style={{fontSize:15}}>{row.icon||"??"}</div>
+              <div style={{fontSize:15}}>{row.icon||"KS"}</div>
               <div style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,color:C.muted2}}>
                 <span style={{width:11,height:11,borderRadius:3,background:normalizeHexColor(row.color),display:"inline-block",border:`1px solid ${C.border}`}}/>
                 {normalizeHexColor(row.color)}
@@ -2768,7 +2790,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
               {u.id!==currentUser.id&&(
                 <>
                   <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:8}}>
-                    {u.status==="pending"&&<><button onClick={()=>update(u.id,{status:"active"})} style={{...btnSt("green"),padding:"7px 13px",fontSize:12}}>? Onayla</button><button onClick={()=>update(u.id,{status:"rejected"})} style={{...btnSt("danger"),padding:"7px 13px",fontSize:12}}>? Reddet</button></>}
+                    {u.status==="pending"&&<><button onClick={()=>update(u.id,{status:"active"})} style={{...btnSt("green"),padding:"7px 13px",fontSize:12}}>Onayla</button><button onClick={()=>update(u.id,{status:"rejected"})} style={{...btnSt("danger"),padding:"7px 13px",fontSize:12}}>Reddet</button></>}
                     {u.status==="active"&&<>
                       <select value={u.role||"operator"} onChange={e=>changeRole(u,e.target.value)} style={{...inputSt,padding:"7px 10px",fontSize:12,maxWidth:190}}>
                         {USER_ROLES.map(r=><option key={r.id} value={r.id}>{r.label}</option>)}
@@ -2776,7 +2798,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
                       <button onClick={()=>update(u.id,{status:"rejected"})} style={{...btnSt("danger"),padding:"7px 13px",fontSize:12}}>Askıya Al</button>
                     </>}
                     {u.status==="rejected"&&<button onClick={()=>update(u.id,{status:"active"})} style={{...btnSt("green"),padding:"7px 13px",fontSize:12}}>Aktifleştir</button>}
-                    {u.role!=="admin"&&<button onClick={()=>setExpanded(expanded===u.id?null:u.id)} style={{...btnSt("ghost"),padding:"7px 13px",fontSize:12}}>{expanded===u.id?"^ Gizle":"?? Yetkiler"}</button>}
+                    {u.role!=="admin"&&<button onClick={()=>setExpanded(expanded===u.id?null:u.id)} style={{...btnSt("ghost"),padding:"7px 13px",fontSize:12}}>{expanded===u.id?"^ Gizle":"Yetkiler"}</button>}
                   </div>
                   {expanded===u.id&&u.role!=="admin"&&(
                     <div style={{background:C.surface,borderRadius:10,padding:12,border:`1px solid ${C.border}`}}>
@@ -3645,7 +3667,6 @@ function ToolStock({currentUser,filtersVisible=true}) {
   const toolPageStart=(toolListPageIdx-1)*Math.max(1,toolRowsPerPage);
   const pagedTools=sortedTools.slice(toolPageStart,toolPageStart+Math.max(1,toolRowsPerPage));
   const lowCount=tools.filter(t=>(Number(t.qty)||0)<=Math.max(Number(t.minQty)||0,0)).length;
-  const stockedTools=[...tools].filter(t=>(Number(t.qty)||0)>0).sort((a,b)=>(Number(b.qty)||0)-(Number(a.qty)||0));
   const stockFilterCounts={
     all:tools.length,
     healthy:tools.filter(t=>resolveStockStatus(t)==="healthy").length,
@@ -3799,14 +3820,6 @@ function ToolStock({currentUser,filtersVisible=true}) {
         </div>
       )}
 
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",marginBottom:12}}>
-        <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Stokdaki Urunler ({stockedTools.length})</div>
-        {stockedTools.length===0?<div style={{fontSize:12,color:C.muted}}>Stokta takim yok</div>:(
-          <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-            {stockedTools.map(t=><span key={t.id} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px",fontSize:11,color:C.muted2}}>{t.code||"-"} · {t.name||"-"} · <span style={{color:C.text,fontWeight:700}}>{Number(t.qty)||0}</span></span>)}
-          </div>
-        )}
-      </div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:8,flexWrap:"wrap"}}>
         <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>Takim Stogu · {tools.length} kayit · {lowCount} kritik stok</div>
       </div>
@@ -4043,6 +4056,14 @@ function Customers({filtersVisible=true}) {
     overscrollBehavior:"contain",
     scrollbarGutter:"stable",
   };
+  const {
+    columns:customerTableColumns,
+    visibleColumns:visibleCustomerTableColumns,
+    tableMinWidth:customerTableMinWidth,
+    moveColumn:moveCustomerTableColumn,
+    toggleColumn:toggleCustomerTableColumn,
+    resetColumns:resetCustomerTableColumns,
+  }=useTableColumnLayout("customers_list",CUSTOMER_LIST_COLUMNS);
 
   async function saveCustomer(){
     if(!form.name.trim()){alert("Firma adı zorunlu!");return;}
@@ -4096,6 +4117,37 @@ function Customers({filtersVisible=true}) {
       setForm({...emptyForm,code:nextCustomerCode(customers.filter(x=>x.id!==c.id))});
     }
   }
+  const renderCustomerTableCell=(c,col)=>{
+    if(col.id==="customer"){
+      return (
+        <td key={col.id} style={{padding:"11px 12px",minWidth:0}}>
+          <div style={{fontWeight:700,color:C.text,fontSize:13,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.name||"-"}</div>
+          {c.notes&&<div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.notes}</div>}
+        </td>
+      );
+    }
+    if(col.id==="contact"){
+      return (
+        <td key={col.id} style={{padding:"11px 12px",fontSize:12,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+          {c.contact||"-"} {c.phone?` - ${c.phone}`:""} {c.email?` - ${c.email}`:""}
+        </td>
+      );
+    }
+    if(col.id==="code"){
+      return <td key={col.id} style={{padding:"11px 12px",fontSize:12,color:C.muted2,whiteSpace:"nowrap"}}>{c.code||"-"}</td>;
+    }
+    if(col.id==="actions"){
+      return (
+        <td key={col.id} style={{padding:"11px 12px",textAlign:"right"}}>
+          <div style={{display:"inline-flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
+            <button onClick={()=>startEdit(c)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
+            <button onClick={()=>removeCustomer(c)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
+          </div>
+        </td>
+      );
+    }
+    return null;
+  };
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
 
@@ -4154,34 +4206,44 @@ function Customers({filtersVisible=true}) {
           </div>
         )}
         <div style={{flex:"1 1 760px",minWidth:0,display:"flex",flexDirection:"column",gap:8}}>
-          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <div style={{fontSize:12,color:C.muted2}}>Musteriler ({sortedCustomers.length}/{customers.length})</div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"flex-start"}}>
+            <TableColumnEditor
+              title="Musteri Listesi"
+              columns={customerTableColumns}
+              onToggle={toggleCustomerTableColumn}
+              onMove={moveCustomerTableColumn}
+              onReset={resetCustomerTableColumns}
+            />
           </div>
 
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
-            <div style={{display:"grid",gridTemplateColumns:"1.6fr 1fr 1fr auto",gap:10,padding:"10px 12px",fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700,background:C.surface,borderBottom:`1px solid ${C.border}`}}>
-              <div>Musteri</div>
-              <div>Iletisim</div>
-              <div>Kod</div>
-              <div style={{textAlign:"right"}}>Islem</div>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",minWidth:customerTableMinWidth}}>
+                <thead>
+                  <tr style={{background:C.surface,borderBottom:`1px solid ${C.border}`}}>
+                    {visibleCustomerTableColumns.map(col=>(
+                      <th key={col.id} style={{padding:"10px 12px",fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700,textAlign:col.align||"left",whiteSpace:"nowrap"}}>
+                        {col.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedCustomers.length===0&&(
+                    <tr>
+                      <td colSpan={Math.max(1,visibleCustomerTableColumns.length)} style={{textAlign:"center",color:C.muted2,padding:"22px 14px"}}>
+                        Filtreye uygun musteri bulunamadi.
+                      </td>
+                    </tr>
+                  )}
+                  {sortedCustomers.map((c,idx)=>(
+                    <tr key={c.id} style={{borderBottom:`1px solid ${C.border}`,background:idx%2===0?C.card:C.surface}}>
+                      {visibleCustomerTableColumns.map(col=>renderCustomerTableCell(c,col))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            {sortedCustomers.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"22px 14px"}}>Filtreye uygun musteri bulunamadi.</div>}
-            {sortedCustomers.map(c=>(
-              <div key={c.id} style={{display:"grid",gridTemplateColumns:"1.6fr 1fr 1fr auto",gap:10,padding:"11px 12px",borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
-                <div style={{minWidth:0}}>
-                  <div style={{fontWeight:700,color:C.text,fontSize:13,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.name}</div>
-                  {c.notes&&<div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.notes}</div>}
-                </div>
-                <div style={{fontSize:12,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                  {c.contact||"-"} {c.phone?` - ${c.phone}`:""} {c.email?` - ${c.email}`:""}
-                </div>
-                <div style={{fontSize:12,color:C.muted2}}>{c.code||"-"}</div>
-                <div style={{display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
-                  <button onClick={()=>startEdit(c)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
-                  <button onClick={()=>removeCustomer(c)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
-                </div>
-              </div>
-            ))}
           </div>
         </div>
       </div>
@@ -4440,6 +4502,59 @@ function MaterialLibrary({filtersVisible=true}) {
     overscrollBehavior:"contain",
     scrollbarGutter:"stable",
   };
+  const {
+    columns:materialTableColumns,
+    visibleColumns:visibleMaterialTableColumns,
+    tableMinWidth:materialTableMinWidth,
+    moveColumn:moveMaterialTableColumn,
+    toggleColumn:toggleMaterialTableColumn,
+    resetColumns:resetMaterialTableColumns,
+  }=useTableColumnLayout("material_library_list",MATERIAL_LIBRARY_LIST_COLUMNS);
+  const renderMaterialTableCell=(m,col)=>{
+    const stock=safeNum(m.stock);
+    const reorder=safeNum(m.reorderPoint);
+    const safety=safeNum(m.safetyStock);
+    const critical=stock<=Math.max(reorder,safety);
+    if(col.id==="material"){
+      return (
+        <td key={col.id} style={{padding:"11px 12px",minWidth:0}}>
+          <div style={{fontWeight:700,color:C.text,fontSize:13,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.name||"-"}</div>
+          <div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+            {m.code||"-"}{Number(m.density)>0?` · ${Number(m.density).toFixed(3)} g/cm3`:""} · {m.type||"raw"} · {m.trackingMode||"lot"}
+          </div>
+          {m.note&&<div style={{fontSize:11,color:C.muted,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.note}</div>}
+        </td>
+      );
+    }
+    if(col.id==="stock_policy"){
+      return (
+        <td key={col.id} style={{padding:"11px 12px",fontSize:12,color:C.muted2}}>
+          <div>Stok: <span style={{color:C.text,fontWeight:700}}>{stock}</span></div>
+          <div>ROP: {reorder} · SS: {safety}</div>
+          {critical&&<div style={{color:C.red,fontSize:11,marginTop:2}}>Kritik stok</div>}
+        </td>
+      );
+    }
+    if(col.id==="supply"){
+      return (
+        <td key={col.id} style={{padding:"11px 12px",fontSize:12,color:C.muted2}}>
+          <div>Lead: {safeNum(m.leadTimeDays)} gun</div>
+          <div>{String(m.valuationMethod||"fifo").toUpperCase()}</div>
+        </td>
+      );
+    }
+    if(col.id==="actions"){
+      return (
+        <td key={col.id} style={{padding:"11px 12px",textAlign:"right"}}>
+          <div style={{display:"inline-flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
+            <button onClick={()=>{setEditId(m.id);setShowForm(true);setForm({name:m.name||"",code:m.code||"",density:String(m.density??""),stock:String(m.stock??""),type:m.type||"raw",reorderPoint:String(m.reorderPoint??0),safetyStock:String(m.safetyStock??0),leadTimeDays:String(m.leadTimeDays??5),trackingMode:m.trackingMode||"lot",valuationMethod:m.valuationMethod||"fifo",note:m.note||""});}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
+            <button onClick={()=>removeMaterial(m)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
+          </div>
+        </td>
+      );
+    }
+    return null;
+  };
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
 
@@ -4522,48 +4637,45 @@ function MaterialLibrary({filtersVisible=true}) {
           </div>
         )}
         <div style={{flex:"1 1 760px",minWidth:0,display:"flex",flexDirection:"column",gap:8}}>
-          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <div style={{fontSize:12,color:C.muted2}}>Malzemeler ({sortedMaterials.length}/{materials.length})</div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <TableColumnEditor
+              title="Malzeme Kutuphanesi"
+              columns={materialTableColumns}
+              onToggle={toggleMaterialTableColumn}
+              onMove={moveMaterialTableColumn}
+              onReset={resetMaterialTableColumns}
+            />
+            <div style={{fontSize:12,color:C.muted2,marginLeft:"auto"}}>Malzemeler ({sortedMaterials.length}/{materials.length})</div>
           </div>
 
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
-        <div style={{display:"grid",gridTemplateColumns:"1.8fr 1.15fr 1fr auto",gap:10,padding:"10px 12px",fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700,background:C.surface,borderBottom:`1px solid ${C.border}`}}>
-          <div>Malzeme</div>
-          <div>Stok Politikasi</div>
-          <div>Tedarik</div>
-          <div style={{textAlign:"right"}}>Islem</div>
-        </div>
-        {sortedMaterials.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"22px 14px"}}>Filtreye uygun malzeme bulunamadi.</div>}
-        {sortedMaterials.map(m=>{
-          const stock=safeNum(m.stock);
-          const reorder=safeNum(m.reorderPoint);
-          const safety=safeNum(m.safetyStock);
-          const critical=stock<=Math.max(reorder,safety);
-          return (
-            <div key={m.id} style={{display:"grid",gridTemplateColumns:"1.8fr 1.15fr 1fr auto",gap:10,padding:"11px 12px",borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
-              <div style={{minWidth:0}}>
-                <div style={{fontWeight:700,color:C.text,fontSize:13,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.name||"-"}</div>
-                <div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                  {m.code||"-"}{Number(m.density)>0?` · ${Number(m.density).toFixed(3)} g/cm3`:""} · {m.type||"raw"} · {m.trackingMode||"lot"}
-                </div>
-                {m.note&&<div style={{fontSize:11,color:C.muted,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.note}</div>}
-              </div>
-              <div style={{fontSize:12,color:C.muted2}}>
-                <div>Stok: <span style={{color:C.text,fontWeight:700}}>{stock}</span></div>
-                <div>ROP: {reorder} · SS: {safety}</div>
-                {critical&&<div style={{color:C.red,fontSize:11,marginTop:2}}>Kritik stok</div>}
-              </div>
-              <div style={{fontSize:12,color:C.muted2}}>
-                <div>Lead: {safeNum(m.leadTimeDays)} gun</div>
-                <div>{String(m.valuationMethod||"fifo").toUpperCase()}</div>
-              </div>
-              <div style={{display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
-                <button onClick={()=>{setEditId(m.id);setShowForm(true);setForm({name:m.name||"",code:m.code||"",density:String(m.density??""),stock:String(m.stock??""),type:m.type||"raw",reorderPoint:String(m.reorderPoint??0),safetyStock:String(m.safetyStock??0),leadTimeDays:String(m.leadTimeDays??5),trackingMode:m.trackingMode||"lot",valuationMethod:m.valuationMethod||"fifo",note:m.note||""});}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
-                <button onClick={()=>removeMaterial(m)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
-              </div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",minWidth:materialTableMinWidth}}>
+                <thead>
+                  <tr style={{background:C.surface,borderBottom:`1px solid ${C.border}`}}>
+                    {visibleMaterialTableColumns.map(col=>(
+                      <th key={col.id} style={{padding:"10px 12px",fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700,textAlign:col.align||"left",whiteSpace:"nowrap"}}>
+                        {col.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedMaterials.length===0&&(
+                    <tr>
+                      <td colSpan={Math.max(1,visibleMaterialTableColumns.length)} style={{textAlign:"center",color:C.muted2,padding:"22px 14px"}}>
+                        Filtreye uygun malzeme bulunamadi.
+                      </td>
+                    </tr>
+                  )}
+                  {sortedMaterials.map((m,idx)=>(
+                    <tr key={m.id} style={{borderBottom:`1px solid ${C.border}`,background:idx%2===0?C.card:C.surface}}>
+                      {visibleMaterialTableColumns.map(col=>renderMaterialTableCell(m,col))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          );
-        })}
           </div>
         </div>
       </div>
@@ -4814,12 +4926,6 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     loadPartToForm(part);
     setPartPage("detail");
   };
-  const openCreatePartModal=()=>{
-    setPartPage("list");
-    setSelectedPartId("");
-    setPartForm({...emptyPartForm,partNo:nextPartNo()});
-    setShowPartModal(true);
-  };
   const openEditPartModal=(part)=>{
     if(part){
       setSelectedPartId(part.id||"");
@@ -4891,6 +4997,42 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
   const partTableScrollStyle=partListPanelsStacked
     ? {overflowX:"auto"}
     : {overflow:"auto",flex:1,minHeight:0,overscrollBehavior:"contain"};
+  const {
+    columns:partListTableColumns,
+    visibleColumns:visiblePartListTableColumns,
+    tableMinWidth:partListTableMinWidth,
+    moveColumn:movePartListTableColumn,
+    toggleColumn:togglePartListTableColumn,
+    resetColumns:resetPartListTableColumns,
+  }=useTableColumnLayout("part_library_list",PART_LIBRARY_LIST_COLUMNS);
+  const partListGridTemplate=useMemo(
+    ()=>visiblePartListTableColumns.map(col=>`${Math.max(84,safeNum(col.width)||140)}px`).join(" "),
+    [visiblePartListTableColumns]
+  );
+  const renderPartListCell=(p,col)=>{
+    const docsCount=(Array.isArray(p.documents)?p.documents.length:0)+(p.drawingFile?1:0);
+    const companyName=getPartCompanyName(p)||"-";
+    if(col.id==="part_no"){
+      return <div style={{fontSize:12,fontWeight:800,fontFamily:"monospace"}}>{p.partNo||"-"}</div>;
+    }
+    if(col.id==="part_name"){
+      return (
+        <div style={{minWidth:0}}>
+          <div style={{fontSize:12,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name||"-"}</div>
+          <div style={{fontSize:10,color:C.muted2,marginTop:2}}>
+            Kurulum {safeNum(p.setupSec)} sn - Cevrim {safeNum(p.cycleSec)} sn
+          </div>
+        </div>
+      );
+    }
+    if(col.id==="company") return <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{companyName}</div>;
+    if(col.id==="customer_code") return <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.customerPartCode||"-"}</div>;
+    if(col.id==="revision") return <div style={{fontSize:11,color:C.text,fontWeight:700}}>{p.revision||"A"}</div>;
+    if(col.id==="material") return <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.material||"-"}</div>;
+    if(col.id==="unit_cost") return <div style={{fontSize:11,color:C.text,fontWeight:700}}>{safeNum(p.unitCost).toFixed(2)} TRY</div>;
+    if(col.id==="files") return <div style={{fontSize:11,color:C.muted2}}>{docsCount}</div>;
+    return null;
+  };
 
   async function pickPartDocuments(e){
     const files=Array.from((e.target.files||[]));
@@ -5044,7 +5186,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
       operationTypeId:pickedType.id,
       operationCode:pickedType.code||"",
       operationName:pickedType.name||"",
-      operationIcon:pickedType.icon||"??",
+      operationIcon:pickedType.icon||"KS",
       operationColor:normalizeHexColor(pickedType.color),
       operation:`${pickedType.code||""}${pickedType.name?` - ${pickedType.name}`:""}`.trim(),
       machine:routingForm.machine||machines[0]||"CNC-1",
@@ -5104,14 +5246,22 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             {selectedPart&&<Badge label={`Secili: ${selectedPart.partNo}`} color={C.accent}/>}
             {selectedPart&&<button onClick={()=>openEditPartModal(selectedPart)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11}}>Seciliyi Duzenle</button>}
-            <button onClick={openCreatePartModal} style={{...btnSt("primary"),padding:"6px 10px",fontSize:11}}>+ Parca Ekle</button>
           </div>
         </div>
         {partPage==="list"&&(
           <>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
-          <div style={{fontSize:11,color:C.muted2,letterSpacing:.5,textTransform:"uppercase"}}>
-            Toplam {parts.length} parca - Filtrelenen {filteredParts.length}
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <TableColumnEditor
+              title="Parca Kutuphanesi"
+              columns={partListTableColumns}
+              onToggle={togglePartListTableColumn}
+              onMove={movePartListTableColumn}
+              onReset={resetPartListTableColumns}
+            />
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.5,textTransform:"uppercase"}}>
+              Toplam {parts.length} parca - Filtrelenen {filteredParts.length}
+            </div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
             {selectedPart&&(
@@ -5154,21 +5304,16 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
           <div style={partListColumnStyle}>
             <div style={partTableCardStyle}>
               <div style={partTableScrollStyle}>
-                <div style={{minWidth:980}}>
-                  <div style={{display:"grid",gridTemplateColumns:"1.1fr 1.7fr 1.2fr 1.1fr .8fr 1.1fr .9fr .7fr",gap:8,padding:"9px 10px",borderBottom:`1px solid ${C.border}`,background:C.card,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700,position:"sticky",top:0,zIndex:2}}>
-                    <div>Parca No</div>
-                    <div>Parca Adi</div>
-                    <div>Firma</div>
-                    <div>Musteri Kodu</div>
-                    <div>Rev</div>
-                    <div>Malzeme</div>
-                    <div style={{textAlign:"right"}}>Birim Maliyet</div>
-                    <div style={{textAlign:"right"}}>Dosya</div>
+                <div style={{minWidth:partListTableMinWidth}}>
+                  <div style={{display:"grid",gridTemplateColumns:partListGridTemplate,gap:8,padding:"9px 10px",borderBottom:`1px solid ${C.border}`,background:C.card,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700,position:"sticky",top:0,zIndex:2}}>
+                    {visiblePartListTableColumns.map(col=>(
+                      <div key={col.id} style={{textAlign:col.align||"left",whiteSpace:"nowrap"}}>
+                        {col.label}
+                      </div>
+                    ))}
                   </div>
                   {pagedParts.map((p,idx)=>{
                     const selected=selectedPartId===p.id;
-                    const docsCount=(Array.isArray(p.documents)?p.documents.length:0)+(p.drawingFile?1:0);
-                    const companyName=getPartCompanyName(p)||"-";
                     return (
                       <button
                         key={p.id}
@@ -5177,7 +5322,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
                           width:"100%",
                           textAlign:"left",
                           display:"grid",
-                          gridTemplateColumns:"1.1fr 1.7fr 1.2fr 1.1fr .8fr 1.1fr .9fr .7fr",
+                          gridTemplateColumns:partListGridTemplate,
                           gap:8,
                           padding:"10px 10px",
                           border:"none",
@@ -5190,19 +5335,11 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
                           boxShadow:selected?`inset 3px 0 0 ${C.accent}`:"none",
                         }}
                       >
-                        <div style={{fontSize:12,fontWeight:800,fontFamily:"monospace"}}>{p.partNo||"-"}</div>
-                        <div style={{minWidth:0}}>
-                          <div style={{fontSize:12,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name||"-"}</div>
-                          <div style={{fontSize:10,color:C.muted2,marginTop:2}}>
-                            Kurulum {safeNum(p.setupSec)} sn - Cevrim {safeNum(p.cycleSec)} sn
+                        {visiblePartListTableColumns.map(col=>(
+                          <div key={col.id} style={{minWidth:0,textAlign:col.align||"left"}}>
+                            {renderPartListCell(p,col)}
                           </div>
-                        </div>
-                        <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{companyName}</div>
-                        <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.customerPartCode||"-"}</div>
-                        <div style={{fontSize:11,color:C.text,fontWeight:700}}>{p.revision||"A"}</div>
-                        <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.material||"-"}</div>
-                        <div style={{fontSize:11,color:C.text,fontWeight:700,textAlign:"right"}}>{safeNum(p.unitCost).toFixed(2)} TRY</div>
-                        <div style={{fontSize:11,color:C.muted2,textAlign:"right"}}>{docsCount}</div>
+                        ))}
                       </button>
                     );
                   })}
@@ -5330,7 +5467,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
               <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr .8fr .8fr auto",gap:6}}>
                 <select style={{...inputSt,padding:"7px 9px",fontSize:12}} value={routingForm.operationTypeId} onChange={e=>setRoutingOperationType(e.target.value)}>
                   {operationTypes.length===0&&<option value="">Ayarlar / Rota ve Operasyon Tipleri</option>}
-                  {operationTypes.map(op=><option key={op.id} value={op.id}>{op.icon||"??"} {op.code} - {op.name}</option>)}
+                  {operationTypes.map(op=><option key={op.id} value={op.id}>{op.icon||"KS"} {op.code} - {op.name}</option>)}
                 </select>
                 <select style={{...inputSt,padding:"7px 9px",fontSize:12}} value={routingForm.machine} onChange={e=>setRoutingForm(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
                 <input style={{...inputSt,padding:"7px 9px",fontSize:12}} type="number" min="0" placeholder="Kurulum sn" value={routingForm.setupSec} onChange={e=>setRoutingForm(f=>({...f,setupSec:e.target.value}))}/>
@@ -5339,7 +5476,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
               </div>
               {selectedOperationType&&(
                 <div style={{fontSize:11,color:C.muted2,marginTop:6}}>
-                  Secili tip: <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"2px 8px",borderRadius:999,border:`1px solid ${normalizeHexColor(selectedOperationType.color)}66`,background:normalizeHexColor(selectedOperationType.color)+"22",color:normalizeHexColor(selectedOperationType.color),fontWeight:700}}>{selectedOperationType.icon||"??"} {selectedOperationType.code} - {selectedOperationType.name}</span> · Varsayilan Kurulum {safeNum(selectedOperationType.defaultSetupSec)}sn · Cevrim {safeNum(selectedOperationType.defaultCycleSec)}sn
+                  Secili tip: <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"2px 8px",borderRadius:999,border:`1px solid ${normalizeHexColor(selectedOperationType.color)}66`,background:normalizeHexColor(selectedOperationType.color)+"22",color:normalizeHexColor(selectedOperationType.color),fontWeight:700}}>{selectedOperationType.icon||"KS"} {selectedOperationType.code} - {selectedOperationType.name}</span> · Varsayilan Kurulum {safeNum(selectedOperationType.defaultSetupSec)}sn · Cevrim {safeNum(selectedOperationType.defaultCycleSec)}sn
                 </div>
               )}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginTop:6}}>
@@ -5350,7 +5487,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
                 <div key={op.id} style={{marginTop:8,padding:"8px 10px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
                   <div style={{fontSize:12,color:C.muted2}}>
                     <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"2px 8px",borderRadius:999,border:`1px solid ${normalizeHexColor(op.operationColor)}66`,background:normalizeHexColor(op.operationColor)+"22",color:normalizeHexColor(op.operationColor),fontWeight:700}}>
-                      {op.operationIcon||"??"} {op.operationCode?`${op.operationCode} - `:""}{op.operationName||op.operation||"-"}
+                      {op.operationIcon||"KS"} {op.operationCode?`${op.operationCode} - `:""}{op.operationName||op.operation||"-"}
                     </span> · {op.machine} · Kurulum {safeNum(op.setupSec)}sn · Cevrim {safeNum(op.cycleSec)}sn {op.ncProgram?`· NC ${op.ncProgram}`:""}
                   </div>
                   <div style={{display:"flex",gap:6}}>
@@ -6200,6 +6337,20 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     if(!ok){alert("Teklif durumu guncellenemedi.");return;}
     setQuotes(prev=>prev.map(x=>x.id===q.id?{...x,...patch}:x));
   }
+  async function removeQuote(q){
+    if(!q||!q.id) return;
+    const linkedOrder=salesOrders.find(row=>row.sourceQuoteId===q.id)||null;
+    const baseLabel=q.code||q.customerName||"Teklif";
+    const warn=linkedOrder
+      ? `\nBu tekliften olusan siparis var: ${linkedOrder.code||"-"} (silinmeyecek).`
+      : "";
+    if(!confirm(`"${baseLabel}" silinsin mi?${warn}`)) return;
+    const ok=await window.DB.deleteDoc("salesQuotes",q.id);
+    if(!ok){alert("Teklif silinemedi.");return;}
+    await addAuditLog(currentUser.id,"salesQuote",q.id,"delete",q,null,{module:"sales"});
+    setQuotes(prev=>prev.filter(x=>x.id!==q.id));
+    if(quoteEditId===q.id) closeQuoteModal();
+  }
 
   async function createWorkOrdersFromSalesOrder(order,{openAfter=true}={}){
     if(!order){return {createdIds:[],createdCodes:[]};}
@@ -6580,6 +6731,19 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     await addAuditLog(currentUser.id,"salesOrder",order.id,"status_update",order,{...order,...patch},{module:"sales"});
     setSalesOrders(prev=>prev.map(x=>x.id===order.id?{...x,...patch}:x));
   }
+  async function removeSalesOrder(order){
+    if(!order||!order.id) return;
+    const linkedCount=(order.workOrderIds||[]).length;
+    const code=order.code||order.customerName||"Siparis";
+    const warn=linkedCount>0
+      ? `\nBu siparise bagli ${linkedCount} is emri var (silinmeyecek).`
+      : "";
+    if(!confirm(`"${code}" silinsin mi?${warn}`)) return;
+    const ok=await window.DB.deleteDoc("salesOrders",order.id);
+    if(!ok){alert("Siparis silinemedi.");return;}
+    await addAuditLog(currentUser.id,"salesOrder",order.id,"delete",order,null,{module:"sales"});
+    setSalesOrders(prev=>prev.filter(x=>x.id!==order.id));
+  }
 
   async function markExternalDoc(order,type){
     const now=new Date().toISOString();
@@ -6734,6 +6898,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
             <button onClick={()=>setQuoteStatus(qr,"approved")} style={{...btnSt("green"),padding:"5px 8px",fontSize:11,opacity:(qr.status||"")==="approved"?0.7:1}} disabled={(qr.status||"")==="approved"}>{(qr.status||"")==="approved"?"Onayli":"Onay"}</button>
             <button onClick={()=>convertQuoteToOrder(qr)} disabled={(qr.status||"")!=="approved"} style={{...btnSt("primary"),padding:"5px 8px",fontSize:11,opacity:(qr.status||"")==="approved"?1:0.6,cursor:(qr.status||"")==="approved"?"pointer":"not-allowed"}}>Siparise Donustur</button>
             <button onClick={()=>setQuoteStatus(qr,"cancelled")} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Iptal</button>
+            <button onClick={()=>removeQuote(qr)} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Sil</button>
           </div>
         </td>
       );
@@ -6790,6 +6955,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
             <button onClick={()=>markExternalDoc(o,"dispatch")} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Irsaliye</button>
             <button onClick={()=>markExternalDoc(o,"invoice")} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Fatura</button>
             <button onClick={()=>setOrderStatus(o,"cancelled")} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11,opacity:(o.status||"")==="cancelled"?0.7:1}} disabled={(o.status||"")==="cancelled"}>Iptal</button>
+            <button onClick={()=>removeSalesOrder(o)} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Sil</button>
           </div>
         </td>
       );
@@ -7635,6 +7801,23 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
     await window.DB.updateDoc("orders",o.id,{status});
     setOrders(orders=>orders.map(x=>x.id===o.id?{...x,status}:x));
   }
+  async function removeWorkOrder(o){
+    if(!o||!o.id) return;
+    const code=o.code||o.name||"Is Emri";
+    if(!confirm(`"${code}" silinsin mi?`)) return;
+    const ok=await window.DB.deleteDoc("orders",o.id);
+    if(!ok){alert("Is emri silinemedi.");return;}
+    setOrders(prev=>prev.filter(x=>x.id!==o.id));
+    if(viewOrder&&viewOrder.id===o.id){
+      setPreviewFile(null);
+      setViewOrder(null);
+    }
+    if(editId===o.id){
+      setEditId(null);
+      setForm(emptyForm);
+      setShowForm(false);
+    }
+  }
 
   async function duplicateWorkOrder(order){
     if(!order){return;}
@@ -7788,6 +7971,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
             <select style={{...inputSt,width:130,padding:"5px 8px",fontSize:11}} value={o.status||"passive"} onChange={e=>setOrderStatus(o,e.target.value)}>
               {ORDER_STATUS_OPTIONS.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
             </select>
+            <button onClick={()=>removeWorkOrder(o)} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Sil</button>
           </div>
         </td>
       );
@@ -7994,7 +8178,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
         <div>
           <span style={labelSt}>Teknik Dosyalar</span>
           <div onClick={()=>fileRef.current?.click()} style={{border:`2px dashed ${C.border}`,borderRadius:12,padding:20,textAlign:"center",cursor:"pointer",background:C.surface}} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();handleFiles(e.dataTransfer.files);}}>
-            <div style={{fontSize:28,marginBottom:6}}>??</div>
+            <div style={{fontSize:20,marginBottom:6,fontWeight:700}}>DOSYA</div>
             <div style={{color:C.muted2,fontSize:13}}>{uploading?"Yükleniyor...":"Dosya seç veya sürükle bırak"}</div>
             <div style={{color:C.muted,fontSize:11,marginTop:4}}>Resim, PDF, DXF, DWG · Maks 5MB/dosya</div>
           </div>
@@ -8008,7 +8192,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
             </div>
           ))}
         </div>
-        <div style={{display:"flex",gap:8}}><button onClick={save} style={{...btnSt("primary"),flex:1,padding:13}}>?? Kaydet</button><button onClick={()=>{setShowForm(false);setForm(emptyForm);setEditId(null);}} style={{...btnSt("ghost"),padding:13}}>İptal</button></div>
+        <div style={{display:"flex",gap:8}}><button onClick={save} style={{...btnSt("primary"),flex:1,padding:13}}>Kaydet</button><button onClick={()=>{setShowForm(false);setForm(emptyForm);setEditId(null);}} style={{...btnSt("ghost"),padding:13}}>İptal</button></div>
       </div>
     </div>
   );
@@ -9226,10 +9410,10 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             </div>
 
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",background:"#fff"}}>
-              <button onClick={()=>setShowOrderDataPanel(true)} style={{...actionBtnStyle,fontSize:17}}>?? Is Emri Dosyalari</button>
-              <button onClick={openShiftEndModal} style={actionBtnStyle}>? İşi Durdur</button>
-              <button onClick={openRejectPartsModal} style={actionBtnStyle}>? Hata Girişi</button>
-              <button onClick={openToolChangeModal} style={{...actionBtnStyle,borderRight:"none"}}>?? Takım Değişimi</button>
+              <button onClick={()=>setShowOrderDataPanel(true)} style={{...actionBtnStyle,fontSize:17}}>Is Emri Dosyalari</button>
+              <button onClick={openShiftEndModal} style={actionBtnStyle}>İşi Durdur</button>
+              <button onClick={openRejectPartsModal} style={actionBtnStyle}>Hata Girişi</button>
+              <button onClick={openToolChangeModal} style={{...actionBtnStyle,borderRight:"none"}}>Takım Değişimi</button>
             </div>
           </div>
         </div>
@@ -9336,7 +9520,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             <div style={{width:"100%",maxWidth:560,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:15}} onClick={e=>e.stopPropagation()}>
               <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>{shiftModalMode==="rejectOnly"?"Hata Girişi":"Vardiya Sonu"}</div>
               <div style={{display:"flex",gap:10}}>
-                {shiftModalMode!=="rejectOnly"&&<div style={{flex:1}}><span style={labelSt}>? Doğru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>}
+                {shiftModalMode!=="rejectOnly"&&<div style={{flex:1}}><span style={labelSt}>Doğru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>}
                 <div style={{flex:1}}><span style={labelSt}>{shiftModalMode==="rejectOnly"?"? Kaç Adet Hatalı?":"? Hatalı Adet"}</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>
               </div>
               <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
@@ -9534,7 +9718,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                   const machineToolQty=Math.max(0,safeNum(e.machineToolQty??e.machineToolChange??0));
                   const isToolChange=String(e.entryType||"")==="tool_change"||(machineToolQty>0&&safeNum(e.correct)===0&&safeNum(e.wrong)===0);
                   const leftLabel=isToolChange
-                    ? `?? ${e.machineToolCode||e.machineToolName||"Takim"} x${machineToolQty}`
+                    ? `Takım: ${e.machineToolCode||e.machineToolName||"Takım"} x${machineToolQty}`
                     : `${e.jobCode||"-"} · ?${safeNum(e.correct)} / ?${safeNum(e.wrong)}`;
                   const timeText=String(e.createdAt||"").slice(11,16)||"--:--";
                   return (
@@ -9629,8 +9813,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
           <div style={{width:"100%",maxWidth:560,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:15}} onClick={e=>e.stopPropagation()}>
             <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>Vardiya Sonu</div>
             <div style={{display:"flex",gap:10}}>
-              <div style={{flex:1}}><span style={labelSt}>? Doğru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>
-              <div style={{flex:1}}><span style={labelSt}>? Hatalı Adet</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>
+              <div style={{flex:1}}><span style={labelSt}>Doğru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>
+              <div style={{flex:1}}><span style={labelSt}>Hatalı Adet</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>
             </div>
             <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
               <button onClick={()=>setShowShiftModal(false)} style={{...btnSt("ghost"),padding:"10px 14px"}}>İptal</button>
@@ -9672,8 +9856,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                   <div style={{display:"flex",gap:5}}><Badge label={e.machine} color={C.accent}/><Badge label={shiftWindowMap[e.shift]?.label||e.shift||"-"} color={C.muted2}/></div>
                 </div>
                 <div style={{display:"flex",gap:12,marginTop:7,fontSize:13}}>
-                  <span style={{color:C.green,fontWeight:600}}>? {e.correct}</span>
-                  <span style={{color:C.red,fontWeight:600}}>? {e.wrong}</span>
+                  <span style={{color:C.green,fontWeight:600}}>Doğru: {e.correct}</span>
+                  <span style={{color:C.red,fontWeight:600}}>Hatalı: {e.wrong}</span>
                   {p&&<span style={{color:C.muted2}}>Maks/gün: {p.max}</span>}
                 </div>
                 {machineToolQty>0&&<div style={{display:"flex",gap:8,marginTop:7,fontSize:12,color:C.muted2,flexWrap:"wrap"}}>
@@ -11288,7 +11472,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:6}}>
                   {dailyBars.map(b=>(
                     <div key={b.machine} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 8px",fontSize:11,color:C.muted2}}>
-                      <span style={{color:C.text,fontWeight:700}}>{b.machine}</span> · <span style={{color:C.green}}>? {b.correct}</span> <span style={{color:C.red}}>? {b.wrong}</span>
+                      <span style={{color:C.text,fontWeight:700}}>{b.machine}</span> · <span style={{color:C.green}}>Doğru {b.correct}</span> <span style={{color:C.red}}>Hatalı {b.wrong}</span>
                     </div>
                   ))}
                 </div>
@@ -11677,7 +11861,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     const firstOp=(part.routingOps||[])[0]||null;
     if(!firstOp) return null;
     const type=firstOp.operationTypeId?operationTypeById[firstOp.operationTypeId]:null;
-    const icon=String(firstOp.operationIcon||type?.icon||"??").trim()||"??";
+    const icon=String(firstOp.operationIcon||type?.icon||"KS").trim()||"KS";
     const color=normalizeHexColor(firstOp.operationColor||type?.color||"#57BE90");
     const code=String(firstOp.operationCode||type?.code||"").trim();
     const name=String(firstOp.operationName||type?.name||firstOp.operation||"Operasyon").trim()||"Operasyon";
@@ -12631,7 +12815,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
           {card.op&&(
             <div style={{marginTop:6}}>
               <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"2px 8px",borderRadius:999,border:`1px solid ${card.op.color}66`,background:card.op.color+"22",color:card.op.color,fontSize:10,fontWeight:700}}>
-                {card.op.icon||"??"} {card.op.code?`${card.op.code} - `:""}{card.op.name}
+                {card.op.icon||"KS"} {card.op.code?`${card.op.code} - `:""}{card.op.name}
               </span>
             </div>
           )}
@@ -12837,7 +13021,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                           title="Bitişi sürükle"
                           style={{position:"absolute",right:0,top:0,bottom:0,width:5,background:"rgba(0,0,0,.35)",cursor:"ew-resize"}}
                         />}
-                        {p._isStart&&opMeta&&<span title={`${opMeta.code?opMeta.code+" - ":""}${opMeta.name}`} style={{position:"absolute",right:6,top:2,fontSize:10,lineHeight:1,color:"#fff",textShadow:"0 1px 2px rgba(0,0,0,.55)"}}>{opMeta.icon||"??"}</span>}
+                        {p._isStart&&opMeta&&<span title={`${opMeta.code?opMeta.code+" - ":""}${opMeta.name}`} style={{position:"absolute",right:6,top:2,fontSize:10,lineHeight:1,color:"#fff",textShadow:"0 1px 2px rgba(0,0,0,.55)"}}>{opMeta.icon||"KS"}</span>}
                       </div>;
                     })}
                   </div>
@@ -12929,7 +13113,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                 <div style={{gridColumn:"1 / -1"}}>
                   <strong>Operasyon:</strong>{" "}
                   <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"2px 8px",borderRadius:999,border:`1px solid ${selectedPlanOperationMeta.color}66`,background:selectedPlanOperationMeta.color+"22",color:selectedPlanOperationMeta.color,fontWeight:700}}>
-                    {selectedPlanOperationMeta.icon||"??"} {selectedPlanOperationMeta.code?`${selectedPlanOperationMeta.code} - `:""}{selectedPlanOperationMeta.name}
+                    {selectedPlanOperationMeta.icon||"KS"} {selectedPlanOperationMeta.code?`${selectedPlanOperationMeta.code} - `:""}{selectedPlanOperationMeta.name}
                   </span>
                 </div>
               )}
@@ -12971,7 +13155,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
               {selectedOrderOperationMeta&&(
                 <div style={{marginTop:6}}>
                   <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"2px 8px",borderRadius:999,border:`1px solid ${selectedOrderOperationMeta.color}66`,background:selectedOrderOperationMeta.color+"22",color:selectedOrderOperationMeta.color,fontSize:11,fontWeight:700}}>
-                    {selectedOrderOperationMeta.icon||"??"} {selectedOrderOperationMeta.code?`${selectedOrderOperationMeta.code} - `:""}{selectedOrderOperationMeta.name}
+                    {selectedOrderOperationMeta.icon||"KS"} {selectedOrderOperationMeta.code?`${selectedOrderOperationMeta.code} - `:""}{selectedOrderOperationMeta.name}
                   </span>
                 </div>
               )}
@@ -13985,6 +14169,7 @@ function MRPDashboard({
   themeMode="light",
   onLogout=()=>{},
   onQuickAction=()=>{},
+  onCreateNewRecord=()=>{},
   roleLabel="Kullanici",
   layoutMode="desktop",
 }){
@@ -14607,7 +14792,7 @@ function MRPDashboard({
           <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
             <input type="date" value={quickDate} onChange={e=>setQuickDate(e.target.value||today)} style={{...inputSt,padding:"7px 9px",fontSize:12,width:150}}/>
             <button onClick={()=>{setMachineQuery("");setStatusFilter("all");setSortMode("status");}} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Temizle</button>
-            <button onClick={()=>setDashboardEditMode(true)} style={{...btnSt("primary"),padding:"7px 12px",fontSize:12,minWidth:140}}>Yeni Kayit Olustur</button>
+            <button onClick={onCreateNewRecord} style={{...btnSt("primary"),padding:"7px 12px",fontSize:12,minWidth:140}}>Yeni Kayit Olustur</button>
             <button onClick={()=>setDashboardEditMode(v=>!v)} style={{...(dashboardEditMode?btnSt("green"):btnSt("ghost")),padding:"7px 10px",fontSize:12}}>
               {dashboardEditMode?"Duzenleme Bitti":"Sayfayi Duzenle"}
             </button>
@@ -18090,7 +18275,7 @@ function App() {
     if(tab==="tools") return <ToolStock currentUser={currentUser} machines={machines} filtersVisible={toolsFilterOpen}/>;
     if(tab==="orders") return <WorkOrders currentUser={currentUser} machines={machines} filtersVisible={ordersFilterOpen}/>;
     if(tab==="users") return <AdminUsers currentUser={currentUser} machines={machines} currentLogo={logoSrc} onLogoUpdate={updateLogo} themeMode={themeMode} onThemeModeChange={updateTheme} menuCatalog={allTabs} menuVisibility={menuVisibility} onMenuVisibilityChange={setMenuVisibility}/>;
-    if(tab==="dashboard") return <MRPDashboard currentUser={currentUser} machines={machines} logoSrc={logoSrc} themeMode={themeMode} onLogout={logout} onQuickAction={handleTopQuickAction} roleLabel={currentRoleLabel} layoutMode={layoutMode}/>;
+    if(tab==="dashboard") return <MRPDashboard currentUser={currentUser} machines={machines} logoSrc={logoSrc} themeMode={themeMode} onLogout={logout} onQuickAction={handleTopQuickAction} onCreateNewRecord={handleDashboardCreateRecord} roleLabel={currentRoleLabel} layoutMode={layoutMode}/>;
     if(tab==="cncmonitor") return <CncMonitorWall currentUser={currentUser} machines={machines}/>;
     if(tab==="mrp") return <MRPRunModule currentUser={currentUser}/>;
     if(tab==="quotes") return <SalesManagement currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")} defaultView="quotes" filtersVisible={salesFilterOpen}/>;
@@ -18343,6 +18528,15 @@ function App() {
     if(actionId==="calendar"){switchToTabIfVisible("planning");return;}
     if(actionId==="mail"){switchToTabIfVisible("sales");return;}
   }
+  function handleDashboardCreateRecord(){
+    const createTargets=["orders","sales","parts","customers","materials","tools","planning"];
+    const target=createTargets.find(id=>tabs.some(t=>t.id===id))||(tabs.find(t=>t.id!=="dashboard")?.id||"");
+    if(!target) return;
+    setTab(target);
+    setTimeout(()=>{
+      window.dispatchEvent(new CustomEvent("mrp:tab-action",{detail:{tab:target,type:"new"}}));
+    },80);
+  }
   function applyTopViewMode(modeId){
     setGlobalViewMode(modeId);
     if(layoutMode!=="desktop") return;
@@ -18516,7 +18710,7 @@ function App() {
               <div style={{display:"flex",alignItems:"center",justifyContent:desktopMenuIconOnly?"center":"space-between",gap:8}}>
                 <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
                   <div style={{width:34,height:34,borderRadius:9,background:leftNavColors.toggleBg,border:`1px solid ${leftNavColors.border}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
-                    {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:14,color:leftNavColors.activeText}}>??</span>}
+                    {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:12,color:leftNavColors.activeText,fontWeight:700}}>LOGO</span>}
                   </div>
                   {!desktopMenuIconOnly&&<div style={{fontSize:15,fontWeight:800,color:leftNavColors.activeText,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>CNC Atolye MRP</div>}
                 </div>
