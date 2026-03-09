@@ -12973,161 +12973,167 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             </div>
           </div>
 
-          <div style={opsPanelStyle}>
-            <div style={opsGridStyle}>
-              <div style={{...sectionCardStyle,...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
-              <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>Kurulum</div>
-              <button onClick={openToolChangeModal} style={{...btnSt("ghost"),width:"100%",padding:"12px 10px",fontSize:13,borderColor:opTheme.borderStrong,color:opTheme.text,background:opTheme.cardBgSoft,fontWeight:700}}>Takım Değişimi</button>
-              <div style={{marginTop:8,fontSize:12,color:opTheme.textDim,textAlign:"center"}}>
-                {machineToolPicked?`${machineToolPicked.code||machineToolPicked.name} x${Math.max(1,Number(form.machineToolQty)||1)}`:"Takım seçilmedi"}
+          <div style={standardMainLayoutStyle}>
+            <div style={standardPrimaryCardStyle}>
+              <div>
+                <div style={standardSectionTitleStyle}>Operasyon Kaydi</div>
+                <div style={standardSectionHintStyle}>Miktar girisi, hedef takibi ve vardiya onayi ayni kartta ilerler.</div>
               </div>
-              <div style={{marginTop:10,fontSize:11,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Stoktaki Takımlar</div>
-              <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:5,maxHeight:130,overflowY:"auto"}}>
-                {stockedTools.slice(0,5).map(t=>(
-                  <div key={t.id} style={{...rowCardStyle,display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:opTheme.textDim}}>
-                    <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:155}}>{t.code||"-"} · {t.name||"Takım"}</span>
-                    <strong>{safeNum(t.qty)}</strong>
+              {form.selectedOrder?(
+                <div style={{padding:"13px 14px",borderRadius:12,border:`1px solid ${rgbaFromHex(C.accent,0.24)}`,background:rgbaFromHex(C.accent,0.05)}}>
+                  <div style={{fontFamily:"monospace",fontSize:15,fontWeight:900,color:C.text}}>{form.selectedOrder.code}</div>
+                  <div style={{fontSize:13,color:C.muted,marginTop:4}}>{form.selectedOrder.name||"Is emri aciklamasi yok"}</div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+                    <span style={{...infoPillStyle,background:C.card,border:`1px solid ${C.border}`,color:C.text}}>Cevrim: {fmtSec(form.selectedOrder.partSec)}</span>
+                    <span style={{...infoPillStyle,background:C.card,border:`1px solid ${C.border}`,color:C.text}}>Hedef: {selectedOrderQty||"-"}</span>
+                    {form.selectedOrder?.dueDate&&<span style={{...infoPillStyle,background:C.card,border:`1px solid ${C.border}`,color:C.text}}>Termin: {form.selectedOrder.dueDate}</span>}
+                  </div>
+                </div>
+              ):(
+                <div style={standardEmptyStateStyle}>Dogru hedef ve belge iliskisi icin once is emri secmeniz onerilir.</div>
+              )}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12}}>
+                <div style={{padding:"14px 14px",borderRadius:12,border:`1px solid ${rgbaFromHex(C.green,0.24)}`,background:rgbaFromHex(C.green,0.06),display:"flex",flexDirection:"column",gap:8}}>
+                  <span style={{fontSize:11,fontWeight:800,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Dogru Adet</span>
+                  <input style={{...inputSt,...themedInputStyle,padding:"14px 12px",fontSize:28,fontWeight:900,textAlign:"center",borderColor:rgbaFromHex(C.green,0.26),background:C.card}} type="number" min="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/>
+                  <div style={{fontSize:12,color:C.muted}}>Temiz uretim miktari.</div>
+                </div>
+                <div style={{padding:"14px 14px",borderRadius:12,border:`1px solid ${rgbaFromHex(C.red,0.24)}`,background:rgbaFromHex(C.red,0.06),display:"flex",flexDirection:"column",gap:8}}>
+                  <span style={{fontSize:11,fontWeight:800,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Hurda Adet</span>
+                  <input style={{...inputSt,...themedInputStyle,padding:"14px 12px",fontSize:28,fontWeight:900,textAlign:"center",borderColor:rgbaFromHex(C.red,0.26),background:C.card}} type="number" min="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/>
+                  <div style={{fontSize:12,color:C.muted}}>Hatali parca bilgisi.</div>
+                </div>
+              </div>
+              <div style={{...rowCardStyle,padding:"13px 14px",display:"flex",flexDirection:"column",gap:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+                  <div>
+                    <div style={{fontSize:12,fontWeight:800,color:C.text}}>Siparis ilerlemesi</div>
+                    <div style={{fontSize:12,color:C.muted2,marginTop:2}}>Gunluk uretim toplami uzerinden hesaplanir.</div>
+                  </div>
+                  <div style={{fontSize:22,fontWeight:900,color:C.text}}>{selectedOrderQty?`%${progressPct}`:"-"}</div>
+                </div>
+                <div style={standardProgressTrackStyle}>
+                  <div style={{...standardProgressFillStyle,width:`${selectedOrderQty?progressPct:0}%`}}/>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8}}>
+                  <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Hedef</div><div style={{fontSize:16,fontWeight:800,color:C.text,marginTop:4}}>{selectedOrderQty||"-"}</div></div>
+                  <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Tamamlanan</div><div style={{fontSize:16,fontWeight:800,color:C.text,marginTop:4}}>{producedQty}</div></div>
+                  <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Kalan</div><div style={{fontSize:16,fontWeight:800,color:C.text,marginTop:4}}>{selectedOrderQty?remainingQty:"-"}</div></div>
+                  <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Toplam Hata</div><div style={{fontSize:16,fontWeight:800,color:C.red,marginTop:4}}>{scrapQty}</div></div>
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:10}}>
+                <button onClick={openShiftEndModal} style={{...btnSt(saved?"green":"primary"),padding:"12px 14px",fontSize:13,fontWeight:800,borderColor:"transparent"}}>{editId?"Vardiya Sonu Guncelle":"Vardiya Sonu Onayla"}</button>
+                <button onClick={openRejectPartsModal} style={{...btnSt("ghost"),padding:"12px 14px",fontSize:13,fontWeight:700,borderColor:rgbaFromHex(C.red,0.2),color:C.red,background:rgbaFromHex(C.red,0.04)}}>Hata Girisi</button>
+                <button onClick={openToolChangeModal} style={{...btnSt("ghost"),padding:"12px 14px",fontSize:13,fontWeight:700}}>Takim Degisimi</button>
+                <button onClick={()=>setShowOrderDataPanel(true)} disabled={!form.selectedOrder} style={{...btnSt("ghost"),padding:"12px 14px",fontSize:13,fontWeight:700,opacity:form.selectedOrder?1:.45,cursor:form.selectedOrder?"pointer":"not-allowed"}}>Is Emri Dokumanlari</button>
+              </div>
+            </div>
+
+            <div style={{flex:"1 1 340px",display:"flex",flexDirection:"column",gap:12,minWidth:0}}>
+              <div style={standardSidebarCardStyle}>
+                <div>
+                  <div style={standardSectionTitleStyle}>Canli Tezgah Durumu</div>
+                  <div style={standardSectionHintStyle}>Anlik telemetry ve kalite verisi ozetlenir.</div>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+                  <span style={{...infoPillStyle,display:"inline-flex",alignItems:"center",gap:6,background:rgbaFromHex(statusMeta.color,0.12),border:`1px solid ${rgbaFromHex(statusMeta.color,0.3)}`,color:statusMeta.color}}>
+                    <span style={{width:10,height:10,borderRadius:"50%",background:statusMeta.color,display:"inline-block"}}/>
+                    {statusMeta.label}
+                  </span>
+                  <span style={{fontSize:12,color:C.muted}}>Son guncelleme: {telemetryUpdatedLabel}</span>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8}}>
+                  <div style={{...rowCardStyle,padding:"11px 12px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Aktif Sure</div><div style={{fontSize:18,fontWeight:900,color:C.text,marginTop:4}}>{fmtActiveShort(currentStatusElapsedSec)}</div></div>
+                  <div style={{...rowCardStyle,padding:"11px 12px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Alarm</div><div style={{fontSize:18,fontWeight:900,color:activeAlarmCount>0?C.red:C.text,marginTop:4}}>{activeAlarmCount}</div></div>
+                  <div style={{...rowCardStyle,padding:"11px 12px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Kullanim</div><div style={{fontSize:18,fontWeight:900,color:C.text,marginTop:4}}>%{utilizationPct}</div></div>
+                  <div style={{...rowCardStyle,padding:"11px 12px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>OEE</div><div style={{fontSize:18,fontWeight:900,color:C.text,marginTop:4}}>%{oeePct}</div></div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:8}}>
+                  <div style={{...rowCardStyle,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Planlanan</div><div style={{fontSize:14,fontWeight:800,color:C.text,marginTop:4}}>{hasPlannedCycle?fmtSec(cycleExpectedSec):"--:--"}</div></div>
+                  <div style={{...rowCardStyle,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Aktif Cevrim</div><div style={{fontSize:14,fontWeight:800,color:C.text,marginTop:4}}>{fmtSec(cycleCurrentSec)}</div></div>
+                  <div style={{...rowCardStyle,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Sapma</div><div style={{fontSize:14,fontWeight:800,color:cycleDeviationExceeded?C.red:C.text,marginTop:4}}>{cycleDeviationSec>=0?"+":""}{fmtSec(cycleDeviationAbsSec)}</div></div>
+                </div>
+              </div>
+
+              <div style={standardSidebarCardStyle}>
+                <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+                  <div>
+                    <div style={standardSectionTitleStyle}>Dokuman ve Takim</div>
+                    <div style={standardSectionHintStyle}>Secili is emri belgeleri ve uygun takim ozeti.</div>
+                  </div>
+                  <button onClick={()=>setShowOrderDataPanel(true)} disabled={!form.selectedOrder} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:11,opacity:form.selectedOrder?1:.45,cursor:form.selectedOrder?"pointer":"not-allowed"}}>Tum Dokumanlar</button>
+                </div>
+                <div style={{...rowCardStyle,padding:"11px 12px"}}>
+                  <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Secili Takim</div>
+                  <div style={{fontSize:14,fontWeight:800,color:C.text,marginTop:4}}>{machineToolPicked?`${machineToolPicked.code||machineToolPicked.name} x${Math.max(1,Number(form.machineToolQty)||1)}`:"Takim secilmedi"}</div>
+                </div>
+                {docsPreview.length===0&&<div style={standardEmptyStateStyle}>{form.selectedOrder?"Secili is emrinde belge yok.":"Belge gormek icin once is emri secin."}</div>}
+                {docsPreview.length>0&&docsPreview.map((f,i)=>(
+                  <div key={`${f.name||"file"}_${i}`} style={{...rowCardStyle,padding:"9px 10px",display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{fontSize:16,lineHeight:1}}>{getFileIcon(f.name)}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name||"Dokuman"}</div>
+                      <div style={{fontSize:10,color:C.muted2,marginTop:2}}>{formatBytes(Number(f.size)||0)}</div>
+                    </div>
+                    <button onClick={()=>openOrderFile(f)} style={{...btnSt("ghost"),padding:"5px 9px",fontSize:11}}>{canFilePreview(f)?"Onizle":"Indir"}</button>
                   </div>
                 ))}
-                {stockedTools.length===0&&<div style={{fontSize:11,color:opTheme.warn}}>Stokta takım yok.</div>}
-              </div>
-            </div>
-
-              <div style={{...sectionCardStyle,...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
-              <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>Uretim</div>
-              <div>
-                <span style={{...labelSt,color:opTheme.textMuted}}>İş Emri</span>
-                {form.selectedOrder?(
-                  <div style={{...rowCardStyle,padding:"9px 10px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <div style={{minWidth:0}}>
-                      <div style={{fontWeight:700,fontFamily:"monospace",fontSize:13,color:opTheme.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{form.selectedOrder.code}</div>
-                      <div style={{fontSize:11,color:opTheme.textDim,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{form.selectedOrder.name||"-"} · {fmtSec(form.selectedOrder.partSec)}</div>
-                    </div>
-                    <button onClick={()=>fv("selectedOrder",null)} style={{background:"transparent",border:"none",color:opTheme.danger,fontSize:18,cursor:"pointer"}}>×</button>
-                  </div>
-                ):(
-                  <>
-                    <button onClick={()=>setShowPicker(!showPicker)} style={{...inputSt,...themedInputStyle,textAlign:"left",cursor:"pointer",color:opTheme.textDim,display:"block"}}>
-                      {orders.length===0?"Aktif iş emri yok":"İş emri seçin..."}
-                    </button>
-                    {showPicker&&(
-                      <div style={{background:opTheme.cardBg,border:`1px solid ${opTheme.borderStrong}`,borderRadius:10,marginTop:4,overflow:"hidden"}}>
-                        <input style={{...inputSt,...themedInputStyle,borderRadius:0,borderBottom:`1px solid ${opTheme.borderStrong}`}} placeholder="Ara..." value={search} onChange={e=>setSearch(e.target.value)} autoFocus/>
-                        <div style={{maxHeight:170,overflowY:"auto"}}>
-                          {filtered.length===0&&<div style={{padding:12,color:opTheme.textDim,textAlign:"center",fontSize:12}}>Sonuç yok</div>}
-                          {filtered.map(o=>(
-                            <div key={o.id} onClick={()=>{fv("selectedOrder",o);setShowPicker(false);setSearch("");}} style={{padding:"10px 11px",cursor:"pointer",borderBottom:`1px solid ${opTheme.border}`}}>
-                              <div style={{fontWeight:700,fontFamily:"monospace",fontSize:12,color:opTheme.text}}>{o.code}</div>
-                              <div style={{fontSize:11,color:opTheme.textDim,marginTop:1}}>{o.name} · {(o.machines||[]).join(", ")}</div>
-                            </div>
-                          ))}
-                        </div>
+                {stockedToolsPreview.length===0&&<div style={standardEmptyStateStyle}>Stokta kullanilabilir takim gorunmuyor.</div>}
+                {stockedToolsPreview.length>0&&stockedToolsPreview.map(t=>{
+                  const qty=safeNum(t.qty);
+                  const min=Math.max(0,safeNum(t.minQty));
+                  const critical=qty<=min;
+                  return (
+                    <div key={t.id} style={{...rowCardStyle,padding:"9px 10px",display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"center"}}>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.code||"-"} · {t.name||"Takim"}</div>
+                        <div style={{fontSize:10,color:C.muted2,marginTop:2}}>{t.location||"Lokasyon yok"}</div>
                       </div>
-                    )}
-                  </>
-                )}
+                      <div style={{textAlign:"right"}}>
+                        <div style={{fontSize:14,fontWeight:900,color:critical?C.red:C.text}}>{qty}</div>
+                        <div style={{fontSize:10,color:C.muted2}}>Min {min}</div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}>
-                <div><span style={{...labelSt,color:opTheme.textMuted}}>Doğru</span><input style={{...inputSt,...themedInputStyle,padding:"12px 10px",fontSize:20,fontWeight:800,textAlign:"center"}} type="number" min="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>
-                <div><span style={{...labelSt,color:opTheme.textMuted}}>Hurda</span><input style={{...inputSt,...themedInputStyle,padding:"12px 10px",fontSize:20,fontWeight:800,textAlign:"center"}} type="number" min="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>
-              </div>
-              <button onClick={openShiftEndModal} style={{...btnSt(saved?"green":"primary"),width:"100%",padding:"12px 10px",fontSize:13,marginTop:9,borderColor:"transparent",fontWeight:700,boxShadow:"0 8px 16px rgba(0,0,0,.22)"}}>
-                {editId?"Vardiya Sonu Güncelle":"Vardiya Sonu Onayla"}
-              </button>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:7,marginTop:9}}>
-                <div style={{...rowCardStyle,textAlign:"center"}}><div style={{fontSize:10,color:opTheme.textMuted}}>Hedef</div><div style={{fontSize:14,color:opTheme.text,fontWeight:800}}>{selectedOrderQty||"-"}</div></div>
-                <div style={{...rowCardStyle,textAlign:"center"}}><div style={{fontSize:10,color:opTheme.textMuted}}>Kalan</div><div style={{fontSize:14,color:opTheme.text,fontWeight:800}}>{selectedOrderQty?remainingQty:"-"}</div></div>
-                <div style={{...rowCardStyle,textAlign:"center"}}><div style={{fontSize:10,color:opTheme.textMuted}}>İlerleme</div><div style={{fontSize:14,color:opTheme.text,fontWeight:800}}>{selectedOrderQty?`%${progressPct}`:"-"}</div></div>
-              </div>
-            </div>
 
-              <div style={{...sectionCardStyle,...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
-              <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>Ariza ve Durus</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                <div style={{...rowCardStyle,padding:"8px 9px",textAlign:"center"}}>
-                  <div style={{fontSize:10,color:opTheme.textMuted}}>Kalite</div>
-                  <div style={{fontSize:20,fontWeight:800,color:qualityPct<90?opTheme.warn:opTheme.text}}>%{qualityPct}</div>
+              <div style={standardSidebarCardStyle}>
+                <div>
+                  <div style={standardSectionTitleStyle}>Son Makine Kayitlari</div>
+                  <div style={standardSectionHintStyle}>Ayni tezgaha ait son vardiya hareketleri.</div>
                 </div>
-                <div style={{...rowCardStyle,padding:"8px 9px",textAlign:"center"}}>
-                  <div style={{fontSize:10,color:opTheme.textMuted}}>Parça Süresi</div>
-                  <div style={{fontSize:20,fontWeight:800,color:opTheme.text}}>{form.selectedOrder?fmtSec(form.selectedOrder.partSec):"--:--"}</div>
-                </div>
-              </div>
-              <button onClick={openShiftEndModal} style={{...btnSt("ghost"),width:"100%",padding:"11px 10px",fontSize:13,marginTop:8,borderColor:opTheme.borderStrong,color:opTheme.text,background:opTheme.cardBgSoft,fontWeight:700}}>Bitir / Durdur</button>
-              <div style={{marginTop:9,fontSize:11,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Son 3 Kayıt</div>
-              <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:5}}>
-                {recentMachineEntries.length===0&&<div style={{fontSize:11,color:opTheme.textDim}}>Kayıt yok.</div>}
-                {recentMachineEntries.map(e=>{
+                {recentMachineEntries.length===0&&<div style={standardEmptyStateStyle}>Secili tezgah icin kayit bulunmuyor.</div>}
+                {recentMachineEntries.length>0&&recentMachineEntries.map(e=>{
                   const machineToolQty=Math.max(0,safeNum(e.machineToolQty??e.machineToolChange??0));
                   const isToolChange=String(e.entryType||"")==="tool_change"||(machineToolQty>0&&safeNum(e.correct)===0&&safeNum(e.wrong)===0);
-                  const leftLabel=isToolChange
-                    ? `Takım: ${e.machineToolCode||e.machineToolName||"Takım"} x${machineToolQty}`
-                    : `${e.jobCode||"-"} · ?${safeNum(e.correct)} / ?${safeNum(e.wrong)}`;
-                  const timeText=String(e.createdAt||"").slice(11,16)||"--:--";
+                  const title=isToolChange?`${e.machineToolCode||e.machineToolName||"Takim"} degisimi`:`${e.jobCode||"-"} uretim kaydi`;
+                  const detail=isToolChange?`Takim adedi: ${machineToolQty}`:`Dogru ${safeNum(e.correct)} · Hurda ${safeNum(e.wrong)}`;
+                  const stampRaw=e.createdAt||`${e.date||""}T00:00:00`;
+                  const stampDate=new Date(stampRaw);
+                  const stampText=Number.isNaN(stampDate.getTime())?(e.date||"--"):new Intl.DateTimeFormat("tr-TR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}).format(stampDate);
                   return (
-                    <div key={e.id} style={{...rowCardStyle,display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:opTheme.textDim}}>
-                      <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:180}}>{leftLabel}</span>
-                      <span>{timeText} · {shiftWindowMap[e.shift]?.label||e.shift||"-"}</span>
+                    <div key={e.id} style={{...rowCardStyle,padding:"10px 11px",display:"flex",justifyContent:"space-between",gap:10,alignItems:"center"}}>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{title}</div>
+                        <div style={{fontSize:11,color:C.muted2,marginTop:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{detail}</div>
+                      </div>
+                      <div style={{fontSize:11,color:C.muted,textAlign:"right",whiteSpace:"nowrap"}}>
+                        <div>{stampText}</div>
+                        <div style={{marginTop:3}}>{shiftWindowMap[e.shift]?.label||e.shift||"-"}</div>
+                      </div>
                     </div>
                   );
                 })}
               </div>
             </div>
-            </div>
-          </div>
-
-          <div style={stockPanelStyle}>
-            <div style={{fontSize:19,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>Stok Bilgileri</div>
-            <div style={stockGridStyle}>
-              <div style={{...sectionCardStyle,padding:"10px 9px",...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
-              <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.6,textTransform:"uppercase",marginBottom:6}}>İş Emri Teknik Dokümanları ({selectedOrderFiles.length})</div>
-              {selectedOrderFiles.length===0&&<div style={{fontSize:12,color:opTheme.textDim}}>Doküman yok.</div>}
-              {selectedOrderFiles.length>0&&(
-                <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:170,overflowY:"auto"}}>
-                  {selectedOrderFiles.map((f,i)=>(
-                    <div key={`${f.name||"file"}_${i}`} style={{...rowCardStyle,display:"flex",alignItems:"center",gap:8,padding:"7px 8px"}}>
-                      <div style={{fontSize:16,lineHeight:1}}>{getFileIcon(f.name)}</div>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:11,color:opTheme.text,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name||"Dokuman"}</div>
-                        <div style={{fontSize:10,color:opTheme.textDim}}>{formatBytes(Number(f.size)||0)}</div>
-                      </div>
-                      <button onClick={()=>openOrderFile(f)} style={{...btnSt("ghost"),padding:"4px 8px",fontSize:10,borderColor:opTheme.borderStrong,color:opTheme.text,background:opTheme.cardBg}}>{canFilePreview(f)?"Önizle":"İndir"}</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-              <div style={{...sectionCardStyle,padding:"10px 9px",...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
-              <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.6,textTransform:"uppercase",marginBottom:6}}>Takım Stokları ({stockedTools.length})</div>
-              {stockedTools.length===0&&<div style={{fontSize:12,color:opTheme.warn}}>Stokta takım yok.</div>}
-              {stockedTools.length>0&&(
-                <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:170,overflowY:"auto"}}>
-                  {stockedTools.slice(0,12).map(t=>{
-                    const qty=safeNum(t.qty);
-                    const min=Math.max(0,safeNum(t.minQty));
-                    const critical=qty<=min;
-                    return (
-                      <div key={t.id} style={{...rowCardStyle,display:"grid",gridTemplateColumns:"1fr auto",alignItems:"center",gap:8,padding:"7px 8px"}}>
-                        <div style={{minWidth:0}}>
-                          <div style={{fontSize:11,color:opTheme.text,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.code||"-"} · {t.name||"Takım"}</div>
-                          <div style={{fontSize:10,color:opTheme.textDim}}>{t.location||"Lokasyon yok"}</div>
-                        </div>
-                        <div style={{fontSize:11,color:critical?opTheme.danger:opTheme.text,fontWeight:800,textAlign:"right"}}>{qty}<div style={{fontSize:10,color:opTheme.textDim}}>Min {min}</div></div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              </div>
-            </div>
           </div>
         </div>
       </div>
-      {!kioskMode&&(
-        <div style={{fontSize:12,color:C.muted2,background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 11px"}}>
-          Uretim kaydi <strong>Vardiya Sonu</strong> onayinda, takim degisimi ise modal onayinda anlik olusur.
-        </div>
-      )}
+      <div style={{fontSize:12,color:C.muted2,background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 11px"}}>
+        Bu ekran daha net bir is akisi icin yeniden duzenlendi. Uretim kaydi <strong>Vardiya Sonu</strong> onayinda tamamlanir.
+      </div>
       {showToolModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={()=>setShowToolModal(false)}>
           <div style={{width:"100%",maxWidth:680,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:15}} onClick={e=>e.stopPropagation()}>
