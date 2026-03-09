@@ -559,6 +559,54 @@ const WORK_ORDER_LIST_COLUMNS = [
   {id:"status_production",label:"Durum / Uretim",width:152},
   {id:"actions",label:"Islem",width:352,align:"right",required:true},
 ];
+const TOOL_STOCK_LIST_COLUMNS = [
+  {id:"row_no",label:"#",width:54,required:true},
+  {id:"tool",label:"Takim",width:240,required:true},
+  {id:"category",label:"Kategori",width:136},
+  {id:"geometry",label:"Geometri",width:132},
+  {id:"material",label:"Malzeme",width:132},
+  {id:"location",label:"Konum",width:132},
+  {id:"qty",label:"Stok",width:88,align:"right"},
+  {id:"min_qty",label:"Min",width:88,align:"right"},
+  {id:"life",label:"Omur",width:96,align:"right"},
+  {id:"status",label:"Durum",width:120},
+  {id:"latest_move",label:"Son Hareket",width:220},
+  {id:"actions",label:"Islemler",width:304,align:"right"},
+];
+const PURCHASE_REQUEST_LIST_COLUMNS = [
+  {id:"request",label:"Talep",width:320,required:true},
+  {id:"qty_date",label:"Miktar / Tarih",width:170},
+  {id:"priority",label:"Oncelik",width:110},
+  {id:"status",label:"Durum",width:130},
+  {id:"actions",label:"Islem",width:190,align:"right",required:true},
+];
+const PURCHASE_QUOTE_LIST_COLUMNS = [
+  {id:"request_supplier",label:"Talep / Tedarikci",width:320,required:true},
+  {id:"unit_price",label:"Birim Fiyat",width:140,align:"right"},
+  {id:"total",label:"Toplam",width:150,align:"right"},
+  {id:"lead_term",label:"Lead-Time / Vade",width:170},
+  {id:"actions",label:"Islem",width:130,align:"right",required:true},
+];
+const PURCHASE_ORDER_LIST_COLUMNS = [
+  {id:"order_supplier",label:"PO / Tedarikci",width:320,required:true},
+  {id:"material_qty",label:"Malzeme / Miktar",width:220},
+  {id:"receipt",label:"Alinan / Red",width:160},
+  {id:"status",label:"Durum",width:120},
+];
+const SUPPLIER_PERF_LIST_COLUMNS = [
+  {id:"name",label:"Tedarikci",width:220,required:true},
+  {id:"po",label:"PO",width:84,align:"right"},
+  {id:"otd",label:"OTD %",width:96,align:"right"},
+  {id:"quality",label:"Kalite %",width:110,align:"right"},
+];
+const FINANCE_FLOW_LIST_COLUMNS = [
+  {id:"dates",label:"Tarih",width:180,required:true},
+  {id:"flow",label:"Akis",width:150},
+  {id:"amount",label:"Tutar",width:160,align:"right"},
+  {id:"party",label:"Cari",width:220},
+  {id:"source",label:"Belge",width:170},
+  {id:"actions",label:"Islem",width:280,align:"right",required:true},
+];
 const MACHINE_BRAND_OPTIONS = ["Fanuc","Siemens","Heidenhain","Generic"];
 const MACHINE_PROTOCOL_OPTIONS = {
   Fanuc:["FOCAS2","MTConnect"],
@@ -1403,6 +1451,47 @@ function TableColumnEditor({title="Sutun Duzenle",columns,onToggle,onMove,onRese
         </div>
       </div>
     </details>
+  );
+}
+function ListRowPager({
+  rowsPerPage=10,
+  page=1,
+  pageCount=1,
+  onRowsPerPageChange=()=>{},
+  onPrev=()=>{},
+  onNext=()=>{},
+  options=[10,20],
+}) {
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:6}}>
+      <span style={{fontSize:11,color:C.muted2}}>Satir</span>
+      <select
+        style={{...inputSt,width:78,padding:"5px 6px",fontSize:12}}
+        value={rowsPerPage}
+        onChange={e=>onRowsPerPageChange(Math.max(1,Number(e.target.value)||10))}
+      >
+        {options.map(opt=>(
+          <option key={opt} value={opt}>{opt}</option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={onPrev}
+        disabled={page<=1}
+        style={{...btnSt("ghost"),padding:"5px 8px",fontSize:12,opacity:page<=1?0.6:1}}
+      >
+        {"<"}
+      </button>
+      <div style={{fontSize:11,color:C.muted2,minWidth:56,textAlign:"center"}}>{page}/{Math.max(1,pageCount)}</div>
+      <button
+        type="button"
+        onClick={onNext}
+        disabled={page>=pageCount}
+        style={{...btnSt("ghost"),padding:"5px 8px",fontSize:12,opacity:page>=pageCount?0.6:1}}
+      >
+        {">"}
+      </button>
+    </div>
   );
 }
 function Badge({label:l,color=C.muted2}) {
@@ -3361,6 +3450,8 @@ function ToolStock({currentUser,filtersVisible=true}) {
   const [stockFilter,setStockFilter]=useState("all");
   const [updatedDateFrom,setUpdatedDateFrom]=useState("");
   const [updatedDateTo,setUpdatedDateTo]=useState("");
+  const [toolRowsPerPage,setToolRowsPerPage]=useState(10);
+  const [toolListPageIdx,setToolListPageIdx]=useState(1);
 
   const load=useCallback(async()=>{
     const [rows,ords,mvs]=await Promise.all([
@@ -3522,6 +3613,15 @@ function ToolStock({currentUser,filtersVisible=true}) {
     if(sortMode==="stock_asc") return (Number(a.qty)||0)-(Number(b.qty)||0);
     return String(a.name||"").localeCompare(String(b.name||""),"tr");
   });
+  const toolTotalPages=Math.max(1,Math.ceil(sortedTools.length/Math.max(1,toolRowsPerPage)));
+  useEffect(()=>{
+    setToolListPageIdx(1);
+  },[search,stockFilter,updatedDateFrom,updatedDateTo,sortMode,toolRowsPerPage]);
+  useEffect(()=>{
+    setToolListPageIdx(prev=>Math.max(1,Math.min(prev,toolTotalPages)));
+  },[toolTotalPages]);
+  const toolPageStart=(toolListPageIdx-1)*Math.max(1,toolRowsPerPage);
+  const pagedTools=sortedTools.slice(toolPageStart,toolPageStart+Math.max(1,toolRowsPerPage));
   const lowCount=tools.filter(t=>(Number(t.qty)||0)<=Math.max(Number(t.minQty)||0,0)).length;
   const stockedTools=[...tools].filter(t=>(Number(t.qty)||0)>0).sort((a,b)=>(Number(b.qty)||0)-(Number(a.qty)||0));
   const stockFilterCounts={
@@ -3546,7 +3646,81 @@ function ToolStock({currentUser,filtersVisible=true}) {
     });
     return out;
   },[movements]);
-  const tableColCount=isAdmin?12:11;
+  const toolStockColumnDefs=useMemo(
+    ()=>TOOL_STOCK_LIST_COLUMNS.filter(col=>isAdmin||col.id!=="actions"),
+    [isAdmin]
+  );
+  const {
+    columns:toolStockTableColumns,
+    visibleColumns:visibleToolStockTableColumns,
+    tableMinWidth:toolStockTableMinWidth,
+    moveColumn:moveToolStockTableColumn,
+    toggleColumn:toggleToolStockTableColumn,
+    resetColumns:resetToolStockTableColumns,
+  }=useTableColumnLayout("tool_stock_list",toolStockColumnDefs);
+  const toolStockSubRowSpan=Math.max(1,visibleToolStockTableColumns.length-1);
+  const renderToolStockTableCell=(t,idx,col)=>{
+    const qty=Number(t.qty)||0;
+    const min=Math.max(Number(t.minQty)||0,0);
+    const status=resolveStockStatus(t);
+    const critical=status!=="healthy";
+    const tone=status==="out"?C.muted2:(status==="critical"?C.red:C.green);
+    const toolMoves=movementMap[t.id]||[];
+    const latestMove=toolMoves[0]||null;
+    if(col.id==="row_no"){
+      return <td key={col.id} style={{padding:"9px 8px",textAlign:"center",fontSize:12,color:C.muted2}}>{idx+1}</td>;
+    }
+    if(col.id==="tool"){
+      return (
+        <td key={col.id} style={{padding:"9px 8px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,minWidth:210}}>
+            <span style={{width:30,height:12,borderRadius:99,background:`linear-gradient(90deg,${tone} 0%,${tone} 68%,${C.surface2} 68%,${C.surface2} 100%)`,border:`1px solid ${tone}66`,display:"inline-block"}}/>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:12,color:C.text,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.code||"-"}</div>
+              <div style={{fontSize:12,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.name||"-"}</div>
+            </div>
+          </div>
+        </td>
+      );
+    }
+    if(col.id==="category") return <td key={col.id} style={{padding:"9px 8px",fontSize:12,color:C.text}}>{t.category||"-"}</td>;
+    if(col.id==="geometry") return <td key={col.id} style={{padding:"9px 8px",fontSize:12,color:C.text}}>{t.geometry||"-"}</td>;
+    if(col.id==="material") return <td key={col.id} style={{padding:"9px 8px",fontSize:12,color:C.text}}>{t.toolMaterial||"-"}</td>;
+    if(col.id==="location") return <td key={col.id} style={{padding:"9px 8px",fontSize:12,color:C.text}}>{t.location||"-"}</td>;
+    if(col.id==="qty") return <td key={col.id} style={{padding:"9px 8px",fontSize:12,color:C.text,fontWeight:700,textAlign:"right"}}>{qty}</td>;
+    if(col.id==="min_qty") return <td key={col.id} style={{padding:"9px 8px",fontSize:12,color:C.muted2,textAlign:"right"}}>{min}</td>;
+    if(col.id==="life") return <td key={col.id} style={{padding:"9px 8px",fontSize:12,color:C.muted2,textAlign:"right"}}>{Math.max(Number(t.expectedLife)||0,0)}</td>;
+    if(col.id==="status"){
+      return (
+        <td key={col.id} style={{padding:"9px 8px",textAlign:"center"}}>
+          <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",borderRadius:999,padding:"3px 8px",fontSize:11,fontWeight:700,color:critical?C.red:C.green,background:critical?C.redDim:C.greenDim,border:`1px solid ${critical?C.red+"55":C.green+"55"}`}}>
+            {status==="out"?"Stok Yok":(status==="critical"?"Kritik":"Normal")}
+          </span>
+        </td>
+      );
+    }
+    if(col.id==="latest_move"){
+      return (
+        <td key={col.id} style={{padding:"9px 8px",fontSize:11,color:C.muted2,minWidth:170}}>
+          {latestMove?`${latestMove.type==="in"?"Giris":"Cikis"} · ${latestMove.qty}${latestMove.orderCode?` · ${latestMove.orderCode}`:""} · ${(latestMove.createdAt||"").slice(0,10)}`:"Hareket yok"}
+        </td>
+      );
+    }
+    if(col.id==="actions"){
+      if(!isAdmin) return null;
+      return (
+        <td key={col.id} style={{padding:"9px 8px",textAlign:"right"}}>
+          <div style={{display:"inline-flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+            <button onClick={()=>openMovement(t.id,"in")} style={{...btnSt("green"),padding:"5px 8px",fontSize:11}}>Giris</button>
+            <button onClick={()=>openMovement(t.id,"out")} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Cikis</button>
+            <button onClick={()=>{setEditId(t.id);setForm({code:t.code||"",name:t.name||"",category:t.category||"",qty:String(qty),minQty:String(min),location:t.location||"",geometry:t.geometry||"",toolMaterial:t.toolMaterial||"",expectedLife:String(t.expectedLife??""),notes:t.notes||""});setShowForm(true);}} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Duzenle</button>
+            <button onClick={()=>removeTool(t.id,t.name||"Takim")} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Sil</button>
+          </div>
+        </td>
+      );
+    }
+    return null;
+  };
   const categoryOptions=(form.category&& !TOOL_CATEGORY_OPTIONS.includes(form.category))
     ? [...TOOL_CATEGORY_OPTIONS,form.category]
     : TOOL_CATEGORY_OPTIONS;
@@ -3639,79 +3813,56 @@ function ToolStock({currentUser,filtersVisible=true}) {
           </div>
         )}
         <div style={{flex:"1 1 760px",minWidth:0,display:"flex",flexDirection:"column",gap:8}}>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <TableColumnEditor
+              title="Takim Stok Tablosu"
+              columns={toolStockTableColumns}
+              onToggle={toggleToolStockTableColumn}
+              onMove={moveToolStockTableColumn}
+              onReset={resetToolStockTableColumns}
+            />
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginLeft:"auto"}}>
+              <div style={{fontSize:12,color:C.muted2}}>Gosterilen Kayit: {pagedTools.length} / {sortedTools.length}</div>
+              <ListRowPager
+                rowsPerPage={toolRowsPerPage}
+                page={toolListPageIdx}
+                pageCount={toolTotalPages}
+                onRowsPerPageChange={setToolRowsPerPage}
+                onPrev={()=>setToolListPageIdx(p=>Math.max(1,p-1))}
+                onNext={()=>setToolListPageIdx(p=>Math.min(toolTotalPages,p+1))}
+              />
+            </div>
+          </div>
           {sortedTools.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"30px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Sonuc yok</div>}
           {sortedTools.length>0&&(
             <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden"}}>
               <div style={{overflowX:"auto"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",minWidth:isAdmin?1280:1140}}>
+                <table style={{width:"100%",borderCollapse:"collapse",minWidth:toolStockTableMinWidth}}>
                   <thead>
                     <tr style={{background:C.surface2,borderBottom:`1px solid ${C.border}`}}>
-                      <th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"center",textTransform:"uppercase",letterSpacing:.6,width:46}}>#</th>
-                      <th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"left",textTransform:"uppercase",letterSpacing:.6}}>Takim</th>
-                      <th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"left",textTransform:"uppercase",letterSpacing:.6}}>Kategori</th>
-                      <th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"left",textTransform:"uppercase",letterSpacing:.6}}>Geometri</th>
-                      <th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"left",textTransform:"uppercase",letterSpacing:.6}}>Malzeme</th>
-                      <th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"left",textTransform:"uppercase",letterSpacing:.6}}>Konum</th>
-                      <th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"right",textTransform:"uppercase",letterSpacing:.6}}>Stok</th>
-                      <th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"right",textTransform:"uppercase",letterSpacing:.6}}>Min</th>
-                      <th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"right",textTransform:"uppercase",letterSpacing:.6}}>Omur</th>
-                      <th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"center",textTransform:"uppercase",letterSpacing:.6}}>Durum</th>
-                      <th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"left",textTransform:"uppercase",letterSpacing:.6}}>Son Hareket</th>
-                      {isAdmin&&<th style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:"right",textTransform:"uppercase",letterSpacing:.6,width:290}}>Islemler</th>}
+                      {visibleToolStockTableColumns.map(col=>(
+                        <th key={col.id} style={{padding:"10px 8px",fontSize:11,color:C.muted2,textAlign:col.align||"left",textTransform:"uppercase",letterSpacing:.6,whiteSpace:"nowrap"}}>
+                          {col.label}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedTools.map((t,idx)=>{
+                    {pagedTools.map((t,idx)=>{
+                      const rowIndex=toolPageStart+idx;
                       const qty=Number(t.qty)||0;
                       const min=Math.max(Number(t.minQty)||0,0);
                       const status=resolveStockStatus(t);
                       const critical=status!=="healthy";
-                      const tone=status==="out"?C.muted2:(status==="critical"?C.red:C.green);
-                      const toolMoves=movementMap[t.id]||[];
-                      const latestMove=toolMoves[0]||null;
                       return (
                         <React.Fragment key={t.id}>
                           <tr style={{borderBottom:`1px solid ${C.border}`,background:critical?C.redDim:C.card}}>
-                            <td style={{padding:"9px 8px",textAlign:"center",fontSize:12,color:C.muted2}}>{idx+1}</td>
-                            <td style={{padding:"9px 8px"}}>
-                              <div style={{display:"flex",alignItems:"center",gap:8,minWidth:210}}>
-                                <span style={{width:30,height:12,borderRadius:99,background:`linear-gradient(90deg,${tone} 0%,${tone} 68%,${C.surface2} 68%,${C.surface2} 100%)`,border:`1px solid ${tone}66`,display:"inline-block"}}/>
-                                <div style={{minWidth:0}}>
-                                  <div style={{fontSize:12,color:C.text,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.code||"-"}</div>
-                                  <div style={{fontSize:12,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.name||"-"}</div>
-                                </div>
-                              </div>
-                            </td>
-                            <td style={{padding:"9px 8px",fontSize:12,color:C.text}}>{t.category||"-"}</td>
-                            <td style={{padding:"9px 8px",fontSize:12,color:C.text}}>{t.geometry||"-"}</td>
-                            <td style={{padding:"9px 8px",fontSize:12,color:C.text}}>{t.toolMaterial||"-"}</td>
-                            <td style={{padding:"9px 8px",fontSize:12,color:C.text}}>{t.location||"-"}</td>
-                            <td style={{padding:"9px 8px",fontSize:12,color:C.text,fontWeight:700,textAlign:"right"}}>{qty}</td>
-                            <td style={{padding:"9px 8px",fontSize:12,color:C.muted2,textAlign:"right"}}>{min}</td>
-                            <td style={{padding:"9px 8px",fontSize:12,color:C.muted2,textAlign:"right"}}>{Math.max(Number(t.expectedLife)||0,0)}</td>
-                            <td style={{padding:"9px 8px",textAlign:"center"}}>
-                              <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",borderRadius:999,padding:"3px 8px",fontSize:11,fontWeight:700,color:critical?C.red:C.green,background:critical?C.redDim:C.greenDim,border:`1px solid ${critical?C.red+"55":C.green+"55"}`}}>
-                                {status==="out"?"Stok Yok":(status==="critical"?"Kritik":"Normal")}
-                              </span>
-                            </td>
-                            <td style={{padding:"9px 8px",fontSize:11,color:C.muted2,minWidth:170}}>
-                              {latestMove?`${latestMove.type==="in"?"Giris":"Cikis"} · ${latestMove.qty}${latestMove.orderCode?` · ${latestMove.orderCode}`:""} · ${(latestMove.createdAt||"").slice(0,10)}`:"Hareket yok"}
-                            </td>
-                            {isAdmin&&(
-                              <td style={{padding:"9px 8px",textAlign:"right"}}>
-                                <div style={{display:"inline-flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                                  <button onClick={()=>openMovement(t.id,"in")} style={{...btnSt("green"),padding:"5px 8px",fontSize:11}}>Giris</button>
-                                  <button onClick={()=>openMovement(t.id,"out")} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Cikis</button>
-                                  <button onClick={()=>{setEditId(t.id);setForm({code:t.code||"",name:t.name||"",category:t.category||"",qty:String(qty),minQty:String(min),location:t.location||"",geometry:t.geometry||"",toolMaterial:t.toolMaterial||"",expectedLife:String(t.expectedLife??""),notes:t.notes||""});setShowForm(true);}} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Duzenle</button>
-                                  <button onClick={()=>removeTool(t.id,t.name||"Takim")} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Sil</button>
-                                </div>
-                              </td>
-                            )}
+                            {visibleToolStockTableColumns.map(col=>renderToolStockTableCell(t,rowIndex,col))}
                           </tr>
                           {t.notes&&(
                             <tr style={{borderBottom:`1px solid ${C.border}`,background:C.surface}}>
                               <td style={{padding:"7px 8px"}}/>
-                              <td colSpan={tableColCount-1} style={{padding:"7px 8px",fontSize:11,color:C.muted2}}>
+                              <td colSpan={toolStockSubRowSpan} style={{padding:"7px 8px",fontSize:11,color:C.muted2}}>
                                 Not: {t.notes}
                               </td>
                             </tr>
@@ -3719,7 +3870,7 @@ function ToolStock({currentUser,filtersVisible=true}) {
                           {isAdmin&&moveOpenId===t.id&&(
                             <tr style={{borderBottom:`1px solid ${C.border}`,background:C.surface}}>
                               <td style={{padding:"9px 8px"}}/>
-                              <td colSpan={tableColCount-1} style={{padding:"9px 8px"}}>
+                              <td colSpan={toolStockSubRowSpan} style={{padding:"9px 8px"}}>
                                 <div style={{display:"grid",gridTemplateColumns:"120px 1fr 1fr",gap:8}}>
                                   <select style={{...inputSt,padding:"7px 10px",fontSize:12}} value={moveForm.type} onChange={e=>setMoveForm(f=>({...f,type:e.target.value}))}>
                                     <option value="in">Giris</option>
@@ -5262,6 +5413,10 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   const [orderDateTo,setOrderDateTo]=useState("");
   const [quoteSortDir,setQuoteSortDir]=useState("desc");
   const [orderSortDir,setOrderSortDir]=useState("desc");
+  const [quoteRowsPerPage,setQuoteRowsPerPage]=useState(10);
+  const [quoteListPageIdx,setQuoteListPageIdx]=useState(1);
+  const [orderRowsPerPage,setOrderRowsPerPage]=useState(10);
+  const [orderListPageIdx,setOrderListPageIdx]=useState(1);
   const {
     columns:quoteTableColumns,
     visibleColumns:visibleQuoteTableColumns,
@@ -6469,6 +6624,22 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     const cmp=av.localeCompare(bv);
     return orderSortDir==="asc"?cmp:-cmp;
   });
+  const quoteTotalPages=Math.max(1,Math.ceil(filteredQuotes.length/Math.max(1,quoteRowsPerPage)));
+  const orderTotalPages=Math.max(1,Math.ceil(filteredOrders.length/Math.max(1,orderRowsPerPage)));
+  useEffect(()=>{
+    setQuoteListPageIdx(1);
+  },[search,quoteStatusFilter,quoteDateFrom,quoteDateTo,quoteSortDir,quoteRowsPerPage]);
+  useEffect(()=>{
+    setOrderListPageIdx(1);
+  },[search,orderStatusFilter,orderDateFrom,orderDateTo,orderSortDir,orderRowsPerPage]);
+  useEffect(()=>{
+    setQuoteListPageIdx(prev=>Math.max(1,Math.min(prev,quoteTotalPages)));
+  },[quoteTotalPages]);
+  useEffect(()=>{
+    setOrderListPageIdx(prev=>Math.max(1,Math.min(prev,orderTotalPages)));
+  },[orderTotalPages]);
+  const pagedQuoteRows=filteredQuotes.slice((quoteListPageIdx-1)*Math.max(1,quoteRowsPerPage),(quoteListPageIdx-1)*Math.max(1,quoteRowsPerPage)+Math.max(1,quoteRowsPerPage));
+  const pagedOrderRows=filteredOrders.slice((orderListPageIdx-1)*Math.max(1,orderRowsPerPage),(orderListPageIdx-1)*Math.max(1,orderRowsPerPage)+Math.max(1,orderRowsPerPage));
   const quoteStatusCounts={
     all:quotes.length,
     offer:quotes.filter(x=>(x.status||"")==="offer").length,
@@ -6753,6 +6924,26 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
             </div>
           )}
           <div style={salesListColumnStyle}>
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <TableColumnEditor
+                title="Teklif Tablosu"
+                columns={quoteTableColumns}
+                onToggle={toggleQuoteTableColumn}
+                onMove={moveQuoteTableColumn}
+                onReset={resetQuoteTableColumns}
+              />
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginLeft:"auto"}}>
+                <div style={{fontSize:12,color:C.muted2}}>Gosterilen Kayit: {pagedQuoteRows.length} / {filteredQuotes.length}</div>
+                <ListRowPager
+                  rowsPerPage={quoteRowsPerPage}
+                  page={quoteListPageIdx}
+                  pageCount={quoteTotalPages}
+                  onRowsPerPageChange={setQuoteRowsPerPage}
+                  onPrev={()=>setQuoteListPageIdx(p=>Math.max(1,p-1))}
+                  onNext={()=>setQuoteListPageIdx(p=>Math.min(quoteTotalPages,p+1))}
+                />
+              </div>
+            </div>
             <div style={salesListTableCardStyle}>
               <div style={salesListTableScrollStyle}>
                 <table style={{width:"100%",minWidth:quoteTableMinWidth,borderCollapse:"collapse",fontSize:12}}>
@@ -6764,7 +6955,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredQuotes.map(qr=>{
+                    {pagedQuoteRows.map(qr=>{
                       const quoteNet=(qr.lines||[]).reduce((sum,line)=>sum+lineTotal(line).net,0);
                       return (
                         <tr key={qr.id} style={{borderBottom:`1px solid ${C.border}`}}>
@@ -6811,6 +7002,26 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
             </div>
           )}
           <div style={salesListColumnStyle}>
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <TableColumnEditor
+                title="Siparis Tablosu"
+                columns={orderTableColumns}
+                onToggle={toggleOrderTableColumn}
+                onMove={moveOrderTableColumn}
+                onReset={resetOrderTableColumns}
+              />
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginLeft:"auto"}}>
+                <div style={{fontSize:12,color:C.muted2}}>Gosterilen Kayit: {pagedOrderRows.length} / {filteredOrders.length}</div>
+                <ListRowPager
+                  rowsPerPage={orderRowsPerPage}
+                  page={orderListPageIdx}
+                  pageCount={orderTotalPages}
+                  onRowsPerPageChange={setOrderRowsPerPage}
+                  onPrev={()=>setOrderListPageIdx(p=>Math.max(1,p-1))}
+                  onNext={()=>setOrderListPageIdx(p=>Math.min(orderTotalPages,p+1))}
+                />
+              </div>
+            </div>
             <div style={salesListTableCardStyle}>
               <div style={salesListTableScrollStyle}>
                 <table style={{width:"100%",minWidth:orderTableMinWidth,borderCollapse:"collapse",fontSize:12}}>
@@ -6822,7 +7033,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredOrders.map(o=>{
+                    {pagedOrderRows.map(o=>{
                       const remaining=Math.max(0,safeNum(o.qty)-safeNum(o.deliveredQty));
                       return (
                         <tr key={o.id} style={{borderBottom:`1px solid ${C.border}`}}>
@@ -7253,6 +7464,8 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
   const [sortDir,setSortDir]=useState("desc");
   const [dueDateFrom,setDueDateFrom]=useState("");
   const [dueDateTo,setDueDateTo]=useState("");
+  const [workOrderRowsPerPage,setWorkOrderRowsPerPage]=useState(10);
+  const [workOrderPageIdx,setWorkOrderPageIdx]=useState(1);
   const [viewOrder,setViewOrder]=useState(null);
   const [viewOrderMoves,setViewOrderMoves]=useState([]);
   const [previewFile,setPreviewFile]=useState(null);
@@ -7493,6 +7706,14 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
   ORDER_STATUS_OPTIONS.forEach(st=>{
     orderStatusCountMap[st.id]=orders.filter(o=>(o.status||"passive")===st.id).length;
   });
+  const workOrderTotalPages=Math.max(1,Math.ceil(filteredOrders.length/Math.max(1,workOrderRowsPerPage)));
+  useEffect(()=>{
+    setWorkOrderPageIdx(1);
+  },[search,statusFilters.join(","),dueDateFrom,dueDateTo,sortDir,workOrderRowsPerPage]);
+  useEffect(()=>{
+    setWorkOrderPageIdx(prev=>Math.max(1,Math.min(prev,workOrderTotalPages)));
+  },[workOrderTotalPages]);
+  const pagedWorkOrders=filteredOrders.slice((workOrderPageIdx-1)*Math.max(1,workOrderRowsPerPage),(workOrderPageIdx-1)*Math.max(1,workOrderRowsPerPage)+Math.max(1,workOrderRowsPerPage));
   const renderWorkOrderTableCell=(o,usage,produced,priorityLabel,col)=>{
     if(col.id==="work_order"){
       return (
@@ -7798,7 +8019,6 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
         )}
         <div style={workListColumnStyle}>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <div style={{fontSize:12,color:C.muted2}}>Gosterilen Kayit: {filteredOrders.length}</div>
             <TableColumnEditor
               title="Is Emri Tablosu"
               columns={workOrderTableColumns}
@@ -7806,6 +8026,17 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
               onMove={moveWorkOrderTableColumn}
               onReset={resetWorkOrderTableColumns}
             />
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginLeft:"auto"}}>
+              <div style={{fontSize:12,color:C.muted2}}>Gosterilen Kayit: {pagedWorkOrders.length} / {filteredOrders.length}</div>
+              <ListRowPager
+                rowsPerPage={workOrderRowsPerPage}
+                page={workOrderPageIdx}
+                pageCount={workOrderTotalPages}
+                onRowsPerPageChange={setWorkOrderRowsPerPage}
+                onPrev={()=>setWorkOrderPageIdx(p=>Math.max(1,p-1))}
+                onNext={()=>setWorkOrderPageIdx(p=>Math.min(workOrderTotalPages,p+1))}
+              />
+            </div>
           </div>
           <div style={workListTableCardStyle}>
             <div style={workListTableScrollStyle}>
@@ -7818,7 +8049,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredOrders.map(o=>{
+                  {pagedWorkOrders.map(o=>{
                     const usage=safeNum(usageCountByOrder[o.id]||usageCountByOrder[o.code]);
                     const produced=safeNum(productionByOrder[o.code]?.total);
                     const priorityLabel=(PRIORITY_OPTIONS.find(p=>p.id===o.priority)||{}).label||"Normal";
@@ -14911,7 +15142,8 @@ function MRPRunModule({currentUser}){
   );
 }
 
-function PurchasingModule({currentUser,filtersVisible=true}){
+function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests"}){
+  const normalizePurchaseView=viewId=>["requests","suppliers","quotes"].includes(String(viewId||""))?String(viewId):"requests";
   const [loading,setLoading]=useState(true);
   const [suppliers,setSuppliers]=useState([]);
   const [supplierGroups,setSupplierGroups]=useState(normalizeSupplierGroups({}).list||[]);
@@ -14920,7 +15152,7 @@ function PurchasingModule({currentUser,filtersVisible=true}){
   const [quotes,setQuotes]=useState([]);
   const [orders,setOrders]=useState([]);
   const [receipts,setReceipts]=useState([]);
-  const [view,setView]=useState("requests");
+  const [view,setView]=useState(()=>normalizePurchaseView(defaultView));
   const [supplierGroupFilter,setSupplierGroupFilter]=useState("all");
   const [supplierForm,setSupplierForm]=useState({name:"",code:"",groupId:"",leadTimeDays:"7",email:"",phone:"",currency:"TRY"});
   const [reqForm,setReqForm]=useState({materialId:"",qty:"",needDate:todayStr(),priority:"normal",note:""});
@@ -14935,6 +15167,14 @@ function PurchasingModule({currentUser,filtersVisible=true}){
   const [orderDateTo,setOrderDateTo]=useState("");
   const [quoteDateFrom,setQuoteDateFrom]=useState("");
   const [quoteDateTo,setQuoteDateTo]=useState("");
+  const [supplierPerfRowsPerPage,setSupplierPerfRowsPerPage]=useState(10);
+  const [supplierPerfPageIdx,setSupplierPerfPageIdx]=useState(1);
+  const [purchaseQuoteRowsPerPage,setPurchaseQuoteRowsPerPage]=useState(10);
+  const [purchaseQuotePageIdx,setPurchaseQuotePageIdx]=useState(1);
+  const [purchaseRequestRowsPerPage,setPurchaseRequestRowsPerPage]=useState(10);
+  const [purchaseRequestPageIdx,setPurchaseRequestPageIdx]=useState(1);
+  const [purchaseOrderRowsPerPage,setPurchaseOrderRowsPerPage]=useState(10);
+  const [purchaseOrderPageIdx,setPurchaseOrderPageIdx]=useState(1);
 
   const load=useCallback(async()=>{
     const [s,m,r,q,p,gr,groupDoc]=await Promise.all([
@@ -14952,6 +15192,7 @@ function PurchasingModule({currentUser,filtersVisible=true}){
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
+  useEffect(()=>{setView(normalizePurchaseView(defaultView));},[defaultView]);
   useEffect(()=>{
     if(!supplierGroups.length) return;
     setSupplierForm(prev=>{
@@ -15151,8 +15392,6 @@ function PurchasingModule({currentUser,filtersVisible=true}){
     const dateOk=inRange(dateYmd,orderDateFrom,orderDateTo);
     return textOk&&statusOk&&dateOk;
   });
-  const receivableOrders=filteredOrders.filter(o=>o.status!=="received");
-  const quoteHasUngrouped=quotes.some(row=>(String(row.supplierGroupId||"").trim()||"ungrouped")==="ungrouped");
   const filteredQuotes=quotes.filter(row=>{
     const textOk=!searchQuery||
       String(row.requestCode||"").toLowerCase().includes(searchQuery)||
@@ -15185,8 +15424,40 @@ function PurchasingModule({currentUser,filtersVisible=true}){
       String(row.groupName||"").toLowerCase().includes(searchQuery);
     return groupOk&&textOk;
   });
+  const purchaseQuoteTotalPages=Math.max(1,Math.ceil(filteredQuotes.length/Math.max(1,purchaseQuoteRowsPerPage)));
+  const purchaseRequestTotalPages=Math.max(1,Math.ceil(filteredRequests.length/Math.max(1,purchaseRequestRowsPerPage)));
+  const purchaseOrderTotalPages=Math.max(1,Math.ceil(filteredOrders.length/Math.max(1,purchaseOrderRowsPerPage)));
+  const supplierPerfTotalPages=Math.max(1,Math.ceil(filteredSupplierPerf.length/Math.max(1,supplierPerfRowsPerPage)));
+  useEffect(()=>{
+    setPurchaseQuotePageIdx(1);
+  },[search,supplierGroupFilter,quoteDateFrom,quoteDateTo,purchaseQuoteRowsPerPage]);
+  useEffect(()=>{
+    setPurchaseRequestPageIdx(1);
+  },[search,requestStatusFilter,requestDateFrom,requestDateTo,purchaseRequestRowsPerPage]);
+  useEffect(()=>{
+    setPurchaseOrderPageIdx(1);
+  },[search,orderStatusFilter,orderDateFrom,orderDateTo,purchaseOrderRowsPerPage]);
+  useEffect(()=>{
+    setSupplierPerfPageIdx(1);
+  },[search,supplierGroupFilter,supplierPerfRowsPerPage]);
+  useEffect(()=>{
+    setPurchaseQuotePageIdx(prev=>Math.max(1,Math.min(prev,purchaseQuoteTotalPages)));
+  },[purchaseQuoteTotalPages]);
+  useEffect(()=>{
+    setPurchaseRequestPageIdx(prev=>Math.max(1,Math.min(prev,purchaseRequestTotalPages)));
+  },[purchaseRequestTotalPages]);
+  useEffect(()=>{
+    setPurchaseOrderPageIdx(prev=>Math.max(1,Math.min(prev,purchaseOrderTotalPages)));
+  },[purchaseOrderTotalPages]);
+  useEffect(()=>{
+    setSupplierPerfPageIdx(prev=>Math.max(1,Math.min(prev,supplierPerfTotalPages)));
+  },[supplierPerfTotalPages]);
+  const pagedPurchaseQuotes=filteredQuotes.slice((purchaseQuotePageIdx-1)*Math.max(1,purchaseQuoteRowsPerPage),(purchaseQuotePageIdx-1)*Math.max(1,purchaseQuoteRowsPerPage)+Math.max(1,purchaseQuoteRowsPerPage));
+  const pagedPurchaseRequests=filteredRequests.slice((purchaseRequestPageIdx-1)*Math.max(1,purchaseRequestRowsPerPage),(purchaseRequestPageIdx-1)*Math.max(1,purchaseRequestRowsPerPage)+Math.max(1,purchaseRequestRowsPerPage));
+  const pagedPurchaseOrders=filteredOrders.slice((purchaseOrderPageIdx-1)*Math.max(1,purchaseOrderRowsPerPage),(purchaseOrderPageIdx-1)*Math.max(1,purchaseOrderRowsPerPage)+Math.max(1,purchaseOrderRowsPerPage));
+  const pagedSupplierPerf=filteredSupplierPerf.slice((supplierPerfPageIdx-1)*Math.max(1,supplierPerfRowsPerPage),(supplierPerfPageIdx-1)*Math.max(1,supplierPerfRowsPerPage)+Math.max(1,supplierPerfRowsPerPage));
   const supplierPerfMap={};
-  filteredSupplierPerf.forEach(row=>{
+  pagedSupplierPerf.forEach(row=>{
     const key=row.groupId||"ungrouped";
     if(!supplierPerfMap[key]){
       supplierPerfMap[key]={id:key,name:row.groupName||"Grupsuz",color:normalizeHexColor(row.groupColor,"#64748b"),sortOrder:safeNum(row.groupSort)||99999,rows:[]};
@@ -15218,15 +15489,108 @@ function PurchasingModule({currentUser,filtersVisible=true}){
     flexDirection:"column",
     gap:12,
   };
+  const {
+    columns:purchaseRequestTableColumns,
+    visibleColumns:visiblePurchaseRequestTableColumns,
+    tableMinWidth:purchaseRequestTableMinWidth,
+    moveColumn:movePurchaseRequestTableColumn,
+    toggleColumn:togglePurchaseRequestTableColumn,
+    resetColumns:resetPurchaseRequestTableColumns,
+  }=useTableColumnLayout("purchase_requests_list",PURCHASE_REQUEST_LIST_COLUMNS);
+  const {
+    columns:purchaseQuoteTableColumns,
+    visibleColumns:visiblePurchaseQuoteTableColumns,
+    tableMinWidth:purchaseQuoteTableMinWidth,
+    moveColumn:movePurchaseQuoteTableColumn,
+    toggleColumn:togglePurchaseQuoteTableColumn,
+    resetColumns:resetPurchaseQuoteTableColumns,
+  }=useTableColumnLayout("purchase_quotes_list",PURCHASE_QUOTE_LIST_COLUMNS);
+  const {
+    columns:purchaseOrderTableColumns,
+    visibleColumns:visiblePurchaseOrderTableColumns,
+    tableMinWidth:purchaseOrderTableMinWidth,
+    moveColumn:movePurchaseOrderTableColumn,
+    toggleColumn:togglePurchaseOrderTableColumn,
+    resetColumns:resetPurchaseOrderTableColumns,
+  }=useTableColumnLayout("purchase_orders_list",PURCHASE_ORDER_LIST_COLUMNS);
+  const {
+    columns:supplierPerfTableColumns,
+    visibleColumns:visibleSupplierPerfTableColumns,
+    tableMinWidth:supplierPerfTableMinWidth,
+    moveColumn:moveSupplierPerfTableColumn,
+    toggleColumn:toggleSupplierPerfTableColumn,
+    resetColumns:resetSupplierPerfTableColumns,
+  }=useTableColumnLayout("purchase_supplier_perf_list",SUPPLIER_PERF_LIST_COLUMNS);
+  const renderPurchaseRequestCell=(r,col)=>{
+    if(col.id==="request"){
+      return <td key={col.id} style={{padding:"8px 10px",color:C.text,fontWeight:700}}>{r.code} · {r.materialCode} · {r.materialName}</td>;
+    }
+    if(col.id==="qty_date"){
+      return <td key={col.id} style={{padding:"8px 10px",color:C.muted2}}>Qty {safeNum(r.qty)} · {r.needDate||"-"}</td>;
+    }
+    if(col.id==="priority"){
+      return <td key={col.id} style={{padding:"8px 10px",color:C.muted2}}>{r.priority||"normal"}</td>;
+    }
+    if(col.id==="status"){
+      return <td key={col.id} style={{padding:"8px 10px"}}><Badge label={r.status||"pending"} color={["pending","approved","ordered"].includes(r.status||"")?C.warn:C.green}/></td>;
+    }
+    if(col.id==="actions"){
+      return (
+        <td key={col.id} style={{padding:"8px 10px",textAlign:"right"}}>
+          <div style={{display:"inline-flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
+            <button onClick={()=>setRequestStatus(r,"approved")} style={{...btnSt("ghost"),padding:"6px 8px",fontSize:11}}>Onayla</button>
+            <button onClick={()=>setRequestStatus(r,"cancelled")} style={{...btnSt("danger"),padding:"6px 8px",fontSize:11}}>Iptal</button>
+          </div>
+        </td>
+      );
+    }
+    return null;
+  };
+  const renderPurchaseQuoteCell=q=>{
+    return visiblePurchaseQuoteTableColumns.map(col=>{
+      if(col.id==="request_supplier"){
+        return <td key={col.id} style={{padding:"8px 10px",color:C.text,fontWeight:700}}>{q.requestCode} · {q.supplierName} {q.supplierGroupName?`· ${q.supplierGroupName}`:""}</td>;
+      }
+      if(col.id==="unit_price"){
+        return <td key={col.id} style={{padding:"8px 10px",color:C.muted2,textAlign:"right"}}>{moneyFmt(q.unitPrice)} / {q.currency}</td>;
+      }
+      if(col.id==="total"){
+        return <td key={col.id} style={{padding:"8px 10px",color:C.text,fontWeight:700,textAlign:"right"}}>{moneyFmt(q.total)}</td>;
+      }
+      if(col.id==="lead_term"){
+        return <td key={col.id} style={{padding:"8px 10px",color:C.muted2}}>LT {q.leadTimeDays}g · Vade {Math.max(0,safeNum(q.paymentTermDays??30))}g</td>;
+      }
+      if(col.id==="actions"){
+        return <td key={col.id} style={{padding:"8px 10px",textAlign:"right"}}><button onClick={()=>quoteToPo(q)} style={{...btnSt("green"),padding:"6px 8px",fontSize:11}}>PO Olustur</button></td>;
+      }
+      return null;
+    });
+  };
+  const renderPurchaseOrderCell=(o,col)=>{
+    if(col.id==="order_supplier"){
+      return <td key={col.id} style={{padding:"8px 10px",color:C.text,fontWeight:700}}>{o.code} · {o.supplierName} {o.supplierGroupName?`· ${o.supplierGroupName}`:""}</td>;
+    }
+    if(col.id==="material_qty"){
+      return <td key={col.id} style={{padding:"8px 10px",color:C.muted2}}>Malzeme: {o.materialCode} · {o.qty}</td>;
+    }
+    if(col.id==="receipt"){
+      return <td key={col.id} style={{padding:"8px 10px",color:C.muted2}}>Alinan: {safeNum(o.receivedQty)} · Red: {safeNum(o.rejectedQty)}</td>;
+    }
+    if(col.id==="status"){
+      return <td key={col.id} style={{padding:"8px 10px"}}><Badge label={o.status||"ordered"} color={o.status==="received"?C.green:C.warn}/></td>;
+    }
+    return null;
+  };
+  const renderSupplierPerfCell=(s,col)=>{
+    if(col.id==="name") return <td key={col.id} style={{padding:"8px 10px",color:C.text,fontWeight:700}}>{s.name}</td>;
+    if(col.id==="po") return <td key={col.id} style={{padding:"8px 10px",color:C.muted2,textAlign:"right"}}>{s.po}</td>;
+    if(col.id==="otd") return <td key={col.id} style={{padding:"8px 10px",color:s.onTimePct<70?C.red:C.green,textAlign:"right"}}>%{s.onTimePct}</td>;
+    if(col.id==="quality") return <td key={col.id} style={{padding:"8px 10px",color:s.qualityPct<90?C.warn:C.green,textAlign:"right"}}>%{s.qualityPct}</td>;
+    return null;
+  };
 
   return (
     <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        <button onClick={()=>setView("requests")} style={chip(view==="requests",C.accent)}>Talep ve PO</button>
-        <button onClick={()=>setView("suppliers")} style={chip(view==="suppliers",C.green)}>Tedarikciler</button>
-        <button onClick={()=>setView("quotes")} style={chip(view==="quotes",C.warn)}>Teklifler</button>
-      </div>
-
       {view==="suppliers"&&(
         <>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
@@ -15259,14 +15623,31 @@ function PurchasingModule({currentUser,filtersVisible=true}){
             <div style={listColumnStyle}>
               <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
-                  <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Tedarikci Performansi</div>
-                  {!filtersVisible&&(
-                    <select style={{...inputSt,padding:"6px 8px",fontSize:12,minWidth:220}} value={supplierGroupFilter} onChange={e=>setSupplierGroupFilter(e.target.value)}>
-                      <option value="all">Tum Gruplar</option>
-                      {supplierGroups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
-                      {supplierPerf.some(x=>x.groupId==="ungrouped")&&<option value="ungrouped">Grupsuz</option>}
-                    </select>
-                  )}
+                  <TableColumnEditor
+                    title="Tedarikci Performans Tablosu"
+                    columns={supplierPerfTableColumns}
+                    onToggle={toggleSupplierPerfTableColumn}
+                    onMove={moveSupplierPerfTableColumn}
+                    onReset={resetSupplierPerfTableColumns}
+                  />
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                    <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Tedarikci Performansi ({pagedSupplierPerf.length} / {filteredSupplierPerf.length})</div>
+                    {!filtersVisible&&(
+                      <select style={{...inputSt,padding:"6px 8px",fontSize:12,minWidth:220}} value={supplierGroupFilter} onChange={e=>setSupplierGroupFilter(e.target.value)}>
+                        <option value="all">Tum Gruplar</option>
+                        {supplierGroups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
+                        {supplierPerf.some(x=>x.groupId==="ungrouped")&&<option value="ungrouped">Grupsuz</option>}
+                      </select>
+                    )}
+                    <ListRowPager
+                      rowsPerPage={supplierPerfRowsPerPage}
+                      page={supplierPerfPageIdx}
+                      pageCount={supplierPerfTotalPages}
+                      onRowsPerPageChange={setSupplierPerfRowsPerPage}
+                      onPrev={()=>setSupplierPerfPageIdx(p=>Math.max(1,p-1))}
+                      onNext={()=>setSupplierPerfPageIdx(p=>Math.min(supplierPerfTotalPages,p+1))}
+                    />
+                  </div>
                 </div>
                 {supplierPerfGroups.map(group=>(
                   <div key={group.id} style={{border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden",marginBottom:8}}>
@@ -15277,14 +15658,24 @@ function PurchasingModule({currentUser,filtersVisible=true}){
                       </div>
                       <div style={{fontSize:11,color:C.muted2}}>{group.rows.length} tedarikci</div>
                     </div>
-                    {group.rows.map(s=>(
-                      <div key={s.id} style={{display:"grid",gridTemplateColumns:"1.4fr repeat(3,.8fr)",gap:8,padding:"8px 10px",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
-                        <div style={{color:C.text,fontWeight:700}}>{s.name}</div>
-                        <div style={{color:C.muted2}}>PO: {s.po}</div>
-                        <div style={{color:s.onTimePct<70?C.red:C.green}}>OTD %{s.onTimePct}</div>
-                        <div style={{color:s.qualityPct<90?C.warn:C.green}}>Kalite %{s.qualityPct}</div>
-                      </div>
-                    ))}
+                    <div style={{overflowX:"auto"}}>
+                      <table style={{width:"100%",minWidth:supplierPerfTableMinWidth,borderCollapse:"collapse",fontSize:12}}>
+                        <thead>
+                          <tr style={{background:C.surface2,color:C.muted2,textAlign:"left"}}>
+                            {visibleSupplierPerfTableColumns.map(col=>(
+                              <th key={col.id} style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`,textAlign:col.align||"left",whiteSpace:"nowrap"}}>{col.label}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.rows.map(s=>(
+                            <tr key={s.id} style={{borderBottom:`1px solid ${C.border}`}}>
+                              {visibleSupplierPerfTableColumns.map(col=>renderSupplierPerfCell(s,col))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 ))}
                 {supplierPerf.length>0&&supplierPerfGroups.length===0&&<div style={{fontSize:12,color:C.muted2}}>Filtreye uygun tedarikci kaydi yok.</div>}
@@ -15311,17 +15702,47 @@ function PurchasingModule({currentUser,filtersVisible=true}){
             <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}><button onClick={saveQuote} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Teklif Kaydet</button></div>
           </div>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Teklif Listesi</div>
-            {quotes.map(q=>(
-              <div key={q.id} style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr 1fr auto",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,alignItems:"center",fontSize:12}}>
-                <div style={{color:C.text,fontWeight:700}}>{q.requestCode} · {q.supplierName} {q.supplierGroupName?`· ${q.supplierGroupName}`:""}</div>
-                <div style={{color:C.muted2}}>{moneyFmt(q.unitPrice)} / {q.currency}</div>
-                <div style={{color:C.muted2}}>Toplam {moneyFmt(q.total)}</div>
-                <div style={{color:C.muted2}}>LT {q.leadTimeDays}g · Vade {Math.max(0,safeNum(q.paymentTermDays??30))}g</div>
-                <button onClick={()=>quoteToPo(q)} style={{...btnSt("green"),padding:"6px 8px",fontSize:11}}>PO Olustur</button>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+              <TableColumnEditor
+                title="Teklif Listesi"
+                columns={purchaseQuoteTableColumns}
+                onToggle={togglePurchaseQuoteTableColumn}
+                onMove={movePurchaseQuoteTableColumn}
+                onReset={resetPurchaseQuoteTableColumns}
+              />
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginLeft:"auto"}}>
+                <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Teklif Listesi ({pagedPurchaseQuotes.length} / {filteredQuotes.length})</div>
+                <ListRowPager
+                  rowsPerPage={purchaseQuoteRowsPerPage}
+                  page={purchaseQuotePageIdx}
+                  pageCount={purchaseQuoteTotalPages}
+                  onRowsPerPageChange={setPurchaseQuoteRowsPerPage}
+                  onPrev={()=>setPurchaseQuotePageIdx(p=>Math.max(1,p-1))}
+                  onNext={()=>setPurchaseQuotePageIdx(p=>Math.min(purchaseQuoteTotalPages,p+1))}
+                />
               </div>
-            ))}
-            {quotes.length===0&&<div style={{fontSize:12,color:C.muted2}}>Teklif yok.</div>}
+            </div>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",minWidth:purchaseQuoteTableMinWidth,borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{background:C.surface2,color:C.muted2,textAlign:"left"}}>
+                    {visiblePurchaseQuoteTableColumns.map(col=><th key={col.id} style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`,textAlign:col.align||"left",whiteSpace:"nowrap"}}>{col.label}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedPurchaseQuotes.map(q=>(
+                    <tr key={q.id} style={{borderBottom:`1px solid ${C.border}`}}>
+                      {renderPurchaseQuoteCell(q)}
+                    </tr>
+                  ))}
+                  {filteredQuotes.length===0&&(
+                    <tr>
+                      <td colSpan={Math.max(1,visiblePurchaseQuoteTableColumns.length)} style={{padding:"20px 10px",textAlign:"center",color:C.muted2}}>Teklif yok.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </>
       )}
@@ -15329,34 +15750,69 @@ function PurchasingModule({currentUser,filtersVisible=true}){
       {view==="requests"&&(
         <>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-            <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Satin Alma Talebi (Manuel)</div>
-            <div style={{display:"grid",gridTemplateColumns:"1.2fr .8fr .8fr .8fr",gap:8}}>
-              <div><span style={labelSt}>Malzeme</span><select style={inputSt} value={reqForm.materialId} onChange={e=>setReqForm(f=>({...f,materialId:e.target.value}))}><option value="">Secin</option>{materials.map(m=><option key={m.id} value={m.id}>{m.code} · {m.name}</option>)}</select></div>
-              <div><span style={labelSt}>Miktar</span><input style={inputSt} type="number" min="0" value={reqForm.qty} onChange={e=>setReqForm(f=>({...f,qty:e.target.value}))}/></div>
-              <div><span style={labelSt}>Ihtiyac Tarihi</span><input style={inputSt} type="date" value={reqForm.needDate} onChange={e=>setReqForm(f=>({...f,needDate:e.target.value||todayStr()}))}/></div>
-              <div><span style={labelSt}>Oncelik</span><select style={inputSt} value={reqForm.priority} onChange={e=>setReqForm(f=>({...f,priority:e.target.value}))}><option value="high">Yuksek</option><option value="normal">Normal</option><option value="low">Dusuk</option></select></div>
-            </div>
-            <div style={{marginTop:8}}><span style={labelSt}>Not</span><input style={inputSt} value={reqForm.note} onChange={e=>setReqForm(f=>({...f,note:e.target.value}))}/></div>
-            <div style={{display:"flex",justifyContent:"space-between",marginTop:10,flexWrap:"wrap",gap:8}}>
-              <button onClick={saveRequest} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Talep Kaydet</button>
-              <button onClick={()=>downloadCsv(`purchase-requests-${todayStr()}.csv`,[{label:"Kod",key:"code"},{label:"Malzeme",key:"materialCode"},{label:"Ad",key:"materialName"},{label:"Miktar",key:"qty"},{label:"Ihtiyac",key:"needDate"},{label:"Durum",key:"status"}],requests)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>CSV Indir</button>
-            </div>
-          </div>
-          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Talep Listesi ({requests.length})</div>
-            {requests.map(r=>(
-              <div key={r.id} style={{display:"grid",gridTemplateColumns:"1.2fr 1fr .8fr .8fr auto auto",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,alignItems:"center",fontSize:12}}>
-                <div style={{color:C.text,fontWeight:700}}>{r.code} · {r.materialCode} · {r.materialName}</div>
-                <div style={{color:C.muted2}}>Qty {safeNum(r.qty)} · {r.needDate||"-"}</div>
-                <div style={{color:C.muted2}}>{r.priority||"normal"}</div>
-                <Badge label={r.status||"pending"} color={["pending","approved","ordered"].includes(r.status||"")?C.warn:C.green}/>
-                <button onClick={()=>setRequestStatus(r,"approved")} style={{...btnSt("ghost"),padding:"6px 8px",fontSize:11}}>Onayla</button>
-                <button onClick={()=>setRequestStatus(r,"cancelled")} style={{...btnSt("danger"),padding:"6px 8px",fontSize:11}}>Iptal</button>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+              <TableColumnEditor
+                title="Talep Listesi"
+                columns={purchaseRequestTableColumns}
+                onToggle={togglePurchaseRequestTableColumn}
+                onMove={movePurchaseRequestTableColumn}
+                onReset={resetPurchaseRequestTableColumns}
+              />
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginLeft:"auto"}}>
+                <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Talep Listesi ({pagedPurchaseRequests.length} / {filteredRequests.length})</div>
+                <ListRowPager
+                  rowsPerPage={purchaseRequestRowsPerPage}
+                  page={purchaseRequestPageIdx}
+                  pageCount={purchaseRequestTotalPages}
+                  onRowsPerPageChange={setPurchaseRequestRowsPerPage}
+                  onPrev={()=>setPurchaseRequestPageIdx(p=>Math.max(1,p-1))}
+                  onNext={()=>setPurchaseRequestPageIdx(p=>Math.min(purchaseRequestTotalPages,p+1))}
+                />
               </div>
-            ))}
+            </div>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",minWidth:purchaseRequestTableMinWidth,borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{background:C.surface2,color:C.muted2,textAlign:"left"}}>
+                    {visiblePurchaseRequestTableColumns.map(col=><th key={col.id} style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`,textAlign:col.align||"left",whiteSpace:"nowrap"}}>{col.label}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedPurchaseRequests.map(r=>(
+                    <tr key={r.id} style={{borderBottom:`1px solid ${C.border}`}}>
+                      {visiblePurchaseRequestTableColumns.map(col=>renderPurchaseRequestCell(r,col))}
+                    </tr>
+                  ))}
+                  {filteredRequests.length===0&&(
+                    <tr>
+                      <td colSpan={Math.max(1,visiblePurchaseRequestTableColumns.length)} style={{padding:"20px 10px",textAlign:"center",color:C.muted2}}>Filtreye uygun talep yok.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Satin Alma Siparisleri ({orders.length})</div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+              <TableColumnEditor
+                title="Satin Alma Siparisleri"
+                columns={purchaseOrderTableColumns}
+                onToggle={togglePurchaseOrderTableColumn}
+                onMove={movePurchaseOrderTableColumn}
+                onReset={resetPurchaseOrderTableColumns}
+              />
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginLeft:"auto"}}>
+                <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Satin Alma Siparisleri ({pagedPurchaseOrders.length} / {filteredOrders.length})</div>
+                <ListRowPager
+                  rowsPerPage={purchaseOrderRowsPerPage}
+                  page={purchaseOrderPageIdx}
+                  pageCount={purchaseOrderTotalPages}
+                  onRowsPerPageChange={setPurchaseOrderRowsPerPage}
+                  onPrev={()=>setPurchaseOrderPageIdx(p=>Math.max(1,p-1))}
+                  onNext={()=>setPurchaseOrderPageIdx(p=>Math.min(purchaseOrderTotalPages,p+1))}
+                />
+              </div>
+            </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr .7fr .7fr .7fr",gap:8,marginBottom:8}}>
               <div><span style={labelSt}>PO Sec</span><select style={inputSt} value={recvForm.poId} onChange={e=>setRecvForm(f=>({...f,poId:e.target.value}))}><option value="">Secin</option>{orders.filter(o=>o.status!=="received").map(o=><option key={o.id} value={o.id}>{o.code} · {o.materialCode} · Kalan {Math.max(0,safeNum(o.qty)-safeNum(o.receivedQty)-safeNum(o.rejectedQty))}</option>)}</select></div>
               <div><span style={labelSt}>Kabul</span><input style={inputSt} type="number" min="0" value={recvForm.acceptedQty} onChange={e=>setRecvForm(f=>({...f,acceptedQty:e.target.value}))}/></div>
@@ -15364,14 +15820,27 @@ function PurchasingModule({currentUser,filtersVisible=true}){
               <div><span style={labelSt}>Giris Tarihi</span><input style={inputSt} type="date" value={recvForm.receiptDate} onChange={e=>setRecvForm(f=>({...f,receiptDate:e.target.value||todayStr()}))}/></div>
             </div>
             <div style={{display:"flex",justifyContent:"flex-end"}}><button onClick={receivePo} style={{...btnSt("green"),padding:"8px 12px",fontSize:12}}>Malzeme Girisi Isle</button></div>
-            {orders.map(o=>(
-              <div key={o.id} style={{padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.muted2,display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr .8fr",gap:8}}>
-                <div style={{color:C.text,fontWeight:700}}>{o.code} · {o.supplierName} {o.supplierGroupName?`· ${o.supplierGroupName}`:""}</div>
-                <div>Malzeme: {o.materialCode} · {o.qty}</div>
-                <div>Alinan: {safeNum(o.receivedQty)} · Red: {safeNum(o.rejectedQty)}</div>
-                <Badge label={o.status||"ordered"} color={o.status==="received"?C.green:C.warn}/>
-              </div>
-            ))}
+            <div style={{overflowX:"auto",marginTop:8}}>
+              <table style={{width:"100%",minWidth:purchaseOrderTableMinWidth,borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{background:C.surface2,color:C.muted2,textAlign:"left"}}>
+                    {visiblePurchaseOrderTableColumns.map(col=><th key={col.id} style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`,textAlign:col.align||"left",whiteSpace:"nowrap"}}>{col.label}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedPurchaseOrders.map(o=>(
+                    <tr key={o.id} style={{borderBottom:`1px solid ${C.border}`}}>
+                      {visiblePurchaseOrderTableColumns.map(col=>renderPurchaseOrderCell(o,col))}
+                    </tr>
+                  ))}
+                  {filteredOrders.length===0&&(
+                    <tr>
+                      <td colSpan={Math.max(1,visiblePurchaseOrderTableColumns.length)} style={{padding:"20px 10px",textAlign:"center",color:C.muted2}}>Filtreye uygun PO kaydi yok.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </>
       )}
@@ -16388,6 +16857,8 @@ function FinanceModule({currentUser,filtersVisible=true}){
   const [dateTo,setDateTo]=useState("");
   const [search,setSearch]=useState("");
   const [sortDir,setSortDir]=useState("asc");
+  const [financeRowsPerPage,setFinanceRowsPerPage]=useState(10);
+  const [financePageIdx,setFinancePageIdx]=useState(1);
 
   const load=useCallback(async()=>{
     const list=await window.DB.getAll("financeLedger");
@@ -16487,6 +16958,14 @@ function FinanceModule({currentUser,filtersVisible=true}){
     const cmp=av.localeCompare(bv);
     return sortDir==="asc"?cmp:-cmp;
   });
+  const financeTotalPages=Math.max(1,Math.ceil(sorted.length/Math.max(1,financeRowsPerPage)));
+  useEffect(()=>{
+    setFinancePageIdx(1);
+  },[search,flowFilter,statusFilter,dateFrom,dateTo,sortDir,financeRowsPerPage]);
+  useEffect(()=>{
+    setFinancePageIdx(prev=>Math.max(1,Math.min(prev,financeTotalPages)));
+  },[financeTotalPages]);
+  const pagedFinanceRows=sorted.slice((financePageIdx-1)*Math.max(1,financeRowsPerPage),(financePageIdx-1)*Math.max(1,financeRowsPerPage)+Math.max(1,financeRowsPerPage));
   const openTahsilatMap=sumByCurrency(rows.filter(r=>(r.flow||"tahsilat")==="tahsilat"&&statusBucket(r)==="planned"));
   const openOdemeMap=sumByCurrency(rows.filter(r=>(r.flow||"tahsilat")==="odeme"&&statusBucket(r)==="planned"));
   const doneTahsilatMap=sumByCurrency(rows.filter(r=>(r.flow||"tahsilat")==="tahsilat"&&statusBucket(r)==="completed"));
@@ -16496,6 +16975,71 @@ function FinanceModule({currentUser,filtersVisible=true}){
   const doneTahsilatText=formatCurrencyMap(doneTahsilatMap);
   const doneOdemeText=formatCurrencyMap(doneOdemeMap);
   const netOpenText=netCurrencyMap(openTahsilatMap,openOdemeMap);
+  const {
+    columns:financeFlowTableColumns,
+    visibleColumns:visibleFinanceFlowTableColumns,
+    tableMinWidth:financeFlowTableMinWidth,
+    moveColumn:moveFinanceFlowTableColumn,
+    toggleColumn:toggleFinanceFlowTableColumn,
+    resetColumns:resetFinanceFlowTableColumns,
+  }=useTableColumnLayout("finance_flow_list",FINANCE_FLOW_LIST_COLUMNS);
+  const renderFinanceFlowCell=(row,col)=>{
+    if(col.id==="dates"){
+      return (
+        <td key={col.id} style={{padding:"8px 10px"}}>
+          <div style={{color:C.text,fontWeight:700}}>{row.dueDate||"-"}</div>
+          <div style={{fontSize:11,color:C.muted2}}>Kayit: {row.eventDate||"-"}</div>
+        </td>
+      );
+    }
+    if(col.id==="flow"){
+      return (
+        <td key={col.id} style={{padding:"8px 10px"}}>
+          <Badge label={flowLabel(row.flow||"tahsilat")} color={(row.flow||"tahsilat")==="tahsilat"?C.accent:C.warn}/>
+          <div style={{fontSize:11,color:C.muted2,marginTop:3}}>Vade {Math.max(0,safeNum(row.paymentTermDays??30))} gun</div>
+        </td>
+      );
+    }
+    if(col.id==="amount"){
+      return (
+        <td key={col.id} style={{padding:"8px 10px",textAlign:"right"}}>
+          <div style={{color:C.text,fontWeight:700}}>{amountText(row)}</div>
+          <div style={{fontSize:11,color:C.muted2}}>Miktar {safeNum(row.qty)}</div>
+        </td>
+      );
+    }
+    if(col.id==="party"){
+      return (
+        <td key={col.id} style={{padding:"8px 10px",color:C.muted2}}>
+          <div style={{color:C.text,fontWeight:700}}>{row.customerName||row.supplierName||"-"}</div>
+          <div style={{fontSize:11}}>Kod: {(row.customerId||row.supplierId||"-")}</div>
+        </td>
+      );
+    }
+    if(col.id==="source"){
+      return (
+        <td key={col.id} style={{padding:"8px 10px",color:C.muted2}}>
+          <div style={{color:C.text,fontWeight:700}}>{row.sourceCode||row.orderCode||row.poCode||"-"}</div>
+          <div style={{fontSize:11}}>{row.sourceType==="purchase_receipt"?"Mal Kabul":"Teslimat"}</div>
+        </td>
+      );
+    }
+    if(col.id==="actions"){
+      return (
+        <td key={col.id} style={{padding:"8px 10px",textAlign:"right"}}>
+          <div style={{display:"inline-flex",gap:6,justifyContent:"flex-end",alignItems:"center",flexWrap:"wrap"}}>
+            <Badge label={statusLabel(row)} color={statusColor(row)}/>
+            <button onClick={()=>setLedgerStatus(row,"planned")} style={{...btnSt("ghost"),padding:"5px 7px",fontSize:11,opacity:statusBucket(row)==="planned"?0.7:1}} disabled={statusBucket(row)==="planned"}>Plan</button>
+            {(row.flow||"tahsilat")==="tahsilat"
+              ? <button onClick={()=>setLedgerStatus(row,"collected")} style={{...btnSt("green"),padding:"5px 7px",fontSize:11,opacity:(row.status||"")==="collected"?0.7:1}} disabled={(row.status||"")==="collected"}>Tahsil</button>
+              : <button onClick={()=>setLedgerStatus(row,"paid")} style={{...btnSt("green"),padding:"5px 7px",fontSize:11,opacity:(row.status||"")==="paid"?0.7:1}} disabled={(row.status||"")==="paid"}>Odendi</button>}
+            <button onClick={()=>setLedgerStatus(row,"cancelled")} style={{...btnSt("danger"),padding:"5px 7px",fontSize:11,opacity:(row.status||"")==="cancelled"?0.7:1}} disabled={(row.status||"")==="cancelled"}>Iptal</button>
+          </div>
+        </td>
+      );
+    }
+    return null;
+  };
 
   return (
     <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
@@ -16545,42 +17089,49 @@ function FinanceModule({currentUser,filtersVisible=true}){
 
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:8,flexWrap:"wrap"}}>
-          <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Finans Akisi ({sorted.length})</div>
-          <div style={{fontSize:12,color:C.accent,fontWeight:700}}>Acik Net: {netOpenText}</div>
-        </div>
-        {sorted.map(row=>(
-          <div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr auto",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,alignItems:"center"}}>
-            <div>
-              <div style={{color:C.text,fontWeight:700}}>{row.dueDate||"-"}</div>
-              <div style={{fontSize:11,color:C.muted2}}>Kayit: {row.eventDate||"-"}</div>
-            </div>
-            <div>
-              <Badge label={flowLabel(row.flow||"tahsilat")} color={(row.flow||"tahsilat")==="tahsilat"?C.accent:C.warn}/>
-              <div style={{fontSize:11,color:C.muted2,marginTop:3}}>Vade {Math.max(0,safeNum(row.paymentTermDays??30))} gun</div>
-            </div>
-            <div>
-              <div style={{color:C.text,fontWeight:700}}>{amountText(row)}</div>
-              <div style={{fontSize:11,color:C.muted2}}>Miktar {safeNum(row.qty)}</div>
-            </div>
-            <div style={{color:C.muted2}}>
-              <div style={{color:C.text,fontWeight:700}}>{row.customerName||row.supplierName||"-"}</div>
-              <div style={{fontSize:11}}>Kod: {(row.customerId||row.supplierId||"-")}</div>
-            </div>
-            <div style={{color:C.muted2}}>
-              <div style={{color:C.text,fontWeight:700}}>{row.sourceCode||row.orderCode||row.poCode||"-"}</div>
-              <div style={{fontSize:11}}>{row.sourceType==="purchase_receipt"?"Mal Kabul":"Teslimat"}</div>
-            </div>
-            <div style={{display:"flex",gap:6,justifyContent:"flex-end",alignItems:"center",flexWrap:"wrap"}}>
-              <Badge label={statusLabel(row)} color={statusColor(row)}/>
-              <button onClick={()=>setLedgerStatus(row,"planned")} style={{...btnSt("ghost"),padding:"5px 7px",fontSize:11,opacity:statusBucket(row)==="planned"?0.7:1}} disabled={statusBucket(row)==="planned"}>Plan</button>
-              {(row.flow||"tahsilat")==="tahsilat"
-                ? <button onClick={()=>setLedgerStatus(row,"collected")} style={{...btnSt("green"),padding:"5px 7px",fontSize:11,opacity:(row.status||"")==="collected"?0.7:1}} disabled={(row.status||"")==="collected"}>Tahsil</button>
-                : <button onClick={()=>setLedgerStatus(row,"paid")} style={{...btnSt("green"),padding:"5px 7px",fontSize:11,opacity:(row.status||"")==="paid"?0.7:1}} disabled={(row.status||"")==="paid"}>Odendi</button>}
-              <button onClick={()=>setLedgerStatus(row,"cancelled")} style={{...btnSt("danger"),padding:"5px 7px",fontSize:11,opacity:(row.status||"")==="cancelled"?0.7:1}} disabled={(row.status||"")==="cancelled"}>Iptal</button>
-            </div>
+          <TableColumnEditor
+            title="Finans Akis Tablosu"
+            columns={financeFlowTableColumns}
+            onToggle={toggleFinanceFlowTableColumn}
+            onMove={moveFinanceFlowTableColumn}
+            onReset={resetFinanceFlowTableColumns}
+          />
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginLeft:"auto"}}>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Finans Akisi ({pagedFinanceRows.length} / {sorted.length})</div>
+            <ListRowPager
+              rowsPerPage={financeRowsPerPage}
+              page={financePageIdx}
+              pageCount={financeTotalPages}
+              onRowsPerPageChange={setFinanceRowsPerPage}
+              onPrev={()=>setFinancePageIdx(p=>Math.max(1,p-1))}
+              onNext={()=>setFinancePageIdx(p=>Math.min(financeTotalPages,p+1))}
+            />
+            <div style={{fontSize:12,color:C.accent,fontWeight:700}}>Acik Net: {netOpenText}</div>
           </div>
-        ))}
-        {sorted.length===0&&<div style={{fontSize:12,color:C.muted2,padding:"8px 2px"}}>Filtreye uygun finans satiri yok.</div>}
+        </div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",minWidth:financeFlowTableMinWidth,borderCollapse:"collapse",fontSize:12}}>
+            <thead>
+              <tr style={{background:C.surface2,color:C.muted2,textAlign:"left"}}>
+                {visibleFinanceFlowTableColumns.map(col=>(
+                  <th key={col.id} style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`,textAlign:col.align||"left",whiteSpace:"nowrap"}}>{col.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {pagedFinanceRows.map(row=>(
+                <tr key={row.id} style={{borderBottom:`1px solid ${C.border}`}}>
+                  {visibleFinanceFlowTableColumns.map(col=>renderFinanceFlowCell(row,col))}
+                </tr>
+              ))}
+              {sorted.length===0&&(
+                <tr>
+                  <td colSpan={Math.max(1,visibleFinanceFlowTableColumns.length)} style={{fontSize:12,color:C.muted2,padding:"20px 10px",textAlign:"center"}}>Filtreye uygun finans satiri yok.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -17258,8 +17809,10 @@ function App() {
       {id:"quality",icon:"quality",label:"Kalite ve Izlenebilirlik",group:"Operasyon",enabled:canQuality},
       {id:"materials",icon:"materials",label:"Malzeme Kutuphanesi",group:"Tedarik ve Stok",enabled:(canOrders||canPurchasing)},
       {id:"tools",icon:"tools",label:"Takim Yonetimi",group:"Tedarik ve Stok",enabled:canTools},
-      {id:"purchase",icon:"purchase",label:"Satin Alma Planlama",group:"Tedarik ve Stok",enabled:canPurchasing},
       {id:"customers",icon:"customers",label:"Musteriler",group:"Tedarik ve Stok",enabled:(canCustomers||canSales)},
+      {id:"purchase_requests",icon:"purchase",label:"Talep ve PO",group:"Satin Alma",enabled:canPurchasing},
+      {id:"purchase_suppliers",icon:"customers",label:"Tedarikciler",group:"Satin Alma",enabled:canPurchasing},
+      {id:"purchase_quotes",icon:"quotes",label:"Teklifler",group:"Satin Alma",enabled:canPurchasing},
       {id:"rapor",icon:"rapor",label:"Raporlar",group:"Analiz ve Yonetim",enabled:canReport},
       {id:"notifications",icon:"notifications",label:"Bildirim Merkezi",group:"Analiz ve Yonetim",enabled:(canNotifications||canUsers||canSales||canPurchasing)},
       {id:"finance",icon:"cost",label:"Finans",group:"Analiz ve Yonetim",enabled:(canSales||canPurchasing||canReport)},
@@ -17280,7 +17833,7 @@ function App() {
     return filteredTabs.length>0?filteredTabs:permissionTabs;
   },[allTabs,hiddenTabs]);
   const tabs=enabledTabs;
-  const groupOrder=["Planlama","Operasyon","Tedarik ve Stok","Analiz ve Yonetim","Sistem"];
+  const groupOrder=["Planlama","Operasyon","Tedarik ve Stok","Satin Alma","Analiz ve Yonetim","Sistem"];
   const menuGroupCountMap=useMemo(()=>{
     const map={all:tabs.length};
     groupOrder.forEach(g=>{
@@ -17353,6 +17906,15 @@ function App() {
     purchase:{
       filterKey:"purchase",
     },
+    purchase_requests:{
+      filterKey:"purchase",
+    },
+    purchase_suppliers:{
+      filterKey:"purchase",
+    },
+    purchase_quotes:{
+      filterKey:"purchase",
+    },
     tools:{
       filterKey:"tools",
       sortDefault:"name_asc",
@@ -17421,14 +17983,23 @@ function App() {
     if(typeof window==="undefined") return;
     const params=new URLSearchParams(window.location.search||"");
     const tabParam=(params.get("tab")||"").trim();
+    const tabAliasMap={purchase:"purchase_requests"};
+    const requestedTab=tabAliasMap[tabParam]||tabParam;
     tabFromUrlAppliedRef.current=true;
-    if(!tabParam) return;
-    if(tabs.some(t=>t.id===tabParam)) setTab(tabParam);
+    if(!requestedTab) return;
+    if(tabs.some(t=>t.id===requestedTab)) setTab(requestedTab);
   },[currentUser,tabs]);
 
   useEffect(()=>{
     if(tabs.length===0) return;
-    if(!tabs.some(t=>t.id===tab)) setTab(tabs[0].id);
+    if(tabs.some(t=>t.id===tab)) return;
+    const tabAliasMap={purchase:"purchase_requests"};
+    const mappedTab=tabAliasMap[tab];
+    if(mappedTab&&tabs.some(t=>t.id===mappedTab)){
+      setTab(mappedTab);
+      return;
+    }
+    setTab(tabs[0].id);
   },[tabs,tab]);
   useEffect(()=>{
     if(menuGroupFilter==="all") return;
@@ -17500,7 +18071,9 @@ function App() {
     if(tab==="cncmonitor") return <CncMonitorWall currentUser={currentUser} machines={machines}/>;
     if(tab==="mrp") return <MRPRunModule currentUser={currentUser}/>;
     if(tab==="quotes") return <SalesManagement currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")} defaultView="quotes" filtersVisible={salesFilterOpen}/>;
-    if(tab==="purchase") return <PurchasingModule currentUser={currentUser} filtersVisible={purchaseFilterOpen}/>;
+    if(tab==="purchase"||tab==="purchase_requests") return <PurchasingModule currentUser={currentUser} filtersVisible={purchaseFilterOpen} defaultView="requests"/>;
+    if(tab==="purchase_suppliers") return <PurchasingModule currentUser={currentUser} filtersVisible={purchaseFilterOpen} defaultView="suppliers"/>;
+    if(tab==="purchase_quotes") return <PurchasingModule currentUser={currentUser} filtersVisible={purchaseFilterOpen} defaultView="quotes"/>;
     if(tab==="downtime") return <DowntimeModule currentUser={currentUser} machines={machines}/>;
     if(tab==="quality") return <QualityTraceabilityModule currentUser={currentUser} machines={machines}/>;
     if(tab==="notifications") return <NotificationCenterModule currentUser={currentUser}/>;
