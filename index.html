@@ -224,43 +224,105 @@ window.DB = {
 // ¦¦ SESSION ¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦
 window.Session = (() => {
   const STORAGE_KEY = "cnc_atolye_session_v1";
+  const LOCAL_KEY = "cnc_atolye_session_v2_local";
+  const SESSION_KEY = "cnc_atolye_session_v2_session";
   let mem = null;
+  let memMode = "";
+  function parseRaw(raw){
+    if(!raw) return null;
+    try{
+      const parsed=JSON.parse(raw);
+      if(parsed&&typeof parsed==="object") return parsed;
+    }catch{}
+    return null;
+  }
+  function readFrom(mode){
+    try{
+      const storage=mode==="local"?window.localStorage:window.sessionStorage;
+      const key=mode==="local"?LOCAL_KEY:SESSION_KEY;
+      const parsed=parseRaw(storage.getItem(key));
+      if(parsed&&typeof parsed==="object"){
+        return {...parsed,remember:mode==="local"};
+      }
+    }catch{}
+    return null;
+  }
+  function clearAllStores(){
+    try{window.localStorage.removeItem(LOCAL_KEY);}catch{}
+    try{window.sessionStorage.removeItem(SESSION_KEY);}catch{}
+    try{window.localStorage.removeItem(STORAGE_KEY);}catch{}
+  }
   function readStorage(){
     if(mem) return mem;
+    const sessionData=readFrom("session");
+    if(sessionData){
+      mem=sessionData;
+      memMode="session";
+      return mem;
+    }
+    const localData=readFrom("local");
+    if(localData){
+      mem=localData;
+      memMode="local";
+      return mem;
+    }
     try{
-      const raw=window.localStorage.getItem(STORAGE_KEY);
-      if(!raw) return null;
-      const parsed=JSON.parse(raw);
-      if(parsed&&typeof parsed==="object"){
-        mem=parsed;
+      const legacy=parseRaw(window.localStorage.getItem(STORAGE_KEY));
+      if(legacy&&typeof legacy==="object"){
+        mem={...legacy,remember:true};
+        memMode="local";
+        window.localStorage.setItem(LOCAL_KEY,JSON.stringify(mem));
+        window.localStorage.removeItem(STORAGE_KEY);
         return mem;
       }
     }catch{}
     return null;
   }
-  function writeStorage(next){
+  function writeStorage(next,mode){
     mem=next;
+    memMode=mode;
     try{
-      if(next) window.localStorage.setItem(STORAGE_KEY,JSON.stringify(next));
-      else window.localStorage.removeItem(STORAGE_KEY);
+      if(!next){
+        clearAllStores();
+        return;
+      }
+      if(mode==="local"){
+        window.localStorage.setItem(LOCAL_KEY,JSON.stringify(next));
+        window.sessionStorage.removeItem(SESSION_KEY);
+      }else{
+        window.sessionStorage.setItem(SESSION_KEY,JSON.stringify(next));
+        window.localStorage.removeItem(LOCAL_KEY);
+      }
+      window.localStorage.removeItem(STORAGE_KEY);
     }catch{}
   }
   return {
     get() { return readStorage(); },
-    set(u) {
+    set(u,opts={}) {
       const now=Date.now();
-      writeStorage({
+      const remember=Boolean(opts&&opts.remember);
+      const payload={
         ...u,
+        remember,
         createdAt:now,
         touchedAt:now,
-      });
+      };
+      writeStorage({
+        ...payload,
+      },remember?"local":"session");
     },
     touch() {
       const cur=readStorage();
       if(!cur) return;
-      writeStorage({ ...cur, touchedAt:Date.now() });
+      const next={ ...cur, touchedAt:Date.now() };
+      const mode=cur.remember?"local":(memMode||"session");
+      writeStorage(next,mode);
     },
-    clear() { writeStorage(null); }
+    clear() {
+      mem=null;
+      memMode="";
+      writeStorage(null,"session");
+    }
   };
 })();
 
@@ -1947,16 +2009,29 @@ function PerfBar({perf,small}) {
 //  AUTH SCREEN
 // ============================================================
 function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) {
+  const REMEMBER_CHOICE_KEY="cnc_atolye_remember_choice_v1";
   const [mode,setMode]=useState("login");
   const [form,setForm]=useState({username:"",password:"",confirm:"",fullName:""});
   const [err,setErr]=useState("");
   const [ok,setOk]=useState("");
   const [loading,setLoading]=useState(false);
+  const [rememberMe,setRememberMe]=useState(()=>{
+    try{
+      return window.localStorage.getItem(REMEMBER_CHOICE_KEY)!=="0";
+    }catch{
+      return true;
+    }
+  });
   const [logoError,setLogoError]=useState(false);
   const [overviewStats,setOverviewStats]=useState({loading:false,activeUsers:0,activeOrders:0,pendingUsers:0,todayEntries:0,todayCorrect:0,todayWrong:0,lastUpdated:""});
   const f=k=>e=>setForm(p=>({...p,[k]:e.target.value}));
 
   useEffect(()=>{setErr(""); setOk("");},[mode]);
+  useEffect(()=>{
+    try{
+      window.localStorage.setItem(REMEMBER_CHOICE_KEY,rememberMe?"1":"0");
+    }catch{}
+  },[rememberMe]);
   useEffect(()=>{setLogoError(false);},[logoSrc]);
 
   const loadOverviewStats=useCallback(async()=>{
@@ -2000,7 +2075,7 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
     if(u.password!==hashPass(form.password)){setErr("Şifre hatalı.");setLoading(false);return;}
     if(u.status==="pending"){setErr("Hesabınız onay bekliyor.");setLoading(false);return;}
     if(u.status==="rejected"){setErr("Hesabınız reddedildi.");setLoading(false);return;}
-    window.Session.set({username:u.id});
+    window.Session.set({username:u.id},{remember:rememberMe});
     onLogin(u);
     setLoading(false);
   }
@@ -2151,6 +2226,12 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
                 <span style={labelSt}>Sifre</span>
                 <input style={inputSt} placeholder="••••••••" type="password" value={form.password} onChange={f("password")}/>
               </div>
+              {mode==="login"&&(
+                <label style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:12,color:C.text,cursor:"pointer",userSelect:"none"}}>
+                  <input type="checkbox" checked={rememberMe} onChange={e=>setRememberMe(Boolean(e.target.checked))}/>
+                  <span>Beni hatirla</span>
+                </label>
+              )}
               {mode==="register"&&(
                 <div>
                   <span style={labelSt}>Sifre Tekrar</span>
