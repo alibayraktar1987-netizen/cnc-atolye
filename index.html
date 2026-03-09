@@ -3837,7 +3837,6 @@ function ToolStock({currentUser,filtersVisible=true}) {
   },[toolTotalPages]);
   const toolPageStart=(toolListPageIdx-1)*Math.max(1,toolRowsPerPage);
   const pagedTools=sortedTools.slice(toolPageStart,toolPageStart+Math.max(1,toolRowsPerPage));
-  const lowCount=tools.filter(t=>(Number(t.qty)||0)<=Math.max(Number(t.minQty)||0,0)).length;
   const stockFilterCounts={
     all:tools.length,
     healthy:tools.filter(t=>resolveStockStatus(t)==="healthy").length,
@@ -4005,9 +4004,6 @@ function ToolStock({currentUser,filtersVisible=true}) {
         </div>
       )}
 
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:8,flexWrap:"wrap"}}>
-        <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>Takim Stogu · {tools.length} kayit · {lowCount} kritik stok</div>
-      </div>
       <div style={{display:"flex",gap:10,alignItems:"stretch",flexWrap:"wrap"}}>
         {filtersVisible&&(
           <div style={filterPanelStyle}>
