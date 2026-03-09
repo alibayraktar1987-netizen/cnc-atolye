@@ -1636,8 +1636,8 @@ function ListRowPager({
     </div>
   );
 }
-function Badge({label:l,color=C.muted2}) {
-  return <span style={{background:color+"18",color,border:`1px solid ${color}40`,borderRadius:999,padding:"2px 8px",fontSize:10,fontWeight:700,letterSpacing:.3,textTransform:"uppercase"}}>{l}</span>;
+function Badge({label:l,color=C.muted2,style}) {
+  return <span style={{background:color+"18",color,border:`1px solid ${color}40`,borderRadius:999,padding:"2px 8px",fontSize:10,fontWeight:700,letterSpacing:.3,textTransform:"uppercase",...style}}>{l}</span>;
 }
 function PerfBar({perf,small}) {
   const col=perf>=85?C.green:perf>=60?C.warn:C.red;
@@ -3612,11 +3612,11 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES,filtersVisi
             onMove={moveTaskListTableColumn}
             onReset={resetTaskListTableColumns}
           />
-          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginLeft:"auto"}}>
-            <Badge label={`Benim Acik: ${myOpenCount}`} color={myOpenCount>0?C.warn:C.green}/>
-            <Badge label={`Devam Eden: ${activeCount}`} color={activeCount>0?C.warn:C.muted2}/>
-            <Badge label={`Geciken: ${overdueCount}`} color={overdueCount>0?C.red:C.green}/>
-            <Badge label={`Tamamlanan: ${doneCount}`} color={C.green}/>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginLeft:"auto",alignItems:"center"}}>
+            <Badge label={`Benim Acik: ${myOpenCount}`} color={myOpenCount>0?C.warn:C.green} style={{display:"inline-flex",alignItems:"center",minHeight:28,padding:"0 10px",lineHeight:1}}/>
+            <Badge label={`Devam Eden: ${activeCount}`} color={activeCount>0?C.warn:C.muted2} style={{display:"inline-flex",alignItems:"center",minHeight:28,padding:"0 10px",lineHeight:1}}/>
+            <Badge label={`Geciken: ${overdueCount}`} color={overdueCount>0?C.red:C.green} style={{display:"inline-flex",alignItems:"center",minHeight:28,padding:"0 10px",lineHeight:1}}/>
+            <Badge label={`Tamamlanan: ${doneCount}`} color={C.green} style={{display:"inline-flex",alignItems:"center",minHeight:28,padding:"0 10px",lineHeight:1}}/>
             <button onClick={openCalendarPage} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,display:"inline-flex",alignItems:"center",gap:6}}>
               <span style={{width:14,height:14,display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon name="planning" size={13}/></span>
               Takvim
@@ -3679,13 +3679,13 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES,filtersVisi
           <span style={{width:16,height:16,display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon name="planning" size={15}/></span>
           Gorev Takvimi
         </div>
-        <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-          <button onClick={openTaskListPage} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Gorev Listesi</button>
-          <button onClick={()=>shiftCalendarMonth(-1)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>&lt;</button>
-          <input style={{...inputSt,padding:"7px 9px",fontSize:12,minWidth:140}} type="month" value={calendarMonthSafe} onChange={e=>setCalendarMonth(e.target.value||monthStr())}/>
-          <button onClick={()=>shiftCalendarMonth(1)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>&gt;</button>
-          <button onClick={()=>setCalendarMonth(monthStr())} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Bu Ay</button>
-        </div>
+        <button onClick={openTaskListPage} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Gorev Listesi</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"auto minmax(0,1fr) auto auto",alignItems:"center",gap:6,marginBottom:10}}>
+        <button onClick={()=>shiftCalendarMonth(-1)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>&lt;</button>
+        <input style={{...inputSt,padding:"7px 9px",fontSize:12,minWidth:0,width:"100%"}} type="month" value={calendarMonthSafe} onChange={e=>setCalendarMonth(e.target.value||monthStr())}/>
+        <button onClick={()=>shiftCalendarMonth(1)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>&gt;</button>
+        <button onClick={()=>setCalendarMonth(monthStr())} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12,whiteSpace:"nowrap"}}>Bu Ay</button>
       </div>
 
       {filtersVisible&&(
@@ -18680,7 +18680,6 @@ function App() {
   const canPurchasing=hasPermission(userForPerm,"manage_purchasing")||canOrders;
   const canQuality=hasPermission(userForPerm,"manage_quality")||canOrders||canReport;
   const canDowntime=hasPermission(userForPerm,"manage_downtime")||canEntry||canReport;
-  const canNotifications=hasPermission(userForPerm,"manage_notifications")||canReport;
   const canPlanning=canOrders;
   const canCustomers=canOrders;
   const canUsers=hasPermission(userForPerm,"approve_users")||isAdmin;
@@ -18714,7 +18713,6 @@ function App() {
       {id:"purchase_suppliers",icon:"customers",label:"Tedarikciler",group:"Satin Alma",enabled:canPurchasing},
       {id:"purchase_quotes",icon:"quotes",label:"Teklifler",group:"Satin Alma",enabled:canPurchasing},
       {id:"rapor",icon:"rapor",label:"Raporlar",group:"Analiz ve Yonetim",enabled:canReport},
-      {id:"notifications",icon:"notifications",label:"Bildirim Merkezi",group:"Analiz ve Yonetim",enabled:(canNotifications||canUsers||canSales||canPurchasing)},
       {id:"finance",icon:"cost",label:"Finans",group:"Analiz ve Yonetim",enabled:(canSales||canPurchasing||canReport)},
       {id:"cost",icon:"cost",label:"Maliyetleme",group:"Analiz ve Yonetim",enabled:(canOrders||canReport||canSales)},
       {id:"materialquote",icon:"cost",label:"Malzeme Teklif",group:"Analiz ve Yonetim",enabled:(canOrders||canSales||canPurchasing||canReport)},
@@ -18725,7 +18723,7 @@ function App() {
       {id:"integrations",icon:"integration",label:"Entegrasyonlar",group:"Sistem",enabled:(canUsers||isAdmin)},
       {id:"users",icon:"users",label:"Ayarlar ve Guvenlik",group:"Sistem",enabled:canUsers},
     ];
-  },[canEntry,canOrders,canSales,canPurchasing,canQuality,canDowntime,canNotifications,canReport,canPlanning,canTools,canCustomers,canMachinePrep,canUsers,isAdmin,canSmartFactory,isOperatorRole,canMonitor]);
+  },[canEntry,canOrders,canSales,canPurchasing,canQuality,canDowntime,canReport,canPlanning,canTools,canCustomers,canMachinePrep,canUsers,isAdmin,canSmartFactory,isOperatorRole,canMonitor]);
   const hiddenTabs=menuVisibility?.hiddenTabs||[];
   const enabledTabs=useMemo(()=>{
     const permissionTabs=allTabs.filter(t=>t.enabled);
@@ -19219,7 +19217,7 @@ function App() {
     applyTopSortMode(topSortDefault);
   }
   function handleTopQuickAction(actionId){
-    if(actionId==="notif"){switchToTabIfVisible("notifications");return;}
+    if(actionId==="notif"){switchToTabIfVisible("assignments");return;}
     if(actionId==="calendar"){switchToTabIfVisible("planning");return;}
     if(actionId==="mail"){switchToTabIfVisible("sales");return;}
   }
