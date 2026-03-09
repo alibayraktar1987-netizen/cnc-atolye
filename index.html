@@ -12292,14 +12292,20 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     if(code&&plannedLegacyOrderCodeSet.has(code)) return true;
     return false;
   }
+  function isOrderIncomplete(order){
+    const st=String(order?.status||"").toLowerCase();
+    return !["completed","cancelled","passive","liquidation","shipped"].includes(st);
+  }
   const priorityWeight={urgent:0,acil:0,normal:1,low:2,dusuk:2};
   const ordersToPlan=[...orders]
     .filter(o=>{
-      const st=String(o.status||"").toLowerCase();
-      if(st==="completed") return false;
-      return !isOrderAlreadyInPlanning(o);
+      const planned=isOrderAlreadyInPlanning(o);
+      return !planned || isOrderIncomplete(o);
     })
     .sort((a,b)=>{
+      const plannedA=isOrderAlreadyInPlanning(a);
+      const plannedB=isOrderAlreadyInPlanning(b);
+      if(plannedA!==plannedB) return plannedA?1:-1;
       const pa=priorityWeight[String(a.priority||"normal").toLowerCase()]??1;
       const pb=priorityWeight[String(b.priority||"normal").toLowerCase()]??1;
       if(pa!==pb) return pa-pb;
@@ -13619,24 +13625,31 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
               <div style={{display:"flex",flexDirection:"column",gap:7,maxHeight:190,overflowY:"auto",paddingRight:2}}>
                 {ordersToPlan.map(order=>{
                   const pMeta=PRIORITY_OPTIONS.find(p=>p.id===order.priority)||{label:(order.priority||"Normal"),color:C.muted2};
+                  const statusMeta=getOrderStatusMeta(order.status||"planned");
+                  const isPlanned=isOrderAlreadyInPlanning(order);
+                  const dragEnabled=!isPlanned;
                   return (
                     <div
                       key={order.id}
-                      draggable
+                      draggable={dragEnabled}
+                      title={isPlanned?"Bu is emri planlama ekraninda zaten mevcut.":""}
                       onDragStart={e=>{
+                        if(!dragEnabled) return;
                         const payload=JSON.stringify({type:"board-order",orderId:order.id});
                         e.dataTransfer.setData("text/plain",payload);
                         e.dataTransfer.effectAllowed="copyMove";
                         setDragBoardOrderId(order.id);
                         setDragBoardSegmentId("");
                       }}
-                      onDragEnd={()=>setDragBoardOrderId("")}
-                      style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 9px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",cursor:"grab",opacity:dragBoardOrderId===order.id?0.58:1}}
+                      onDragEnd={()=>{if(dragEnabled) setDragBoardOrderId("");}}
+                      style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 9px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",cursor:dragEnabled?"grab":"default",opacity:dragBoardOrderId===order.id?0.58:1}}
                     >
                       <div style={{minWidth:210,flex:1}}>
                         <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                           <span style={{fontWeight:800,color:C.text,fontFamily:"monospace",fontSize:12}}>{order.code||"-"}</span>
                           <Badge label={pMeta.label||"-"} color={pMeta.color||C.muted2}/>
+                          <Badge label={statusMeta.label||"-"} color={statusMeta.color||C.muted2}/>
+                          <Badge label={isPlanned?"Planli":"Planlanmamis"} color={isPlanned?C.accent:C.warn}/>
                         </div>
                         <div style={{fontSize:12,color:C.text,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
                           {order.name||"-"}{order.customerName?` · ${order.customerName}`:""}
@@ -13646,13 +13659,25 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                         </div>
                       </div>
                       <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                        <button onClick={()=>quickPlanToday(order)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>
+                        <button
+                          onClick={()=>quickPlanToday(order)}
+                          disabled={isPlanned}
+                          style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,opacity:isPlanned?0.5:1,cursor:isPlanned?"not-allowed":"pointer"}}
+                        >
                           Bugun
                         </button>
-                        <button onClick={()=>openWeekPlanModalForOrder(order)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>
+                        <button
+                          onClick={()=>openWeekPlanModalForOrder(order)}
+                          disabled={isPlanned}
+                          style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,opacity:isPlanned?0.5:1,cursor:isPlanned?"not-allowed":"pointer"}}
+                        >
                           Bu Hafta
                         </button>
-                        <button onClick={()=>openPlanModalForOrder(order)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}>
+                        <button
+                          onClick={()=>openPlanModalForOrder(order)}
+                          disabled={isPlanned}
+                          style={{...btnSt("primary"),padding:"6px 10px",fontSize:12,opacity:isPlanned?0.5:1,cursor:isPlanned?"not-allowed":"pointer"}}
+                        >
                           Planla
                         </button>
                       </div>
