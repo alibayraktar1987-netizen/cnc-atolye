@@ -3368,101 +3368,147 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
     if(!baseDueDate||!recurrenceUntil||recurrenceUntil<baseDueDate) return 0;
     return buildRecurrenceDates(baseDueDate,mode,recurrenceUntil).length;
   })();
+  const taskStatusOptions=[
+    {id:"all",label:"Tum Gorevler"},
+    {id:"open",label:"Acilanlar"},
+    {id:"in_progress",label:"Devam Edenler"},
+    {id:"done",label:"Tamamlananlar"},
+    {id:"cancelled",label:"Iptal Edilenler"},
+  ];
+  const taskStatusCounts={
+    all:visibleTasks.length,
+    open:visibleTasks.filter(t=>(t.status||"open")==="open").length,
+    in_progress:visibleTasks.filter(t=>(t.status||"")==="in_progress").length,
+    done:visibleTasks.filter(t=>(t.status||"")==="done").length,
+    cancelled:visibleTasks.filter(t=>(t.status||"")==="cancelled").length,
+  };
+  const taskSplitWrapStyle={
+    display:"flex",
+    gap:10,
+    alignItems:"stretch",
+    flexWrap:"wrap",
+  };
+  const taskFilterPanelStyle={
+    flex:"0 0 250px",
+    width:"100%",
+    maxWidth:280,
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    padding:12,
+    display:"flex",
+    flexDirection:"column",
+    gap:10,
+  };
+  const taskListColumnStyle={
+    flex:"1 1 760px",
+    minWidth:0,
+    display:"flex",
+    flexDirection:"column",
+    gap:8,
+  };
 
   const taskListPanel=(
-    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
-        <div style={{fontWeight:700,color:C.text,fontSize:14}}>Gorev Listesi</div>
-        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginLeft:"auto"}}>
-          <Badge label={`Benim Acik: ${myOpenCount}`} color={myOpenCount>0?C.warn:C.green}/>
-          <Badge label={`Devam Eden: ${activeCount}`} color={activeCount>0?C.warn:C.muted2}/>
-          <Badge label={`Geciken: ${overdueCount}`} color={overdueCount>0?C.red:C.green}/>
-          <Badge label={`Tamamlanan: ${doneCount}`} color={C.green}/>
-          <button onClick={openCalendarPage} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,display:"inline-flex",alignItems:"center",gap:6}}>
-            <span style={{width:14,height:14,display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon name="planning" size={13}/></span>
-            Takvim
-          </button>
-        </div>
-      </div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end",marginBottom:10}}>
-        <div style={{minWidth:220,flex:"1 1 320px"}}>
-          <span style={labelSt}>Ara</span>
-          <input style={inputSt} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Gorev, calisan, tezgah, is emri..."/>
-        </div>
-        <div style={{minWidth:170,flex:"1 1 180px"}}>
-          <span style={labelSt}>Durum</span>
-          <select style={inputSt} value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
-            <option value="all">Tum Durumlar</option>
-            <option value="open">Acilanlar</option>
-            <option value="in_progress">Devam Edenler</option>
-            <option value="done">Tamamlananlar</option>
-            <option value="cancelled">Iptal Edilenler</option>
-          </select>
-        </div>
-        {canAssign&&(
-          <div style={{minWidth:200,flex:"1 1 220px"}}>
-            <span style={labelSt}>Calisan</span>
-            <select style={inputSt} value={filterAssignee} onChange={e=>setFilterAssignee(e.target.value)}>
-              <option value="all">Tum Calisanlar</option>
-              {activeUsers.map(u=><option key={u.id} value={u.id}>{u.fullName||u.id}</option>)}
-            </select>
-          </div>
-        )}
-      </div>
-
-      {filteredTasks.length===0&&(
-        <div style={{padding:"26px 10px",textAlign:"center",fontSize:12,color:C.muted2,border:`1px dashed ${C.border}`,borderRadius:10}}>
-          Gosterilecek gorev bulunamadi.
-        </div>
-      )}
-
-      {filteredTasks.length>0&&(
-        <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {filteredTasks.map(task=>{
-            const sMeta=statusMeta(task.status||"open");
-            const pMeta=priorityMeta(task.priority||"medium");
-            const due=String(task.dueDate||"");
-            const isOverdue=due&&due<todayStr()&&!["done","cancelled"].includes(task.status||"");
-            const canAct=canAssign||task.assigneeId===currentUser.id;
-            const isRecurring=(task.recurrenceMode==="weekly"||task.recurrenceMode==="monthly")&&Number(task.recurrenceCount||0)>1;
-            const recurrenceLabel=task.recurrenceMode==="weekly"?"Haftalik":"Aylik";
+    <div style={taskSplitWrapStyle}>
+      <div style={taskFilterPanelStyle}>
+        <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Gorevler</div>
+        <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Gorev, calisan, tezgah, is emri ara"/>
+        <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Gorev Durumu</div>
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {taskStatusOptions.map(opt=>{
+            const active=filterStatus===opt.id;
+            const color=opt.id==="all"?C.accent:statusMeta(opt.id).color;
             return (
-              <div key={task.id} style={{border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px",background:C.surface}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
-                  <div style={{minWidth:220,flex:1}}>
-                    <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-                      <div style={{fontWeight:800,color:C.text,fontSize:14}}>{task.title||"-"}</div>
-                      <Badge label={sMeta.label} color={sMeta.color}/>
-                      <Badge label={pMeta.label} color={pMeta.color}/>
-                    </div>
-                    {task.detail&&<div style={{fontSize:12,color:C.text,marginTop:4,whiteSpace:"pre-wrap"}}>{task.detail}</div>}
-                    <div style={{display:"flex",gap:6,flexWrap:"wrap",fontSize:11,color:C.muted2,marginTop:5}}>
-                      <span>Calisan: <strong>{task.assigneeName||task.assigneeId||"-"}</strong></span>
-                      {task.machine&&<span>Tezgah: <strong>{task.machine}</strong></span>}
-                      {task.orderCode&&<span>Is Emri: <strong>{task.orderCode}</strong></span>}
-                      {task.assignedByName&&<span>Atayan: <strong>{task.assignedByName}</strong></span>}
-                      {due&&<span style={{color:isOverdue?C.red:C.muted2}}>Termin: <strong>{due}</strong></span>}
-                      {isRecurring&&(
-                        <span>
-                          Tekrar: <strong>{recurrenceLabel}</strong>
-                          {task.recurrenceIndex&&task.recurrenceCount?` (${task.recurrenceIndex}/${task.recurrenceCount})`:""}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                    {canAct&&task.status==="open"&&<button onClick={()=>updateTaskStatus(task,"in_progress")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Basla</button>}
-                    {canAct&&["open","in_progress"].includes(task.status||"")&&<button onClick={()=>updateTaskStatus(task,"done")} style={{...btnSt("green"),padding:"6px 10px",fontSize:12}}>Tamamla</button>}
-                    {canAct&&task.status==="done"&&<button onClick={()=>updateTaskStatus(task,"open")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Yeniden Ac</button>}
-                    {canAssign&&task.status!=="cancelled"&&<button onClick={()=>updateTaskStatus(task,"cancelled")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Iptal</button>}
-                    {canAssign&&<button onClick={()=>deleteTask(task)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Sil</button>}
-                  </div>
-                </div>
-              </div>
+              <button key={opt.id} onClick={()=>setFilterStatus(opt.id)} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:active?color:C.border,color:active?color:C.text}}>
+                <span>{opt.label}</span>
+                <span style={{fontSize:11,color:C.muted2}}>{taskStatusCounts[opt.id]||0}</span>
+              </button>
             );
           })}
         </div>
-      )}
+        {canAssign&&(
+          <>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Calisan</div>
+            <select style={{...inputSt,padding:"8px 10px",fontSize:12}} value={filterAssignee} onChange={e=>setFilterAssignee(e.target.value)}>
+              <option value="all">Tum Calisanlar</option>
+              {activeUsers.map(u=><option key={u.id} value={u.id}>{u.fullName||u.id}</option>)}
+            </select>
+          </>
+        )}
+        <button onClick={()=>{setQuery("");setFilterStatus("all");setFilterAssignee("all");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
+      </div>
+
+      <div style={taskListColumnStyle}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <div style={{fontWeight:700,color:C.text,fontSize:14}}>Gorev Listesi</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginLeft:"auto"}}>
+            <Badge label={`Benim Acik: ${myOpenCount}`} color={myOpenCount>0?C.warn:C.green}/>
+            <Badge label={`Devam Eden: ${activeCount}`} color={activeCount>0?C.warn:C.muted2}/>
+            <Badge label={`Geciken: ${overdueCount}`} color={overdueCount>0?C.red:C.green}/>
+            <Badge label={`Tamamlanan: ${doneCount}`} color={C.green}/>
+            <button onClick={openCalendarPage} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,display:"inline-flex",alignItems:"center",gap:6}}>
+              <span style={{width:14,height:14,display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon name="planning" size={13}/></span>
+              Takvim
+            </button>
+          </div>
+        </div>
+
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:10}}>
+          {filteredTasks.length===0&&(
+            <div style={{padding:"26px 10px",textAlign:"center",fontSize:12,color:C.muted2,border:`1px dashed ${C.border}`,borderRadius:10}}>
+              Gosterilecek gorev bulunamadi.
+            </div>
+          )}
+
+          {filteredTasks.length>0&&(
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {filteredTasks.map(task=>{
+                const sMeta=statusMeta(task.status||"open");
+                const pMeta=priorityMeta(task.priority||"medium");
+                const due=String(task.dueDate||"");
+                const isOverdue=due&&due<todayStr()&&!["done","cancelled"].includes(task.status||"");
+                const canAct=canAssign||task.assigneeId===currentUser.id;
+                const isRecurring=(task.recurrenceMode==="weekly"||task.recurrenceMode==="monthly")&&Number(task.recurrenceCount||0)>1;
+                const recurrenceLabel=task.recurrenceMode==="weekly"?"Haftalik":"Aylik";
+                return (
+                  <div key={task.id} style={{border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px",background:C.surface}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+                      <div style={{minWidth:220,flex:1}}>
+                        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                          <div style={{fontWeight:800,color:C.text,fontSize:14}}>{task.title||"-"}</div>
+                          <Badge label={sMeta.label} color={sMeta.color}/>
+                          <Badge label={pMeta.label} color={pMeta.color}/>
+                        </div>
+                        {task.detail&&<div style={{fontSize:12,color:C.text,marginTop:4,whiteSpace:"pre-wrap"}}>{task.detail}</div>}
+                        <div style={{display:"flex",gap:6,flexWrap:"wrap",fontSize:11,color:C.muted2,marginTop:5}}>
+                          <span>Calisan: <strong>{task.assigneeName||task.assigneeId||"-"}</strong></span>
+                          {task.machine&&<span>Tezgah: <strong>{task.machine}</strong></span>}
+                          {task.orderCode&&<span>Is Emri: <strong>{task.orderCode}</strong></span>}
+                          {task.assignedByName&&<span>Atayan: <strong>{task.assignedByName}</strong></span>}
+                          {due&&<span style={{color:isOverdue?C.red:C.muted2}}>Termin: <strong>{due}</strong></span>}
+                          {isRecurring&&(
+                            <span>
+                              Tekrar: <strong>{recurrenceLabel}</strong>
+                              {task.recurrenceIndex&&task.recurrenceCount?` (${task.recurrenceIndex}/${task.recurrenceCount})`:""}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                        {canAct&&task.status==="open"&&<button onClick={()=>updateTaskStatus(task,"in_progress")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Basla</button>}
+                        {canAct&&["open","in_progress"].includes(task.status||"")&&<button onClick={()=>updateTaskStatus(task,"done")} style={{...btnSt("green"),padding:"6px 10px",fontSize:12}}>Tamamla</button>}
+                        {canAct&&task.status==="done"&&<button onClick={()=>updateTaskStatus(task,"open")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Yeniden Ac</button>}
+                        {canAssign&&task.status!=="cancelled"&&<button onClick={()=>updateTaskStatus(task,"cancelled")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Iptal</button>}
+                        {canAssign&&<button onClick={()=>deleteTask(task)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Sil</button>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
   const calendarPanel=(
