@@ -3577,6 +3577,7 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
 
   return (
     <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
+      <style>{`@keyframes assignmentViewFadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
       {canAssign&&showCreateTaskModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.62)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:70,padding:14}} onClick={closeCreateTaskPage}>
           <div style={{width:"100%",maxWidth:1080,maxHeight:"92vh",overflowY:"auto",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}} onClick={e=>e.stopPropagation()}>
@@ -3613,7 +3614,9 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
         </div>
       )}
 
-      {effectiveAssignmentPage==="calendar"?calendarPanel:taskListPanel}
+      <div key={effectiveAssignmentPage} style={{animation:"assignmentViewFadeIn .22s ease-out",transformOrigin:"top center"}}>
+        {effectiveAssignmentPage==="calendar"?calendarPanel:taskListPanel}
+      </div>
     </div>
   );
 }
