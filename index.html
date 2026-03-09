@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
-<title>CNC Atölye Takip</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+<title>Factorab</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body,#root{
@@ -469,6 +469,15 @@ function minuteFromIsoLike(value){
 }
 const EFFECTIVE_SECONDS = 72000;
 const LOGO_SRC = "./logo.png";
+const FACTORAB_ORANGE = "#f05a00";
+const FACTORAB_WHITE = "#eef2ff";
+const FACTORAB_INK = "#0b0f1c";
+function isCustomBrandLogo(src){
+  const value=String(src||"").trim();
+  if(!value) return false;
+  if(value===LOGO_SRC) return false;
+  return true;
+}
 const SESSION_TIMEOUT_MIN = 30;
 const USER_ROLES = [
   { id:"admin", label:"Admin" },
@@ -714,7 +723,7 @@ const MACHINE_DEFAULT_POINTS = MACHINE_DATA_POINTS.reduce((acc,p)=>{
   return acc;
 },{});
 const DEFAULT_QUOTE_TEMPLATE = {
-  companyName:"CNC Atolye",
+  companyName:"Factorab",
   companyAddress:"",
   companyPhone:"",
   companyEmail:"",
@@ -1573,6 +1582,64 @@ const btnSt=(v="primary")=>({border:`1px solid ${v==="primary"?C.accent:v==="dan
      v==="green"?{background:C.green,color:"#fff"}:
      v==="ghost"?{background:C.surface,color:C.text}:
      {background:C.surface2,color:C.text})});
+function FactorabMark({size=26,variant="dark"}){
+  const palette=variant==="light"
+    ? {hex:FACTORAB_ORANGE,main:FACTORAB_INK,top:FACTORAB_ORANGE,mid:FACTORAB_INK,dot:FACTORAB_ORANGE}
+    : (variant==="filled"
+      ? {hex:"rgba(255,255,255,.42)",main:"#ffffff",top:"#ffffff",mid:"rgba(255,255,255,.68)",dot:"#ffffff"}
+      : {hex:FACTORAB_ORANGE,main:FACTORAB_WHITE,top:FACTORAB_ORANGE,mid:FACTORAB_WHITE,dot:FACTORAB_ORANGE});
+  const sw=size<=22?3.1:3.6;
+  return (
+    <svg width={size} height={size} viewBox="0 0 54 54" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <polygon points="27,3 50,15.5 50,38.5 27,51 4,38.5 4,15.5" stroke={palette.hex} strokeWidth="2.2" fill="none" strokeLinejoin="round"/>
+      <line x1="17" y1="16" x2="17" y2="38" stroke={palette.main} strokeWidth={sw} strokeLinecap="round"/>
+      <line x1="17" y1="16" x2="36" y2="16" stroke={palette.top} strokeWidth={sw} strokeLinecap="round"/>
+      <line x1="17" y1="27" x2="30" y2="27" stroke={palette.mid} strokeWidth={sw} strokeLinecap="round"/>
+      <circle cx="40" cy="38" r={size<=22?3.2:3.6} fill={palette.dot}/>
+    </svg>
+  );
+}
+function FactorabWordmark({variant="dark",showTagline=false,compact=false,style={}}){
+  const primary=variant==="light"?FACTORAB_INK:FACTORAB_WHITE;
+  const muted=variant==="light"?"rgba(11,15,28,.38)":"rgba(238,242,255,.45)";
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:compact?2:4,minWidth:0,...style}}>
+      <div style={{
+        fontFamily:"\"Barlow Condensed\",\"DM Sans\",sans-serif",
+        fontWeight:700,
+        fontSize:compact?20:30,
+        letterSpacing:compact?2.2:3.4,
+        lineHeight:1,
+        color:primary,
+        textTransform:"uppercase",
+        whiteSpace:"nowrap",
+      }}>
+        FACTOR<span style={{color:FACTORAB_ORANGE}}>AB</span>
+      </div>
+      {showTagline&&(
+        <div style={{
+          fontFamily:"\"Barlow\",\"DM Sans\",sans-serif",
+          fontWeight:300,
+          fontSize:compact?8.5:9.5,
+          letterSpacing:compact?2.4:4.2,
+          textTransform:"uppercase",
+          color:muted,
+          whiteSpace:"nowrap",
+        }}>
+          Manufacturing Intelligence Platform
+        </div>
+      )}
+    </div>
+  );
+}
+function FactorabBrand({variant="dark",markSize=34,showTagline=false,compact=false,gap=10,style={}}){
+  return (
+    <div style={{display:"flex",alignItems:"center",gap,minWidth:0,...style}}>
+      <FactorabMark size={markSize} variant={variant}/>
+      <FactorabWordmark variant={variant} showTagline={showTagline} compact={compact}/>
+    </div>
+  );
+}
 
 function TableColumnEditor({title="Sutun Duzenle",columns,onToggle,onMove,onReset}) {
   const rows=Array.isArray(columns)?columns:[];
@@ -1980,7 +2047,7 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
     }}>
       <div style={{width:"100%",maxWidth:1040}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:10}}>
-          <div style={{fontSize:11,color:C.muted2,letterSpacing:.9,textTransform:"uppercase"}}>CNC Atolye Is Takip Platformu</div>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:.9,textTransform:"uppercase"}}>Factorab Is Takip Platformu</div>
           <button onClick={onThemeToggle} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:98}}>
             {themeMode==="dark"?"Acik Tema":"Koyu Tema"}
           </button>
@@ -1999,14 +2066,13 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
             flexDirection:"column",
             gap:12,
           }}>
-            <div style={{display:"flex",alignItems:"center",gap:12}}>
-              <div style={{width:56,height:56,borderRadius:16,background:C.accent,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",boxShadow:`0 10px 24px ${C.accent}66`}}>
-                {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:26,color:"#fff"}}>C</span>}
+            <div style={{display:"flex",alignItems:"center",gap:12,minWidth:0}}>
+              <div style={{width:58,height:58,borderRadius:16,background:C.accent,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",boxShadow:`0 10px 24px ${C.accent}66`,flexShrink:0}}>
+                {isCustomBrandLogo(logoSrc)&&!logoError
+                  ? <img src={logoSrc} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                  : <FactorabMark size={34} variant="dark"/>}
               </div>
-              <div>
-                <div style={{fontWeight:800,fontSize:24,color:C.text,letterSpacing:-.6,lineHeight:1.05}}>CNC Atolye</div>
-                <div style={{fontSize:13,color:C.muted2,marginTop:3}}>Tek giris, rol bazli otomatik yetkilendirme</div>
-              </div>
+              <FactorabWordmark variant={themeMode==="dark"?"dark":"light"} showTagline compact/>
             </div>
             <div style={{fontSize:13,color:C.muted2,lineHeight:1.6}}>
               Kullanici adi ve sifre ile giris yapildiginda sistem hesabin rolunu otomatik algilar.
@@ -2828,6 +2894,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
   const [expanded,setExpanded]=useState(null);
   const [settingsView,setSettingsView]=useState("genel");
   const [logoLoading,setLogoLoading]=useState(false);
+  const [logoPreviewError,setLogoPreviewError]=useState(false);
   const [quoteTemplate,setQuoteTemplate]=useState(DEFAULT_QUOTE_TEMPLATE);
   const [templateSaving,setTemplateSaving]=useState(false);
   const [menuConfig,setMenuConfig]=useState(()=>normalizeMenuVisibilityConfig(menuVisibility||{}));
@@ -2851,6 +2918,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
   useEffect(()=>{
     setMenuConfig(normalizeMenuVisibilityConfig(menuVisibility||{}));
   },[menuVisibility]);
+  useEffect(()=>{setLogoPreviewError(false);},[currentLogo]);
 
   async function update(id,patch) {
     await window.DB.updateDoc("users",id,patch);
@@ -3063,7 +3131,9 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
             <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
               <div style={{width:56,height:56,borderRadius:12,background:C.surface,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
-                <img src={currentLogo||LOGO_SRC} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                {isCustomBrandLogo(currentLogo)&&!logoPreviewError
+                  ? <img src={currentLogo} alt="Logo" onError={()=>setLogoPreviewError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                  : <FactorabMark size={34} variant={themeMode==="dark"?"dark":"light"}/>}
               </div>
               <div style={{fontSize:12,color:C.muted2}}>Giris sayfasi ve uygulama basliginda kullanilir.</div>
             </div>
@@ -3182,7 +3252,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
               <div><span style={labelSt}>Port</span><input style={inputSt} type="number" min="1" max="65535" value={notificationDeliverySettings.email?.port||"587"} onChange={e=>setNotificationField("email","port",e.target.value)}/></div>
               <div><span style={labelSt}>Kullanici</span><input style={inputSt} value={notificationDeliverySettings.email?.username||""} onChange={e=>setNotificationField("email","username",e.target.value)} placeholder="kullanici@mail.com"/></div>
               <div><span style={labelSt}>Sifre / Token</span><input style={inputSt} type="password" value={notificationDeliverySettings.email?.password||""} onChange={e=>setNotificationField("email","password",e.target.value)} placeholder="********"/></div>
-              <div><span style={labelSt}>Gonderen Adi</span><input style={inputSt} value={notificationDeliverySettings.email?.fromName||""} onChange={e=>setNotificationField("email","fromName",e.target.value)} placeholder="CNC Atolye"/></div>
+              <div><span style={labelSt}>Gonderen Adi</span><input style={inputSt} value={notificationDeliverySettings.email?.fromName||""} onChange={e=>setNotificationField("email","fromName",e.target.value)} placeholder="Factorab"/></div>
               <div><span style={labelSt}>Gonderen E-Posta</span><input style={inputSt} value={notificationDeliverySettings.email?.fromEmail||""} onChange={e=>setNotificationField("email","fromEmail",e.target.value)} placeholder="noreply@firma.com"/></div>
               <div><span style={labelSt}>Reply-To</span><input style={inputSt} value={notificationDeliverySettings.email?.replyTo||""} onChange={e=>setNotificationField("email","replyTo",e.target.value)} placeholder="destek@firma.com"/></div>
               <div style={{display:"flex",alignItems:"flex-end"}}>
@@ -15249,6 +15319,7 @@ function MRPDashboard({
   const [widgetReportId,setWidgetReportId]=useState("");
   const [dragWidgetId,setDragWidgetId]=useState("");
   const [isNarrow,setIsNarrow]=useState(()=>typeof window!=="undefined"?window.innerWidth<980:false);
+  const [dashboardLogoError,setDashboardLogoError]=useState(false);
   const [data,setData]=useState({orders:[],sales:[],materials:[],prs:[],connectors:[],telemetry:[],downtimes:[],entries:[],quality:[],notifs:[],tools:[]});
   const dashboardUserKey=String(currentUser?.id||"default");
   function sortReports(rows=[]){
@@ -15312,6 +15383,7 @@ function MRPDashboard({
     window.addEventListener("resize",onResize);
     return ()=>window.removeEventListener("resize",onResize);
   },[]);
+  useEffect(()=>{setDashboardLogoError(false);},[logoSrc]);
   useEffect(()=>{
     function onDashboardWidgetSync(ev){
       const userId=String(ev&&ev.detail&&ev.detail.userId||"");
@@ -15796,7 +15868,9 @@ function MRPDashboard({
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",background:commandBarTone.heroBg}}>
           <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
             <div style={{width:40,height:40,borderRadius:10,background:"rgba(255,255,255,.16)",border:`1px solid ${commandBarTone.heroChipBorder}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
-              {logoSrc?<img src={logoSrc} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:17,color:commandBarTone.heroText}}>{"\uD83C\uDFED"}</span>}
+              {isCustomBrandLogo(logoSrc)&&!dashboardLogoError
+                ? <img src={logoSrc} alt="Logo" onError={()=>setDashboardLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                : <FactorabMark size={24} variant="dark"/>}
             </div>
             <div style={{minWidth:0}}>
               <div style={{fontSize:11,color:commandBarTone.heroMuted,letterSpacing:.7,textTransform:"uppercase"}}>Canlı Üretim Panosu</div>
@@ -20443,7 +20517,9 @@ function App() {
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",background:appCommandBarTone.heroBg}}>
         <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
           <div style={{width:40,height:40,borderRadius:10,background:"rgba(255,255,255,.16)",border:`1px solid ${appCommandBarTone.heroChipBorder}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
-            {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:17,color:appCommandBarTone.heroText}}>{"\uD83C\uDFED"}</span>}
+            {isCustomBrandLogo(logoSrc)&&!logoError
+              ? <img src={logoSrc} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+              : <FactorabMark size={24} variant="dark"/>}
           </div>
           <div style={{minWidth:0}}>
             <div style={{fontSize:11,color:appCommandBarTone.heroMuted,letterSpacing:.7,textTransform:"uppercase"}}>Canli Uretim Panosu</div>
@@ -20559,9 +20635,11 @@ function App() {
               <div style={{display:"flex",alignItems:"center",justifyContent:desktopMenuIconOnly?"center":"space-between",gap:8}}>
                 <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
                   <div style={{width:34,height:34,borderRadius:9,background:leftNavColors.toggleBg,border:`1px solid ${leftNavColors.border}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
-                    {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:12,color:leftNavColors.activeText,fontWeight:700}}>LOGO</span>}
+                    {isCustomBrandLogo(logoSrc)&&!logoError
+                      ? <img src={logoSrc} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                      : <FactorabMark size={20} variant="dark"/>}
                   </div>
-                  {!desktopMenuIconOnly&&<div style={{fontSize:15,fontWeight:800,color:leftNavColors.activeText,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>CNC Atolye MRP</div>}
+                  {!desktopMenuIconOnly&&<FactorabWordmark variant="dark" compact style={{maxWidth:170,overflow:"hidden"}}/>}
                 </div>
                 {layoutMode==="desktop"&&(
                   <button
