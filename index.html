@@ -1634,6 +1634,9 @@ function NavIcon({name,size=18}) {
   if(name==="notifications") return (
     <svg viewBox="0 0 24 24" style={st}><path {...p} d="M6 16h12l-1-2v-3a5 5 0 0 0-10 0v3z"/><path {...p} d="M10 18a2 2 0 0 0 4 0"/></svg>
   );
+  if(name==="search") return (
+    <svg viewBox="0 0 24 24" style={st}><circle {...p} cx="11" cy="11" r="6.5"/><path {...p} d="M16 16l4.2 4.2"/></svg>
+  );
   if(name==="quality") return (
     <svg viewBox="0 0 24 24" style={st}><path {...p} d="M12 3l8 4v5c0 5-3.3 8-8 9-4.7-1-8-4-8-9V7z"/><path {...p} d="M9 12l2 2 4-4"/></svg>
   );
@@ -2321,7 +2324,7 @@ function SupplierGroupSettings({currentUser}) {
 // ============================================================
 //  ADMIN USERS
 // ============================================================
-function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,menuCatalog=[],menuVisibility,onMenuVisibilityChange}) {
+function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="light",onThemeModeChange=()=>{},menuCatalog=[],menuVisibility,onMenuVisibilityChange}) {
   const [users,setUsers]=useState([]);
   const [loading,setLoading]=useState(true);
   const [expanded,setExpanded]=useState(null);
@@ -2512,6 +2515,18 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,menuCatalog=[
 
       {settingsView==="genel"&&(
         <div style={{marginBottom:18}}>
+          <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Genel Ayarlar · Tema</div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12,marginBottom:14}}>
+            <div style={{fontSize:12,color:C.muted2,marginBottom:10}}>Uygulama temasini buradan yonetin.</div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <button onClick={()=>onThemeModeChange("light")} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,borderColor:themeMode==="light"?C.accent:C.border,color:themeMode==="light"?C.accent:C.text}} disabled={themeMode==="light"}>
+                Acik Tema
+              </button>
+              <button onClick={()=>onThemeModeChange("dark")} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,borderColor:themeMode==="dark"?C.accent:C.border,color:themeMode==="dark"?C.accent:C.text}} disabled={themeMode==="dark"}>
+                Koyu Tema
+              </button>
+            </div>
+          </div>
           <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Genel Ayarlar · Logo</div>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
             <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
@@ -3696,6 +3711,9 @@ function Customers({filtersVisible=true}) {
   const [showCustomerModal,setShowCustomerModal]=useState(false);
   const [search,setSearch]=useState("");
   const [sortMode,setSortMode]=useState("name_asc");
+  const [contactFilter,setContactFilter]=useState("all");
+  const [updatedDateFrom,setUpdatedDateFrom]=useState("");
+  const [updatedDateTo,setUpdatedDateTo]=useState("");
   const [loading,setLoading]=useState(true);
 
   const load=useCallback(async()=>{
@@ -3737,20 +3755,68 @@ function Customers({filtersVisible=true}) {
   },[customers,load]);
 
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
-  const q=search.trim().toLowerCase();
-  const filtered=customers.filter(c=>
-    !q ||
-    (c.name||"").toLowerCase().includes(q) ||
-    (c.code||"").toLowerCase().includes(q) ||
-    (c.contact||"").toLowerCase().includes(q) ||
-    (c.phone||"").toLowerCase().includes(q)
-  );
-  const sortedCustomers=[...filtered].sort((a,b)=>{
+  const toYmd=value=>{
+    const raw=String(value||"").trim();
+    if(!raw) return "";
+    if(/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    if(/^\d{4}-\d{2}-\d{2}T/.test(raw)) return raw.slice(0,10);
+    const d=new Date(raw);
+    if(Number.isNaN(d.getTime())) return "";
+    return ymdLocal(d);
+  };
+  const inRange=(ymd,from,to)=>{
+    if(from&&(!ymd||ymd<from)) return false;
+    if(to&&(!ymd||ymd>to)) return false;
+    return true;
+  };
+  const hasContactInfo=row=>Boolean(String(row?.contact||"").trim()||String(row?.phone||"").trim()||String(row?.email||"").trim());
+  const q=String(search||"").trim().toLowerCase();
+  const customerFilterRows=customers.filter(row=>{
+    const textOk=!q||[
+      row.name||"",
+      row.code||"",
+      row.contact||"",
+      row.phone||"",
+      row.email||"",
+      row.notes||"",
+    ].join(" ").toLowerCase().includes(q);
+    const contactOk=contactFilter==="all"||(contactFilter==="with_contact"?hasContactInfo(row):!hasContactInfo(row));
+    const dateYmd=toYmd(row.updatedAt)||toYmd(row.createdAt);
+    const dateOk=inRange(dateYmd,updatedDateFrom,updatedDateTo);
+    return textOk&&contactOk&&dateOk;
+  });
+  const sortedCustomers=[...customerFilterRows].sort((a,b)=>{
     if(sortMode==="name_desc") return String(b.name||"").localeCompare(String(a.name||""),"tr");
     if(sortMode==="code_asc") return String(a.code||"").localeCompare(String(b.code||""),"tr");
     if(sortMode==="code_desc") return String(b.code||"").localeCompare(String(a.code||""),"tr");
     return String(a.name||"").localeCompare(String(b.name||""),"tr");
   });
+  const contactFilterCounts={
+    all:customers.length,
+    with_contact:customers.filter(row=>hasContactInfo(row)).length,
+    missing_contact:customers.filter(row=>!hasContactInfo(row)).length,
+  };
+  const contactFilterOptions=[
+    {id:"all",label:"Tum Musteriler"},
+    {id:"with_contact",label:"Iletisimi Olan"},
+    {id:"missing_contact",label:"Iletisimi Eksik"},
+  ];
+  const filterPanelStyle={
+    flex:"0 0 250px",
+    width:"100%",
+    maxWidth:280,
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    padding:12,
+    display:"flex",
+    flexDirection:"column",
+    gap:10,
+    minHeight:0,
+    overflowY:"auto",
+    overscrollBehavior:"contain",
+    scrollbarGutter:"stable",
+  };
 
   async function saveCustomer(){
     if(!form.name.trim()){alert("Firma adı zorunlu!");return;}
@@ -3811,7 +3877,7 @@ function Customers({filtersVisible=true}) {
     <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
       {showCustomerModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.68)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:54,padding:14}} onClick={()=>setShowCustomerModal(false)}>
-          <div style={{width:"100%",maxWidth:900,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0,maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+          <div style={{width:"100%",maxWidth:900,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:15,maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8,flexWrap:"wrap"}}>
               <div style={{fontWeight:700,color:C.text,fontSize:16}}>{editId?"Müşteri Düzenle":"Yeni Müşteri"}</div>
               <div style={{display:"flex",gap:8,alignItems:"center"}}>
@@ -3837,35 +3903,61 @@ function Customers({filtersVisible=true}) {
         </div>
       )}
 
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-        <div style={{fontSize:12,color:C.muted2}}>Kayıtlı Firma: {customers.length}</div>
-        {filtersVisible&&<input style={{...inputSt,padding:"7px 10px",fontSize:12,minWidth:220}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Firma adı, kod veya yetkili ara..."/>}
-      </div>
-
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
-        <div style={{display:"grid",gridTemplateColumns:"1.6fr 1fr 1fr auto",gap:10,padding:"10px 12px",fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700,background:C.surface,borderBottom:`1px solid ${C.border}`}}>
-          <div>Musteri</div>
-          <div>Iletisim</div>
-          <div>Kod</div>
-          <div style={{textAlign:"right"}}>Islem</div>
-        </div>
-        {sortedCustomers.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"22px 14px"}}>Müşteri bulunamadı</div>}
-        {sortedCustomers.map(c=>(
-          <div key={c.id} style={{display:"grid",gridTemplateColumns:"1.6fr 1fr 1fr auto",gap:10,padding:"11px 12px",borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
-            <div style={{minWidth:0}}>
-              <div style={{fontWeight:700,color:C.text,fontSize:13,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.name}</div>
-              {c.notes&&<div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.notes}</div>}
+      <div style={{display:"flex",gap:10,alignItems:"stretch",flexWrap:"wrap"}}>
+        {filtersVisible&&(
+          <div style={filterPanelStyle}>
+            <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Musteriler</div>
+            <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Firma, kod, iletisim ara"/>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Iletisim Durumu</div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {contactFilterOptions.map(opt=>(
+                <button
+                  key={opt.id}
+                  onClick={()=>setContactFilter(opt.id)}
+                  style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:contactFilter===opt.id?C.accent:C.border,color:contactFilter===opt.id?C.accent:C.text}}
+                >
+                  <span>{opt.label}</span>
+                  <span style={{fontSize:11,color:C.muted2}}>{contactFilterCounts[opt.id]||0}</span>
+                </button>
+              ))}
             </div>
-            <div style={{fontSize:12,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-              {c.contact||"-"} {c.phone?`· ${c.phone}`:""}
-            </div>
-            <div style={{fontSize:12,color:C.muted2}}>{c.code||"-"}</div>
-            <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
-              <button onClick={()=>startEdit(c)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
-              <button onClick={()=>removeCustomer(c)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
-            </div>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Guncelleme Tarihi</div>
+            <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={updatedDateFrom} onChange={e=>setUpdatedDateFrom(e.target.value||"")}/>
+            <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={updatedDateTo} onChange={e=>setUpdatedDateTo(e.target.value||"")}/>
+            <button onClick={()=>{setSearch("");setContactFilter("all");setUpdatedDateFrom("");setUpdatedDateTo("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
           </div>
-        ))}
+        )}
+        <div style={{flex:"1 1 760px",minWidth:0,display:"flex",flexDirection:"column",gap:8}}>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <div style={{fontSize:12,color:C.muted2}}>Musteriler ({sortedCustomers.length}/{customers.length})</div>
+          </div>
+
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1.6fr 1fr 1fr auto",gap:10,padding:"10px 12px",fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700,background:C.surface,borderBottom:`1px solid ${C.border}`}}>
+              <div>Musteri</div>
+              <div>Iletisim</div>
+              <div>Kod</div>
+              <div style={{textAlign:"right"}}>Islem</div>
+            </div>
+            {sortedCustomers.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"22px 14px"}}>Filtreye uygun musteri bulunamadi.</div>}
+            {sortedCustomers.map(c=>(
+              <div key={c.id} style={{display:"grid",gridTemplateColumns:"1.6fr 1fr 1fr auto",gap:10,padding:"11px 12px",borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
+                <div style={{minWidth:0}}>
+                  <div style={{fontWeight:700,color:C.text,fontSize:13,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.name}</div>
+                  {c.notes&&<div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.notes}</div>}
+                </div>
+                <div style={{fontSize:12,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                  {c.contact||"-"} {c.phone?` - ${c.phone}`:""} {c.email?` - ${c.email}`:""}
+                </div>
+                <div style={{fontSize:12,color:C.muted2}}>{c.code||"-"}</div>
+                <div style={{display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
+                  <button onClick={()=>startEdit(c)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
+                  <button onClick={()=>removeCustomer(c)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -4900,7 +4992,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
 
       {showPartModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.68)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:54,padding:14}} onClick={()=>setShowPartModal(false)}>
-          <div style={{width:"100%",maxWidth:980,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0,maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+          <div style={{width:"100%",maxWidth:980,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:15,maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8,flexWrap:"wrap"}}>
               <div style={{fontWeight:700,color:C.text,fontSize:16}}>Parca Tanimi</div>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -8294,6 +8386,29 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     };
   })();
   const opTheme=(()=>{
+    if(!kioskMode){
+      return {
+        shell:C.card,
+        shellGradient:C.card,
+        panel:C.surface,
+        panelGradient:C.surface,
+        panelDark:C.surface2,
+        panelDarkGradient:C.surface2,
+        panelSoft:C.surface,
+        panelSoftGradient:C.surface,
+        border:C.border,
+        borderStrong:C.border,
+        text:C.text,
+        textDim:C.muted,
+        textMuted:C.muted2,
+        cardBg:C.card,
+        cardBgSoft:C.surface2,
+        inputBg:C.card,
+        shadow:"0 10px 28px rgba(15,23,42,.07)",
+        danger:C.red,
+        warn:C.warn,
+      };
+    }
     if(statusMeta.mode==="running"){
       return {
         shell:"#0d1218",
@@ -8378,13 +8493,13 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     .slice(0,3);
   const entryRootStyle=kioskMode
     ? {padding:10,display:"flex",flexDirection:"column",gap:10,width:"100%",height:"100dvh",minHeight:"100vh",overflow:"hidden",background:opTheme.shellGradient}
-    : {padding:0,display:"flex",flexDirection:"column",gap:12};
+    : {padding:0,display:"flex",flexDirection:"column",gap:10};
   const shellStyle=kioskMode
     ? {background:opTheme.shellGradient,borderRadius:18,border:`1px solid ${opTheme.borderStrong}`,padding:10,display:"flex",flexDirection:"column",flex:1,minHeight:0,overflow:"hidden",boxShadow:opTheme.shadow}
-    : {background:opTheme.shell,borderRadius:18,border:`1px solid ${C.border}`,padding:10};
+    : {background:opTheme.shell,borderRadius:14,border:`1px solid ${C.border}`,padding:12,boxShadow:opTheme.shadow};
   const contentStackStyle=kioskMode
     ? {marginTop:10,display:"flex",flexDirection:"column",gap:10,flex:1,minHeight:0,overflowY:"auto",paddingRight:2}
-    : {marginTop:10,display:"flex",flexDirection:"column",gap:10};
+    : {marginTop:12,display:"flex",flexDirection:"column",gap:12};
   const opsPanelStyle=kioskMode
     ? {background:opTheme.panelGradient||opTheme.panel,border:`1px solid ${opTheme.borderStrong}`,borderRadius:12,padding:"12px 10px",display:"flex",flexDirection:"column",flex:1,minHeight:0,boxShadow:"inset 0 1px 0 rgba(255,255,255,.12)"}
     : {background:opTheme.panelGradient||opTheme.panel,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:"12px 10px"};
@@ -8402,7 +8517,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     : {background:opTheme.panelDarkGradient||opTheme.panelDark,border:`1px solid ${opTheme.border}`,borderRadius:12,padding:"10px 12px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8,alignItems:"center"};
   const topControlStyle=kioskMode
     ? {display:"flex",gap:6,justifyContent:"flex-end",alignItems:"center",flexWrap:"nowrap",gridColumn:"1 / -1",overflowX:"auto",paddingBottom:2}
-    : {display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"};
+    : {display:"flex",gap:6,justifyContent:"flex-start",flexWrap:"wrap",gridColumn:"1 / -1"};
   const infoPillStyle={background:opTheme.cardBgSoft,border:`1px solid ${opTheme.borderStrong}`,borderRadius:10,padding:"7px 10px",color:opTheme.text,fontSize:11,fontWeight:700};
   const machineChipStyle=(active)=>({
     ...chip(active,active?C.accent:C.muted2),
@@ -8423,8 +8538,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   });
   const sectionCardStyle=kioskMode
     ? {background:opTheme.cardBg,border:`1px solid ${opTheme.borderStrong}`,borderRadius:10,padding:10,boxShadow:"inset 0 1px 0 rgba(255,255,255,.08)"}
-    : {background:"rgba(0,0,0,.1)",border:`1px solid ${opTheme.border}`,borderRadius:10,padding:10};
-  const rowCardStyle={background:opTheme.cardBgSoft,border:`1px solid ${opTheme.borderStrong}`,borderRadius:8,padding:"6px 7px"};
+    : {background:opTheme.cardBg,border:`1px solid ${opTheme.border}`,borderRadius:10,padding:10};
+  const rowCardStyle={background:opTheme.cardBgSoft,border:`1px solid ${opTheme.borderStrong}`,borderRadius:8,padding:"7px 8px"};
   const themedInputStyle={background:opTheme.inputBg,borderColor:opTheme.borderStrong,color:opTheme.text};
   const statStripStyle={display:"grid",gridTemplateColumns:kioskMode?"repeat(4,minmax(0,1fr))":"repeat(auto-fit,minmax(140px,1fr))",gap:8};
   function fmtDurationLong(totalSec){
@@ -8889,7 +9004,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
         )}
         {showToolModal&&(
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={()=>setShowToolModal(false)}>
-            <div style={{width:"100%",maxWidth:680,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0}} onClick={e=>e.stopPropagation()}>
+            <div style={{width:"100%",maxWidth:680,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:15}} onClick={e=>e.stopPropagation()}>
               <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>Takım Değişimi</div>
               <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
                 <div style={{flex:"1 1 260px"}}>
@@ -8912,7 +9027,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
         )}
         {showShiftModal&&(
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={closeShiftModal}>
-            <div style={{width:"100%",maxWidth:560,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0}} onClick={e=>e.stopPropagation()}>
+            <div style={{width:"100%",maxWidth:560,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:15}} onClick={e=>e.stopPropagation()}>
               <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>{shiftModalMode==="rejectOnly"?"Hata Girişi":"Vardiya Sonu"}</div>
               <div style={{display:"flex",gap:10}}>
                 {shiftModalMode!=="rejectOnly"&&<div style={{flex:1}}><span style={labelSt}>? Doğru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>}
@@ -8952,6 +9067,17 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   return (
     <div style={entryRootStyle}>
       <div style={shellStyle}>
+        {!kioskMode&&(
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap",marginBottom:10}}>
+            <div>
+              <div style={{fontSize:17,fontWeight:800,color:C.text}}>Uretim Girisi</div>
+              <div style={{fontSize:12,color:C.muted2,marginTop:2}}>Tezgah, is emri ve vardiya bazli hizli operator kaydi.</div>
+            </div>
+            <div style={{fontSize:12,color:C.muted2,padding:"7px 10px",border:`1px solid ${C.border}`,borderRadius:999,background:C.surface2}}>
+              {selectedDateLabel}
+            </div>
+          </div>
+        )}
         <div style={topInfoGridStyle}>
           <div>
             <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.7,textTransform:"uppercase"}}>Tezgah</div>
@@ -9017,7 +9143,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
           <div style={opsPanelStyle}>
             <div style={opsGridStyle}>
               <div style={{...sectionCardStyle,...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
-              <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>KURULUM</div>
+              <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>Kurulum</div>
               <button onClick={openToolChangeModal} style={{...btnSt("ghost"),width:"100%",padding:"12px 10px",fontSize:13,borderColor:opTheme.borderStrong,color:opTheme.text,background:opTheme.cardBgSoft,fontWeight:700}}>Takım Değişimi</button>
               <div style={{marginTop:8,fontSize:12,color:opTheme.textDim,textAlign:"center"}}>
                 {machineToolPicked?`${machineToolPicked.code||machineToolPicked.name} x${Math.max(1,Number(form.machineToolQty)||1)}`:"Takım seçilmedi"}
@@ -9035,7 +9161,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             </div>
 
               <div style={{...sectionCardStyle,...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
-              <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>URETIM</div>
+              <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>Uretim</div>
               <div>
                 <span style={{...labelSt,color:opTheme.textMuted}}>İş Emri</span>
                 {form.selectedOrder?(
@@ -9083,7 +9209,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             </div>
 
               <div style={{...sectionCardStyle,...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
-              <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>ARIZA / DURUS</div>
+              <div style={{fontSize:16,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>Ariza ve Durus</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 <div style={{...rowCardStyle,padding:"8px 9px",textAlign:"center"}}>
                   <div style={{fontSize:10,color:opTheme.textMuted}}>Kalite</div>
@@ -9118,7 +9244,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
           </div>
 
           <div style={stockPanelStyle}>
-            <div style={{fontSize:19,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>STOK BILGILERI</div>
+            <div style={{fontSize:19,fontWeight:800,color:opTheme.text,textAlign:"center",marginBottom:8}}>Stok Bilgileri</div>
             <div style={stockGridStyle}>
               <div style={{...sectionCardStyle,padding:"10px 9px",...(kioskMode?{display:"flex",flexDirection:"column",minHeight:0}:{})}}>
               <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.6,textTransform:"uppercase",marginBottom:6}}>İş Emri Teknik Dokümanları ({selectedOrderFiles.length})</div>
@@ -9164,10 +9290,14 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
           </div>
         </div>
       </div>
-      {!kioskMode&&<div style={{fontSize:12,color:C.muted2}}>Uretim kaydi <strong>Vardiya Sonu</strong> onayinda, takim degisimi ise modal onayinda anlik olusur.</div>}
+      {!kioskMode&&(
+        <div style={{fontSize:12,color:C.muted2,background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 11px"}}>
+          Uretim kaydi <strong>Vardiya Sonu</strong> onayinda, takim degisimi ise modal onayinda anlik olusur.
+        </div>
+      )}
       {showToolModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={()=>setShowToolModal(false)}>
-          <div style={{width:"100%",maxWidth:680,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0}} onClick={e=>e.stopPropagation()}>
+          <div style={{width:"100%",maxWidth:680,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:15}} onClick={e=>e.stopPropagation()}>
             <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>Takım Değişimi</div>
             <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
               <div style={{flex:"1 1 260px"}}>
@@ -9190,7 +9320,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
       )}
       {showShiftModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={()=>setShowShiftModal(false)}>
-          <div style={{width:"100%",maxWidth:560,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0}} onClick={e=>e.stopPropagation()}>
+          <div style={{width:"100%",maxWidth:560,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:15}} onClick={e=>e.stopPropagation()}>
             <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>Vardiya Sonu</div>
             <div style={{display:"flex",gap:10}}>
               <div style={{flex:1}}><span style={labelSt}>? Doğru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>
@@ -9224,13 +9354,13 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
         </div>
       )}
       {!kioskMode&&todayEntries.length>0&&(
-        <div>
-          <span style={{...labelSt,marginTop:4}}>Seçili Gün Girişlerim</span>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:8}}>Secili Gun Girislerim ({Math.min(todayEntries.length,5)})</div>
           {todayEntries.slice(0,5).map(e=>{
             const p=calcPerf(e.correct,e.wrong,e.partSec);
             const machineToolQty=Number(e.machineToolQty??e.machineToolChange??0);
             return (
-              <div key={e.id} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",marginBottom:8}}>
+              <div key={e.id} style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 12px",marginBottom:8}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <div><span style={{fontWeight:700,fontSize:13,fontFamily:"monospace",color:C.text}}>{e.jobCode}</span><span style={{fontSize:12,color:C.muted2,marginLeft:6}}>{e.jobName}</span></div>
                   <div style={{display:"flex",gap:5}}><Badge label={e.machine} color={C.accent}/><Badge label={shiftWindowMap[e.shift]?.label||e.shift||"-"} color={C.muted2}/></div>
@@ -9251,6 +9381,11 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               </div>
             );
           })}
+        </div>
+      )}
+      {!kioskMode&&todayEntries.length===0&&(
+        <div style={{background:C.surface2,border:`1px dashed ${C.border}`,borderRadius:10,padding:"12px 14px",fontSize:12,color:C.muted2}}>
+          Secili gunde kayit bulunmuyor.
         </div>
       )}
     </div>
@@ -9740,6 +9875,15 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
     chartType:"column",
     maxItems:"10",
   });
+  const [analyticsSource,setAnalyticsSource]=useState("entries");
+  const [analyticsRowDimension,setAnalyticsRowDimension]=useState("machine");
+  const [analyticsColDimension,setAnalyticsColDimension]=useState("__all");
+  const [analyticsMetric,setAnalyticsMetric]=useState("totalParts");
+  const [analyticsAggregation,setAnalyticsAggregation]=useState("sum");
+  const [analyticsTopN,setAnalyticsTopN]=useState("12");
+  const [analyticsSortMode,setAnalyticsSortMode]=useState("desc");
+  const [analyticsView,setAnalyticsView]=useState("pivot");
+  const [analyticsSearch,setAnalyticsSearch]=useState("");
   const [loading,setLoading]=useState(true);
 
   const sortReports=useCallback((rows=[])=>[...rows].sort((a,b)=>{
@@ -9791,6 +9935,32 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
   useEffect(()=>{
     if(reportPage==="detail"&&!selectedCustomReportId) setReportPage("list");
   },[reportPage,selectedCustomReportId]);
+  useEffect(()=>{
+    const src=REPORT_SOURCE_DEFS[analyticsSource]||REPORT_SOURCE_DEFS.entries;
+    const dims=src.dimensions.map(d=>d.id);
+    const mets=src.metrics.map(m=>m.id);
+    if(!dims.includes(analyticsRowDimension)){
+      setAnalyticsRowDimension(src.dimensions[0]?.id||"__all");
+    }
+    if(!mets.includes(analyticsMetric)){
+      setAnalyticsMetric(src.metrics[0]?.id||"__count");
+    }
+  },[analyticsSource]);
+  useEffect(()=>{
+    const src=REPORT_SOURCE_DEFS[analyticsSource]||REPORT_SOURCE_DEFS.entries;
+    const metricDef=src.metrics.find(m=>m.id===analyticsMetric)||src.metrics[0];
+    const aggs=metricDef?.aggs||["sum"];
+    if(!aggs.includes(analyticsAggregation)){
+      setAnalyticsAggregation(aggs[0]);
+    }
+  },[analyticsSource,analyticsMetric,analyticsAggregation]);
+  useEffect(()=>{
+    const src=REPORT_SOURCE_DEFS[analyticsSource]||REPORT_SOURCE_DEFS.entries;
+    const allowedCols=["__all",...src.dimensions.map(d=>d.id).filter(id=>id!==analyticsRowDimension)];
+    if(!allowedCols.includes(analyticsColDimension)){
+      setAnalyticsColDimension("__all");
+    }
+  },[analyticsSource,analyticsRowDimension,analyticsColDimension]);
 
   function applyRangePreset(type){
     const end=todayStr();
@@ -9941,6 +10111,15 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
   function formatMetricNumber(value){
     const n=safeNum(value);
     return n.toLocaleString("tr-TR",{maximumFractionDigits:2});
+  }
+  function aggregateNumeric(values,mode="sum",isCountMetric=false){
+    const arr=Array.isArray(values)?values:[];
+    if(isCountMetric) return arr.length;
+    if(arr.length===0) return 0;
+    if(mode==="avg") return arr.reduce((s,v)=>s+safeNum(v),0)/arr.length;
+    if(mode==="max") return Math.max(...arr.map(v=>safeNum(v)));
+    if(mode==="min") return Math.min(...arr.map(v=>safeNum(v)));
+    return arr.reduce((s,v)=>s+safeNum(v),0);
   }
   function normalizeCustomConfig(raw){
     const source=REPORT_SOURCE_DEFS[raw?.source]?raw.source:"entries";
@@ -10132,18 +10311,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
       grouped[label].push(cfg.metric==="__count"?1:safeNum(row[cfg.metric]));
     });
     let data=Object.entries(grouped).map(([label,values])=>{
-      let value=0;
-      if(cfg.metric==="__count"){
-        value=values.length;
-      }else if(cfg.aggregation==="avg"){
-        value=values.length?values.reduce((s,v)=>s+v,0)/values.length:0;
-      }else if(cfg.aggregation==="max"){
-        value=values.length?Math.max(...values):0;
-      }else if(cfg.aggregation==="min"){
-        value=values.length?Math.min(...values):0;
-      }else{
-        value=values.reduce((s,v)=>s+v,0);
-      }
+      const value=aggregateNumeric(values,cfg.aggregation,cfg.metric==="__count");
       return {label,value,count:values.length};
     }).sort((a,b)=>b.value-a.value);
     if(cfg.chartType!=="table") data=data.slice(0,cfg.maxItems);
@@ -10156,6 +10324,134 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
     if(selectedCustomReport) return aggregateCustomReport(selectedCustomReport);
     return null;
   },[selectedCustomReport,showBuilder,reportForm,sourceRows,period,rangeEnabled,fromDate,toDate]);
+  const analyticsSourceDef=REPORT_SOURCE_DEFS[analyticsSource]||REPORT_SOURCE_DEFS.entries;
+  const analyticsMetricDef=analyticsSourceDef.metrics.find(m=>m.id===analyticsMetric)||analyticsSourceDef.metrics[0];
+  const analyticsRowDimDef=analyticsSourceDef.dimensions.find(d=>d.id===analyticsRowDimension)||analyticsSourceDef.dimensions[0];
+  const analyticsColDimDef=analyticsColDimension==="__all"
+    ? {id:"__all",label:"Toplam Kolon"}
+    : (analyticsSourceDef.dimensions.find(d=>d.id===analyticsColDimension)||{id:"__all",label:"Toplam Kolon"});
+  const analyticsColumnOptions=[
+    {id:"__all",label:"Toplam Kolon"},
+    ...analyticsSourceDef.dimensions.filter(d=>d.id!==analyticsRowDimension),
+  ];
+  const analyticsQuery=String(analyticsSearch||"").trim().toLowerCase();
+  const analyticsBaseRows=useMemo(()=>{
+    let rows=[...(sourceRows[analyticsSource]||[])];
+    const dateField=analyticsSourceDef.dateField;
+    if(dateField){
+      rows=rows.filter(row=>{
+        const ymd=normalizeDateYmd(row[dateField]);
+        if(!ymd) return true;
+        return inCurrentWindow(ymd);
+      });
+    }
+    if(!analyticsQuery) return rows;
+    return rows.filter(row=>{
+      const txt=Object.values(row||{}).map(v=>String(v??"")).join(" ").toLowerCase();
+      return txt.includes(analyticsQuery);
+    });
+  },[sourceRows,analyticsSource,analyticsSourceDef.dateField,analyticsQuery,period,rangeEnabled,fromDate,toDate]);
+  const analyticsPivot=useMemo(()=>{
+    const rowId=analyticsRowDimension||"__all";
+    const colId=analyticsColDimension||"__all";
+    const isCountMetric=analyticsMetric==="__count";
+    const topN=Math.max(3,Math.min(80,Math.floor(safeNum(analyticsTopN)||12)));
+    const matrix={};
+    const colSet=new Set();
+    const toDimLabel=(value)=>(
+      value===undefined||value===null||String(value).trim()===""?"(Bos)":String(value)
+    );
+    analyticsBaseRows.forEach(row=>{
+      const rowLabel=rowId==="__all"?"Toplam":toDimLabel(row[rowId]);
+      const colLabel=colId==="__all"?"Toplam":toDimLabel(row[colId]);
+      colSet.add(colLabel);
+      if(!matrix[rowLabel]) matrix[rowLabel]={};
+      if(!matrix[rowLabel][colLabel]) matrix[rowLabel][colLabel]=[];
+      matrix[rowLabel][colLabel].push(isCountMetric?1:safeNum(row[analyticsMetric]));
+    });
+    const columns=colId==="__all"
+      ? ["Toplam"]
+      : [...colSet].sort((a,b)=>String(a).localeCompare(String(b),"tr"));
+    const rowItems=Object.entries(matrix).map(([label,cells])=>{
+      const colValues=Object.fromEntries(columns.map(col=>[
+        col,
+        aggregateNumeric(cells[col]||[],analyticsAggregation,isCountMetric),
+      ]));
+      const total=Object.values(colValues).reduce((s,v)=>s+safeNum(v),0);
+      const recordCount=Object.values(cells).reduce((s,arr)=>s+(Array.isArray(arr)?arr.length:0),0);
+      return {label,colValues,total,recordCount};
+    }).sort((a,b)=>{
+      const delta=safeNum(a.total)-safeNum(b.total);
+      if(delta!==0) return analyticsSortMode==="asc"?delta:-delta;
+      return String(a.label).localeCompare(String(b.label),"tr");
+    });
+    const visibleRows=rowItems.slice(0,topN);
+    const colTotals=Object.fromEntries(columns.map(col=>[
+      col,
+      visibleRows.reduce((s,row)=>s+safeNum(row.colValues[col]),0),
+    ]));
+    const grandTotal=Object.values(colTotals).reduce((s,v)=>s+safeNum(v),0);
+    const metricSeries=analyticsBaseRows.map(row=>isCountMetric?1:safeNum(row[analyticsMetric]));
+    const metricSum=metricSeries.reduce((s,v)=>s+safeNum(v),0);
+    const metricAvg=metricSeries.length?metricSum/metricSeries.length:0;
+    const rowDistinct=new Set(analyticsBaseRows.map(row=>rowId==="__all"?"Toplam":toDimLabel(row[rowId]))).size;
+    const colDistinct=colId==="__all"?1:new Set(analyticsBaseRows.map(row=>toDimLabel(row[colId]))).size;
+    const maxCell=Math.max(0,...visibleRows.flatMap(r=>columns.map(col=>safeNum(r.colValues[col]))));
+    return {
+      topN,
+      rows:visibleRows,
+      columns,
+      colTotals,
+      grandTotal,
+      metricSum,
+      metricAvg,
+      rowDistinct,
+      colDistinct,
+      maxCell,
+      totalRows:analyticsBaseRows.length,
+    };
+  },[analyticsBaseRows,analyticsRowDimension,analyticsColDimension,analyticsMetric,analyticsAggregation,analyticsTopN,analyticsSortMode]);
+  function exportAnalyticsPivotCsv(){
+    const rows=analyticsPivot.rows||[];
+    const cols=analyticsPivot.columns||[];
+    if(rows.length===0){
+      alert("Disa aktarim icin satir yok.");
+      return;
+    }
+    const csvCols=[
+      {label:analyticsRowDimDef?.label||"Satir",key:"rowLabel"},
+      ...cols.map((col,idx)=>({label:col,key:`c_${idx}`})),
+      {label:"Satir Toplami",key:"rowTotal"},
+      {label:"Kayit",key:"recordCount"},
+    ];
+    const csvRows=rows.map(row=>{
+      const out={rowLabel:row.label,rowTotal:row.total,recordCount:row.recordCount};
+      cols.forEach((col,idx)=>{ out[`c_${idx}`]=row.colValues[col]||0; });
+      return out;
+    });
+    downloadCsv(
+      `analytics-${analyticsSource}-${todayStr()}.csv`,
+      csvCols,
+      csvRows
+    );
+  }
+  function openAnalyticsInBuilder(){
+    const chartType=analyticsView==="table"?"table":"column";
+    setReportForm({
+      name:`${analyticsSourceDef.label} ${analyticsRowDimDef?.label||"Analiz"} Ozeti`,
+      source:analyticsSource,
+      dimension:analyticsRowDimension,
+      metric:analyticsMetric,
+      aggregation:analyticsAggregation,
+      chartType,
+      maxItems:String(analyticsPivot.topN||12),
+    });
+    setEditingReportId("");
+    setSelectedCustomReportId("");
+    setShowBuilder(true);
+    setReportPage("builder");
+    window.scrollTo({top:0,behavior:"smooth"});
+  }
   function renderCustomReportView(preview){
     if(!preview) return null;
     if(preview.rowCount===0){
@@ -10336,6 +10632,168 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
             <button onClick={()=>{const t=todayStr();setFromDate(t);setToDate(t);}} style={{...btnSt("ghost"),padding:"9px 11px",fontSize:12,marginBottom:1}}>Bugün</button>
             </div>
           </div>
+        )}
+      </div>
+      <div style={{...panelStyle,padding:"12px 14px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,flexWrap:"wrap",marginBottom:10}}>
+          <div>
+            <div style={sectionCaptionStyle}>Analytics Studio</div>
+            <div style={{fontSize:13,color:C.text,fontWeight:700,marginTop:2}}>Zoho tarzi pivot ve karsilastirmali analiz</div>
+          </div>
+          <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+            <Badge label={`${analyticsPivot.totalRows} Kayit`} color={C.accent}/>
+            <Badge label={`${analyticsPivot.rows.length} Satir`} color={C.muted2}/>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8,marginBottom:8}}>
+          <div>
+            <span style={labelSt}>Veri Kaynagi</span>
+            <select style={inputSt} value={analyticsSource} onChange={e=>setAnalyticsSource(e.target.value)}>
+              {Object.entries(REPORT_SOURCE_DEFS).map(([id,def])=><option key={id} value={id}>{def.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <span style={labelSt}>Satir Boyutu</span>
+            <select style={inputSt} value={analyticsRowDimension} onChange={e=>setAnalyticsRowDimension(e.target.value)}>
+              {analyticsSourceDef.dimensions.map(dim=><option key={dim.id} value={dim.id}>{dim.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <span style={labelSt}>Kolon Boyutu</span>
+            <select style={inputSt} value={analyticsColDimension} onChange={e=>setAnalyticsColDimension(e.target.value)}>
+              {analyticsColumnOptions.map(dim=><option key={dim.id} value={dim.id}>{dim.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <span style={labelSt}>Olcum</span>
+            <select style={inputSt} value={analyticsMetric} onChange={e=>setAnalyticsMetric(e.target.value)}>
+              {analyticsSourceDef.metrics.map(metric=><option key={metric.id} value={metric.id}>{metric.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <span style={labelSt}>Toplama</span>
+            <select style={inputSt} value={analyticsAggregation} onChange={e=>setAnalyticsAggregation(e.target.value)}>
+              {(analyticsMetricDef?.aggs||["sum"]).map(agg=><option key={agg} value={agg}>{agg.toUpperCase()}</option>)}
+            </select>
+          </div>
+          <div>
+            <span style={labelSt}>Satir Limiti</span>
+            <input style={inputSt} type="number" min="3" max="80" value={analyticsTopN} onChange={e=>setAnalyticsTopN(e.target.value)}/>
+          </div>
+          <div>
+            <span style={labelSt}>Siralama</span>
+            <select style={inputSt} value={analyticsSortMode} onChange={e=>setAnalyticsSortMode(e.target.value)}>
+              <option value="desc">Yuksekten Dusuge</option>
+              <option value="asc">Dusukten Yuksege</option>
+            </select>
+          </div>
+          <div>
+            <span style={labelSt}>Arama</span>
+            <input style={inputSt} value={analyticsSearch} onChange={e=>setAnalyticsSearch(e.target.value)} placeholder="kayitlarda ara"/>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:10}}>
+          {[
+            ["pivot","Pivot"],
+            ["heatmap","Heatmap"],
+            ["bars","Bar"],
+            ["table","Tablo"],
+          ].map(([id,label])=>(
+            <button key={id} onClick={()=>setAnalyticsView(id)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,borderColor:analyticsView===id?C.accent:C.border,color:analyticsView===id?C.accent:C.text}}>
+              {label}
+            </button>
+          ))}
+          <button onClick={exportAnalyticsPivotCsv} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>CSV Indir</button>
+          <button onClick={openAnalyticsInBuilder} style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}>Rapor Olusturucuya Aktar</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8,marginBottom:10}}>
+          <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:9,padding:"8px 10px"}}>
+            <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Olcum Toplami</div>
+            <div style={{fontSize:18,color:C.text,fontWeight:800,marginTop:2}}>{formatMetricNumber(analyticsPivot.metricSum)}</div>
+          </div>
+          <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:9,padding:"8px 10px"}}>
+            <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>Olcum Ortalama</div>
+            <div style={{fontSize:18,color:C.text,fontWeight:800,marginTop:2}}>{formatMetricNumber(analyticsPivot.metricAvg)}</div>
+          </div>
+          <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:9,padding:"8px 10px"}}>
+            <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>{analyticsRowDimDef?.label||"Satir"} Adedi</div>
+            <div style={{fontSize:18,color:C.text,fontWeight:800,marginTop:2}}>{analyticsPivot.rowDistinct}</div>
+          </div>
+          <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:9,padding:"8px 10px"}}>
+            <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase"}}>{analyticsColDimDef?.label||"Kolon"} Adedi</div>
+            <div style={{fontSize:18,color:C.text,fontWeight:800,marginTop:2}}>{analyticsPivot.colDistinct}</div>
+          </div>
+        </div>
+        {analyticsPivot.totalRows===0?(
+          <div style={{padding:"16px 12px",border:`1px dashed ${C.border}`,borderRadius:10,color:C.muted2,fontSize:12,background:C.surface2}}>
+            Secili filtrede analytics kaydi bulunamadi.
+          </div>
+        ):(
+          <>
+            {(analyticsView==="pivot"||analyticsView==="table"||analyticsView==="heatmap")&&(
+              <div style={{overflowX:"auto",border:`1px solid ${C.border}`,borderRadius:10}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:780}}>
+                  <thead>
+                    <tr style={{background:C.surface2,color:C.muted2,textAlign:"left"}}>
+                      <th style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`}}>{analyticsRowDimDef?.label||"Satir"}</th>
+                      {analyticsPivot.columns.map(col=>(
+                        <th key={col} style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`,textAlign:"right"}}>{col}</th>
+                      ))}
+                      <th style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`,textAlign:"right"}}>Toplam</th>
+                      <th style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`,textAlign:"right"}}>Kayit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {analyticsPivot.rows.map(row=>(
+                      <tr key={row.label} style={{borderBottom:`1px solid ${C.border}`}}>
+                        <td style={{padding:"8px 10px",color:C.text,fontWeight:600}}>{row.label}</td>
+                        {analyticsPivot.columns.map(col=>{
+                          const cellVal=safeNum(row.colValues[col]);
+                          const cellPct=analyticsPivot.maxCell>0?cellVal/analyticsPivot.maxCell:0;
+                          const cellBg=analyticsView==="heatmap"
+                            ? `rgba(43,127,255,${(0.08+(cellPct*0.35)).toFixed(3)})`
+                            : "transparent";
+                          return (
+                            <td key={col} style={{padding:"8px 10px",color:C.text,textAlign:"right",background:cellBg}}>
+                              {formatMetricNumber(cellVal)}
+                            </td>
+                          );
+                        })}
+                        <td style={{padding:"8px 10px",color:C.text,textAlign:"right",fontWeight:700}}>{formatMetricNumber(row.total)}</td>
+                        <td style={{padding:"8px 10px",color:C.muted2,textAlign:"right"}}>{row.recordCount}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{background:C.surface2,color:C.text,fontWeight:700}}>
+                      <td style={{padding:"8px 10px",borderTop:`1px solid ${C.border}`}}>Genel Toplam</td>
+                      {analyticsPivot.columns.map(col=>(
+                        <td key={col} style={{padding:"8px 10px",borderTop:`1px solid ${C.border}`,textAlign:"right"}}>{formatMetricNumber(analyticsPivot.colTotals[col]||0)}</td>
+                      ))}
+                      <td style={{padding:"8px 10px",borderTop:`1px solid ${C.border}`,textAlign:"right"}}>{formatMetricNumber(analyticsPivot.grandTotal)}</td>
+                      <td style={{padding:"8px 10px",borderTop:`1px solid ${C.border}`,textAlign:"right"}}>{analyticsPivot.totalRows}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+            {analyticsView==="bars"&&(
+              <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                {analyticsPivot.rows.map((row,i)=>{
+                  const pct=analyticsPivot.grandTotal>0?(safeNum(row.total)/analyticsPivot.grandTotal)*100:0;
+                  return (
+                    <div key={row.label} style={{display:"grid",gridTemplateColumns:"1.3fr 2fr auto",gap:8,alignItems:"center"}}>
+                      <div style={{color:C.text,fontSize:12,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{i+1}. {row.label}</div>
+                      <div style={{height:10,background:C.surface2,border:`1px solid ${C.border}`,borderRadius:999,overflow:"hidden"}}>
+                        <div style={{width:`${Math.max(4,pct)}%`,height:"100%",background:CORPORATE_CHART_PALETTE[i%CORPORATE_CHART_PALETTE.length]}}/>
+                      </div>
+                      <div style={{color:C.text,fontSize:12,fontWeight:700}}>{formatMetricNumber(row.total)}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
       </div>
       <div style={{...panelStyle,padding:"12px 14px"}}>
@@ -12181,7 +12639,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       )}
       {showPlanModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.68)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:54,padding:14}} onClick={()=>setShowPlanModal(false)}>
-          <div style={{width:"100%",maxWidth:640,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0}} onClick={e=>e.stopPropagation()}>
+          <div style={{width:"100%",maxWidth:640,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:15}} onClick={e=>e.stopPropagation()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8}}>
               <div style={{fontWeight:700,color:C.text,fontSize:16}}>{editId?"Planlama Düzenle":"Yeni Planlama"}</div>
               {editId&&<Badge label="Düzenleme" color={C.warn}/>}
@@ -12226,7 +12684,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       )}
       {showMpsModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.68)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:53,padding:14}} onClick={()=>setShowMpsModal(false)}>
-          <div style={{width:"100%",maxWidth:920,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0,maxHeight:"88vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+          <div style={{width:"100%",maxWidth:920,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:15,maxHeight:"88vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8,flexWrap:"wrap"}}>
               <div style={{fontWeight:700,color:C.text,fontSize:16}}>MPS Calistir</div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -13219,7 +13677,6 @@ function MRPDashboard({
   machines=DEFAULT_MACHINES,
   logoSrc=LOGO_SRC,
   themeMode="light",
-  onThemeToggle=()=>{},
   onLogout=()=>{},
   onQuickAction=()=>{},
   roleLabel="Kullanici",
@@ -13598,6 +14055,16 @@ function MRPDashboard({
   const pendingPr=data.prs.filter(r=>!["received","cancelled","closed"].includes(r.status||""));
   const unresolvedNotifs=data.notifs.filter(n=>!["resolved","closed"].includes(n.status||""));
   const lowLifeTools=data.tools.filter(t=>t.remainingLifePct!==undefined&&t.remainingLifePct!==null&&safeNum(t.remainingLifePct)<=20);
+  const dashboardNotifCount=useMemo(()=>{
+    const uid=String(currentUser?.id||"").trim();
+    return (data.notifs||[]).filter(n=>{
+      const status=String(n?.status||"new").toLowerCase();
+      if(status!=="new") return false;
+      const target=String(n?.targetUserId||"").trim();
+      if(!target) return true;
+      return Boolean(uid)&&target===uid;
+    }).length;
+  },[data.notifs,currentUser?.id]);
 
   const latestTelemetry={};
   [...data.telemetry].sort((a,b)=>(b.collectedAtUtc||"").localeCompare(a.collectedAtUtc||"")).forEach(t=>{
@@ -13737,10 +14204,9 @@ function MRPDashboard({
     {id:"table",label:"Tablo",icon:"\u25A4"},
   ];
   const quickActions=[
-    {id:"notif",label:"Bildirimler",icon:"\uD83D\uDD14"},
-    {id:"calendar",label:"Takvim",icon:"\uD83D\uDCC5"},
-    {id:"mail",label:"Mesajlar",icon:"\u2709"},
-    {id:"settings",label:"Ayarlar",icon:"\u2699"},
+    {id:"notif",label:"Bildirimler",icon:"notifications"},
+    {id:"calendar",label:"Takvim",icon:"planning"},
+    {id:"mail",label:"Mesajlar",icon:"sales"},
   ];
   const hasReportWidgets=dashboardWidgetRows.length>0;
   const showReportWidgetArea=hasReportWidgets||dashboardEditMode;
@@ -13795,18 +14261,20 @@ function MRPDashboard({
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <div style={{position:"relative",minWidth:isNarrow?190:250}}>
-              <span style={{position:"absolute",left:10,top:8,color:commandBarTone.heroMuted,fontSize:13}}>{"\uD83D\uDD0D"}</span>
+              <span style={{position:"absolute",left:10,top:7,width:15,height:15,color:commandBarTone.heroMuted,display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon name="search" size={14}/></span>
               <input value={machineQuery} onChange={e=>setMachineQuery(e.target.value)} placeholder="Kayitlarda ara..." style={{...inputSt,padding:"8px 10px 8px 30px",fontSize:12,minWidth:isNarrow?190:250,background:commandBarTone.heroFieldBg,borderColor:commandBarTone.heroFieldBorder,color:commandBarTone.heroText}}/>
             </div>
             <button onClick={()=>setDashboardEditMode(v=>!v)} title="Yeni aksiyon" style={{border:`1px solid ${commandBarTone.heroChipBorder}`,background:commandBarTone.heroChipBg,color:commandBarTone.heroText,padding:"8px 10px",fontSize:14,minWidth:34,borderRadius:8,cursor:"pointer"}}>{dashboardEditMode?"×":"+"}</button>
             {quickActions.map(act=>(
-              <button key={act.id} onClick={()=>onQuickAction(act.id)} title={act.label} style={{border:`1px solid ${commandBarTone.heroChipBorder}`,background:commandBarTone.heroChipBg,color:commandBarTone.heroText,padding:"7px 9px",fontSize:13,minWidth:34,borderRadius:8,cursor:"pointer"}}>
-                {act.icon}
+              <button key={act.id} onClick={()=>onQuickAction(act.id)} title={act.label} style={{position:"relative",border:`1px solid ${commandBarTone.heroChipBorder}`,background:commandBarTone.heroChipBg,color:commandBarTone.heroText,padding:"7px 9px",fontSize:13,minWidth:34,borderRadius:8,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center"}}>
+                <span style={{width:16,height:16,display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon name={act.icon} size={14}/></span>
+                {act.id==="notif"&&dashboardNotifCount>0&&(
+                  <span style={{position:"absolute",top:-6,right:-6,minWidth:16,height:16,padding:"0 4px",borderRadius:999,background:"#ef4444",color:"#fff",fontSize:10,fontWeight:800,display:"inline-flex",alignItems:"center",justifyContent:"center",lineHeight:1.1,border:`1px solid ${commandBarTone.heroBg}`}}>
+                    {dashboardNotifCount>99?"99+":dashboardNotifCount}
+                  </span>
+                )}
               </button>
             ))}
-            <button onClick={onThemeToggle} style={{border:`1px solid ${commandBarTone.heroChipBorder}`,background:commandBarTone.heroChipBg,color:commandBarTone.heroText,padding:"7px 10px",fontSize:12,borderRadius:8,cursor:"pointer",minWidth:98}}>
-              {themeMode==="dark"?"Acik Tema":"Koyu Tema"}
-            </button>
             <button onClick={onLogout} style={{border:`1px solid ${commandBarTone.heroChipBorder}`,background:commandBarTone.heroChipBg,color:commandBarTone.heroText,padding:"7px 10px",fontSize:12,borderRadius:8,cursor:"pointer",minWidth:72}}>
               Cikis
             </button>
@@ -16530,6 +16998,7 @@ function App() {
   const [purchaseFilterOpen,setPurchaseFilterOpen]=useState(true);
   const [partsFilterOpen,setPartsFilterOpen]=useState(true);
   const [financeFilterOpen,setFinanceFilterOpen]=useState(true);
+  const [topNotifCount,setTopNotifCount]=useState(0);
   const [globalSortMode,setGlobalSortMode]=useState("group");
   const [topContentSortMode,setTopContentSortMode]=useState("date_desc");
   const [globalViewMode,setGlobalViewMode]=useState("cards");
@@ -16637,6 +17106,40 @@ function App() {
     return ()=>{
       clearInterval(timer);
       evts.forEach(evt=>window.removeEventListener(evt,updateTouch));
+    };
+  },[currentUser]);
+  useEffect(()=>{
+    if(!currentUser){
+      setTopNotifCount(0);
+      return;
+    }
+    let alive=true;
+    const uid=String(currentUser?.id||"").trim();
+    const loadNotifCount=async()=>{
+      const rows=await window.DB.getAll("notifications");
+      if(!alive) return;
+      const count=(rows||[]).filter(n=>{
+        const status=String(n?.status||"new").toLowerCase();
+        if(status!=="new") return false;
+        const target=String(n?.targetUserId||"").trim();
+        if(!target) return true;
+        return Boolean(uid)&&target===uid;
+      }).length;
+      setTopNotifCount(count);
+    };
+    loadNotifCount();
+    const timer=setInterval(loadNotifCount,30000);
+    const onVisibility=()=>{
+      if(typeof document==="undefined") return;
+      if(document.visibilityState==="visible") loadNotifCount();
+    };
+    window.addEventListener("focus",loadNotifCount);
+    if(typeof document!=="undefined") document.addEventListener("visibilitychange",onVisibility);
+    return ()=>{
+      alive=false;
+      clearInterval(timer);
+      window.removeEventListener("focus",loadNotifCount);
+      if(typeof document!=="undefined") document.removeEventListener("visibilitychange",onVisibility);
     };
   },[currentUser]);
 
@@ -16941,8 +17444,8 @@ function App() {
     if(tab==="rapor") return <Report currentUser={currentUser} machines={machines}/>;
     if(tab==="tools") return <ToolStock currentUser={currentUser} machines={machines} filtersVisible={toolsFilterOpen}/>;
     if(tab==="orders") return <WorkOrders currentUser={currentUser} machines={machines} filtersVisible={ordersFilterOpen}/>;
-    if(tab==="users") return <AdminUsers currentUser={currentUser} machines={machines} currentLogo={logoSrc} onLogoUpdate={updateLogo} menuCatalog={allTabs} menuVisibility={menuVisibility} onMenuVisibilityChange={setMenuVisibility}/>;
-    if(tab==="dashboard") return <MRPDashboard currentUser={currentUser} machines={machines} logoSrc={logoSrc} themeMode={themeMode} onThemeToggle={()=>updateTheme(themeMode==="dark"?"light":"dark")} onLogout={logout} onQuickAction={handleTopQuickAction} roleLabel={currentRoleLabel} layoutMode={layoutMode}/>;
+    if(tab==="users") return <AdminUsers currentUser={currentUser} machines={machines} currentLogo={logoSrc} onLogoUpdate={updateLogo} themeMode={themeMode} onThemeModeChange={updateTheme} menuCatalog={allTabs} menuVisibility={menuVisibility} onMenuVisibilityChange={setMenuVisibility}/>;
+    if(tab==="dashboard") return <MRPDashboard currentUser={currentUser} machines={machines} logoSrc={logoSrc} themeMode={themeMode} onLogout={logout} onQuickAction={handleTopQuickAction} roleLabel={currentRoleLabel} layoutMode={layoutMode}/>;
     if(tab==="cncmonitor") return <CncMonitorWall currentUser={currentUser} machines={machines}/>;
     if(tab==="mrp") return <MRPRunModule currentUser={currentUser}/>;
     if(tab==="quotes") return <SalesManagement currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")} defaultView="quotes" filtersVisible={salesFilterOpen}/>;
@@ -17129,10 +17632,9 @@ function App() {
     );
   };
   const topQuickActions=[
-    {id:"notif",label:"Bildirimler",icon:"\uD83D\uDD14"},
-    {id:"calendar",label:"Takvim",icon:"\uD83D\uDCC5"},
-    {id:"mail",label:"Mesajlar",icon:"\u2709"},
-    {id:"settings",label:"Ayarlar",icon:"\u2699"},
+    {id:"notif",label:"Bildirimler",icon:"notifications",showMobile:true},
+    {id:"calendar",label:"Takvim",icon:"planning"},
+    {id:"mail",label:"Mesajlar",icon:"sales"},
   ];
   const topViewChoices=[
     {id:"cards",label:"Kartlar",icon:"\u25A6"},
@@ -17193,7 +17695,6 @@ function App() {
     if(actionId==="notif"){switchToTabIfVisible("notifications");return;}
     if(actionId==="calendar"){switchToTabIfVisible("planning");return;}
     if(actionId==="mail"){switchToTabIfVisible("sales");return;}
-    if(actionId==="settings"){switchToTabIfVisible("users");}
   }
   function applyTopViewMode(modeId){
     setGlobalViewMode(modeId);
@@ -17268,7 +17769,7 @@ function App() {
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
           <div style={{position:"relative",minWidth:isMobile?0:250,flex:isMobile?"1 1 100%":"0 0 auto"}}>
-            <span style={{position:"absolute",left:10,top:8,color:appCommandBarTone.heroMuted,fontSize:13}}>{"\uD83D\uDD0D"}</span>
+            <span style={{position:"absolute",left:10,top:7,width:15,height:15,color:appCommandBarTone.heroMuted,display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon name="search" size={14}/></span>
             <input value={menuQuery} onChange={e=>setMenuQuery(e.target.value)} placeholder="Modul veya kayit ara..." style={{...inputSt,padding:"8px 10px 8px 30px",fontSize:12,minWidth:isMobile?0:250,width:isMobile?"100%":undefined,background:appCommandBarTone.heroFieldBg,borderColor:appCommandBarTone.heroFieldBorder,color:appCommandBarTone.heroText}}/>
           </div>
           {isMobile&&(
@@ -17276,14 +17777,16 @@ function App() {
               Menu
             </button>
           )}
-          {!isMobile&&topQuickActions.map(act=>(
-            <button key={act.id} onClick={()=>handleTopQuickAction(act.id)} title={act.label} style={{border:`1px solid ${appCommandBarTone.heroChipBorder}`,background:appCommandBarTone.heroChipBg,color:appCommandBarTone.heroText,padding:"7px 9px",fontSize:13,minWidth:34,borderRadius:8,cursor:"pointer"}}>
-              {act.icon}
+          {topQuickActions.filter(act=>!isMobile||act.showMobile).map(act=>(
+            <button key={act.id} onClick={()=>handleTopQuickAction(act.id)} title={act.label} style={{position:"relative",border:`1px solid ${appCommandBarTone.heroChipBorder}`,background:appCommandBarTone.heroChipBg,color:appCommandBarTone.heroText,padding:"7px 9px",fontSize:13,minWidth:34,borderRadius:8,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center"}}>
+              <span style={{width:16,height:16,display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon name={act.icon} size={14}/></span>
+              {act.id==="notif"&&topNotifCount>0&&(
+                <span style={{position:"absolute",top:-6,right:-6,minWidth:16,height:16,padding:"0 4px",borderRadius:999,background:"#ef4444",color:"#fff",fontSize:10,fontWeight:800,display:"inline-flex",alignItems:"center",justifyContent:"center",lineHeight:1.1,border:`1px solid ${appCommandBarTone.heroBg}`}}>
+                  {topNotifCount>99?"99+":topNotifCount}
+                </span>
+              )}
             </button>
           ))}
-          <button onClick={()=>updateTheme(themeMode==="dark"?"light":"dark")} style={{border:`1px solid ${appCommandBarTone.heroChipBorder}`,background:appCommandBarTone.heroChipBg,color:appCommandBarTone.heroText,padding:"7px 10px",fontSize:12,borderRadius:8,cursor:"pointer",minWidth:isMobile?64:98}}>
-            {isMobile?"Tema":(themeMode==="dark"?"Acik Tema":"Koyu Tema")}
-          </button>
           <button onClick={logout} style={{border:`1px solid ${appCommandBarTone.heroChipBorder}`,background:appCommandBarTone.heroChipBg,color:appCommandBarTone.heroText,padding:"7px 10px",fontSize:12,borderRadius:8,cursor:"pointer",minWidth:isMobile?58:72}}>
             Cikis
           </button>
