@@ -5808,8 +5808,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
       {partPage==="list"&&(
         <>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <div style={{fontWeight:700,color:C.text}}>Parca Kutuphanesi</div>
+          <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
               {selectedPart&&<Badge label={`Secili: ${selectedPart.partNo}`} color={C.accent}/>}
               {selectedPart&&<button onClick={()=>openEditPartModal(selectedPart)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11}}>Seciliyi Duzenle</button>}
@@ -5837,11 +5836,11 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
             )}
             <div style={partListColumnStyle}>
               <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                <TableColumnEditor
-                  title="Parca Kutuphanesi"
-                  columns={partListTableColumns}
-                  onToggle={togglePartListTableColumn}
-                  onMove={movePartListTableColumn}
+              <TableColumnEditor
+                title="Parca Listesi"
+                columns={partListTableColumns}
+                onToggle={togglePartListTableColumn}
+                onMove={movePartListTableColumn}
                   onReset={resetPartListTableColumns}
                 />
                 <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginLeft:"auto"}}>
@@ -18926,7 +18925,7 @@ function App() {
     {id:"quotes",tabId:"quotes",eventTab:"quotes",label:"Teklif",hint:"Satis teklifi"},
     {id:"sales",tabId:"sales",eventTab:"sales",label:"Satis Siparisi",hint:"Musteri siparisi"},
     {id:"planning",tabId:"planning",eventTab:"planning",label:"Planlama",hint:"Plan kaydi"},
-    {id:"parts",tabId:"parts",eventTab:"parts",label:"Parca",hint:"Parca kutuphanesi"},
+    {id:"parts",tabId:"parts",eventTab:"parts",label:"Parca",hint:"Parca kaydi"},
     {id:"materials",tabId:"materials",eventTab:"materials",label:"Malzeme",hint:"Malzeme karti"},
     {id:"tools",tabId:"tools",eventTab:"tools",label:"Takim",hint:"Takim kaydi"},
     {id:"customers",tabId:"customers",eventTab:"customers",label:"Musteri",hint:"Musteri karti"},
