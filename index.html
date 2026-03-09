@@ -86,6 +86,9 @@ function sanitizeForFirestore(value) {
   if(typeof value==="number"){
     return Number.isFinite(value)?value:0;
   }
+  if(typeof value==="string"){
+    return repairMojibakeString(value);
+  }
   if(value instanceof Date){
     return value.toISOString();
   }
@@ -94,6 +97,39 @@ function sanitizeForFirestore(value) {
     Object.entries(value).forEach(([k,v])=>{
       const sv=sanitizeForFirestore(v);
       if(sv!==undefined) out[k]=sv;
+    });
+    return out;
+  }
+  return value;
+}
+function repairMojibakeString(input){
+  const raw=String(input??"");
+  if(!raw) return raw;
+  const replacements=[
+    ["Ã‡","Ç"],["Ã§","ç"],
+    ["Ä°","İ"],["Ä±","ı"],
+    ["Ã–","Ö"],["Ã¶","ö"],
+    ["Ãœ","Ü"],["Ã¼","ü"],
+    ["Åž","Ş"],["ÅŸ","ş"],
+    ["Äž","Ğ"],["ÄŸ","ğ"],
+    ["â€™","'"],["â€˜","'"],
+    ["â€œ","\""],["â€","\""],
+    ["â€“","-"],["â€”","-"],
+  ];
+  let out=raw;
+  replacements.forEach(([from,to])=>{
+    out=out.split(from).join(to);
+  });
+  return out;
+}
+function repairMojibakeDeep(value){
+  if(value===undefined||value===null) return value;
+  if(typeof value==="string") return repairMojibakeString(value);
+  if(Array.isArray(value)) return value.map(item=>repairMojibakeDeep(item));
+  if(typeof value==="object"){
+    const out={};
+    Object.entries(value).forEach(([k,v])=>{
+      out[k]=repairMojibakeDeep(v);
     });
     return out;
   }
@@ -114,7 +150,7 @@ window.DB = {
     try {
       const s = await getDoc(doc(db, col, id));
       lastDbError="";
-      return s.exists() ? { id: s.id, ...s.data() } : null;
+      return s.exists() ? repairMojibakeDeep({ id: s.id, ...s.data() }) : null;
     } catch(e) {
       setLastDbError(e);
       console.error("DB.getDoc error",col,id,e);
@@ -136,7 +172,7 @@ window.DB = {
     try {
       const s = await getDocs(collection(db, col));
       lastDbError="";
-      return s.docs.map(d => ({ id: d.id, ...d.data() }));
+      return s.docs.map(d => repairMojibakeDeep({ id: d.id, ...d.data() }));
     } catch(e) {
       setLastDbError(e);
       console.error("DB.getAll error",col,e);
@@ -481,11 +517,11 @@ const THEME_PRESETS = {
   dark:{
     bg:"#16181C", bgAlt:"#1C2025",
     surface:"#232830", surface2:"#1E232A", card:"#272D35", border:"#3A414C",
-    accent:"#8FA2B6", accentDim:"#2E3742", brandTint:"#303946",
-    green:"#7FA08F", greenDim:"#2F3B35",
-    red:"#C19397", redDim:"#413338",
-    warn:"#B7A483", warnDim:"#3E3930",
-    purple:"#9A92AE",
+    accent:"#57BE90", accentDim:"#E4F4EE", brandTint:"#E8F6F8",
+    green:"#57BE90", greenDim:"#E4F4EE",
+    red:"#015249", redDim:"#DDEAE8",
+    warn:"#79C9D4", warnDim:"#E6F4F7",
+    purple:"#79C9D4",
     text:"#ECEFF3", muted:"#B9C0CA", muted2:"#8D95A1",
   },
 };
@@ -802,11 +838,11 @@ function normalizeMenuVisibilityConfig(raw){
   return {hiddenTabs};
 }
 const DEFAULT_ROUTING_OPERATION_TYPES = [
-  { id:"op10", code:"OP-10", name:"Kesim ve Hazirlik", icon:"KS", color:"#57BE90", defaultSetupSec:300, defaultCycleSec:60, sortOrder:10 },
-  { id:"op20", code:"OP-20", name:"Kaba Isleme", icon:"KB", color:"#79C9D4", defaultSetupSec:240, defaultCycleSec:90, sortOrder:20 },
-  { id:"op30", code:"OP-30", name:"Finis Isleme", icon:"FN", color:"#015249", defaultSetupSec:180, defaultCycleSec:80, sortOrder:30 },
-  { id:"op40", code:"OP-40", name:"Delik Delme ve Klavuz", icon:"DL", color:"#A5A5AF", defaultSetupSec:120, defaultCycleSec:45, sortOrder:40 },
-  { id:"op50", code:"OP-50", name:"Olcum ve Kontrol", icon:"QC", color:"#4AB587", defaultSetupSec:90, defaultCycleSec:30, sortOrder:50 },
+  { id:"op10", code:"OP-10", name:"Kesim ve Hazırlık", icon:"KS", color:"#57BE90", defaultSetupSec:300, defaultCycleSec:60, sortOrder:10 },
+  { id:"op20", code:"OP-20", name:"Kaba İşleme", icon:"KB", color:"#79C9D4", defaultSetupSec:240, defaultCycleSec:90, sortOrder:20 },
+  { id:"op30", code:"OP-30", name:"Finiş İşleme", icon:"FN", color:"#015249", defaultSetupSec:180, defaultCycleSec:80, sortOrder:30 },
+  { id:"op40", code:"OP-40", name:"Delik Delme ve Kılavuz", icon:"DL", color:"#A5A5AF", defaultSetupSec:120, defaultCycleSec:45, sortOrder:40 },
+  { id:"op50", code:"OP-50", name:"Ölçüm ve Kontrol", icon:"QC", color:"#4AB587", defaultSetupSec:90, defaultCycleSec:30, sortOrder:50 },
 ];
 const OPERATION_ICON_OPTIONS = ["KS","KB","FN","DL","QC","TR","FR","MZ","PN","AS"];
 const LEGACY_OPERATION_ICON_MAP = {
@@ -3898,6 +3934,11 @@ function ToolStock({currentUser,filtersVisible=true}) {
   const [updatedDateTo,setUpdatedDateTo]=useState("");
   const [toolRowsPerPage,setToolRowsPerPage]=useState(10);
   const [toolListPageIdx,setToolListPageIdx]=useState(1);
+  const toolListPanelRef=useRef(null);
+  const {
+    height:toolListPanelHeight,
+    isNarrow:toolListPanelsStacked,
+  }=useViewportPanelMetrics(toolListPanelRef,{minHeight:340,bottomGap:14,narrowWidth:1180});
 
   const load=useCallback(async()=>{
     const [rows,ords,mvs]=await Promise.all([
@@ -4184,6 +4225,21 @@ function ToolStock({currentUser,filtersVisible=true}) {
   const categoryOptions=(form.category&& !TOOL_CATEGORY_OPTIONS.includes(form.category))
     ? [...TOOL_CATEGORY_OPTIONS,form.category]
     : TOOL_CATEGORY_OPTIONS;
+  const toolSplitWrapStyle={
+    display:"flex",
+    gap:10,
+    alignItems:toolListPanelsStacked?"flex-start":"stretch",
+    flexWrap:"wrap",
+    ...(toolListPanelsStacked
+      ? {}
+      : {
+        height:toolListPanelHeight,
+        maxHeight:toolListPanelHeight,
+        flex:1,
+        minHeight:0,
+        overflow:"hidden",
+      }),
+  };
   const filterPanelStyle={
     flex:"0 0 250px",
     width:"100%",
@@ -4195,11 +4251,41 @@ function ToolStock({currentUser,filtersVisible=true}) {
     display:"flex",
     flexDirection:"column",
     gap:10,
-    minHeight:0,
-    overflowY:"auto",
-    overscrollBehavior:"contain",
-    scrollbarGutter:"stable",
+    ...(toolListPanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+        overflowY:"auto",
+        overscrollBehavior:"contain",
+        scrollbarGutter:"stable",
+      }),
   };
+  const toolListColumnStyle={
+    flex:"1 1 760px",
+    minWidth:0,
+    display:"flex",
+    flexDirection:"column",
+    gap:8,
+    ...(toolListPanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+      }),
+  };
+  const toolTableCardStyle={
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:14,
+    overflow:"hidden",
+    display:"flex",
+    flexDirection:"column",
+    ...(toolListPanelsStacked?{}:{flex:1,minHeight:0}),
+  };
+  const toolTableScrollStyle=toolListPanelsStacked
+    ? {overflowX:"auto"}
+    : {overflow:"auto",flex:1,minHeight:0,overscrollBehavior:"contain"};
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
 
@@ -4244,7 +4330,7 @@ function ToolStock({currentUser,filtersVisible=true}) {
         </div>
       )}
 
-      <div style={{display:"flex",gap:10,alignItems:"stretch",flexWrap:"wrap"}}>
+      <div ref={toolListPanelRef} style={toolSplitWrapStyle}>
         {filtersVisible&&(
           <div style={filterPanelStyle}>
             <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Takimlar</div>
@@ -4268,7 +4354,7 @@ function ToolStock({currentUser,filtersVisible=true}) {
             <button onClick={()=>{setStockFilter("all");setUpdatedDateFrom("");setUpdatedDateTo("");setSearch("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
           </div>
         )}
-        <div style={{flex:"1 1 760px",minWidth:0,display:"flex",flexDirection:"column",gap:8}}>
+        <div style={toolListColumnStyle}>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <TableColumnEditor
               title="Takim Stok Tablosu"
@@ -4291,8 +4377,8 @@ function ToolStock({currentUser,filtersVisible=true}) {
           </div>
           {sortedTools.length===0&&<div style={{textAlign:"center",color:C.muted2,padding:"30px 20px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>Sonuc yok</div>}
           {sortedTools.length>0&&(
-            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden"}}>
-              <div style={{overflowX:"auto"}}>
+            <div style={toolTableCardStyle}>
+              <div style={toolTableScrollStyle}>
                 <table style={{width:"100%",borderCollapse:"collapse",minWidth:toolStockTableMinWidth}}>
                   <thead>
                     <tr style={{background:C.surface2,borderBottom:`1px solid ${C.border}`}}>
@@ -4375,6 +4461,11 @@ function Customers({filtersVisible=true}) {
   const [updatedDateFrom,setUpdatedDateFrom]=useState("");
   const [updatedDateTo,setUpdatedDateTo]=useState("");
   const [loading,setLoading]=useState(true);
+  const customerListPanelRef=useRef(null);
+  const {
+    height:customerListPanelHeight,
+    isNarrow:customerListPanelsStacked,
+  }=useViewportPanelMetrics(customerListPanelRef,{minHeight:340,bottomGap:14,narrowWidth:1180});
 
   const load=useCallback(async()=>{
     const list=await window.DB.getAll("customers");
@@ -4461,6 +4552,21 @@ function Customers({filtersVisible=true}) {
     {id:"with_contact",label:"Iletisimi Olan"},
     {id:"missing_contact",label:"Iletisimi Eksik"},
   ];
+  const customerSplitWrapStyle={
+    display:"flex",
+    gap:10,
+    alignItems:customerListPanelsStacked?"flex-start":"stretch",
+    flexWrap:"wrap",
+    ...(customerListPanelsStacked
+      ? {}
+      : {
+        height:customerListPanelHeight,
+        maxHeight:customerListPanelHeight,
+        flex:1,
+        minHeight:0,
+        overflow:"hidden",
+      }),
+  };
   const filterPanelStyle={
     flex:"0 0 250px",
     width:"100%",
@@ -4472,11 +4578,41 @@ function Customers({filtersVisible=true}) {
     display:"flex",
     flexDirection:"column",
     gap:10,
-    minHeight:0,
-    overflowY:"auto",
-    overscrollBehavior:"contain",
-    scrollbarGutter:"stable",
+    ...(customerListPanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+        overflowY:"auto",
+        overscrollBehavior:"contain",
+        scrollbarGutter:"stable",
+      }),
   };
+  const customerListColumnStyle={
+    flex:"1 1 760px",
+    minWidth:0,
+    display:"flex",
+    flexDirection:"column",
+    gap:8,
+    ...(customerListPanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+      }),
+  };
+  const customerTableCardStyle={
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    overflow:"hidden",
+    display:"flex",
+    flexDirection:"column",
+    ...(customerListPanelsStacked?{}:{flex:1,minHeight:0}),
+  };
+  const customerTableScrollStyle=customerListPanelsStacked
+    ? {overflowX:"auto"}
+    : {overflow:"auto",flex:1,minHeight:0,overscrollBehavior:"contain"};
   const {
     columns:customerTableColumns,
     visibleColumns:visibleCustomerTableColumns,
@@ -4602,7 +4738,7 @@ function Customers({filtersVisible=true}) {
         </div>
       )}
 
-      <div style={{display:"flex",gap:10,alignItems:"stretch",flexWrap:"wrap"}}>
+      <div ref={customerListPanelRef} style={customerSplitWrapStyle}>
         {filtersVisible&&(
           <div style={filterPanelStyle}>
             <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Musteriler</div>
@@ -4626,7 +4762,7 @@ function Customers({filtersVisible=true}) {
             <button onClick={()=>{setSearch("");setContactFilter("all");setUpdatedDateFrom("");setUpdatedDateTo("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
           </div>
         )}
-        <div style={{flex:"1 1 760px",minWidth:0,display:"flex",flexDirection:"column",gap:8}}>
+        <div style={customerListColumnStyle}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"flex-start"}}>
             <TableColumnEditor
               title="Musteri Listesi"
@@ -4637,13 +4773,13 @@ function Customers({filtersVisible=true}) {
             />
           </div>
 
-          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
-            <div style={{overflowX:"auto"}}>
+          <div style={customerTableCardStyle}>
+            <div style={customerTableScrollStyle}>
               <table style={{width:"100%",borderCollapse:"collapse",minWidth:customerTableMinWidth}}>
                 <thead>
                   <tr style={{background:C.surface,borderBottom:`1px solid ${C.border}`}}>
                     {visibleCustomerTableColumns.map(col=>(
-                      <th key={col.id} style={{padding:"10px 12px",fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700,textAlign:col.align||"left",whiteSpace:"nowrap"}}>
+                      <th key={col.id} style={{padding:"10px 12px",fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700,textAlign:col.align||"left",whiteSpace:"nowrap",position:"sticky",top:0,zIndex:2,background:C.surface}}>
                         {col.label}
                       </th>
                     ))}
@@ -5686,27 +5822,25 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
         </div>
         {partPage==="list"&&(
           <>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <TableColumnEditor
-              title="Parca Kutuphanesi"
-              columns={partListTableColumns}
-              onToggle={togglePartListTableColumn}
-              onMove={movePartListTableColumn}
-              onReset={resetPartListTableColumns}
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+          <TableColumnEditor
+            title="Parca Kutuphanesi"
+            columns={partListTableColumns}
+            onToggle={togglePartListTableColumn}
+            onMove={movePartListTableColumn}
+            onReset={resetPartListTableColumns}
+          />
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginLeft:"auto"}}>
+            <div style={{fontSize:12,color:C.muted2}}>Gosterilen Kayit: {pagedParts.length} / {filteredParts.length}</div>
+            <ListRowPager
+              rowsPerPage={partRowsPerPage}
+              page={partListPageIdx}
+              pageCount={partTotalPages}
+              onRowsPerPageChange={setPartRowsPerPage}
+              onPrev={()=>setPartListPageIdx(p=>Math.max(1,p-1))}
+              onNext={()=>setPartListPageIdx(p=>Math.min(partTotalPages,p+1))}
+              options={[10,20]}
             />
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <span style={{fontSize:11,color:C.muted2}}>Satir</span>
-              <select style={{...inputSt,width:78,padding:"5px 6px",fontSize:12}} value={partRowsPerPage} onChange={e=>setPartRowsPerPage(Math.max(1,Number(e.target.value)||10))}>
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-              </select>
-              <button onClick={()=>setPartListPageIdx(p=>Math.max(1,p-1))} disabled={partListPageIdx<=1} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:12,opacity:partListPageIdx<=1?0.6:1}}>{"<"}</button>
-              <div style={{fontSize:11,color:C.muted2,minWidth:56,textAlign:"center"}}>{partListPageIdx}/{partTotalPages}</div>
-              <button onClick={()=>setPartListPageIdx(p=>Math.min(partTotalPages,p+1))} disabled={partListPageIdx>=partTotalPages} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:12,opacity:partListPageIdx>=partTotalPages?0.6:1}}>{">"}</button>
-            </div>
           </div>
         </div>
         <div ref={partListPanelRef} style={partSplitWrapStyle}>
@@ -10364,7 +10498,7 @@ function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule})
     setEntries(e.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
     let typeRows=dt;
     if(typeRows.length===0){
-      const seeds=[["DT-ARIZA","Ariza","ariza"],["DT-MAT","Malzeme Yok","malzeme"],["DT-PROG","Program Hatasi","program"],["DT-MOLA","Mola","mola"],["DT-TEM","Temizlik","temizlik"]];
+      const seeds=[["DT-ARIZA","Arıza","ariza"],["DT-MAT","Malzeme Yok","malzeme"],["DT-PROG","Program Hatası","program"],["DT-MOLA","Mola","mola"],["DT-TEM","Temizlik","temizlik"]];
       for(const [code,name,cat] of seeds){
         await window.DB.addDoc("downtimeTypes",{code,name,category:cat,requireReason:true,notifyMaintenance:cat==="ariza",updatedAt:new Date().toISOString()});
       }
@@ -15812,6 +15946,11 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
   const [purchaseRequestPageIdx,setPurchaseRequestPageIdx]=useState(1);
   const [purchaseOrderRowsPerPage,setPurchaseOrderRowsPerPage]=useState(10);
   const [purchaseOrderPageIdx,setPurchaseOrderPageIdx]=useState(1);
+  const supplierListPanelRef=useRef(null);
+  const {
+    height:supplierListPanelHeight,
+    isNarrow:supplierListPanelsStacked,
+  }=useViewportPanelMetrics(supplierListPanelRef,{minHeight:340,bottomGap:14,narrowWidth:1180});
 
   const load=useCallback(async()=>{
     const [s,m,r,q,p,gr,groupDoc]=await Promise.all([
@@ -16175,7 +16314,21 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
     if(s!==0) return s;
     return (a.name||"").localeCompare(b.name||"","tr");
   });
-  const splitWrapStyle={display:"flex",gap:10,alignItems:"flex-start",flexWrap:"wrap"};
+  const splitWrapStyle={
+    display:"flex",
+    gap:10,
+    alignItems:supplierListPanelsStacked?"flex-start":"stretch",
+    flexWrap:"wrap",
+    ...(supplierListPanelsStacked
+      ? {}
+      : {
+        height:supplierListPanelHeight,
+        maxHeight:supplierListPanelHeight,
+        flex:1,
+        minHeight:0,
+        overflow:"hidden",
+      }),
+  };
   const filterPanelStyle={
     flex:"0 0 250px",
     width:"100%",
@@ -16187,6 +16340,15 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
     display:"flex",
     flexDirection:"column",
     gap:10,
+    ...(supplierListPanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+        overflowY:"auto",
+        overscrollBehavior:"contain",
+        scrollbarGutter:"stable",
+      }),
   };
   const listColumnStyle={
     flex:"1 1 760px",
@@ -16194,7 +16356,25 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
     display:"flex",
     flexDirection:"column",
     gap:12,
+    ...(supplierListPanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+      }),
   };
+  const supplierListCardStyle={
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:14,
+    padding:14,
+    display:"flex",
+    flexDirection:"column",
+    ...(supplierListPanelsStacked?{}:{flex:1,minHeight:0}),
+  };
+  const supplierListScrollStyle=supplierListPanelsStacked
+    ? {}
+    : {overflow:"auto",flex:1,minHeight:0,overscrollBehavior:"contain",paddingRight:2};
   const {
     columns:purchaseRequestTableColumns,
     visibleColumns:visiblePurchaseRequestTableColumns,
@@ -16298,10 +16478,10 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
 
   return (
-    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
       {view==="suppliers"&&(
         <>
-          <div style={splitWrapStyle}>
+          <div ref={supplierListPanelRef} style={splitWrapStyle}>
             {filtersVisible&&(
               <div style={filterPanelStyle}>
                 <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Tedarikciler</div>
@@ -16316,7 +16496,7 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
               </div>
             )}
             <div style={listColumnStyle}>
-              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+              <div style={supplierListCardStyle}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
                   <TableColumnEditor
                     title="Tedarikci Performans Tablosu"
@@ -16344,37 +16524,39 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
                     />
                   </div>
                 </div>
-                {supplierPerfGroups.map(group=>(
-                  <div key={group.id} style={{border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden",marginBottom:8}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",background:C.surface,borderBottom:`1px solid ${C.border}`}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8}}>
-                        <span style={{width:10,height:10,borderRadius:99,background:normalizeHexColor(group.color,"#64748b"),display:"inline-block"}}/>
-                        <div style={{fontSize:12,color:C.text,fontWeight:700}}>{group.name}</div>
+                <div style={supplierListScrollStyle}>
+                  {supplierPerfGroups.map(group=>(
+                    <div key={group.id} style={{border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden",marginBottom:8}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",background:C.surface,borderBottom:`1px solid ${C.border}`}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8}}>
+                          <span style={{width:10,height:10,borderRadius:99,background:normalizeHexColor(group.color,"#64748b"),display:"inline-block"}}/>
+                          <div style={{fontSize:12,color:C.text,fontWeight:700}}>{group.name}</div>
+                        </div>
+                        <div style={{fontSize:11,color:C.muted2}}>{group.rows.length} tedarikci</div>
                       </div>
-                      <div style={{fontSize:11,color:C.muted2}}>{group.rows.length} tedarikci</div>
-                    </div>
-                    <div style={{overflowX:"auto"}}>
-                      <table style={{width:"100%",minWidth:supplierPerfTableMinWidth,borderCollapse:"collapse",fontSize:12}}>
-                        <thead>
-                          <tr style={{background:C.surface2,color:C.muted2,textAlign:"left"}}>
-                            {visibleSupplierPerfTableColumns.map(col=>(
-                              <th key={col.id} style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`,textAlign:col.align||"left",whiteSpace:"nowrap"}}>{col.label}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {group.rows.map(s=>(
-                            <tr key={s.id} style={{borderBottom:`1px solid ${C.border}`}}>
-                              {visibleSupplierPerfTableColumns.map(col=>renderSupplierPerfCell(s,col))}
+                      <div style={{overflowX:"auto"}}>
+                        <table style={{width:"100%",minWidth:supplierPerfTableMinWidth,borderCollapse:"collapse",fontSize:12}}>
+                          <thead>
+                            <tr style={{background:C.surface2,color:C.muted2,textAlign:"left"}}>
+                              {visibleSupplierPerfTableColumns.map(col=>(
+                                <th key={col.id} style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`,textAlign:col.align||"left",whiteSpace:"nowrap",position:"sticky",top:0,zIndex:2,background:C.surface2}}>{col.label}</th>
+                              ))}
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {group.rows.map(s=>(
+                              <tr key={s.id} style={{borderBottom:`1px solid ${C.border}`}}>
+                                {visibleSupplierPerfTableColumns.map(col=>renderSupplierPerfCell(s,col))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
-                  </div>
-                ))}
-                {supplierPerf.length>0&&supplierPerfGroups.length===0&&<div style={{fontSize:12,color:C.muted2}}>Filtreye uygun tedarikci kaydi yok.</div>}
-                {supplierPerf.length===0&&<div style={{fontSize:12,color:C.muted2}}>Kayitli tedarikci yok.</div>}
+                  ))}
+                  {supplierPerf.length>0&&supplierPerfGroups.length===0&&<div style={{fontSize:12,color:C.muted2}}>Filtreye uygun tedarikci kaydi yok.</div>}
+                  {supplierPerf.length===0&&<div style={{fontSize:12,color:C.muted2}}>Kayitli tedarikci yok.</div>}
+                </div>
               </div>
             </div>
           </div>
@@ -16598,7 +16780,7 @@ function DowntimeModule({currentUser,machines=DEFAULT_MACHINES}){
     const [t,e]=await Promise.all([window.DB.getAll("downtimeTypes"),window.DB.getAll("downtimeEvents")]);
     setTypes(t); setEvents(e);
     if(t.length===0){
-      const seeds=[["DT-ARIZA","Ariza","ariza"],["DT-MAT","Malzeme Yok","malzeme"],["DT-PROG","Program Hatasi","program"],["DT-MOLA","Mola","mola"],["DT-TEM","Temizlik","temizlik"]];
+      const seeds=[["DT-ARIZA","Arıza","ariza"],["DT-MAT","Malzeme Yok","malzeme"],["DT-PROG","Program Hatası","program"],["DT-MOLA","Mola","mola"],["DT-TEM","Temizlik","temizlik"]];
       for(const [code,name,cat] of seeds){
         await window.DB.addDoc("downtimeTypes",{code,name,category:cat,requireReason:true,notifyMaintenance:cat==="ariza",updatedAt:new Date().toISOString()});
       }

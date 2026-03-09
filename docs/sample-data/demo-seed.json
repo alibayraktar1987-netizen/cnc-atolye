@@ -3,7 +3,7 @@
     {
       "id": "itm_001",
       "code": "PRD-001",
-      "name": "Flans Govde",
+      "name": "Flanş Gövde",
       "itemType": "finished",
       "uom": "adet",
       "safetyStock": 20,
@@ -13,7 +13,7 @@
     {
       "id": "itm_002",
       "code": "RAW-001",
-      "name": "AISI 304 Cubuk",
+      "name": "AISI 304 Çubuk",
       "itemType": "raw_material",
       "uom": "kg",
       "safetyStock": 100,
@@ -64,4 +64,3 @@
     }
   ]
 }
-
