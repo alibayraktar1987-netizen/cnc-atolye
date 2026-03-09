@@ -575,12 +575,6 @@ function applyAppFavicon(src){
   applyLink("factorab-favicon","icon");
   applyLink("factorab-favicon-shortcut","shortcut icon");
 }
-function isCustomBrandLogo(src){
-  const value=String(src||"").trim();
-  if(!value) return false;
-  if(value===LOGO_SRC) return false;
-  return true;
-}
 const SESSION_TIMEOUT_MIN = 30;
 const USER_ROLES = [
   { id:"admin", label:"Admin" },
@@ -1795,19 +1789,15 @@ const btnSt=(v="primary")=>({border:`1px solid ${v==="primary"?C.accent:v==="dan
      v==="ghost"?{background:C.surface,color:C.text}:
      {background:C.surface2,color:C.text})});
 function FactorabMark({size=26,variant="dark"}){
-  const palette=variant==="light"
-    ? {hex:FACTORAB_ORANGE,main:FACTORAB_INK,top:FACTORAB_ORANGE,mid:FACTORAB_INK,dot:FACTORAB_ORANGE}
-    : (variant==="filled"
-      ? {hex:"rgba(255,255,255,.42)",main:"#ffffff",top:"#ffffff",mid:"rgba(255,255,255,.68)",dot:"#ffffff"}
-      : {hex:FACTORAB_ORANGE,main:FACTORAB_WHITE,top:FACTORAB_ORANGE,mid:FACTORAB_WHITE,dot:FACTORAB_ORANGE});
-  const sw=size<=22?3.1:3.6;
+  const palette=variant==="filled"
+    ? {bg:"rgba(255,255,255,.18)",fg:"#ffffff",stroke:"rgba(255,255,255,.42)"}
+    : (variant==="light"
+      ? {bg:FACTORAB_ORANGE,fg:"#ffffff",stroke:"none"}
+      : {bg:FACTORAB_ORANGE,fg:"#ffffff",stroke:"none"});
   return (
-    <svg width={size} height={size} viewBox="0 0 54 54" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <polygon points="27,3 50,15.5 50,38.5 27,51 4,38.5 4,15.5" stroke={palette.hex} strokeWidth="2.2" fill="none" strokeLinejoin="round"/>
-      <line x1="17" y1="16" x2="17" y2="38" stroke={palette.main} strokeWidth={sw} strokeLinecap="round"/>
-      <line x1="17" y1="16" x2="36" y2="16" stroke={palette.top} strokeWidth={sw} strokeLinecap="round"/>
-      <line x1="17" y1="27" x2="30" y2="27" stroke={palette.mid} strokeWidth={sw} strokeLinecap="round"/>
-      <circle cx="40" cy="38" r={size<=22?3.2:3.6} fill={palette.dot}/>
+    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <rect x="0.5" y="0.5" width="63" height="63" rx="14" fill={palette.bg} stroke={palette.stroke} />
+      <path d="M17 15h30v8H26v9h18v8H26v16h-9z" fill={palette.fg}/>
     </svg>
   );
 }
@@ -2172,7 +2162,6 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
       return true;
     }
   });
-  const [logoError,setLogoError]=useState(false);
   const [overviewStats,setOverviewStats]=useState({loading:false,activeUsers:0,activeOrders:0,pendingUsers:0,todayEntries:0,todayCorrect:0,todayWrong:0,lastUpdated:""});
   const f=k=>e=>setForm(p=>({...p,[k]:e.target.value}));
 
@@ -2182,8 +2171,6 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
       window.localStorage.setItem(REMEMBER_CHOICE_KEY,rememberMe?"1":"0");
     }catch{}
   },[rememberMe]);
-  useEffect(()=>{setLogoError(false);},[logoSrc]);
-
   const loadOverviewStats=useCallback(async()=>{
     setOverviewStats(s=>({...s,loading:true}));
     const [users,orders,entries]=await Promise.all([
@@ -2293,9 +2280,7 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
           }}>
             <div style={{display:"flex",alignItems:"center",gap:12,minWidth:0}}>
               <div style={{width:58,height:58,borderRadius:16,background:C.accent,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",boxShadow:`0 10px 24px ${C.accent}66`,flexShrink:0}}>
-                {isCustomBrandLogo(logoSrc)&&!logoError
-                  ? <img src={logoSrc} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-                  : <FactorabMark size={34} variant="dark"/>}
+                <FactorabMark size={34} variant="dark"/>
               </div>
               <FactorabWordmark variant={themeMode==="dark"?"dark":"light"} showTagline compact/>
             </div>
@@ -3125,7 +3110,6 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
   const [expanded,setExpanded]=useState(null);
   const [settingsView,setSettingsView]=useState("genel");
   const [logoLoading,setLogoLoading]=useState(false);
-  const [logoPreviewError,setLogoPreviewError]=useState(false);
   const [quoteTemplate,setQuoteTemplate]=useState(DEFAULT_QUOTE_TEMPLATE);
   const [templateSaving,setTemplateSaving]=useState(false);
   const [menuConfig,setMenuConfig]=useState(()=>normalizeMenuVisibilityConfig(menuVisibility||{}));
@@ -3149,7 +3133,6 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
   useEffect(()=>{
     setMenuConfig(normalizeMenuVisibilityConfig(menuVisibility||{}));
   },[menuVisibility]);
-  useEffect(()=>{setLogoPreviewError(false);},[currentLogo]);
 
   async function update(id,patch) {
     await window.DB.updateDoc("users",id,patch);
@@ -3362,9 +3345,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
             <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
               <div style={{width:56,height:56,borderRadius:12,background:C.surface,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
-                {isCustomBrandLogo(currentLogo)&&!logoPreviewError
-                  ? <img src={currentLogo} alt="Logo" onError={()=>setLogoPreviewError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-                  : <FactorabMark size={34} variant={themeMode==="dark"?"dark":"light"}/>}
+                <FactorabMark size={34} variant={themeMode==="dark"?"dark":"light"}/>
               </div>
               <div style={{fontSize:12,color:C.muted2}}>Giris sayfasi ve uygulama basliginda kullanilir.</div>
             </div>
@@ -15551,7 +15532,6 @@ function MRPDashboard({
   const [widgetReportId,setWidgetReportId]=useState("");
   const [dragWidgetId,setDragWidgetId]=useState("");
   const [isNarrow,setIsNarrow]=useState(()=>typeof window!=="undefined"?window.innerWidth<980:false);
-  const [dashboardLogoError,setDashboardLogoError]=useState(false);
   const [data,setData]=useState({orders:[],sales:[],materials:[],prs:[],connectors:[],telemetry:[],downtimes:[],entries:[],quality:[],notifs:[],tools:[]});
   const dashboardUserKey=String(currentUser?.id||"default");
   function sortReports(rows=[]){
@@ -15615,7 +15595,6 @@ function MRPDashboard({
     window.addEventListener("resize",onResize);
     return ()=>window.removeEventListener("resize",onResize);
   },[]);
-  useEffect(()=>{setDashboardLogoError(false);},[logoSrc]);
   useEffect(()=>{
     function onDashboardWidgetSync(ev){
       const userId=String(ev&&ev.detail&&ev.detail.userId||"");
@@ -16110,9 +16089,7 @@ function MRPDashboard({
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",background:commandBarTone.heroBg}}>
           <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
             <div style={{width:40,height:40,borderRadius:10,background:"rgba(255,255,255,.16)",border:`1px solid ${commandBarTone.heroChipBorder}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
-              {isCustomBrandLogo(logoSrc)&&!dashboardLogoError
-                ? <img src={logoSrc} alt="Logo" onError={()=>setDashboardLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-                : <FactorabMark size={24} variant="dark"/>}
+              <FactorabMark size={24} variant="dark"/>
             </div>
             <div style={{minWidth:0}}>
               <div style={{fontSize:11,color:commandBarTone.heroMuted,letterSpacing:.7,textTransform:"uppercase"}}>Canlı Üretim Panosu</div>
@@ -19958,7 +19935,6 @@ function App() {
   const [logoSrc,setLogoSrc]=useState(LOGO_SRC);
   const [isTablet,setIsTablet]=useState(()=>typeof window!=="undefined"?window.matchMedia("(min-width: 768px)").matches:false);
   const [isDesktop,setIsDesktop]=useState(()=>typeof window!=="undefined"?window.matchMedia("(min-width: 1200px)").matches:false);
-  const [logoError,setLogoError]=useState(false);
   const [mobileMenuOpen,setMobileMenuOpen]=useState(false);
   const [menuQuery,setMenuQuery]=useState("");
   const [menuGroupFilter,setMenuGroupFilter]=useState("all");
@@ -20060,7 +20036,6 @@ function App() {
     window.addEventListener("menu_visibility_updated",onUpdated);
     return ()=>window.removeEventListener("menu_visibility_updated",onUpdated);
   },[]);
-  useEffect(()=>{setLogoError(false);},[logoSrc]);
   useEffect(()=>{applyAppFavicon(logoSrc);},[logoSrc]);
   useEffect(()=>{
     if(typeof window==="undefined") return;
@@ -20986,9 +20961,7 @@ function App() {
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",background:appCommandBarTone.heroBg}}>
         <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
           <div style={{width:40,height:40,borderRadius:10,background:"rgba(255,255,255,.16)",border:`1px solid ${appCommandBarTone.heroChipBorder}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
-            {isCustomBrandLogo(logoSrc)&&!logoError
-              ? <img src={logoSrc} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-              : <FactorabMark size={24} variant="dark"/>}
+            <FactorabMark size={24} variant="dark"/>
           </div>
           <div style={{minWidth:0}}>
             <div style={{fontSize:11,color:appCommandBarTone.heroMuted,letterSpacing:.7,textTransform:"uppercase"}}>Canli Uretim Panosu</div>
@@ -21165,9 +21138,7 @@ function App() {
               <div style={{display:"flex",alignItems:"center",justifyContent:desktopMenuIconOnly?"center":"space-between",gap:8}}>
                 <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
                   <div style={{width:34,height:34,borderRadius:9,background:leftNavColors.toggleBg,border:`1px solid ${leftNavColors.border}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
-                    {isCustomBrandLogo(logoSrc)&&!logoError
-                      ? <img src={logoSrc} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-                      : <FactorabMark size={20} variant="dark"/>}
+                    <FactorabMark size={20} variant="dark"/>
                   </div>
                   {!desktopMenuIconOnly&&<FactorabWordmark variant="dark" compact style={{maxWidth:170,overflow:"hidden"}}/>}
                 </div>
