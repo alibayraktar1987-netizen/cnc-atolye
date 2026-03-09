@@ -18949,6 +18949,14 @@ function App() {
     setGlobalFilterOpen(false);
   },[tab]);
   useEffect(()=>{
+    if(!dashboardCreateModalOpen) return;
+    const onKey=e=>{
+      if(e.key==="Escape") setDashboardCreateModalOpen(false);
+    };
+    window.addEventListener("keydown",onKey);
+    return ()=>window.removeEventListener("keydown",onKey);
+  },[dashboardCreateModalOpen]);
+  useEffect(()=>{
     if(!currentUser) return;
     syncTabQueryParam(tab);
   },[currentUser,tab]);
@@ -19258,14 +19266,24 @@ function App() {
     if(actionId==="calendar"){switchToTabIfVisible("planning");return;}
     if(actionId==="mail"){switchToTabIfVisible("sales");return;}
   }
-  function handleDashboardCreateRecord(){
-    const createTargets=["orders","sales","parts","customers","materials","tools","planning"];
-    const target=createTargets.find(id=>tabs.some(t=>t.id===id))||(tabs.find(t=>t.id!=="dashboard")?.id||"");
-    if(!target) return;
-    setTab(target);
+  function runDashboardCreateAction(target){
+    const nextTab=String(target?.tabId||"").trim();
+    const actionTab=String(target?.eventTab||nextTab).trim();
+    if(!nextTab||!actionTab) return;
+    setDashboardCreateModalOpen(false);
+    setTab(nextTab);
     setTimeout(()=>{
-      window.dispatchEvent(new CustomEvent("mrp:tab-action",{detail:{tab:target,type:"new"}}));
+      window.dispatchEvent(new CustomEvent("mrp:tab-action",{detail:{tab:actionTab,type:"new"}}));
     },80);
+  }
+  function handleDashboardCreateRecord(){
+    if(dashboardCreateOptions.length>0){
+      setDashboardCreateModalOpen(true);
+      return;
+    }
+    const target=tabs.find(t=>t.id!=="dashboard");
+    if(!target) return;
+    runDashboardCreateAction({tabId:target.id,eventTab:target.id});
   }
   function applyTopViewMode(modeId){
     setGlobalViewMode(modeId);
@@ -19527,6 +19545,34 @@ function App() {
               </div>
             </div>
           )}
+        </div>
+      )}
+      {dashboardCreateModalOpen&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.62)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:80,padding:14}} onClick={()=>setDashboardCreateModalOpen(false)}>
+          <div style={{width:"100%",maxWidth:860,maxHeight:"90vh",overflowY:"auto",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:10}}>
+              <div>
+                <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase"}}>Yeni Kayit Olustur</div>
+                <div style={{fontSize:18,fontWeight:800,color:C.text,marginTop:2}}>Kayit tipini secin</div>
+              </div>
+              <button onClick={()=>setDashboardCreateModalOpen(false)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Kapat</button>
+            </div>
+            <div style={{fontSize:12,color:C.muted2,marginBottom:10}}>
+              Secime gore ilgili modul acilir ve yeni kayit formu otomatik baslatilir.
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
+              {dashboardCreateOptions.map(opt=>(
+                <button key={opt.id} onClick={()=>runDashboardCreateAction(opt)} style={{...btnSt("ghost"),padding:"10px 11px",fontSize:12,textAlign:"left",display:"flex",flexDirection:"column",gap:6,alignItems:"flex-start",borderColor:C.border,background:C.surface,minHeight:96}}>
+                  <div style={{fontSize:14,fontWeight:800,color:C.text}}>{opt.label}</div>
+                  <div style={{fontSize:11,color:C.muted2}}>{opt.hint}</div>
+                  <div style={{fontSize:10,color:C.accent,textTransform:"uppercase",letterSpacing:.5}}>{opt.moduleLabel}</div>
+                </button>
+              ))}
+            </div>
+            {dashboardCreateOptions.length===0&&(
+              <div style={{marginTop:10,fontSize:12,color:C.muted2}}>Bu kullanici icin uygun yeni kayit tipi bulunamadi.</div>
+            )}
+          </div>
         </div>
       )}
     </div>
