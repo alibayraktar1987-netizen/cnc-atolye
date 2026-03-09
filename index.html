@@ -4636,7 +4636,6 @@ function MaterialLibrary({filtersVisible=true}) {
     return "healthy";
   };
   const q=String(search||"").trim().toLowerCase();
-  const stockedMaterials=[...materials].filter(m=>(Number(m.stock)||0)>0).sort((a,b)=>(Number(b.stock)||0)-(Number(a.stock)||0));
   const materialFilterRows=materials.filter(row=>{
     const textOk=!q||[
       row.name||"",
@@ -4794,14 +4793,6 @@ function MaterialLibrary({filtersVisible=true}) {
       </div>
       )}
 
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}>
-        <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Stokdaki Urunler ({stockedMaterials.length})</div>
-        {stockedMaterials.length===0?<div style={{fontSize:12,color:C.muted}}>Stokta malzeme yok</div>:(
-          <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-            {stockedMaterials.map(m=><span key={m.id} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px",fontSize:11,color:C.muted2}}>{m.code||"-"} · {m.name||"-"} · <span style={{color:C.text,fontWeight:700}}>{Number(m.stock)||0}</span></span>)}
-          </div>
-        )}
-      </div>
       <div style={{display:"flex",gap:10,alignItems:"stretch",flexWrap:"wrap"}}>
         {filtersVisible&&(
           <div style={filterPanelStyle}>
