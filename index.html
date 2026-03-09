@@ -572,6 +572,7 @@ const PRIORITY_OPTIONS = [
 ];
 const TABLE_COLUMN_LAYOUT_STORAGE_PREFIX = "cnc_atolye_table_columns_v1";
 const SALES_QUOTE_LIST_COLUMNS = [
+  {id:"row_no",label:"No",width:54,required:true},
   {id:"quote_no",label:"Teklif No",width:176},
   {id:"customer",label:"Firma Adi",width:168},
   {id:"valid_until",label:"Gecerlilik",width:128},
@@ -580,6 +581,7 @@ const SALES_QUOTE_LIST_COLUMNS = [
   {id:"actions",label:"Islem",width:336,align:"right",required:true},
 ];
 const SALES_ORDER_LIST_COLUMNS = [
+  {id:"row_no",label:"No",width:54,required:true},
   {id:"order_no",label:"Siparis No",width:176},
   {id:"customer",label:"Musteri",width:210},
   {id:"due_date",label:"Termin",width:120},
@@ -589,6 +591,7 @@ const SALES_ORDER_LIST_COLUMNS = [
   {id:"actions",label:"Islem",width:420,align:"right",required:true},
 ];
 const WORK_ORDER_LIST_COLUMNS = [
+  {id:"row_no",label:"No",width:54,required:true},
   {id:"work_order",label:"Is Emri",width:232},
   {id:"customer_part",label:"Musteri / Parca",width:228},
   {id:"due",label:"Termin",width:124},
@@ -596,7 +599,7 @@ const WORK_ORDER_LIST_COLUMNS = [
   {id:"actions",label:"Islem",width:352,align:"right",required:true},
 ];
 const TOOL_STOCK_LIST_COLUMNS = [
-  {id:"row_no",label:"#",width:54,required:true},
+  {id:"row_no",label:"No",width:54,required:true},
   {id:"tool",label:"Takim",width:240,required:true},
   {id:"brand",label:"Marka",width:132},
   {id:"supplier_code",label:"Tedarikci Kod",width:168},
@@ -612,18 +615,21 @@ const TOOL_STOCK_LIST_COLUMNS = [
   {id:"actions",label:"Islemler",width:304,align:"right"},
 ];
 const CUSTOMER_LIST_COLUMNS = [
+  {id:"row_no",label:"No",width:54,required:true},
   {id:"customer",label:"Musteri",width:300,required:true},
   {id:"contact",label:"Iletisim",width:340},
   {id:"code",label:"Kod",width:130},
   {id:"actions",label:"Islem",width:180,align:"right",required:true},
 ];
 const MATERIAL_LIBRARY_LIST_COLUMNS = [
+  {id:"row_no",label:"No",width:54,required:true},
   {id:"material",label:"Malzeme",width:340,required:true},
   {id:"stock_policy",label:"Stok Politikasi",width:200},
   {id:"supply",label:"Tedarik",width:150},
   {id:"actions",label:"Islem",width:170,align:"right",required:true},
 ];
 const PART_LIBRARY_LIST_COLUMNS = [
+  {id:"row_no",label:"No",width:54,required:true},
   {id:"part_no",label:"Parca No",width:160,required:true},
   {id:"part_name",label:"Parca Adi",width:260,required:true},
   {id:"company",label:"Firma",width:180},
@@ -634,6 +640,7 @@ const PART_LIBRARY_LIST_COLUMNS = [
   {id:"files",label:"Dosya",width:90,align:"right"},
 ];
 const TASK_ASSIGNMENT_LIST_COLUMNS = [
+  {id:"row_no",label:"No",width:54,required:true},
   {id:"task",label:"Gorev",width:320,required:true},
   {id:"assignee",label:"Calisan",width:180},
   {id:"machine",label:"Tezgah",width:140},
@@ -646,6 +653,7 @@ const TASK_ASSIGNMENT_LIST_COLUMNS = [
   {id:"actions",label:"Islem",width:340,align:"right",required:true},
 ];
 const PURCHASE_REQUEST_LIST_COLUMNS = [
+  {id:"row_no",label:"No",width:54,required:true},
   {id:"request",label:"Talep",width:320,required:true},
   {id:"qty_date",label:"Miktar / Tarih",width:170},
   {id:"priority",label:"Oncelik",width:110},
@@ -653,6 +661,7 @@ const PURCHASE_REQUEST_LIST_COLUMNS = [
   {id:"actions",label:"Islem",width:190,align:"right",required:true},
 ];
 const PURCHASE_QUOTE_LIST_COLUMNS = [
+  {id:"row_no",label:"No",width:54,required:true},
   {id:"request_supplier",label:"Talep / Tedarikci",width:320,required:true},
   {id:"unit_price",label:"Birim Fiyat",width:140,align:"right"},
   {id:"total",label:"Toplam",width:150,align:"right"},
@@ -660,18 +669,21 @@ const PURCHASE_QUOTE_LIST_COLUMNS = [
   {id:"actions",label:"Islem",width:130,align:"right",required:true},
 ];
 const PURCHASE_ORDER_LIST_COLUMNS = [
+  {id:"row_no",label:"No",width:54,required:true},
   {id:"order_supplier",label:"PO / Tedarikci",width:320,required:true},
   {id:"material_qty",label:"Malzeme / Miktar",width:220},
   {id:"receipt",label:"Alinan / Red",width:160},
   {id:"status",label:"Durum",width:120},
 ];
 const SUPPLIER_PERF_LIST_COLUMNS = [
+  {id:"row_no",label:"No",width:54,required:true},
   {id:"name",label:"Tedarikci",width:220,required:true},
   {id:"po",label:"PO",width:84,align:"right"},
   {id:"otd",label:"OTD %",width:96,align:"right"},
   {id:"quality",label:"Kalite %",width:110,align:"right"},
 ];
 const FINANCE_FLOW_LIST_COLUMNS = [
+  {id:"row_no",label:"No",width:54,required:true},
   {id:"dates",label:"Tarih",width:180,required:true},
   {id:"flow",label:"Akis",width:150},
   {id:"amount",label:"Tutar",width:160,align:"right"},
@@ -1378,6 +1390,11 @@ function normalizeTableColumnLayout(raw,defs){
   base.forEach(col=>{
     if(!seen.has(col.id)) order.push(col.id);
   });
+  const rowNoIdx=order.indexOf("row_no");
+  if(rowNoIdx>0){
+    order.splice(rowNoIdx,1);
+    order.unshift("row_no");
+  }
   return order.map((id,idx)=>{
     const col=byId[id];
     const hasVisible=Object.prototype.hasOwnProperty.call(visibleInput,id);
@@ -1687,6 +1704,161 @@ function ListRowPager({
     </div>
   );
 }
+function SearchableSelect({
+  value="",
+  onChange=()=>{},
+  options=[],
+  placeholder="Secin...",
+  disabled=false,
+  style={},
+  menuMaxHeight=220,
+  searchPlaceholder="Listede ara...",
+  noResultsText="Sonuc bulunamadi",
+  compact=false,
+}) {
+  const rootRef=useRef(null);
+  const inputRef=useRef(null);
+  const [open,setOpen]=useState(false);
+  const [query,setQuery]=useState("");
+  const norm=s=>String(s||"").toLocaleLowerCase("tr");
+  const normalizedOptions=useMemo(()=>{
+    const arr=Array.isArray(options)?options:[];
+    return arr.map((opt,idx)=>{
+      if(opt&&typeof opt==="object"){
+        const v=String(opt.value??"");
+        const l=String(opt.label??v);
+        return {id:String(opt.id??`opt_${idx}_${v}`),value:v,label:l};
+      }
+      const raw=String(opt??"");
+      return {id:`opt_${idx}_${raw}`,value:raw,label:raw};
+    });
+  },[options]);
+  const selected=useMemo(()=>{
+    const val=String(value??"");
+    return normalizedOptions.find(opt=>String(opt.value)===val)||null;
+  },[normalizedOptions,value]);
+  const filteredOptions=useMemo(()=>{
+    const q=norm(query).trim();
+    if(!q) return normalizedOptions;
+    return normalizedOptions.filter(opt=>norm(opt.label).includes(q)||norm(opt.value).includes(q));
+  },[normalizedOptions,query]);
+
+  useEffect(()=>{
+    if(!open) return;
+    function handlePointer(ev){
+      if(!rootRef.current) return;
+      if(rootRef.current.contains(ev.target)) return;
+      setOpen(false);
+    }
+    if(typeof window==="undefined") return;
+    window.addEventListener("mousedown",handlePointer,true);
+    window.addEventListener("touchstart",handlePointer,true);
+    return ()=>{
+      window.removeEventListener("mousedown",handlePointer,true);
+      window.removeEventListener("touchstart",handlePointer,true);
+    };
+  },[open]);
+  useEffect(()=>{
+    if(open){
+      setTimeout(()=>{if(inputRef.current) inputRef.current.focus();},20);
+    }else{
+      setQuery("");
+    }
+  },[open]);
+
+  return (
+    <div ref={rootRef} style={{position:"relative",width:"100%",...style}}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={()=>{if(!disabled) setOpen(v=>!v);}}
+        style={{
+          ...inputSt,
+          display:"flex",
+          alignItems:"center",
+          justifyContent:"space-between",
+          gap:8,
+          textAlign:"left",
+          padding:compact?"7px 10px":"10px 12px",
+          fontSize:compact?12:14,
+          cursor:disabled?"not-allowed":"pointer",
+          opacity:disabled?0.65:1,
+          background:C.surface,
+        }}
+      >
+        <span style={{color:selected?C.text:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+          {selected?selected.label:placeholder}
+        </span>
+        <span style={{fontSize:11,color:C.muted2,flexShrink:0}}>{open?"▲":"▼"}</span>
+      </button>
+      {open&&!disabled&&(
+        <div
+          style={{
+            position:"absolute",
+            left:0,
+            right:0,
+            top:"calc(100% + 4px)",
+            zIndex:5200,
+            background:C.card,
+            border:`1px solid ${C.border}`,
+            borderRadius:10,
+            boxShadow:"0 12px 30px rgba(15,23,42,.28)",
+            padding:8,
+          }}
+        >
+          <input
+            ref={inputRef}
+            style={{...inputSt,padding:"7px 9px",fontSize:12}}
+            value={query}
+            onChange={e=>setQuery(e.target.value)}
+            onKeyDown={e=>{
+              if(e.key==="Escape"){
+                e.preventDefault();
+                setOpen(false);
+              }
+              if(e.key==="Enter"&&filteredOptions.length===1){
+                e.preventDefault();
+                onChange(String(filteredOptions[0].value));
+                setOpen(false);
+              }
+            }}
+            placeholder={searchPlaceholder}
+          />
+          <div style={{display:"flex",flexDirection:"column",gap:4,marginTop:6,maxHeight:menuMaxHeight,overflowY:"auto",paddingRight:2}}>
+            {filteredOptions.length===0&&(
+              <div style={{fontSize:11,color:C.muted2,padding:"6px 8px"}}>{noResultsText}</div>
+            )}
+            {filteredOptions.map(opt=>{
+              const active=String(opt.value)===String(value??"");
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={()=>{
+                    onChange(String(opt.value));
+                    setOpen(false);
+                  }}
+                  style={{
+                    ...btnSt("ghost"),
+                    padding:"6px 8px",
+                    fontSize:12,
+                    textAlign:"left",
+                    justifyContent:"flex-start",
+                    borderColor:active?C.accent:C.border,
+                    color:active?C.accent:C.text,
+                    background:active?(C.accent+"12"):C.surface,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 function Badge({label:l,color=C.muted2,style}) {
   return <span style={{background:color+"18",color,border:`1px solid ${color}40`,borderRadius:999,padding:"2px 8px",fontSize:10,fontWeight:700,letterSpacing:.3,textTransform:"uppercase",...style}}>{l}</span>;
 }
@@ -1708,22 +1880,20 @@ function PerfBar({perf,small}) {
 //  AUTH SCREEN
 // ============================================================
 function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) {
-  const [portal,setPortal]=useState("operator");
   const [mode,setMode]=useState("login");
   const [form,setForm]=useState({username:"",password:"",confirm:"",fullName:""});
-  const [err,setErr]=useState(""); const [ok,setOk]=useState(""); const [loading,setLoading]=useState(false);
+  const [err,setErr]=useState("");
+  const [ok,setOk]=useState("");
+  const [loading,setLoading]=useState(false);
   const [logoError,setLogoError]=useState(false);
-  const [adminStats,setAdminStats]=useState({loading:false,activeOrders:0,todayEntries:0,pendingUsers:0,activeOperators:0,todayCorrect:0,todayWrong:0,lastUpdated:""});
+  const [overviewStats,setOverviewStats]=useState({loading:false,activeUsers:0,activeOrders:0,pendingUsers:0,todayEntries:0,todayCorrect:0,todayWrong:0,lastUpdated:""});
   const f=k=>e=>setForm(p=>({...p,[k]:e.target.value}));
 
-  useEffect(()=>{
-    if(portal==="admin"&&mode!=="login") setMode("login");
-    setErr(""); setOk("");
-  },[portal,mode]);
+  useEffect(()=>{setErr(""); setOk("");},[mode]);
   useEffect(()=>{setLogoError(false);},[logoSrc]);
 
-  const loadAdminStats=useCallback(async()=>{
-    setAdminStats(s=>({...s,loading:true}));
+  const loadOverviewStats=useCallback(async()=>{
+    setOverviewStats(s=>({...s,loading:true}));
     const [users,orders,entries]=await Promise.all([
       window.DB.getAll("users"),
       window.DB.getAll("orders"),
@@ -1734,12 +1904,12 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
     const now=new Date();
     const hh=pad2(now.getHours());
     const mm=pad2(now.getMinutes());
-    setAdminStats({
+    setOverviewStats({
       loading:false,
+      activeUsers:users.filter(u=>u.status==="active").length,
       activeOrders:orders.filter(o=>isOpenOrderStatus(o.status)).length,
       todayEntries:todayRows.length,
       pendingUsers:users.filter(u=>u.status==="pending").length,
-      activeOperators:users.filter(u=>u.role==="operator"&&u.status==="active").length,
       todayCorrect:todayRows.reduce((s,e)=>s+(Number(e.correct)||0),0),
       todayWrong:todayRows.reduce((s,e)=>s+(Number(e.wrong)||0),0),
       lastUpdated:`${hh}:${mm}`,
@@ -1747,21 +1917,25 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
   },[]);
 
   useEffect(()=>{
-    if(portal!=="admin") return;
-    loadAdminStats();
-  },[portal,loadAdminStats]);
+    loadOverviewStats();
+    const timer=setInterval(loadOverviewStats,60000);
+    return ()=>clearInterval(timer);
+  },[loadOverviewStats]);
 
   async function doLogin() {
-    setErr(""); setLoading(true);
-    const u = await window.DB.getDoc("users", form.username.toLowerCase());
+    setErr("");
+    setOk("");
+    const username=String(form.username||"").trim().toLowerCase();
+    if(!username||!form.password){setErr("Kullanici adi ve sifre zorunlu.");return;}
+    setLoading(true);
+    const u = await window.DB.getDoc("users",username);
     if(!u){setErr("Kullanıcı bulunamadı.");setLoading(false);return;}
     if(u.password!==hashPass(form.password)){setErr("Şifre hatalı.");setLoading(false);return;}
     if(u.status==="pending"){setErr("Hesabınız onay bekliyor.");setLoading(false);return;}
     if(u.status==="rejected"){setErr("Hesabınız reddedildi.");setLoading(false);return;}
-    if(portal==="admin"&&u.role!=="admin"){setErr("Bu giriş ekranı yalnızca yönetici hesapları içindir.");setLoading(false);return;}
-    if(portal==="operator"&&u.role==="admin"){setErr("Yönetici hesabı ile Yönetici Girişi ekranını kullanın.");setLoading(false);return;}
     window.Session.set({username:u.id});
-    onLogin(u); setLoading(false);
+    onLogin(u);
+    setLoading(false);
   }
 
   async function doRegister() {
@@ -1771,7 +1945,8 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
     if(form.password.length<8){setErr("Sifre en az 8 karakter olmali.");return;}
     if(!/[A-Z]/.test(form.password)||!/[a-z]/.test(form.password)||!/[0-9]/.test(form.password)){setErr("Sifre buyuk-kucuk harf ve rakam icermeli.");return;}
     setLoading(true);
-    const key=form.username.toLowerCase().trim();
+    const key=String(form.username||"").toLowerCase().trim();
+    if(!/^[a-z0-9._-]{3,30}$/.test(key)){setErr("Kullanici adi 3-30 karakter olmali ve yalnizca harf/rakam/._- icermeli.");setLoading(false);return;}
     const existing=await window.DB.getDoc("users",key);
     if(existing){setErr("Bu kullanıcı adı alınmış.");setLoading(false);return;}
     const allUsers=await window.DB.getAll("users");
@@ -1789,98 +1964,139 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
     setMode("login"); setForm({username:"",password:"",confirm:"",fullName:""}); setLoading(false);
   }
 
+  const qualityTotal=safeNum(overviewStats.todayCorrect)+safeNum(overviewStats.todayWrong);
+  const qualityPct=qualityTotal>0?Math.round((safeNum(overviewStats.todayCorrect)*100)/qualityTotal):100;
+
   return (
-    <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{width:"100%",maxWidth:portal==="admin"?980:380}}>
-        <div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}>
+    <div style={{
+      minHeight:"100vh",
+      background:themeMode==="dark"
+        ? "radial-gradient(1200px 620px at -10% -10%, rgba(87,190,144,.20), transparent 55%), radial-gradient(900px 520px at 110% 0%, rgba(121,201,212,.22), transparent 58%), #16181C"
+        : "radial-gradient(1100px 600px at -10% -10%, rgba(87,190,144,.18), transparent 55%), radial-gradient(900px 520px at 110% 0%, rgba(121,201,212,.20), transparent 58%), #F4F7F8",
+      display:"flex",
+      alignItems:"center",
+      justifyContent:"center",
+      padding:18,
+    }}>
+      <div style={{width:"100%",maxWidth:1040}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:10}}>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:.9,textTransform:"uppercase"}}>CNC Atolye Is Takip Platformu</div>
           <button onClick={onThemeToggle} style={{...btnSt("ghost"),padding:"7px 12px",fontSize:12,minWidth:98}}>
             {themeMode==="dark"?"Acik Tema":"Koyu Tema"}
           </button>
         </div>
-        <div style={{display:"flex",background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:4,margin:"0 auto 22px",maxWidth:420}}>
-          {[["operator","Operatör Girişi"],["admin","Yönetici Girişi"]].map(([id,lbl])=>(
-            <button key={id} onClick={()=>setPortal(id)} style={{flex:1,padding:"10px 0",border:"none",borderRadius:9,cursor:"pointer",background:portal===id?C.card:"transparent",color:portal===id?C.text:C.muted2,fontWeight:portal===id?700:500,fontSize:13,fontFamily:"inherit"}}>{lbl}</button>
-          ))}
-        </div>
 
-        {portal==="operator"?(
-          <div style={{width:"100%",maxWidth:380,margin:"0 auto"}}>
-            <div style={{textAlign:"center",marginBottom:28}}>
-              <div style={{width:60,height:60,borderRadius:18,background:C.accent,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 10px",overflow:"hidden"}}>
-                {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:28}}>LOGO</span>}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:14,alignItems:"stretch"}}>
+          <div style={{
+            background:themeMode==="dark"
+              ? "linear-gradient(160deg, rgba(35,40,48,.96) 0%, rgba(39,45,53,.92) 100%)"
+              : "linear-gradient(160deg, rgba(255,255,255,.96) 0%, rgba(240,244,246,.92) 100%)",
+            border:`1px solid ${C.border}`,
+            borderRadius:18,
+            padding:22,
+            boxShadow:themeMode==="dark"?"0 26px 52px rgba(0,0,0,.34)":"0 22px 42px rgba(15,23,42,.11)",
+            display:"flex",
+            flexDirection:"column",
+            gap:12,
+          }}>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <div style={{width:56,height:56,borderRadius:16,background:C.accent,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",boxShadow:`0 10px 24px ${C.accent}66`}}>
+                {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:26,color:"#fff"}}>C</span>}
               </div>
-              <div style={{fontWeight:800,fontSize:22,color:C.text,letterSpacing:-.5}}>CNC Atölye</div>
-              <div style={{color:C.muted2,fontSize:13,marginTop:2}}>İş Takip Sistemi</div>
+              <div>
+                <div style={{fontWeight:800,fontSize:24,color:C.text,letterSpacing:-.6,lineHeight:1.05}}>CNC Atolye</div>
+                <div style={{fontSize:13,color:C.muted2,marginTop:3}}>Tek giris, rol bazli otomatik yetkilendirme</div>
+              </div>
             </div>
-            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:24}}>
-              <div style={{display:"flex",background:C.surface,borderRadius:10,padding:3,marginBottom:20}}>
-                {[["login","Giriş Yap"],["register","Kayıt Ol"]].map(([id,lbl])=>(
-                  <button key={id} onClick={()=>{setMode(id);setErr("");setOk("");}} style={{flex:1,padding:"9px 0",border:"none",borderRadius:8,cursor:"pointer",background:mode===id?C.card:"transparent",color:mode===id?C.text:C.muted2,fontWeight:mode===id?700:400,fontSize:13,fontFamily:"inherit"}}>{lbl}</button>
-                ))}
-              </div>
-              {err&&<div style={{background:C.redDim,border:`1px solid ${C.red}40`,borderRadius:10,padding:"10px 14px",color:C.red,fontSize:13,marginBottom:14}}>{err}</div>}
-              {ok&&<div style={{background:C.greenDim,border:`1px solid ${C.green}40`,borderRadius:10,padding:"10px 14px",color:C.green,fontSize:13,marginBottom:14}}>{ok}</div>}
-              <div style={{display:"flex",flexDirection:"column",gap:12}}>
-                {mode==="register"&&<div><span style={labelSt}>Ad Soyad</span><input style={inputSt} placeholder="Adınız Soyadınız" value={form.fullName} onChange={f("fullName")}/></div>}
-                <div><span style={labelSt}>Kullanıcı Adı</span><input style={inputSt} placeholder="kullanici_adi" value={form.username} onChange={f("username")} autoCapitalize="none" autoCorrect="off"/></div>
-                <div><span style={labelSt}>Şifre</span><input style={inputSt} placeholder="••••••" type="password" value={form.password} onChange={f("password")}/></div>
-                {mode==="register"&&<div><span style={labelSt}>Şifre Tekrar</span><input style={inputSt} placeholder="••••••" type="password" value={form.confirm} onChange={f("confirm")}/></div>}
-                <button onClick={mode==="login"?doLogin:doRegister} style={{...btnSt("primary"),width:"100%",padding:14,fontSize:15,opacity:loading?0.7:1}} disabled={loading}>
-                  {loading?"...":mode==="login"?"Giriş Yap":"Kayıt Ol"}
+            <div style={{fontSize:13,color:C.muted2,lineHeight:1.6}}>
+              Kullanici adi ve sifre ile giris yapildiginda sistem hesabin rolunu otomatik algilar.
+              Yonetici, operator veya ozel yetkili kullanicilar ayni ekrani kullanir.
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8}}>
+              {[
+                ["Aktif Kullanici",overviewStats.activeUsers,C.accent],
+                ["Aktif Is Emri",overviewStats.activeOrders,C.green],
+                ["Bugun Giris",overviewStats.todayEntries,C.warn],
+                ["Onay Bekleyen",overviewStats.pendingUsers,C.muted2],
+              ].map(([title,value,color])=>(
+                <div key={title} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:11,padding:"10px 11px"}}>
+                  <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>{title}</div>
+                  <div style={{marginTop:3,fontSize:21,fontFamily:"monospace",fontWeight:800,color}}>{value}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:11,padding:"10px 11px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Gunluk Kalite Ozeti</div>
+                <button onClick={loadOverviewStats} disabled={overviewStats.loading} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11,opacity:overviewStats.loading?0.7:1}}>
+                  {overviewStats.loading?"Yenileniyor...":"Yenile"}
                 </button>
               </div>
+              <div style={{fontSize:14,color:C.text,fontWeight:700,marginTop:4}}>
+                <span style={{color:C.green}}>{overviewStats.todayCorrect}</span> dogru / <span style={{color:C.red}}>{overviewStats.todayWrong}</span> hatali
+              </div>
+              <PerfBar perf={qualityPct}/>
+              <div style={{fontSize:11,color:C.muted2,marginTop:3}}>
+                {overviewStats.lastUpdated?`Son guncelleme: ${overviewStats.lastUpdated}`:""}
+              </div>
             </div>
-            <div style={{textAlign:"center",color:C.muted,fontSize:11,marginTop:12}}>İlk kayıt otomatik Yönetici olur.</div>
           </div>
-        ):(
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16,alignItems:"stretch"}}>
-            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:16,padding:22}}>
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:18}}>
-                <div style={{width:42,height:42,borderRadius:12,background:C.accent,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
-                  {!logoError?<img src={logoSrc||LOGO_SRC} alt="Logo" onError={()=>setLogoError(true)} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:18}}>LOGO</span>}
-                </div>
+
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:22,boxShadow:themeMode==="dark"?"0 22px 44px rgba(0,0,0,.32)":"0 20px 40px rgba(15,23,42,.10)",display:"flex",flexDirection:"column"}}>
+            <div style={{fontSize:12,color:C.muted2,textTransform:"uppercase",letterSpacing:.9}}>Hesap Erisimi</div>
+            <div style={{fontWeight:800,fontSize:24,color:C.text,letterSpacing:-.5,marginTop:2}}>
+              {mode==="login"?"Giris Yap":"Yeni Hesap Olustur"}
+            </div>
+            <div style={{fontSize:12,color:C.muted2,marginTop:4,marginBottom:14}}>
+              {mode==="login"
+                ? "Rol secmenize gerek yok. Hesabinizin yetkileri otomatik yuklenir."
+                : "Yeni kayitlar yonetici onayindan sonra aktif olur. Ilk kayit otomatik admin olur."}
+            </div>
+
+            <div style={{display:"flex",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:3,marginBottom:14}}>
+              {[["login","Giris Yap"],["register","Kayit Ol"]].map(([id,lbl])=>(
+                <button
+                  key={id}
+                  onClick={()=>{setMode(id);setErr("");setOk("");}}
+                  style={{flex:1,padding:"9px 0",border:"none",borderRadius:8,cursor:"pointer",background:mode===id?C.card:"transparent",color:mode===id?C.text:C.muted2,fontWeight:mode===id?700:500,fontSize:13,fontFamily:"inherit"}}
+                >
+                  {lbl}
+                </button>
+              ))}
+            </div>
+
+            {err&&<div style={{background:C.redDim,border:`1px solid ${C.red}40`,borderRadius:10,padding:"10px 12px",color:C.red,fontSize:13,marginBottom:12}}>{err}</div>}
+            {ok&&<div style={{background:C.greenDim,border:`1px solid ${C.green}40`,borderRadius:10,padding:"10px 12px",color:C.green,fontSize:13,marginBottom:12}}>{ok}</div>}
+
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              {mode==="register"&&(
                 <div>
-                  <div style={{fontWeight:800,fontSize:18,color:C.text,letterSpacing:-.3}}>Yönetici Paneli</div>
-                  <div style={{fontSize:12,color:C.muted2}}>Gosterge paneli erisimi</div>
+                  <span style={labelSt}>Ad Soyad</span>
+                  <input style={inputSt} placeholder="Ad Soyad" value={form.fullName} onChange={f("fullName")}/>
                 </div>
+              )}
+              <div>
+                <span style={labelSt}>Kullanici Adi</span>
+                <input style={inputSt} placeholder="kullanici_adi" value={form.username} onChange={f("username")} autoCapitalize="none" autoCorrect="off"/>
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10}}>
-                {[
-                  ["Aktif İş Emirleri",adminStats.activeOrders,C.accent],
-                  ["Bugün Giriş",adminStats.todayEntries,C.green],
-                  ["Onay Bekleyen",adminStats.pendingUsers,C.warn],
-                  ["Aktif Operatör",adminStats.activeOperators,C.muted2],
-                ].map(([title,value,color])=>(
-                  <div key={title} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
-                    <div style={{fontSize:11,color:C.muted2,marginBottom:6,textTransform:"uppercase",letterSpacing:.7}}>{title}</div>
-                    <div style={{fontSize:22,color,marginBottom:2,fontWeight:800,fontFamily:"monospace"}}>{value}</div>
-                  </div>
-                ))}
+              <div>
+                <span style={labelSt}>Sifre</span>
+                <input style={inputSt} placeholder="••••••••" type="password" value={form.password} onChange={f("password")}/>
               </div>
-              <div style={{display:"flex",gap:10,marginTop:10}}>
-                <div style={{flex:1,background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}>
-                  <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Bugün Doğru / Hatalı</div>
-                  <div style={{fontSize:14,color:C.text,fontWeight:700,marginTop:2}}><span style={{color:C.green}}>{adminStats.todayCorrect}</span> / <span style={{color:C.red}}>{adminStats.todayWrong}</span></div>
+              {mode==="register"&&(
+                <div>
+                  <span style={labelSt}>Sifre Tekrar</span>
+                  <input style={inputSt} placeholder="••••••••" type="password" value={form.confirm} onChange={f("confirm")}/>
                 </div>
-                <button onClick={loadAdminStats} disabled={adminStats.loading} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,alignSelf:"stretch",opacity:adminStats.loading?0.7:1}}>
-                  {adminStats.loading?"Yenileniyor...":"Yenile"}
-                </button>
-              </div>
-            </div>
-            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:22}}>
-              <div style={{fontWeight:700,fontSize:18,color:C.text,marginBottom:4}}>Yönetici Girişi</div>
-              <div style={{fontSize:12,color:C.muted2,marginBottom:16}}>Sadece yönetici hesaplarıyla giriş yapılabilir. {adminStats.lastUpdated?`Son güncelleme: ${adminStats.lastUpdated}`:""}</div>
-              {err&&<div style={{background:C.redDim,border:`1px solid ${C.red}40`,borderRadius:10,padding:"10px 14px",color:C.red,fontSize:13,marginBottom:14}}>{err}</div>}
-              {ok&&<div style={{background:C.greenDim,border:`1px solid ${C.green}40`,borderRadius:10,padding:"10px 14px",color:C.green,fontSize:13,marginBottom:14}}>{ok}</div>}
-              <div style={{display:"flex",flexDirection:"column",gap:12}}>
-                <div><span style={labelSt}>Kullanıcı Adı</span><input style={inputSt} placeholder="yonetici_adi" value={form.username} onChange={f("username")} autoCapitalize="none" autoCorrect="off"/></div>
-                <div><span style={labelSt}>Şifre</span><input style={inputSt} placeholder="••••••" type="password" value={form.password} onChange={f("password")}/></div>
-                <button onClick={doLogin} style={{...btnSt("primary"),width:"100%",padding:14,fontSize:15,opacity:loading?0.7:1}} disabled={loading}>{loading?"...":"Yönetici Olarak Giriş Yap"}</button>
-                <button onClick={()=>{setPortal("operator");setMode("register");setErr("");setOk("");}} style={{...btnSt("ghost"),width:"100%",padding:12,fontSize:13}}>Yeni hesap oluştur</button>
-              </div>
+              )}
+              <button onClick={mode==="login"?doLogin:doRegister} style={{...btnSt("primary"),width:"100%",padding:14,fontSize:15,opacity:loading?0.7:1}} disabled={loading}>
+                {loading?"...":mode==="login"?"Giris Yap":"Kayit Ol"}
+              </button>
             </div>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
@@ -3551,7 +3767,7 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES,filtersVisi
     ()=>visibleTaskListTableColumns.map(col=>`${Math.max(84,safeNum(col.width)||140)}px`).join(" "),
     [visibleTaskListTableColumns]
   );
-  const renderTaskListCell=(task,col)=>{
+  const renderTaskListCell=(task,col,rowNo)=>{
     const sMeta=statusMeta(task.status||"open");
     const pMeta=priorityMeta(task.priority||"medium");
     const due=String(task.dueDate||"");
@@ -3559,6 +3775,9 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES,filtersVisi
     const canAct=canAssign||task.assigneeId===currentUser.id;
     const isRecurring=(task.recurrenceMode==="weekly"||task.recurrenceMode==="monthly")&&Number(task.recurrenceCount||0)>1;
     const recurrenceLabel=task.recurrenceMode==="weekly"?"Haftalik":"Aylik";
+    if(col.id==="row_no"){
+      return <div style={{fontSize:11,color:C.muted2,textAlign:"center",fontWeight:700}}>{rowNo}</div>;
+    }
     if(col.id==="task"){
       return (
         <div style={{minWidth:0}}>
@@ -3644,10 +3863,13 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES,filtersVisi
           {canAssign&&(
             <>
               <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Calisan</div>
-              <select style={{...inputSt,padding:"8px 10px",fontSize:12}} value={filterAssignee} onChange={e=>setFilterAssignee(e.target.value)}>
-                <option value="all">Tum Calisanlar</option>
-                {activeUsers.map(u=><option key={u.id} value={u.id}>{u.fullName||u.id}</option>)}
-              </select>
+              <SearchableSelect
+                compact
+                value={filterAssignee}
+                onChange={v=>setFilterAssignee(v)}
+                placeholder="Tum Calisanlar"
+                options={[{value:"all",label:"Tum Calisanlar"},...activeUsers.map(u=>({value:u.id,label:u.fullName||u.id}))]}
+              />
             </>
           )}
           <button onClick={()=>{setQuery("");setFilterStatus("all");setFilterAssignee("all");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
@@ -3693,29 +3915,32 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES,filtersVisi
                   </div>
                 ))}
               </div>
-              {pagedTasks.map((task,idx)=>(
-                <div
-                  key={task.id}
-                  onClick={()=>openTaskDetailPage(task)}
-                  style={{
-                    display:"grid",
-                    gridTemplateColumns:taskListGridTemplate,
-                    gap:8,
-                    padding:"10px 10px",
-                    borderBottom:`1px solid ${C.border}`,
-                    background:((taskListStart+idx)%2===0)?C.surface:C.card,
-                    color:C.text,
-                    alignItems:"center",
-                    cursor:"pointer",
-                  }}
-                >
-                  {visibleTaskListTableColumns.map(col=>(
-                    <div key={col.id} style={{minWidth:0,textAlign:col.align||"left"}}>
-                      {renderTaskListCell(task,col)}
-                    </div>
-                  ))}
-                </div>
-              ))}
+              {pagedTasks.map((task,idx)=>{
+                const rowNo=taskListStart+idx+1;
+                return (
+                  <div
+                    key={task.id}
+                    onClick={()=>openTaskDetailPage(task)}
+                    style={{
+                      display:"grid",
+                      gridTemplateColumns:taskListGridTemplate,
+                      gap:8,
+                      padding:"10px 10px",
+                      borderBottom:`1px solid ${C.border}`,
+                      background:((taskListStart+idx)%2===0)?C.surface:C.card,
+                      color:C.text,
+                      alignItems:"center",
+                      cursor:"pointer",
+                    }}
+                  >
+                    {visibleTaskListTableColumns.map(col=>(
+                      <div key={col.id} style={{minWidth:0,textAlign:col.align||"left"}}>
+                        {renderTaskListCell(task,col,rowNo)}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
               {filteredTasks.length===0&&<div style={{fontSize:12,color:C.muted2,padding:"12px 10px"}}>Filtreye uygun gorev bulunamadi.</div>}
             </div>
           </div>
@@ -3768,10 +3993,12 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES,filtersVisi
           {canAssign&&effectiveCalendarScope==="all"&&(
             <div style={{minWidth:200,flex:"1 1 220px"}}>
               <span style={labelSt}>Calisan</span>
-              <select style={inputSt} value={filterAssignee} onChange={e=>setFilterAssignee(e.target.value)}>
-                <option value="all">Tum Calisanlar</option>
-                {activeUsers.map(u=><option key={u.id} value={u.id}>{u.fullName||u.id}</option>)}
-              </select>
+              <SearchableSelect
+                value={filterAssignee}
+                onChange={v=>setFilterAssignee(v)}
+                placeholder="Tum Calisanlar"
+                options={[{value:"all",label:"Tum Calisanlar"},...activeUsers.map(u=>({value:u.id,label:u.fullName||u.id}))]}
+              />
             </div>
           )}
         </div>
@@ -3846,15 +4073,39 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES,filtersVisi
               <button onClick={closeCreateTaskPage} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:8}}>
-              <div><span style={labelSt}>Calisan</span><select style={inputSt} value={form.assigneeId} onChange={e=>setF("assigneeId",e.target.value)}>{activeUsers.map(u=><option key={u.id} value={u.id}>{u.fullName||u.id}</option>)}</select></div>
+              <div>
+                <span style={labelSt}>Calisan</span>
+                <SearchableSelect
+                  value={form.assigneeId}
+                  onChange={v=>setF("assigneeId",v)}
+                  placeholder="Calisan secin"
+                  options={activeUsers.map(u=>({value:u.id,label:u.fullName||u.id}))}
+                />
+              </div>
               <div><span style={labelSt}>Oncelik</span><select style={inputSt} value={form.priority} onChange={e=>setF("priority",e.target.value)}><option value="high">Yuksek</option><option value="medium">Normal</option><option value="low">Dusuk</option></select></div>
               <div><span style={labelSt}>Termin</span><input style={inputSt} type="date" value={form.dueDate} onChange={e=>setF("dueDate",e.target.value||"")}/></div>
               <div><span style={labelSt}>Tekrar</span><select style={inputSt} value={form.recurrenceMode} onChange={e=>setF("recurrenceMode",e.target.value)}><option value="none">Tek Sefer</option><option value="weekly">Haftalik</option><option value="monthly">Aylik</option></select></div>
               {form.recurrenceMode!=="none"&&(
                 <div><span style={labelSt}>Tekrar Bitis</span><input style={inputSt} type="date" min={form.dueDate||todayStr()} value={form.recurrenceUntil} onChange={e=>setF("recurrenceUntil",e.target.value||"")}/></div>
               )}
-              <div><span style={labelSt}>Tezgah</span><select style={inputSt} value={form.machine} onChange={e=>setF("machine",e.target.value)}><option value="">Seciniz</option>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
-              <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Is Emri (Opsiyonel)</span><select style={inputSt} value={form.orderId} onChange={e=>setF("orderId",e.target.value)}><option value="">Seciniz</option>{openOrders.map(o=><option key={o.id} value={o.id}>{o.code||"-"} - {o.name||"-"}</option>)}</select></div>
+              <div>
+                <span style={labelSt}>Tezgah</span>
+                <SearchableSelect
+                  value={form.machine}
+                  onChange={v=>setF("machine",v)}
+                  placeholder="Seciniz"
+                  options={[{value:"",label:"Seciniz"},...machines.map(m=>({value:m,label:m}))]}
+                />
+              </div>
+              <div style={{gridColumn:"1 / -1"}}>
+                <span style={labelSt}>Is Emri (Opsiyonel)</span>
+                <SearchableSelect
+                  value={form.orderId}
+                  onChange={v=>setF("orderId",v)}
+                  placeholder="Seciniz"
+                  options={[{value:"",label:"Seciniz"},...openOrders.map(o=>({value:o.id,label:`${o.code||"-"} - ${o.name||"-"}`}))]}
+                />
+              </div>
               <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Gorev Basligi</span><input style={inputSt} value={form.title} onChange={e=>setF("title",e.target.value)} placeholder="Orn: CNC-2 icin ilk parca ayari"/></div>
               <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Aciklama</span><textarea rows={3} style={{...inputSt,minHeight:76,resize:"vertical"}} value={form.detail} onChange={e=>setF("detail",e.target.value)} placeholder="Gorev detaylari..."/></div>
             </div>
@@ -4415,10 +4666,13 @@ function ToolStock({currentUser,filtersVisible=true}) {
                                     <option value="out">Cikis</option>
                                   </select>
                                   <input style={{...inputSt,padding:"7px 10px",fontSize:12}} type="number" min="1" placeholder="Miktar" value={moveForm.qty} onChange={e=>setMoveForm(f=>({...f,qty:e.target.value}))}/>
-                                  <select style={{...inputSt,padding:"7px 10px",fontSize:12}} value={moveForm.orderId} onChange={e=>setMoveForm(f=>({...f,orderId:e.target.value}))}>
-                                    <option value="">Is emri sec (opsiyonel)</option>
-                                    {orders.map(o=><option key={o.id} value={o.id}>{o.code} - {o.name}</option>)}
-                                  </select>
+                                  <SearchableSelect
+                                    compact
+                                    value={moveForm.orderId}
+                                    onChange={v=>setMoveForm(f=>({...f,orderId:v}))}
+                                    placeholder="Is emri sec (opsiyonel)"
+                                    options={[{value:"",label:"Is emri sec (opsiyonel)"},...orders.map(o=>({value:o.id,label:`${o.code} - ${o.name}`}))]}
+                                  />
                                   <input style={{...inputSt,padding:"7px 10px",fontSize:12,gridColumn:"1 / span 2"}} placeholder="Not (opsiyonel)" value={moveForm.note} onChange={e=>setMoveForm(f=>({...f,note:e.target.value}))}/>
                                   <div style={{display:"flex",gap:7}}>
                                     <button onClick={()=>saveMovement(t)} style={{...btnSt("primary"),padding:"7px 10px",fontSize:12}}>Hareket Kaydet</button>
@@ -4547,7 +4801,8 @@ function Customers({filtersVisible=true}) {
   useEffect(()=>{
     setCustomerListPageIdx(prev=>Math.max(1,Math.min(prev,customerTotalPages)));
   },[customerTotalPages]);
-  const pagedCustomers=sortedCustomers.slice((customerListPageIdx-1)*Math.max(1,customerRowsPerPage),(customerListPageIdx-1)*Math.max(1,customerRowsPerPage)+Math.max(1,customerRowsPerPage));
+  const customerListStart=(customerListPageIdx-1)*Math.max(1,customerRowsPerPage);
+  const pagedCustomers=sortedCustomers.slice(customerListStart,customerListStart+Math.max(1,customerRowsPerPage));
   const contactFilterCounts={
     all:customers.length,
     with_contact:customers.filter(row=>hasContactInfo(row)).length,
@@ -4680,7 +4935,10 @@ function Customers({filtersVisible=true}) {
       setForm({...emptyForm,code:nextCustomerCode(customers.filter(x=>x.id!==c.id))});
     }
   }
-  const renderCustomerTableCell=(c,col)=>{
+  const renderCustomerTableCell=(c,col,rowNo)=>{
+    if(col.id==="row_no"){
+      return <td key={col.id} style={{padding:"11px 12px",fontSize:11,color:C.muted2,textAlign:"center",fontWeight:700}}>{rowNo}</td>;
+    }
     if(col.id==="customer"){
       return (
         <td key={col.id} style={{padding:"11px 12px",minWidth:0}}>
@@ -4811,11 +5069,14 @@ function Customers({filtersVisible=true}) {
                       </td>
                     </tr>
                   )}
-                  {pagedCustomers.map((c,idx)=>(
-                    <tr key={c.id} style={{borderBottom:`1px solid ${C.border}`,background:idx%2===0?C.card:C.surface}}>
-                      {visibleCustomerTableColumns.map(col=>renderCustomerTableCell(c,col))}
-                    </tr>
-                  ))}
+                  {pagedCustomers.map((c,idx)=>{
+                    const rowNo=customerListStart+idx+1;
+                    return (
+                      <tr key={c.id} style={{borderBottom:`1px solid ${C.border}`,background:idx%2===0?C.card:C.surface}}>
+                        {visibleCustomerTableColumns.map(col=>renderCustomerTableCell(c,col,rowNo))}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -5055,9 +5316,10 @@ function MaterialLibrary({filtersVisible=true}) {
   useEffect(()=>{
     setMaterialPageIdx(prev=>Math.max(1,Math.min(prev,materialTotalPages)));
   },[materialTotalPages]);
+  const materialListStart=(materialPageIdx-1)*Math.max(1,materialRowsPerPage);
   const pagedMaterials=sortedMaterials.slice(
-    (materialPageIdx-1)*Math.max(1,materialRowsPerPage),
-    (materialPageIdx-1)*Math.max(1,materialRowsPerPage)+Math.max(1,materialRowsPerPage)
+    materialListStart,
+    materialListStart+Math.max(1,materialRowsPerPage)
   );
   const stockFilterCounts={
     all:materials.length,
@@ -5097,11 +5359,14 @@ function MaterialLibrary({filtersVisible=true}) {
     toggleColumn:toggleMaterialTableColumn,
     resetColumns:resetMaterialTableColumns,
   }=useTableColumnLayout("material_library_list",MATERIAL_LIBRARY_LIST_COLUMNS);
-  const renderMaterialTableCell=(m,col)=>{
+  const renderMaterialTableCell=(m,col,rowNo)=>{
     const stock=safeNum(m.stock);
     const reorder=safeNum(m.reorderPoint);
     const safety=safeNum(m.safetyStock);
     const critical=stock<=Math.max(reorder,safety);
+    if(col.id==="row_no"){
+      return <td key={col.id} style={{padding:"11px 12px",fontSize:11,color:C.muted2,textAlign:"center",fontWeight:700}}>{rowNo}</td>;
+    }
     if(col.id==="material"){
       return (
         <td key={col.id} style={{padding:"11px 12px",minWidth:0}}>
@@ -5251,11 +5516,14 @@ function MaterialLibrary({filtersVisible=true}) {
                       </td>
                     </tr>
                   )}
-                  {pagedMaterials.map((m,idx)=>(
-                    <tr key={m.id} style={{borderBottom:`1px solid ${C.border}`,background:idx%2===0?C.card:C.surface}}>
-                      {visibleMaterialTableColumns.map(col=>renderMaterialTableCell(m,col))}
-                    </tr>
-                  ))}
+                  {pagedMaterials.map((m,idx)=>{
+                    const rowNo=materialListStart+idx+1;
+                    return (
+                      <tr key={m.id} style={{borderBottom:`1px solid ${C.border}`,background:idx%2===0?C.card:C.surface}}>
+                        {visibleMaterialTableColumns.map(col=>renderMaterialTableCell(m,col,rowNo))}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -5273,6 +5541,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
   const emptyPartForm={
     partNo:"",
     customerPartCode:"",
+    customerId:"",
     customerName:"",
     name:"",
     material:"",
@@ -5280,14 +5549,12 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     setupSec:"300",
     cycleSec:"60",
     qtyPerRaw:"1",
-    rawUnitCost:"0",
-    laborRateHour:"250",
-    machineRateHour:"600",
     ncProgramVersion:"V1",
     documents:[],
     notes:"",
   };
   const [parts,setParts]=useState([]);
+  const [customers,setCustomers]=useState([]);
   const [materials,setMaterials]=useState([]);
   const [operationTypes,setOperationTypes]=useState(DEFAULT_ROUTING_OPERATION_TYPES);
   const [loading,setLoading]=useState(true);
@@ -5312,13 +5579,15 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
   }=useViewportPanelMetrics(partListPanelRef,{minHeight:340,bottomGap:14,narrowWidth:1180});
 
   const load=useCallback(async()=>{
-    const [p,m,opDoc]=await Promise.all([
+    const [p,m,c,opDoc]=await Promise.all([
       window.DB.getAll("parts"),
       window.DB.getAll("materials"),
+      window.DB.getAll("customers"),
       window.DB.getDoc("config","routingOperationTypes"),
     ]);
     setParts(p.sort((a,b)=>(a.partNo||"").localeCompare(b.partNo||"","tr")));
     setMaterials(m.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    setCustomers(c.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
     setOperationTypes(normalizeRoutingOperationTypes(opDoc||{}));
     setLoading(false);
   },[]);
@@ -5338,6 +5607,14 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     const next=(nums.length?Math.max(...nums):0)+1;
     return `PRT-${String(next).padStart(4,"0")}`;
   },[parts]);
+  const nextCustomerCode=useCallback((list=customers)=>{
+    const nums=list.map(c=>{
+      const m=String(c.code||"").toUpperCase().match(/^FRM-(\d+)$/);
+      return m?Number(m[1]):null;
+    }).filter(n=>n!==null);
+    const next=(nums.length?Math.max(...nums):0)+1;
+    return `FRM-${String(next).padStart(3,"0")}`;
+  },[customers]);
   useEffect(()=>{
     function onTabAction(ev){
       const d=ev&&ev.detail?ev.detail:{};
@@ -5371,6 +5648,16 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
   },[parts,selectedPartId]);
 
   const selectedPart=parts.find(p=>p.id===selectedPartId)||null;
+  const normalizeCustomerKey=value=>String(value||"").trim().toLocaleLowerCase("tr");
+  const customerById=useMemo(()=>{
+    const map={};
+    customers.forEach(c=>{
+      const id=String(c?.id||"").trim();
+      if(!id) return;
+      map[id]=c;
+    });
+    return map;
+  },[customers]);
   const selectedPartPriceHistory=selectedPart
     ? [...(selectedPart.priceHistory||[])].sort((a,b)=>{
         const da=String(a?.updatedAt||a?.date||a?.createdAt||"");
@@ -5379,6 +5666,8 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
       })
     : [];
   const getPartCompanyName=(part)=>{
+    const fromId=String(customerById[String(part?.customerId||"")]?.name||"").trim();
+    if(fromId) return fromId;
     const direct=String(part?.customerName||part?.companyName||"").trim();
     if(direct) return direct;
     const history=(Array.isArray(part?.priceHistory)?part.priceHistory:[])
@@ -5477,19 +5766,6 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     density:bomMaterial?.density,
   });
 
-  const partCostCalc=(()=>{
-    const qtyRaw=Math.max(0,safeNum(partForm.qtyPerRaw));
-    const rawUnit=Math.max(0,safeNum(partForm.rawUnitCost));
-    const laborRate=Math.max(0,safeNum(partForm.laborRateHour));
-    const machineRate=Math.max(0,safeNum(partForm.machineRateHour));
-    const setupSec=Math.max(0,safeNum(partForm.setupSec));
-    const cycleSec=Math.max(0,safeNum(partForm.cycleSec));
-    const materialCost=qtyRaw*rawUnit;
-    const laborCost=((setupSec+cycleSec)/3600)*laborRate;
-    const machineCost=((setupSec+cycleSec)/3600)*machineRate;
-    const unitCost=materialCost+laborCost+machineCost;
-    return {materialCost,laborCost,machineCost,unitCost};
-  })();
   const selectedOperationType=operationTypes.find(o=>o.id===routingForm.operationTypeId)||operationTypes[0]||null;
   function setRoutingOperationType(operationTypeId){
     const picked=operationTypes.find(o=>o.id===operationTypeId)||null;
@@ -5592,9 +5868,12 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     ()=>visiblePartListTableColumns.map(col=>`${Math.max(84,safeNum(col.width)||140)}px`).join(" "),
     [visiblePartListTableColumns]
   );
-  const renderPartListCell=(p,col)=>{
+  const renderPartListCell=(p,col,rowNo)=>{
     const docsCount=(Array.isArray(p.documents)?p.documents.length:0)+(p.drawingFile?1:0);
     const companyName=getPartCompanyName(p)||"-";
+    if(col.id==="row_no"){
+      return <div style={{fontSize:11,color:C.muted2,textAlign:"center",fontWeight:700}}>{rowNo}</div>;
+    }
     if(col.id==="part_no"){
       return <div style={{fontSize:12,fontWeight:800,fontFamily:"monospace"}}>{p.partNo||"-"}</div>;
     }
@@ -5648,22 +5927,62 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     if(!partForm.name.trim()){alert("Parca adi zorunlu.");return;}
     const computedPartNo=(String(partForm.partNo||"").trim().toUpperCase()||nextPartNo());
     const existing=parts.find(p=>(p.partNo||"").toUpperCase()===computedPartNo);
+    const typedCustomerName=String(partForm.customerName||"").trim();
+    let pickedCustomer=customers.find(c=>c.id===partForm.customerId)||null;
+    if(!pickedCustomer&&typedCustomerName){
+      pickedCustomer=customers.find(c=>normalizeCustomerKey(c.name)===normalizeCustomerKey(typedCustomerName))||null;
+    }
+    let resolvedCustomerId=pickedCustomer?.id||"";
+    let resolvedCustomerName=pickedCustomer?.name||typedCustomerName;
+    if(!pickedCustomer&&typedCustomerName){
+      const shouldCreate=confirm(`"${typedCustomerName}" musterisi kayitli degil. Yeni musteri kaydi olusturulsun mu?`);
+      if(shouldCreate){
+        const customerPayload={
+          name:typedCustomerName,
+          code:nextCustomerCode(),
+          contact:"",
+          phone:"",
+          email:"",
+          notes:"Parca yonetimi ekranindan otomatik olusturuldu.",
+          updatedAt:new Date().toISOString(),
+        };
+        const customerId=await window.DB.addDoc("customers",customerPayload);
+        if(!customerId){
+          alert("Musteri kaydi olusturulamadi. Parca kaydi iptal edildi.");
+          return;
+        }
+        const createdCustomer={id:customerId,...customerPayload,createdAt:new Date().toISOString()};
+        setCustomers(prev=>[...prev,createdCustomer].sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+        resolvedCustomerId=customerId;
+        resolvedCustomerName=createdCustomer.name;
+        setPartForm(f=>({...f,customerId:customerId,customerName:createdCustomer.name}));
+      }
+    }
+    const existingBreakdown=(existing&&typeof existing.costBreakdown==="object"&&existing.costBreakdown)?existing.costBreakdown:{};
+    const preservedRawUnitCost=Math.max(0,safeNum(existing?.rawUnitCost));
+    const preservedLaborRateHour=Math.max(0,safeNum(existing?.laborRateHour));
+    const preservedMachineRateHour=Math.max(0,safeNum(existing?.machineRateHour));
+    const preservedMaterialCost=Math.max(0,safeNum(existingBreakdown.materialCost));
+    const preservedLaborCost=Math.max(0,safeNum(existingBreakdown.laborCost));
+    const preservedMachineCost=Math.max(0,safeNum(existingBreakdown.machineCost));
+    const preservedUnitCost=Math.max(0,safeNum(existing?.unitCost));
     const payload={
       partNo:computedPartNo,
       customerPartCode:String(partForm.customerPartCode||"").trim().toUpperCase(),
-      customerName:String(partForm.customerName||"").trim(),
+      customerId:resolvedCustomerId,
+      customerName:resolvedCustomerName,
       name:partForm.name.trim(),
       material:partForm.material.trim(),
       revision:(partForm.revision||"A").trim().toUpperCase(),
       setupSec:Math.max(0,safeNum(partForm.setupSec)),
       cycleSec:Math.max(0,safeNum(partForm.cycleSec)),
       qtyPerRaw:Math.max(0,safeNum(partForm.qtyPerRaw)),
-      rawUnitCost:Math.max(0,safeNum(partForm.rawUnitCost)),
-      laborRateHour:Math.max(0,safeNum(partForm.laborRateHour)),
-      machineRateHour:Math.max(0,safeNum(partForm.machineRateHour)),
+      rawUnitCost:preservedRawUnitCost,
+      laborRateHour:preservedLaborRateHour,
+      machineRateHour:preservedMachineRateHour,
       ncProgramVersion:(partForm.ncProgramVersion||"V1").trim().toUpperCase(),
-      unitCost:partCostCalc.unitCost,
-      costBreakdown:{materialCost:partCostCalc.materialCost,laborCost:partCostCalc.laborCost,machineCost:partCostCalc.machineCost},
+      unitCost:preservedUnitCost,
+      costBreakdown:{materialCost:preservedMaterialCost,laborCost:preservedLaborCost,machineCost:preservedMachineCost},
       documents:Array.isArray(partForm.documents)?partForm.documents:[],
       notes:partForm.notes.trim(),
       bomLines:Array.isArray(existing?.bomLines)?existing.bomLines:[],
@@ -5700,19 +6019,24 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     const docs=(Array.isArray(p.documents)&&p.documents.length>0)
       ? p.documents
       : (p.drawingFile?[{...p.drawingFile,id:`legacy_${p.id||Date.now()}`}]:[]);
+    const resolvedCustomerName=p.customerName||p.companyName||getPartCompanyName(p)||"";
+    const directCustomerId=String(p.customerId||"").trim();
+    const matchedCustomer=directCustomerId
+      ? customers.find(c=>c.id===directCustomerId)
+      : (resolvedCustomerName
+        ? customers.find(c=>normalizeCustomerKey(c.name)===normalizeCustomerKey(resolvedCustomerName))
+        : null);
     setPartForm({
       partNo:p.partNo||"",
       customerPartCode:p.customerPartCode||"",
-      customerName:p.customerName||p.companyName||getPartCompanyName(p)||"",
+      customerId:matchedCustomer?.id||directCustomerId||"",
+      customerName:matchedCustomer?.name||resolvedCustomerName,
       name:p.name||"",
       material:p.material||"",
       revision:p.revision||"A",
       setupSec:String(p.setupSec??300),
       cycleSec:String(p.cycleSec??60),
       qtyPerRaw:String(p.qtyPerRaw??1),
-      rawUnitCost:String(p.rawUnitCost??0),
-      laborRateHour:String(p.laborRateHour??250),
-      machineRateHour:String(p.machineRateHour??600),
       ncProgramVersion:p.ncProgramVersion||"V1",
       documents:docs,
       notes:p.notes||"",
@@ -5904,7 +6228,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
                         >
                           {visiblePartListTableColumns.map(col=>(
                             <div key={col.id} style={{minWidth:0,textAlign:col.align||"left"}}>
-                              {renderPartListCell(p,col)}
+                              {renderPartListCell(p,col,partListStart+idx+1)}
                             </div>
                           ))}
                         </button>
@@ -5933,22 +6257,46 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
               <div><span style={labelSt}>Parca No (Otomatik)</span><input style={{...inputSt,background:C.surface,color:C.muted2}} value={partForm.partNo||nextPartNo()} readOnly/></div>
               <div><span style={labelSt}>Parca Musteri Kodu</span><input style={inputSt} value={partForm.customerPartCode} onChange={e=>fv("customerPartCode",e.target.value)} placeholder="MUS-PRC-001"/></div>
               <div><span style={labelSt}>Parca Adi *</span><input style={inputSt} value={partForm.name} onChange={e=>fv("name",e.target.value)} placeholder="Govde"/></div>
-              <div><span style={labelSt}>Firma Adi</span><input style={inputSt} value={partForm.customerName} onChange={e=>fv("customerName",e.target.value)} placeholder="ABC Otomotiv"/></div>
+              <div>
+                <span style={labelSt}>Musteri (Secim)</span>
+                <SearchableSelect
+                  value={partForm.customerId||""}
+                  onChange={id=>{
+                    const picked=customers.find(c=>c.id===id)||null;
+                    setPartForm(f=>({...f,customerId:id,customerName:picked?.name||f.customerName||""}));
+                  }}
+                  placeholder="Musteri secin..."
+                  options={customers.map(c=>({value:c.id,label:`${c.name}${c.code?` (${c.code})`:""}`}))}
+                />
+              </div>
+              <div>
+                <span style={labelSt}>Musteri Adi</span>
+                <input
+                  style={inputSt}
+                  value={partForm.customerName}
+                  onChange={e=>{
+                    const typed=e.target.value;
+                    const matched=customers.find(c=>normalizeCustomerKey(c.name)===normalizeCustomerKey(typed))||null;
+                    setPartForm(f=>({...f,customerName:typed,customerId:matched?.id||""}));
+                  }}
+                  placeholder="Listede yoksa yazin"
+                />
+                <div style={{fontSize:10,color:C.muted2,marginTop:3}}>Kaydetmede listede yoksa yeni musteri olusturma onayi sorulur.</div>
+              </div>
               <div><span style={labelSt}>Revizyon</span><input style={inputSt} value={partForm.revision} onChange={e=>fv("revision",e.target.value)}/></div>
               <div>
                 <span style={labelSt}>Malzeme</span>
-                <select style={inputSt} value={partForm.material} onChange={e=>fv("material",e.target.value)}>
-                  <option value="">Secin...</option>
-                  {materials.map(m=><option key={m.id} value={m.name||""}>{m.code?`${m.code} - `:""}{m.name||""}</option>)}
-                </select>
+                <SearchableSelect
+                  value={partForm.material}
+                  onChange={v=>fv("material",v)}
+                  placeholder="Malzeme secin..."
+                  options={materials.map(m=>({value:m.name||"",label:`${m.code?`${m.code} - `:""}${m.name||""}`}))}
+                />
               </div>
               <div><span style={labelSt}>Kurulum (sn)</span><input style={inputSt} type="number" min="0" value={partForm.setupSec} onChange={e=>fv("setupSec",e.target.value)}/></div>
               <div><span style={labelSt}>Cevrim (sn)</span><input style={inputSt} type="number" min="0" value={partForm.cycleSec} onChange={e=>fv("cycleSec",e.target.value)}/></div>
               <div><span style={labelSt}>Hammadde Miktar</span><input style={inputSt} type="number" min="0" value={partForm.qtyPerRaw} onChange={e=>fv("qtyPerRaw",e.target.value)}/></div>
-              <div><span style={labelSt}>Hammadde Birim Maliyet</span><input style={inputSt} type="number" min="0" value={partForm.rawUnitCost} onChange={e=>fv("rawUnitCost",e.target.value)}/></div>
               <div><span style={labelSt}>NC Program Versiyon</span><input style={inputSt} value={partForm.ncProgramVersion} onChange={e=>fv("ncProgramVersion",e.target.value)} placeholder="V1"/></div>
-              <div><span style={labelSt}>Iscilik Saatlik</span><input style={inputSt} type="number" min="0" value={partForm.laborRateHour} onChange={e=>fv("laborRateHour",e.target.value)}/></div>
-              <div><span style={labelSt}>Tezgah Saatlik</span><input style={inputSt} type="number" min="0" value={partForm.machineRateHour} onChange={e=>fv("machineRateHour",e.target.value)}/></div>
               <div>
                 <span style={labelSt}>Dosyalar</span>
                 <label style={{...inputSt,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
@@ -5977,7 +6325,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
             </div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:10}}>
               <div style={{fontSize:12,color:C.muted2}}>
-                Birim Maliyet = Malzeme {partCostCalc.materialCost.toFixed(2)} + Iscilik {partCostCalc.laborCost.toFixed(2)} + Tezgah {partCostCalc.machineCost.toFixed(2)} = <span style={{color:C.text,fontWeight:700}}>{partCostCalc.unitCost.toFixed(2)} TRY</span>
+                Maliyet alanlari sadeleştirildi.
               </div>
               <button onClick={savePart} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Parca Kaydet/Guncelle</button>
             </div>
@@ -6035,7 +6383,13 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
                   {operationTypes.length===0&&<option value="">Ayarlar / Rota ve Operasyon Tipleri</option>}
                   {operationTypes.map(op=><option key={op.id} value={op.id}>{op.icon||"KS"} {op.code} - {op.name}</option>)}
                 </select>
-                <select style={{...inputSt,padding:"7px 9px",fontSize:12}} value={routingForm.machine} onChange={e=>setRoutingForm(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
+                <SearchableSelect
+                  compact
+                  value={routingForm.machine}
+                  onChange={v=>setRoutingForm(f=>({...f,machine:v}))}
+                  placeholder="Tezgah secin"
+                  options={machines.map(m=>({value:m,label:m}))}
+                />
                 <input style={{...inputSt,padding:"7px 9px",fontSize:12}} type="number" min="0" placeholder="Kurulum sn" value={routingForm.setupSec} onChange={e=>setRoutingForm(f=>({...f,setupSec:e.target.value}))}/>
                 <input style={{...inputSt,padding:"7px 9px",fontSize:12}} type="number" min="0" placeholder="Cevrim sn" value={routingForm.cycleSec} onChange={e=>setRoutingForm(f=>({...f,cycleSec:e.target.value}))}/>
                 <button onClick={addRoutingOp} style={{...btnSt("green"),padding:"7px 9px",fontSize:12}} disabled={operationTypes.length===0}>Ekle</button>
@@ -7390,8 +7744,10 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   useEffect(()=>{
     setOrderListPageIdx(prev=>Math.max(1,Math.min(prev,orderTotalPages)));
   },[orderTotalPages]);
-  const pagedQuoteRows=filteredQuotes.slice((quoteListPageIdx-1)*Math.max(1,quoteRowsPerPage),(quoteListPageIdx-1)*Math.max(1,quoteRowsPerPage)+Math.max(1,quoteRowsPerPage));
-  const pagedOrderRows=filteredOrders.slice((orderListPageIdx-1)*Math.max(1,orderRowsPerPage),(orderListPageIdx-1)*Math.max(1,orderRowsPerPage)+Math.max(1,orderRowsPerPage));
+  const quoteListStart=(quoteListPageIdx-1)*Math.max(1,quoteRowsPerPage);
+  const orderListStart=(orderListPageIdx-1)*Math.max(1,orderRowsPerPage);
+  const pagedQuoteRows=filteredQuotes.slice(quoteListStart,quoteListStart+Math.max(1,quoteRowsPerPage));
+  const pagedOrderRows=filteredOrders.slice(orderListStart,orderListStart+Math.max(1,orderRowsPerPage));
   const quoteStatusCounts={
     all:quotes.length,
     offer:quotes.filter(x=>(x.status||"")==="offer").length,
@@ -7433,7 +7789,10 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
         overflow:"hidden",
       }),
   };
-  const renderQuoteTableCell=(qr,quoteNet,col)=>{
+  const renderQuoteTableCell=(qr,quoteNet,col,rowNo)=>{
+    if(col.id==="row_no"){
+      return <td key={col.id} style={{padding:"10px 12px",textAlign:"center",fontSize:11,color:C.muted2,fontWeight:700}}>{rowNo}</td>;
+    }
     if(col.id==="quote_no"){
       return (
         <td key={col.id} style={{padding:"10px 12px"}}>
@@ -7471,7 +7830,10 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     }
     return null;
   };
-  const renderSalesOrderTableCell=(o,remaining,col)=>{
+  const renderSalesOrderTableCell=(o,remaining,col,rowNo)=>{
+    if(col.id==="row_no"){
+      return <td key={col.id} style={{padding:"10px 12px",textAlign:"center",fontSize:11,color:C.muted2,fontWeight:700}}>{rowNo}</td>;
+    }
     if(col.id==="order_no"){
       return (
         <td key={col.id} style={{padding:"10px 12px"}}>
@@ -7616,7 +7978,15 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
               {priceEditId&&<Badge label={`Satir Duzenleme: ${activePriceEdit?.partNo||priceEditId}`} color={C.warn}/>}
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr 1fr 1fr 0.8fr",gap:8}}>
-              <div><span style={labelSt}>Musteri</span><select style={inputSt} value={priceForm.customerId} onChange={e=>setPriceForm(f=>({...f,customerId:e.target.value}))}><option value="">Secin</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+              <div>
+                <span style={labelSt}>Musteri</span>
+                <SearchableSelect
+                  value={priceForm.customerId}
+                  onChange={v=>setPriceForm(f=>({...f,customerId:v}))}
+                  placeholder="Secin..."
+                  options={customers.map(c=>({value:c.id,label:c.name||"-"}))}
+                />
+              </div>
               <div><span style={labelSt}>Parca No</span><input style={inputSt} value={priceForm.partNo} onChange={e=>setPriceForm(f=>({...f,partNo:e.target.value}))}/></div>
               <div><span style={labelSt}>Birim Fiyat</span><input style={inputSt} type="number" min="0" value={priceForm.price} onChange={e=>setPriceForm(f=>({...f,price:e.target.value}))}/></div>
               <div><span style={labelSt}>Iskonto %</span><input style={inputSt} type="number" min="0" max="100" value={priceForm.discountPct} onChange={e=>setPriceForm(f=>({...f,discountPct:e.target.value}))}/></div>
@@ -7709,11 +8079,12 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                     </tr>
                   </thead>
                   <tbody>
-                    {pagedQuoteRows.map(qr=>{
+                    {pagedQuoteRows.map((qr,idx)=>{
+                      const rowNo=quoteListStart+idx+1;
                       const quoteNet=(qr.lines||[]).reduce((sum,line)=>sum+lineTotal(line).net,0);
                       return (
                         <tr key={qr.id} style={{borderBottom:`1px solid ${C.border}`}}>
-                          {visibleQuoteTableColumns.map(col=>renderQuoteTableCell(qr,quoteNet,col))}
+                          {visibleQuoteTableColumns.map(col=>renderQuoteTableCell(qr,quoteNet,col,rowNo))}
                         </tr>
                       );
                     })}
@@ -7787,11 +8158,12 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                     </tr>
                   </thead>
                   <tbody>
-                    {pagedOrderRows.map(o=>{
+                    {pagedOrderRows.map((o,idx)=>{
+                      const rowNo=orderListStart+idx+1;
                       const remaining=Math.max(0,safeNum(o.qty)-safeNum(o.deliveredQty));
                       return (
                         <tr key={o.id} style={{borderBottom:`1px solid ${C.border}`}}>
-                          {visibleOrderTableColumns.map(col=>renderSalesOrderTableCell(o,remaining,col))}
+                          {visibleOrderTableColumns.map(col=>renderSalesOrderTableCell(o,remaining,col,rowNo))}
                         </tr>
                       );
                     })}
@@ -7821,7 +8193,15 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
             <div style={{padding:14,display:"flex",flexDirection:"column",gap:12,overflowY:"auto"}}>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
                 <div><span style={labelSt}>Teklif No</span><input style={inputSt} value={quoteForm.code} onChange={e=>setQ("code",e.target.value.toUpperCase())}/></div>
-                <div><span style={labelSt}>Musteri *</span><select style={inputSt} value={quoteForm.customerId} onChange={e=>setQ("customerId",e.target.value)}><option value="">Secin</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+                <div>
+                  <span style={labelSt}>Musteri *</span>
+                  <SearchableSelect
+                    value={quoteForm.customerId}
+                    onChange={v=>setQ("customerId",v)}
+                    placeholder="Secin..."
+                    options={customers.map(c=>({value:c.id,label:c.name||"-"}))}
+                  />
+                </div>
                 <div><span style={labelSt}>Gecerlilik</span><input style={inputSt} type="date" value={quoteForm.validUntil} onChange={e=>setQ("validUntil",e.target.value)}/></div>
                 <div><span style={labelSt}>Odeme Vadesi (Gun)</span><input style={inputSt} type="number" min="0" value={quoteForm.paymentTermDays} onChange={e=>setQ("paymentTermDays",e.target.value)}/></div>
                 <div><span style={labelSt}>Oncelik</span><select style={inputSt} value={quoteForm.priority} onChange={e=>setQ("priority",e.target.value)}><option value="urgent">Acil</option><option value="normal">Normal</option><option value="low">Dusuk</option></select></div>
@@ -7915,7 +8295,15 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
             <div style={{padding:14,display:"flex",flexDirection:"column",gap:12,overflowY:"auto"}}>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
                 <div><span style={labelSt}>Siparis No</span><input style={inputSt} value={orderForm.code} onChange={e=>setO("code",e.target.value.toUpperCase())}/></div>
-                <div><span style={labelSt}>Musteri *</span><select style={inputSt} value={orderForm.customerId} onChange={e=>setO("customerId",e.target.value)}><option value="">Secin</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+                <div>
+                  <span style={labelSt}>Musteri *</span>
+                  <SearchableSelect
+                    value={orderForm.customerId}
+                    onChange={v=>setO("customerId",v)}
+                    placeholder="Secin..."
+                    options={customers.map(c=>({value:c.id,label:c.name||"-"}))}
+                  />
+                </div>
                 <div><span style={labelSt}>Termin</span><input style={inputSt} type="date" value={orderForm.dueDate} onChange={e=>setO("dueDate",e.target.value)}/></div>
                 <div><span style={labelSt}>Odeme Vadesi (Gun)</span><input style={inputSt} type="number" min="0" value={orderForm.paymentTermDays} onChange={e=>setO("paymentTermDays",e.target.value)}/></div>
                 <div><span style={labelSt}>Oncelik</span><select style={inputSt} value={orderForm.priority} onChange={e=>setO("priority",e.target.value)}><option value="urgent">Acil</option><option value="normal">Normal</option><option value="low">Dusuk</option></select></div>
@@ -8122,17 +8510,21 @@ function SalesOrders({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders}) {
           <div><span style={labelSt}>Siparis Adi *</span><input style={inputSt} value={form.name} onChange={e=>fv("name",e.target.value)} placeholder="Parca / urun adi"/></div>
           <div>
             <span style={labelSt}>Musteri</span>
-            <select style={inputSt} value={form.customerId||""} onChange={e=>fv("customerId",e.target.value)}>
-              <option value="">Musteri secin</option>
-              {customers.map(c=><option key={c.id} value={c.id}>{c.name}{c.code?` (${c.code})`:""}</option>)}
-            </select>
+            <SearchableSelect
+              value={form.customerId||""}
+              onChange={v=>fv("customerId",v)}
+              placeholder="Musteri secin"
+              options={customers.map(c=>({value:c.id,label:`${c.name}${c.code?` (${c.code})`:""}`}))}
+            />
           </div>
           <div>
             <span style={labelSt}>Malzeme</span>
-            <select style={inputSt} value={form.material||""} onChange={e=>fv("material",e.target.value)}>
-              <option value="">Malzeme secin...</option>
-              {materialOptions.map(m=><option key={m.id||m.name} value={m.name||""}>{m.code?`${m.code} - `:""}{m.name||""}</option>)}
-            </select>
+            <SearchableSelect
+              value={form.material||""}
+              onChange={v=>fv("material",v)}
+              placeholder="Malzeme secin..."
+              options={materialOptions.map(m=>({value:m.name||"",label:`${m.code?`${m.code} - `:""}${m.name||""}`}))}
+            />
           </div>
           <div><span style={labelSt}>Siparis Adedi</span><input style={inputSt} type="number" min="0" value={form.qty} onChange={e=>fv("qty",e.target.value)} placeholder="0"/></div>
           <div><span style={labelSt}>Termin</span><input style={inputSt} type="date" value={form.dueDate||""} onChange={e=>fv("dueDate",e.target.value||"")}/></div>
@@ -8484,8 +8876,12 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
   useEffect(()=>{
     setWorkOrderPageIdx(prev=>Math.max(1,Math.min(prev,workOrderTotalPages)));
   },[workOrderTotalPages]);
-  const pagedWorkOrders=filteredOrders.slice((workOrderPageIdx-1)*Math.max(1,workOrderRowsPerPage),(workOrderPageIdx-1)*Math.max(1,workOrderRowsPerPage)+Math.max(1,workOrderRowsPerPage));
-  const renderWorkOrderTableCell=(o,usage,produced,priorityLabel,col)=>{
+  const workOrderListStart=(workOrderPageIdx-1)*Math.max(1,workOrderRowsPerPage);
+  const pagedWorkOrders=filteredOrders.slice(workOrderListStart,workOrderListStart+Math.max(1,workOrderRowsPerPage));
+  const renderWorkOrderTableCell=(o,usage,produced,priorityLabel,col,rowNo)=>{
+    if(col.id==="row_no"){
+      return <td key={col.id} style={{padding:"10px 12px",textAlign:"center",fontSize:11,color:C.muted2,fontWeight:700}}>{rowNo}</td>;
+    }
     if(col.id==="work_order"){
       return (
         <td key={col.id} style={{padding:"10px 12px",minWidth:0}}>
@@ -8612,10 +9008,10 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
     : materials;
 
   if(viewOrder) return (
-    <div style={{padding:0}}>
+    <div style={{padding:"0 8px 10px"}}>
       <button onClick={()=>{setPreviewFile(null);setViewOrder(null);}} style={{...btnSt("ghost"),marginBottom:16,padding:"8px 14px",fontSize:13}}>‹ Geri</button>
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0,marginBottom:12}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"16px 18px",marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
           <div><div style={{fontWeight:800,fontSize:18,fontFamily:"monospace",color:C.text}}>{viewOrder.code}</div><div style={{fontSize:15,fontWeight:600,marginTop:2,color:C.text}}>{viewOrder.name}</div></div>
           <Badge label={getOrderStatusMeta(viewOrder.status).label} color={getOrderStatusMeta(viewOrder.status).color}/>
         </div>
@@ -8710,17 +9106,21 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
         </div>
         <div>
           <span style={labelSt}>Müşteri</span>
-          <select style={inputSt} value={form.customerId||""} onChange={e=>fv("customerId",e.target.value)}>
-            <option value="">Müşteri seçin (opsiyonel)</option>
-            {customers.map(c=><option key={c.id} value={c.id}>{c.name}{c.code?` (${c.code})`:""}</option>)}
-          </select>
+          <SearchableSelect
+            value={form.customerId||""}
+            onChange={v=>fv("customerId",v)}
+            placeholder="Musteri secin (opsiyonel)"
+            options={customers.map(c=>({value:c.id,label:`${c.name}${c.code?` (${c.code})`:""}`}))}
+          />
         </div>
         <div>
           <span style={labelSt}>Malzeme</span>
-          <select style={inputSt} value={form.material||""} onChange={e=>fv("material",e.target.value)}>
-            <option value="">Malzeme secin...</option>
-            {materialOptions.map(m=><option key={m.id||m.name} value={m.name||""}>{m.code?`${m.code} - `:""}{m.name||""}</option>)}
-          </select>
+          <SearchableSelect
+            value={form.material||""}
+            onChange={v=>fv("material",v)}
+            placeholder="Malzeme secin..."
+            options={materialOptions.map(m=>({value:m.name||"",label:`${m.code?`${m.code} - `:""}${m.name||""}`}))}
+          />
         </div>
         <div>
           <span style={labelSt}>Parça Süresi (saniye) *</span>
@@ -8821,13 +9221,14 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
                   </tr>
                 </thead>
                 <tbody>
-                  {pagedWorkOrders.map(o=>{
+                  {pagedWorkOrders.map((o,idx)=>{
+                    const rowNo=workOrderListStart+idx+1;
                     const usage=safeNum(usageCountByOrder[o.id]||usageCountByOrder[o.code]);
                     const produced=safeNum(productionByOrder[o.code]?.total);
                     const priorityLabel=(PRIORITY_OPTIONS.find(p=>p.id===o.priority)||{}).label||"Normal";
                     return (
                       <tr key={o.id} style={{borderBottom:`1px solid ${C.border}`,opacity:(o.status==="passive"||o.status==="liquidation")?0.6:1}}>
-                        {visibleWorkOrderTableColumns.map(col=>renderWorkOrderTableCell(o,usage,produced,priorityLabel,col))}
+                        {visibleWorkOrderTableColumns.map(col=>renderWorkOrderTableCell(o,usage,produced,priorityLabel,col,rowNo))}
                       </tr>
                     );
                   })}
@@ -10065,11 +10466,13 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
                 <div style={{flex:"1 1 260px"}}>
                   <span style={labelSt}>İş Emri Takım Değişimi</span>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 95px",gap:8}}>
-                    <select style={inputSt} value={toolDraft.machineToolId} onChange={e=>setToolDraft(p=>({...p,machineToolId:e.target.value}))}>
-                      <option value="">Takım seç (opsiyonel)</option>
-                      {toolOptions.map(t=><option key={t.id} value={t.id}>{t.code} - {t.name} (Stok: {Number(t.qty)||0})</option>)}
-                    </select>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 95px",gap:8}}>
+                    <SearchableSelect
+                      value={toolDraft.machineToolId}
+                      onChange={v=>setToolDraft(p=>({...p,machineToolId:v}))}
+                      placeholder="Takim sec (opsiyonel)"
+                      options={[{value:"",label:"Takim sec (opsiyonel)"},...toolOptions.map(t=>({value:t.id,label:`${t.code} - ${t.name} (Stok: ${Number(t.qty)||0})`}))]}
+                    />
                     <input style={inputSt} type="number" min="1" placeholder="Adet" disabled={!toolDraft.machineToolId} value={toolDraft.machineToolQty} onChange={e=>setToolDraft(p=>({...p,machineToolQty:e.target.value}))}/>
                   </div>
                 </div>
@@ -10359,10 +10762,12 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               <div style={{flex:"1 1 260px"}}>
                 <span style={labelSt}>İş Emri Takım Değişimi</span>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 95px",gap:8}}>
-                  <select style={inputSt} value={toolDraft.machineToolId} onChange={e=>setToolDraft(p=>({...p,machineToolId:e.target.value}))}>
-                    <option value="">Takım seç (opsiyonel)</option>
-                    {toolOptions.map(t=><option key={t.id} value={t.id}>{t.code} - {t.name} (Stok: {Number(t.qty)||0})</option>)}
-                  </select>
+                  <SearchableSelect
+                    value={toolDraft.machineToolId}
+                    onChange={v=>setToolDraft(p=>({...p,machineToolId:v}))}
+                    placeholder="Takim sec (opsiyonel)"
+                    options={[{value:"",label:"Takim sec (opsiyonel)"},...toolOptions.map(t=>({value:t.id,label:`${t.code} - ${t.name} (Stok: ${Number(t.qty)||0})`}))]}
+                  />
                   <input style={inputSt} type="number" min="1" placeholder="Adet" disabled={!toolDraft.machineToolId} value={toolDraft.machineToolQty} onChange={e=>setToolDraft(p=>({...p,machineToolQty:e.target.value}))}/>
                 </div>
               </div>
@@ -10723,7 +11128,15 @@ function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule})
       <div style={{display:"grid",gridTemplateColumns:isWide?"1.1fr .9fr":"1fr",gap:12}}>
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
           <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Uretim Girisi</div>
-          <div><span style={labelSt}>Is Emri</span><select style={{...inputSt,padding:"11px 12px",fontSize:14}} value={selectedOrderId} onChange={e=>setSelectedOrderId(e.target.value)}><option value="">{machineOrders.length===0?"Uygun is emri yok":"Is emri secin"}</option>{machineOrders.map(o=><option key={o.id} value={o.id}>{o.code} · {o.name||o.partNo||"-"}</option>)}</select></div>
+          <div>
+            <span style={labelSt}>Is Emri</span>
+            <SearchableSelect
+              value={selectedOrderId}
+              onChange={v=>setSelectedOrderId(v)}
+              placeholder={machineOrders.length===0?"Uygun is emri yok":"Is emri secin"}
+              options={machineOrders.map(o=>({value:o.id,label:`${o.code} · ${o.name||o.partNo||"-"}`}))}
+            />
+          </div>
           {selectedOrder&&<div style={{fontSize:12,color:C.muted2,marginTop:6}}>Parca sure: {fmtSec(selectedOrder.partSec)} · Termin: {selectedOrder.dueDate||"-"} · Oncelik: {selectedOrder.priority||"normal"}</div>}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
             <div><span style={labelSt}>Dogru Adet</span><input style={{...inputSt,padding:"13px 12px",fontSize:18,fontWeight:700,textAlign:"center"}} type="number" min="0" value={entryForm.correct} onChange={e=>setEntryForm(f=>({...f,correct:e.target.value}))}/></div>
@@ -10754,7 +11167,15 @@ function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule})
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
           <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Durus Girisi</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 110px",gap:8}}>
-            <div><span style={labelSt}>Durus Tipi</span><select style={inputSt} value={downtimeForm.typeId} onChange={e=>setDowntimeForm(f=>({...f,typeId:e.target.value}))}><option value="">Secin</option>{downtimeTypes.map(t=><option key={t.id} value={t.id}>{t.code} · {t.name}</option>)}</select></div>
+            <div>
+              <span style={labelSt}>Durus Tipi</span>
+              <SearchableSelect
+                value={downtimeForm.typeId}
+                onChange={v=>setDowntimeForm(f=>({...f,typeId:v}))}
+                placeholder="Secin"
+                options={downtimeTypes.map(t=>({value:t.id,label:`${t.code} · ${t.name}`}))}
+              />
+            </div>
             <div><span style={labelSt}>Dakika</span><input style={inputSt} type="number" min="1" value={downtimeForm.minutes} onChange={e=>setDowntimeForm(f=>({...f,minutes:e.target.value}))}/></div>
           </div>
           <div style={{marginTop:8}}><span style={labelSt}>Neden</span><input style={inputSt} value={downtimeForm.reason} onChange={e=>setDowntimeForm(f=>({...f,reason:e.target.value}))} placeholder="Malzeme yok / ariza detayi vb."/></div>
@@ -11704,33 +12125,43 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8,marginBottom:8}}>
           <div>
             <span style={labelSt}>Veri Kaynagi</span>
-            <select style={inputSt} value={analyticsSource} onChange={e=>setAnalyticsSource(e.target.value)}>
-              {Object.entries(REPORT_SOURCE_DEFS).map(([id,def])=><option key={id} value={id}>{def.label}</option>)}
-            </select>
+            <SearchableSelect
+              value={analyticsSource}
+              onChange={v=>setAnalyticsSource(v)}
+              options={Object.entries(REPORT_SOURCE_DEFS).map(([id,def])=>({value:id,label:def.label}))}
+            />
           </div>
           <div>
             <span style={labelSt}>Satir Boyutu</span>
-            <select style={inputSt} value={analyticsRowDimension} onChange={e=>setAnalyticsRowDimension(e.target.value)}>
-              {analyticsSourceDef.dimensions.map(dim=><option key={dim.id} value={dim.id}>{dim.label}</option>)}
-            </select>
+            <SearchableSelect
+              value={analyticsRowDimension}
+              onChange={v=>setAnalyticsRowDimension(v)}
+              options={analyticsSourceDef.dimensions.map(dim=>({value:dim.id,label:dim.label}))}
+            />
           </div>
           <div>
             <span style={labelSt}>Kolon Boyutu</span>
-            <select style={inputSt} value={analyticsColDimension} onChange={e=>setAnalyticsColDimension(e.target.value)}>
-              {analyticsColumnOptions.map(dim=><option key={dim.id} value={dim.id}>{dim.label}</option>)}
-            </select>
+            <SearchableSelect
+              value={analyticsColDimension}
+              onChange={v=>setAnalyticsColDimension(v)}
+              options={analyticsColumnOptions.map(dim=>({value:dim.id,label:dim.label}))}
+            />
           </div>
           <div>
             <span style={labelSt}>Olcum</span>
-            <select style={inputSt} value={analyticsMetric} onChange={e=>setAnalyticsMetric(e.target.value)}>
-              {analyticsSourceDef.metrics.map(metric=><option key={metric.id} value={metric.id}>{metric.label}</option>)}
-            </select>
+            <SearchableSelect
+              value={analyticsMetric}
+              onChange={v=>setAnalyticsMetric(v)}
+              options={analyticsSourceDef.metrics.map(metric=>({value:metric.id,label:metric.label}))}
+            />
           </div>
           <div>
             <span style={labelSt}>Toplama</span>
-            <select style={inputSt} value={analyticsAggregation} onChange={e=>setAnalyticsAggregation(e.target.value)}>
-              {(analyticsMetricDef?.aggs||["sum"]).map(agg=><option key={agg} value={agg}>{agg.toUpperCase()}</option>)}
-            </select>
+            <SearchableSelect
+              value={analyticsAggregation}
+              onChange={v=>setAnalyticsAggregation(v)}
+              options={(analyticsMetricDef?.aggs||["sum"]).map(agg=>({value:agg,label:String(agg).toUpperCase()}))}
+            />
           </div>
           <div>
             <span style={labelSt}>Satir Limiti</span>
@@ -11926,11 +12357,46 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
             <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10,marginBottom:10}}>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
                 <div><span style={labelSt}>Rapor Adi *</span><input style={inputSt} value={reportForm.name} onChange={e=>updateReportFormField("name",e.target.value)} placeholder="Orn. Tezgah Performans Ozeti"/></div>
-                <div><span style={labelSt}>Veri Kaynagi</span><select style={inputSt} value={reportForm.source} onChange={e=>updateReportFormField("source",e.target.value)}>{Object.entries(REPORT_SOURCE_DEFS).map(([id,def])=><option key={id} value={id}>{def.label}</option>)}</select></div>
-                <div><span style={labelSt}>Boyut (X Alan)</span><select style={inputSt} value={reportForm.dimension} onChange={e=>updateReportFormField("dimension",e.target.value)}>{activeBuilderSource.dimensions.map(dim=><option key={dim.id} value={dim.id}>{dim.label}</option>)}</select></div>
-                <div><span style={labelSt}>Olcum (Y Alan)</span><select style={inputSt} value={reportForm.metric} onChange={e=>updateReportFormField("metric",e.target.value)}>{activeBuilderSource.metrics.map(met=><option key={met.id} value={met.id}>{met.label}</option>)}</select></div>
-                <div><span style={labelSt}>Toplama</span><select style={inputSt} value={reportForm.aggregation} onChange={e=>updateReportFormField("aggregation",e.target.value)}>{(activeBuilderMetric?.aggs||["sum"]).map(agg=><option key={agg} value={agg}>{agg.toUpperCase()}</option>)}</select></div>
-                <div><span style={labelSt}>Grafik Tipi</span><select style={inputSt} value={reportForm.chartType} onChange={e=>updateReportFormField("chartType",e.target.value)}>{CHART_TYPE_OPTIONS.map(opt=><option key={opt.id} value={opt.id}>{opt.label}</option>)}</select></div>
+                <div>
+                  <span style={labelSt}>Veri Kaynagi</span>
+                  <SearchableSelect
+                    value={reportForm.source}
+                    onChange={v=>updateReportFormField("source",v)}
+                    options={Object.entries(REPORT_SOURCE_DEFS).map(([id,def])=>({value:id,label:def.label}))}
+                  />
+                </div>
+                <div>
+                  <span style={labelSt}>Boyut (X Alan)</span>
+                  <SearchableSelect
+                    value={reportForm.dimension}
+                    onChange={v=>updateReportFormField("dimension",v)}
+                    options={activeBuilderSource.dimensions.map(dim=>({value:dim.id,label:dim.label}))}
+                  />
+                </div>
+                <div>
+                  <span style={labelSt}>Olcum (Y Alan)</span>
+                  <SearchableSelect
+                    value={reportForm.metric}
+                    onChange={v=>updateReportFormField("metric",v)}
+                    options={activeBuilderSource.metrics.map(met=>({value:met.id,label:met.label}))}
+                  />
+                </div>
+                <div>
+                  <span style={labelSt}>Toplama</span>
+                  <SearchableSelect
+                    value={reportForm.aggregation}
+                    onChange={v=>updateReportFormField("aggregation",v)}
+                    options={(activeBuilderMetric?.aggs||["sum"]).map(agg=>({value:agg,label:String(agg).toUpperCase()}))}
+                  />
+                </div>
+                <div>
+                  <span style={labelSt}>Grafik Tipi</span>
+                  <SearchableSelect
+                    value={reportForm.chartType}
+                    onChange={v=>updateReportFormField("chartType",v)}
+                    options={CHART_TYPE_OPTIONS.map(opt=>({value:opt.id,label:opt.label}))}
+                  />
+                </div>
                 <div><span style={labelSt}>Maks Satir</span><input style={inputSt} type="number" min="3" max="40" value={reportForm.maxItems} onChange={e=>updateReportFormField("maxItems",e.target.value)}/></div>
               </div>
               <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10,flexWrap:"wrap"}}>
@@ -13439,10 +13905,13 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                 <input value={planQuery} onChange={e=>setPlanQuery(e.target.value)} placeholder="Makine, is emri, musteri, operasyon ara..." style={{...inputSt,padding:"10px 12px",fontSize:13}}/>
               </div>
               <div style={{minWidth:150,flex:"1 1 170px"}}>
-                <select value={planMachineFilter} onChange={e=>setPlanMachineFilter(e.target.value)} style={{...inputSt,padding:"10px 12px",fontSize:13}}>
-                  <option value="all">Tum Tezgahlar</option>
-                  {machines.map(m=><option key={m} value={m}>{m}</option>)}
-                </select>
+                <SearchableSelect
+                  value={planMachineFilter}
+                  onChange={v=>setPlanMachineFilter(v)}
+                  placeholder="Tum Tezgahlar"
+                  options={[{value:"all",label:"Tum Tezgahlar"},...machines.map(m=>({value:m,label:m}))]}
+                  style={{width:"100%"}}
+                />
               </div>
               <div style={{minWidth:150,flex:"1 1 170px"}}>
                 <input type="date" value={planDateFrom} onChange={e=>setPlanDateFrom(e.target.value||"")} style={{...inputSt,padding:"10px 12px",fontSize:13}}/>
@@ -13738,10 +14207,12 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
             </div>
             <div style={{marginTop:9}}>
               <span style={labelSt}>İş Emri</span>
-              <select value={form.orderId} onChange={e=>fv("orderId",e.target.value)} style={inputSt}>
-                <option value="">İş emri seçin...</option>
-                {orders.map(o=><option key={o.id} value={o.id}>{o.code} - {o.name}{o.customerName?` - ${o.customerName}`:""} ({(o.machines||[]).join(", ")})</option>)}
-              </select>
+              <SearchableSelect
+                value={form.orderId}
+                onChange={v=>fv("orderId",v)}
+                placeholder="Is emri secin..."
+                options={orders.map(o=>({value:o.id,label:`${o.code} - ${o.name}${o.customerName?` - ${o.customerName}`:""} (${(o.machines||[]).join(", ")})`}))}
+              />
               {selectedOrder&&<div style={{fontSize:12,color:C.muted2,marginTop:6}}>Parça süresi: {fmtSec(selectedOrder.partSec)} · Maks/gün: {selectedOrder.partSec?Math.floor(EFFECTIVE_SECONDS/selectedOrder.partSec):"-"}</div>}
               {selectedOrderOperationMeta&&(
                 <div style={{marginTop:6}}>
@@ -16326,10 +16797,16 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
   useEffect(()=>{
     setSupplierPerfPageIdx(prev=>Math.max(1,Math.min(prev,supplierPerfTotalPages)));
   },[supplierPerfTotalPages]);
-  const pagedPurchaseQuotes=filteredQuotes.slice((purchaseQuotePageIdx-1)*Math.max(1,purchaseQuoteRowsPerPage),(purchaseQuotePageIdx-1)*Math.max(1,purchaseQuoteRowsPerPage)+Math.max(1,purchaseQuoteRowsPerPage));
-  const pagedPurchaseRequests=filteredRequests.slice((purchaseRequestPageIdx-1)*Math.max(1,purchaseRequestRowsPerPage),(purchaseRequestPageIdx-1)*Math.max(1,purchaseRequestRowsPerPage)+Math.max(1,purchaseRequestRowsPerPage));
-  const pagedPurchaseOrders=filteredOrders.slice((purchaseOrderPageIdx-1)*Math.max(1,purchaseOrderRowsPerPage),(purchaseOrderPageIdx-1)*Math.max(1,purchaseOrderRowsPerPage)+Math.max(1,purchaseOrderRowsPerPage));
-  const pagedSupplierPerf=filteredSupplierPerf.slice((supplierPerfPageIdx-1)*Math.max(1,supplierPerfRowsPerPage),(supplierPerfPageIdx-1)*Math.max(1,supplierPerfRowsPerPage)+Math.max(1,supplierPerfRowsPerPage));
+  const purchaseQuoteListStart=(purchaseQuotePageIdx-1)*Math.max(1,purchaseQuoteRowsPerPage);
+  const purchaseRequestListStart=(purchaseRequestPageIdx-1)*Math.max(1,purchaseRequestRowsPerPage);
+  const purchaseOrderListStart=(purchaseOrderPageIdx-1)*Math.max(1,purchaseOrderRowsPerPage);
+  const supplierPerfListStart=(supplierPerfPageIdx-1)*Math.max(1,supplierPerfRowsPerPage);
+  const pagedPurchaseQuotes=filteredQuotes.slice(purchaseQuoteListStart,purchaseQuoteListStart+Math.max(1,purchaseQuoteRowsPerPage));
+  const pagedPurchaseRequests=filteredRequests.slice(purchaseRequestListStart,purchaseRequestListStart+Math.max(1,purchaseRequestRowsPerPage));
+  const pagedPurchaseOrders=filteredOrders.slice(purchaseOrderListStart,purchaseOrderListStart+Math.max(1,purchaseOrderRowsPerPage));
+  const pagedSupplierPerf=filteredSupplierPerf
+    .slice(supplierPerfListStart,supplierPerfListStart+Math.max(1,supplierPerfRowsPerPage))
+    .map((row,idx)=>({...row,rowNo:supplierPerfListStart+idx+1}));
   const supplierPerfMap={};
   pagedSupplierPerf.forEach(row=>{
     const key=row.groupId||"ungrouped";
@@ -16436,7 +16913,10 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
     toggleColumn:toggleSupplierPerfTableColumn,
     resetColumns:resetSupplierPerfTableColumns,
   }=useTableColumnLayout("purchase_supplier_perf_list",SUPPLIER_PERF_LIST_COLUMNS);
-  const renderPurchaseRequestCell=(r,col)=>{
+  const renderPurchaseRequestCell=(r,col,rowNo)=>{
+    if(col.id==="row_no"){
+      return <td key={col.id} style={{padding:"8px 10px",fontSize:11,color:C.muted2,textAlign:"center",fontWeight:700}}>{rowNo}</td>;
+    }
     if(col.id==="request"){
       return <td key={col.id} style={{padding:"8px 10px",color:C.text,fontWeight:700}}>{r.code} · {r.materialCode} · {r.materialName}</td>;
     }
@@ -16461,8 +16941,11 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
     }
     return null;
   };
-  const renderPurchaseQuoteCell=q=>{
+  const renderPurchaseQuoteCell=(q,rowNo)=>{
     return visiblePurchaseQuoteTableColumns.map(col=>{
+      if(col.id==="row_no"){
+        return <td key={col.id} style={{padding:"8px 10px",fontSize:11,color:C.muted2,textAlign:"center",fontWeight:700}}>{rowNo}</td>;
+      }
       if(col.id==="request_supplier"){
         return <td key={col.id} style={{padding:"8px 10px",color:C.text,fontWeight:700}}>{q.requestCode} · {q.supplierName} {q.supplierGroupName?`· ${q.supplierGroupName}`:""}</td>;
       }
@@ -16481,7 +16964,10 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
       return null;
     });
   };
-  const renderPurchaseOrderCell=(o,col)=>{
+  const renderPurchaseOrderCell=(o,col,rowNo)=>{
+    if(col.id==="row_no"){
+      return <td key={col.id} style={{padding:"8px 10px",fontSize:11,color:C.muted2,textAlign:"center",fontWeight:700}}>{rowNo}</td>;
+    }
     if(col.id==="order_supplier"){
       return <td key={col.id} style={{padding:"8px 10px",color:C.text,fontWeight:700}}>{o.code} · {o.supplierName} {o.supplierGroupName?`· ${o.supplierGroupName}`:""}</td>;
     }
@@ -16496,7 +16982,8 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
     }
     return null;
   };
-  const renderSupplierPerfCell=(s,col)=>{
+  const renderSupplierPerfCell=(s,col,rowNo)=>{
+    if(col.id==="row_no") return <td key={col.id} style={{padding:"8px 10px",fontSize:11,color:C.muted2,textAlign:"center",fontWeight:700}}>{rowNo}</td>;
     if(col.id==="name") return <td key={col.id} style={{padding:"8px 10px",color:C.text,fontWeight:700}}>{s.name}</td>;
     if(col.id==="po") return <td key={col.id} style={{padding:"8px 10px",color:C.muted2,textAlign:"right"}}>{s.po}</td>;
     if(col.id==="otd") return <td key={col.id} style={{padding:"8px 10px",color:s.onTimePct<70?C.red:C.green,textAlign:"right"}}>%{s.onTimePct}</td>;
@@ -16516,11 +17003,17 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
                 <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Tedarikciler</div>
                 <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Tedarikci veya grup ara"/>
                 <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Tedarikci Grubu</div>
-                <select style={{...inputSt,padding:"8px 10px",fontSize:12}} value={supplierGroupFilter} onChange={e=>setSupplierGroupFilter(e.target.value)}>
-                  <option value="all">Tum Gruplar</option>
-                  {supplierGroups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
-                  {supplierPerf.some(x=>x.groupId==="ungrouped")&&<option value="ungrouped">Grupsuz</option>}
-                </select>
+                <SearchableSelect
+                  compact
+                  value={supplierGroupFilter}
+                  onChange={v=>setSupplierGroupFilter(v)}
+                  placeholder="Tum Gruplar"
+                  options={[
+                    {value:"all",label:"Tum Gruplar"},
+                    ...supplierGroups.map(g=>({value:g.id,label:g.name})),
+                    ...(supplierPerf.some(x=>x.groupId==="ungrouped")?[{value:"ungrouped",label:"Grupsuz"}]:[]),
+                  ]}
+                />
                 <button onClick={()=>{setSearch("");setSupplierGroupFilter("all");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
               </div>
             )}
@@ -16537,11 +17030,18 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                     <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Tedarikci Performansi ({pagedSupplierPerf.length} / {filteredSupplierPerf.length})</div>
                     {!filtersVisible&&(
-                      <select style={{...inputSt,padding:"6px 8px",fontSize:12,minWidth:220}} value={supplierGroupFilter} onChange={e=>setSupplierGroupFilter(e.target.value)}>
-                        <option value="all">Tum Gruplar</option>
-                        {supplierGroups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
-                        {supplierPerf.some(x=>x.groupId==="ungrouped")&&<option value="ungrouped">Grupsuz</option>}
-                      </select>
+                      <SearchableSelect
+                        compact
+                        value={supplierGroupFilter}
+                        onChange={v=>setSupplierGroupFilter(v)}
+                        placeholder="Tum Gruplar"
+                        style={{minWidth:220}}
+                        options={[
+                          {value:"all",label:"Tum Gruplar"},
+                          ...supplierGroups.map(g=>({value:g.id,label:g.name})),
+                          ...(supplierPerf.some(x=>x.groupId==="ungrouped")?[{value:"ungrouped",label:"Grupsuz"}]:[]),
+                        ]}
+                      />
                     )}
                     <ListRowPager
                       rowsPerPage={supplierPerfRowsPerPage}
@@ -16575,7 +17075,7 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
                           <tbody>
                             {group.rows.map(s=>(
                               <tr key={s.id} style={{borderBottom:`1px solid ${C.border}`}}>
-                                {visibleSupplierPerfTableColumns.map(col=>renderSupplierPerfCell(s,col))}
+                                {visibleSupplierPerfTableColumns.map(col=>renderSupplierPerfCell(s,col,s.rowNo))}
                               </tr>
                             ))}
                           </tbody>
@@ -16604,7 +17104,14 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
               <div><span style={labelSt}>Unvan</span><input style={inputSt} value={supplierForm.name} onChange={e=>setSupplierForm(f=>({...f,name:e.target.value}))}/></div>
               <div><span style={labelSt}>Kod</span><input style={inputSt} value={supplierForm.code} onChange={e=>setSupplierForm(f=>({...f,code:e.target.value}))}/></div>
-              <div><span style={labelSt}>Grup</span><select style={inputSt} value={supplierForm.groupId} onChange={e=>setSupplierForm(f=>({...f,groupId:e.target.value}))}>{supplierGroups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
+              <div>
+                <span style={labelSt}>Grup</span>
+                <SearchableSelect
+                  value={supplierForm.groupId}
+                  onChange={v=>setSupplierForm(f=>({...f,groupId:v}))}
+                  options={supplierGroups.map(g=>({value:g.id,label:g.name}))}
+                />
+              </div>
               <div><span style={labelSt}>Lead-Time</span><input style={inputSt} type="number" min="0" value={supplierForm.leadTimeDays} onChange={e=>setSupplierForm(f=>({...f,leadTimeDays:e.target.value}))}/></div>
               <div><span style={labelSt}>E-Posta</span><input style={inputSt} value={supplierForm.email} onChange={e=>setSupplierForm(f=>({...f,email:e.target.value}))}/></div>
               <div><span style={labelSt}>Telefon</span><input style={inputSt} value={supplierForm.phone} onChange={e=>setSupplierForm(f=>({...f,phone:e.target.value}))}/></div>
@@ -16649,9 +17156,9 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
                   </tr>
                 </thead>
                 <tbody>
-                  {pagedPurchaseQuotes.map(q=>(
+                  {pagedPurchaseQuotes.map((q,idx)=>(
                     <tr key={q.id} style={{borderBottom:`1px solid ${C.border}`}}>
-                      {renderPurchaseQuoteCell(q)}
+                      {renderPurchaseQuoteCell(q,purchaseQuoteListStart+idx+1)}
                     </tr>
                   ))}
                   {filteredQuotes.length===0&&(
@@ -16676,8 +17183,24 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
               <button onClick={closeQuoteModal} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8}}>
-              <div><span style={labelSt}>Talep</span><select style={inputSt} value={quoteForm.requestId} onChange={e=>setQuoteForm(f=>({...f,requestId:e.target.value}))}><option value="">Secin</option>{openReq.map(r=><option key={r.id} value={r.id}>{r.code} - {r.materialCode} - {r.qty}</option>)}</select></div>
-              <div><span style={labelSt}>Tedarikci</span><select style={inputSt} value={quoteForm.supplierId} onChange={e=>setQuoteForm(f=>({...f,supplierId:e.target.value}))}><option value="">Secin</option>{suppliers.map(s=>{const group=resolveSupplierGroup(s);return <option key={s.id} value={s.id}>{s.name} - {group.name}</option>;})}</select></div>
+              <div>
+                <span style={labelSt}>Talep</span>
+                <SearchableSelect
+                  value={quoteForm.requestId}
+                  onChange={v=>setQuoteForm(f=>({...f,requestId:v}))}
+                  placeholder="Secin"
+                  options={openReq.map(r=>({value:r.id,label:`${r.code} - ${r.materialCode} - ${r.qty}`}))}
+                />
+              </div>
+              <div>
+                <span style={labelSt}>Tedarikci</span>
+                <SearchableSelect
+                  value={quoteForm.supplierId}
+                  onChange={v=>setQuoteForm(f=>({...f,supplierId:v}))}
+                  placeholder="Secin"
+                  options={suppliers.map(s=>{const group=resolveSupplierGroup(s);return {value:s.id,label:`${s.name} - ${group.name}`};})}
+                />
+              </div>
               <div><span style={labelSt}>Birim Fiyat</span><input style={inputSt} type="number" min="0" value={quoteForm.unitPrice} onChange={e=>setQuoteForm(f=>({...f,unitPrice:e.target.value}))}/></div>
               <div><span style={labelSt}>Lead-Time</span><input style={inputSt} type="number" min="0" value={quoteForm.leadTimeDays} onChange={e=>setQuoteForm(f=>({...f,leadTimeDays:e.target.value}))}/></div>
               <div><span style={labelSt}>Odeme Vadesi (Gun)</span><input style={inputSt} type="number" min="0" value={quoteForm.paymentTermDays} onChange={e=>setQuoteForm(f=>({...f,paymentTermDays:e.target.value}))}/></div>
@@ -16726,9 +17249,9 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
                   </tr>
                 </thead>
                 <tbody>
-                  {pagedPurchaseRequests.map(r=>(
+                  {pagedPurchaseRequests.map((r,idx)=>(
                     <tr key={r.id} style={{borderBottom:`1px solid ${C.border}`}}>
-                      {visiblePurchaseRequestTableColumns.map(col=>renderPurchaseRequestCell(r,col))}
+                      {visiblePurchaseRequestTableColumns.map(col=>renderPurchaseRequestCell(r,col,purchaseRequestListStart+idx+1))}
                     </tr>
                   ))}
                   {filteredRequests.length===0&&(
@@ -16762,7 +17285,15 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
               </div>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr .7fr .7fr .7fr",gap:8,marginBottom:8}}>
-              <div><span style={labelSt}>PO Sec</span><select style={inputSt} value={recvForm.poId} onChange={e=>setRecvForm(f=>({...f,poId:e.target.value}))}><option value="">Secin</option>{orders.filter(o=>o.status!=="received").map(o=><option key={o.id} value={o.id}>{o.code} · {o.materialCode} · Kalan {Math.max(0,safeNum(o.qty)-safeNum(o.receivedQty)-safeNum(o.rejectedQty))}</option>)}</select></div>
+              <div>
+                <span style={labelSt}>PO Sec</span>
+                <SearchableSelect
+                  value={recvForm.poId}
+                  onChange={v=>setRecvForm(f=>({...f,poId:v}))}
+                  placeholder="Secin"
+                  options={orders.filter(o=>o.status!=="received").map(o=>({value:o.id,label:`${o.code} · ${o.materialCode} · Kalan ${Math.max(0,safeNum(o.qty)-safeNum(o.receivedQty)-safeNum(o.rejectedQty))}`}))}
+                />
+              </div>
               <div><span style={labelSt}>Kabul</span><input style={inputSt} type="number" min="0" value={recvForm.acceptedQty} onChange={e=>setRecvForm(f=>({...f,acceptedQty:e.target.value}))}/></div>
               <div><span style={labelSt}>Red</span><input style={inputSt} type="number" min="0" value={recvForm.rejectedQty} onChange={e=>setRecvForm(f=>({...f,rejectedQty:e.target.value}))}/></div>
               <div><span style={labelSt}>Giris Tarihi</span><input style={inputSt} type="date" value={recvForm.receiptDate} onChange={e=>setRecvForm(f=>({...f,receiptDate:e.target.value||todayStr()}))}/></div>
@@ -16776,9 +17307,9 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
                   </tr>
                 </thead>
                 <tbody>
-                  {pagedPurchaseOrders.map(o=>(
+                  {pagedPurchaseOrders.map((o,idx)=>(
                     <tr key={o.id} style={{borderBottom:`1px solid ${C.border}`}}>
-                      {visiblePurchaseOrderTableColumns.map(col=>renderPurchaseOrderCell(o,col))}
+                      {visiblePurchaseOrderTableColumns.map(col=>renderPurchaseOrderCell(o,col,purchaseOrderListStart+idx+1))}
                     </tr>
                   ))}
                   {filteredOrders.length===0&&(
@@ -16796,7 +17327,7 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
   );
 }
 
-function DowntimeModule({currentUser,machines=DEFAULT_MACHINES}){
+function DowntimeModule({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true}){
   const [loading,setLoading]=useState(true);
   const [types,setTypes]=useState([]);
   const [events,setEvents]=useState([]);
@@ -16804,17 +17335,46 @@ function DowntimeModule({currentUser,machines=DEFAULT_MACHINES}){
   const fallbackShiftId=shiftRows[0]?.id||DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1";
   const [typeForm,setTypeForm]=useState({code:"",name:"",category:"ariza",requireReason:true,notifyMaintenance:true});
   const [eventForm,setEventForm]=useState({machine:machines[0]||"CNC-1",typeId:"",startAt:`${todayStr()}T08:00`,endAt:`${todayStr()}T09:00`,operatorId:currentUser.id||"",reason:"",shift:fallbackShiftId});
+  const [showEventModal,setShowEventModal]=useState(false);
+  const [search,setSearch]=useState("");
+  const [machineFilter,setMachineFilter]=useState("all");
+  const [categoryFilter,setCategoryFilter]=useState("all");
+  const [dateFrom,setDateFrom]=useState("");
+  const [dateTo,setDateTo]=useState("");
+  const [sortDir,setSortDir]=useState("desc");
+  const [rowsPerPage,setRowsPerPage]=useState(10);
+  const [pageIdx,setPageIdx]=useState(1);
+  const downtimePanelRef=useRef(null);
+  const {
+    height:downtimePanelHeight,
+    isNarrow:downtimePanelsStacked,
+  }=useViewportPanelMetrics(downtimePanelRef,{minHeight:340,bottomGap:14,narrowWidth:1180});
+
+  const openEventModal=useCallback(()=>{
+    setEventForm({
+      machine:machines[0]||"CNC-1",
+      typeId:"",
+      startAt:`${todayStr()}T08:00`,
+      endAt:`${todayStr()}T09:00`,
+      operatorId:currentUser.id||"",
+      reason:"",
+      shift:fallbackShiftId,
+    });
+    setShowEventModal(true);
+  },[machines,currentUser.id,fallbackShiftId]);
+  const closeEventModal=useCallback(()=>setShowEventModal(false),[]);
 
   const load=useCallback(async()=>{
     const [t,e]=await Promise.all([window.DB.getAll("downtimeTypes"),window.DB.getAll("downtimeEvents")]);
-    setTypes(t); setEvents(e);
+    setTypes((t||[]).sort((a,b)=>String(a.name||"").localeCompare(String(b.name||""),"tr")));
+    setEvents([...(e||[])].sort((a,b)=>String(b.startAt||b.date||b.createdAt||"").localeCompare(String(a.startAt||a.date||a.createdAt||""))));
     if(t.length===0){
       const seeds=[["DT-ARIZA","Arıza","ariza"],["DT-MAT","Malzeme Yok","malzeme"],["DT-PROG","Program Hatası","program"],["DT-MOLA","Mola","mola"],["DT-TEM","Temizlik","temizlik"]];
       for(const [code,name,cat] of seeds){
         await window.DB.addDoc("downtimeTypes",{code,name,category:cat,requireReason:true,notifyMaintenance:cat==="ariza",updatedAt:new Date().toISOString()});
       }
       const again=await window.DB.getAll("downtimeTypes");
-      setTypes(again);
+      setTypes((again||[]).sort((a,b)=>String(a.name||"").localeCompare(String(b.name||""),"tr")));
     }
     setLoading(false);
   },[]);
@@ -16822,13 +17382,30 @@ function DowntimeModule({currentUser,machines=DEFAULT_MACHINES}){
   useEffect(()=>{
     setEventForm(prev=>shiftRows.some(row=>row.id===prev.shift)?prev:{...prev,shift:fallbackShiftId});
   },[shiftRows,fallbackShiftId]);
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="downtime") return;
+      if(d.type==="refresh"){load();return;}
+      if(d.type==="sort"){
+        setSortDir(d.sortMode==="date_asc"?"asc":"desc");
+        return;
+      }
+      if(d.type==="new"){
+        openEventModal();
+        window.scrollTo({top:0,behavior:"smooth"});
+      }
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load,openEventModal]);
 
   async function saveType(){
     if(!typeForm.name.trim()){alert("Durus tipi adi zorunlu.");return;}
     const payload={code:(typeForm.code||`DT-${Date.now().toString().slice(-4)}`).toUpperCase(),name:typeForm.name.trim(),category:typeForm.category||"ariza",requireReason:Boolean(typeForm.requireReason),notifyMaintenance:Boolean(typeForm.notifyMaintenance),updatedAt:new Date().toISOString()};
     const id=await window.DB.addDoc("downtimeTypes",payload);
     if(!id){alert("Durus tipi kaydedilemedi.");return;}
-    setTypes(prev=>[{id,...payload},...prev]);
+    setTypes(prev=>[{id,...payload},...prev].sort((a,b)=>String(a.name||"").localeCompare(String(b.name||""),"tr")));
     setTypeForm({code:"",name:"",category:"ariza",requireReason:true,notifyMaintenance:true});
   }
   async function saveEvent(){
@@ -16836,9 +17413,12 @@ function DowntimeModule({currentUser,machines=DEFAULT_MACHINES}){
     const selectedShiftRow=shiftRows.find(row=>row.id===eventForm.shift)||shiftRows[0]||DEFAULT_SHIFT_WINDOWS[0];
     if(!type){alert("Durus tipi secin.");return;}
     if(type.requireReason&&!eventForm.reason.trim()){alert("Bu durus tipi icin neden girisi zorunlu.");return;}
-    const startIso=new Date(eventForm.startAt).toISOString();
-    const endIso=new Date(eventForm.endAt).toISOString();
-    const durationMin=Math.max(0,Math.round((new Date(endIso)-new Date(startIso))/60000));
+    const startMs=Date.parse(eventForm.startAt);
+    const endMs=Date.parse(eventForm.endAt);
+    if(!Number.isFinite(startMs)||!Number.isFinite(endMs)){alert("Baslangic ve bitis zamani gecersiz.");return;}
+    const startIso=new Date(startMs).toISOString();
+    const endIso=new Date(endMs).toISOString();
+    const durationMin=Math.max(0,Math.round((endMs-startMs)/60000));
     if(durationMin<=0){alert("Bitis zamani baslangictan buyuk olmali.");return;}
     const payload={machine:eventForm.machine,typeId:type.id,typeCode:type.code||"",typeName:type.name||"",category:type.category||"",startAt:startIso,endAt:endIso,durationMin,date:eventForm.startAt.slice(0,10),operatorId:eventForm.operatorId||"",reason:eventForm.reason.trim(),shift:eventForm.shift||"",shiftLabel:selectedShiftRow?.label||eventForm.shift||"",createdBy:currentUser.id,updatedAt:new Date().toISOString()};
     const id=await window.DB.addDoc("downtimeEvents",payload);
@@ -16846,63 +17426,301 @@ function DowntimeModule({currentUser,machines=DEFAULT_MACHINES}){
     if(type.notifyMaintenance){
       await window.DB.addDoc("notifications",{type:"maintenance",title:"Bakim Bildirimi",message:`${payload.machine} icin ${type.name} durusu girildi.`,severity:"high",status:"new",sourceKey:id,createdAt:new Date().toISOString()});
     }
-    setEvents(prev=>[{id,...payload},...prev]);
-    setEventForm(f=>({...f,reason:""}));
+    setEvents(prev=>[{id,...payload},...prev].sort((a,b)=>String(b.startAt||b.date||b.createdAt||"").localeCompare(String(a.startAt||a.date||a.createdAt||""))));
+    setShowEventModal(false);
+    setEventForm({
+      machine:machines[0]||"CNC-1",
+      typeId:"",
+      startAt:`${todayStr()}T08:00`,
+      endAt:`${todayStr()}T09:00`,
+      operatorId:currentUser.id||"",
+      reason:"",
+      shift:fallbackShiftId,
+    });
   }
+  useEffect(()=>{
+    setPageIdx(1);
+  },[search,machineFilter,categoryFilter,dateFrom,dateTo,sortDir,rowsPerPage,events.length]);
+  const toYmd=value=>{
+    const raw=String(value||"").trim();
+    if(!raw) return "";
+    if(/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    if(/^\d{4}-\d{2}-\d{2}T/.test(raw)) return raw.slice(0,10);
+    const d=new Date(raw);
+    if(Number.isNaN(d.getTime())) return "";
+    return ymdLocal(d);
+  };
+  const inRange=(ymd,from,to)=>{
+    if(from&&(!ymd||ymd<from)) return false;
+    if(to&&(!ymd||ymd>to)) return false;
+    return true;
+  };
 
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  const categoryMeta={
+    all:{label:"Tum Duruslar",color:C.accent},
+    ariza:{label:"Ariza",color:C.red},
+    malzeme:{label:"Malzeme",color:C.warn},
+    program:{label:"Program",color:C.accent},
+    mola:{label:"Mola",color:C.green},
+    temizlik:{label:"Temizlik",color:C.muted2},
+    diger:{label:"Diger",color:C.muted2},
+  };
+  const machineOptions=[...new Set([...(Array.isArray(machines)?machines:[]),...events.map(e=>String(e.machine||"").trim()).filter(Boolean)])].sort((a,b)=>String(a||"").localeCompare(String(b||""),"tr"));
+  const searchQuery=String(search||"").trim().toLowerCase();
+  const categoryCounts={all:events.length,ariza:0,malzeme:0,program:0,mola:0,temizlik:0,diger:0};
+  events.forEach(row=>{
+    const key=String(row.category||"diger");
+    if(!Object.prototype.hasOwnProperty.call(categoryCounts,key)) categoryCounts.diger+=1;
+    else if(key!=="all") categoryCounts[key]+=1;
+  });
+  const filteredEvents=events.filter(row=>{
+    const textOk=!searchQuery||[
+      row.machine||"",
+      row.typeCode||"",
+      row.typeName||"",
+      row.reason||"",
+      row.operatorId||"",
+      row.shiftLabel||"",
+    ].join(" ").toLowerCase().includes(searchQuery);
+    const machineOk=machineFilter==="all"||String(row.machine||"")===machineFilter;
+    const categoryOk=categoryFilter==="all"||String(row.category||"")===categoryFilter;
+    const dateYmd=toYmd(row.startAt)||toYmd(row.date)||"";
+    const dateOk=inRange(dateYmd,dateFrom,dateTo);
+    return textOk&&machineOk&&categoryOk&&dateOk;
+  });
+  const sortedEvents=[...filteredEvents].sort((a,b)=>{
+    const av=String(a.startAt||a.date||a.createdAt||"");
+    const bv=String(b.startAt||b.date||b.createdAt||"");
+    const cmp=av.localeCompare(bv);
+    return sortDir==="asc"?cmp:-cmp;
+  });
+  const totalPages=Math.max(1,Math.ceil(sortedEvents.length/Math.max(1,rowsPerPage)));
+  const safePageIdx=Math.max(1,Math.min(pageIdx,totalPages));
+  const listStart=(safePageIdx-1)*Math.max(1,rowsPerPage);
+  const pagedEvents=sortedEvents.slice(listStart,listStart+Math.max(1,rowsPerPage));
+  const totalDurationMin=sortedEvents.reduce((sum,row)=>sum+Math.max(0,safeNum(row.durationMin)),0);
+  const avgDurationMin=sortedEvents.length?Math.round(totalDurationMin/sortedEvents.length):0;
   const paretoMap={};
-  events.forEach(e=>{
+  sortedEvents.forEach(e=>{
     const key=`${e.typeCode||"-"} ${e.typeName||"-"}`;
     if(!paretoMap[key]) paretoMap[key]={key,count:0,min:0};
     paretoMap[key].count+=1;
     paretoMap[key].min+=safeNum(e.durationMin);
   });
   const pareto=Object.values(paretoMap).sort((a,b)=>b.min-a.min).slice(0,10);
+  const downtimeSplitWrapStyle={
+    display:"flex",
+    gap:10,
+    alignItems:downtimePanelsStacked?"flex-start":"stretch",
+    flexWrap:"wrap",
+    ...(downtimePanelsStacked
+      ? {}
+      : {
+        height:downtimePanelHeight,
+        maxHeight:downtimePanelHeight,
+        flex:1,
+        minHeight:0,
+        overflow:"hidden",
+      }),
+  };
+  const downtimeFilterPanelStyle={
+    flex:"0 0 250px",
+    width:"100%",
+    maxWidth:280,
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    padding:12,
+    display:"flex",
+    flexDirection:"column",
+    gap:10,
+    ...(downtimePanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+        overflowY:"auto",
+        overscrollBehavior:"contain",
+        scrollbarGutter:"stable",
+      }),
+  };
+  const downtimeListColumnStyle={
+    flex:"1 1 760px",
+    minWidth:0,
+    display:"flex",
+    flexDirection:"column",
+    gap:8,
+    ...(downtimePanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+      }),
+  };
+  const downtimeListTableCardStyle={
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    overflow:"hidden",
+    display:"flex",
+    flexDirection:"column",
+    ...(downtimePanelsStacked?{}:{flex:1,minHeight:0}),
+  };
+  const downtimeListTableScrollStyle=downtimePanelsStacked
+    ? {overflowX:"auto"}
+    : {overflow:"auto",flex:1,minHeight:0,overscrollBehavior:"contain"};
   return (
     <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-        <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Durus Kaydi</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
-          <div><span style={labelSt}>Tezgah</span><select style={inputSt} value={eventForm.machine} onChange={e=>setEventForm(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
-          <div><span style={labelSt}>Durus Tipi</span><select style={inputSt} value={eventForm.typeId} onChange={e=>setEventForm(f=>({...f,typeId:e.target.value}))}><option value="">Secin</option>{types.map(t=><option key={t.id} value={t.id}>{t.code} · {t.name}</option>)}</select></div>
-          <div><span style={labelSt}>Baslangic</span><input style={inputSt} type="datetime-local" value={eventForm.startAt} onChange={e=>setEventForm(f=>({...f,startAt:e.target.value}))}/></div>
-          <div><span style={labelSt}>Bitis</span><input style={inputSt} type="datetime-local" value={eventForm.endAt} onChange={e=>setEventForm(f=>({...f,endAt:e.target.value}))}/></div>
-          <div><span style={labelSt}>Operator</span><input style={inputSt} value={eventForm.operatorId} onChange={e=>setEventForm(f=>({...f,operatorId:e.target.value}))}/></div>
-          <div><span style={labelSt}>Vardiya</span><select style={inputSt} value={eventForm.shift} onChange={e=>setEventForm(f=>({...f,shift:e.target.value}))}>{shiftRows.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
-          <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Neden</span><input style={inputSt} value={eventForm.reason} onChange={e=>setEventForm(f=>({...f,reason:e.target.value}))} placeholder="Ariza detayi / malzeme yok vb."/></div>
-        </div>
-        <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}><button onClick={saveEvent} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Durus Kaydet</button></div>
-      </div>
-
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-        <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Durus Tipi Tanimi</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:8}}>
-          <input style={inputSt} value={typeForm.code} onChange={e=>setTypeForm(f=>({...f,code:e.target.value}))} placeholder="DT-KOD"/>
-          <input style={inputSt} value={typeForm.name} onChange={e=>setTypeForm(f=>({...f,name:e.target.value}))} placeholder="Tip Adi"/>
-          <select style={inputSt} value={typeForm.category} onChange={e=>setTypeForm(f=>({...f,category:e.target.value}))}><option value="ariza">Ariza</option><option value="malzeme">Malzeme</option><option value="program">Program</option><option value="mola">Mola</option><option value="temizlik">Temizlik</option><option value="diger">Diger</option></select>
-          <button onClick={saveType} style={{...btnSt("green"),padding:"8px 12px",fontSize:12}}>Ekle</button>
-        </div>
-      </div>
-
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-          <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Son Duruslar ({events.length})</div>
-          {events.slice(0,20).map(e=>(
-            <div key={e.id} style={{padding:"7px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.muted2}}>
-              <span style={{color:C.text,fontWeight:700}}>{e.machine}</span> · {e.typeName} · {e.durationMin} dk · {(e.date||"")}
+      {showEventModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.62)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:70,padding:14}} onClick={closeEventModal}>
+          <div style={{width:"100%",maxWidth:980,maxHeight:"92vh",overflowY:"auto",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+              <div>
+                <div style={{fontWeight:800,color:C.text,fontSize:16}}>Yeni Durus Kaydi</div>
+                <div style={{fontSize:12,color:C.muted2}}>Durus detaylarini girerek kaydi olusturun.</div>
+              </div>
+              <button onClick={closeEventModal} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
             </div>
-          ))}
-        </div>
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-          <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Top 10 Durus Nedeni (Pareto)</div>
-          {pareto.map((p,idx)=>(
-            <div key={p.key} style={{padding:"7px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,display:"flex",justifyContent:"space-between",gap:8}}>
-              <div style={{color:C.text}}>{idx+1}. {p.key}</div>
-              <div style={{color:C.muted2}}>{p.min} dk ({p.count})</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
+              <div>
+                <span style={labelSt}>Tezgah</span>
+                <SearchableSelect value={eventForm.machine} onChange={v=>setEventForm(f=>({...f,machine:v}))} options={machineOptions.map(m=>({value:m,label:m}))}/>
+              </div>
+              <div>
+                <span style={labelSt}>Durus Tipi</span>
+                <SearchableSelect value={eventForm.typeId} onChange={v=>setEventForm(f=>({...f,typeId:v}))} placeholder="Secin" options={types.map(t=>({value:t.id,label:`${t.code} · ${t.name}`}))}/>
+              </div>
+              <div><span style={labelSt}>Baslangic</span><input style={inputSt} type="datetime-local" value={eventForm.startAt} onChange={e=>setEventForm(f=>({...f,startAt:e.target.value}))}/></div>
+              <div><span style={labelSt}>Bitis</span><input style={inputSt} type="datetime-local" value={eventForm.endAt} onChange={e=>setEventForm(f=>({...f,endAt:e.target.value}))}/></div>
+              <div><span style={labelSt}>Operator</span><input style={inputSt} value={eventForm.operatorId} onChange={e=>setEventForm(f=>({...f,operatorId:e.target.value}))} placeholder="Operator ID"/></div>
+              <div>
+                <span style={labelSt}>Vardiya</span>
+                <SearchableSelect value={eventForm.shift} onChange={v=>setEventForm(f=>({...f,shift:v}))} options={shiftRows.map(s=>({value:s.id,label:s.label}))}/>
+              </div>
+              <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Neden</span><input style={inputSt} value={eventForm.reason} onChange={e=>setEventForm(f=>({...f,reason:e.target.value}))} placeholder="Ariza detayi / malzeme yok vb."/></div>
             </div>
-          ))}
-          {pareto.length===0&&<div style={{fontSize:12,color:C.muted2}}>Durus kaydi yok.</div>}
+            <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:12}}>
+              <button onClick={closeEventModal} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Iptal</button>
+              <button onClick={saveEvent} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Durus Kaydet</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div ref={downtimePanelRef} style={downtimeSplitWrapStyle}>
+        {filtersVisible&&(
+          <div style={downtimeFilterPanelStyle}>
+            <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Duruslar</div>
+            <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Tezgah, tip, neden, operator ara..."/>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Tarih Araligi</div>
+            <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={dateFrom} onChange={e=>setDateFrom(e.target.value||"")}/>
+            <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={dateTo} onChange={e=>setDateTo(e.target.value||"")}/>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Tezgah</div>
+            <SearchableSelect compact value={machineFilter} onChange={v=>setMachineFilter(v)} placeholder="Tum Tezgahlar" options={[{value:"all",label:"Tum Tezgahlar"},...machineOptions.map(m=>({value:m,label:m}))]}/>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Durus Kategorisi</div>
+            <button onClick={()=>setCategoryFilter("all")} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:categoryFilter==="all"?categoryMeta.all.color:C.border,color:categoryFilter==="all"?categoryMeta.all.color:C.text}}>
+              <span>{categoryMeta.all.label}</span>
+              <span style={{fontSize:11,color:C.muted2}}>{categoryCounts.all||0}</span>
+            </button>
+            <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:220,overflowY:"auto"}}>
+              {Object.keys(categoryMeta).filter(id=>id!=="all").map(id=>{
+                const active=categoryFilter===id;
+                const meta=categoryMeta[id]||categoryMeta.diger;
+                return (
+                  <button key={id} onClick={()=>setCategoryFilter(id)} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:active?meta.color:C.border,color:active?meta.color:C.text}}>
+                    <span>{meta.label}</span>
+                    <span style={{fontSize:11,color:C.muted2}}>{categoryCounts[id]||0}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <button onClick={()=>{setSearch("");setMachineFilter("all");setCategoryFilter("all");setDateFrom("");setDateTo("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
+          </div>
+        )}
+
+        <div style={downtimeListColumnStyle}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Filtreli Kayit</div><div style={{fontSize:20,fontWeight:800,color:C.text}}>{sortedEvents.length}</div></div>
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Toplam Durus</div><div style={{fontSize:20,fontWeight:800,color:C.warn}}>{totalDurationMin} dk</div></div>
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Ortalama Durus</div><div style={{fontSize:20,fontWeight:800,color:C.accent}}>{avgDurationMin} dk</div></div>
+          </div>
+
+          <div style={downtimeListTableCardStyle}>
+            <div style={{padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",borderBottom:`1px solid ${C.border}`}}>
+              <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Durus Listesi ({sortedEvents.length})</div>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginLeft:"auto"}}>
+                <button onClick={openEventModal} style={{...btnSt("primary"),padding:"7px 10px",fontSize:12}}>+ Yeni Kayit</button>
+                <ListRowPager rowsPerPage={rowsPerPage} page={safePageIdx} pageCount={totalPages} onRowsPerPageChange={setRowsPerPage} onPrev={()=>setPageIdx(p=>Math.max(1,p-1))} onNext={()=>setPageIdx(p=>Math.min(totalPages,p+1))} options={[10,20]}/>
+              </div>
+            </div>
+            <div style={downtimeListTableScrollStyle}>
+              <table style={{width:"100%",minWidth:980,borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{background:C.surface,color:C.muted2,textAlign:"left"}}>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:"center",position:"sticky",top:0,zIndex:2,background:C.surface}}>No</th>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,position:"sticky",top:0,zIndex:2,background:C.surface}}>Tezgah</th>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,position:"sticky",top:0,zIndex:2,background:C.surface}}>Durus Tipi</th>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,position:"sticky",top:0,zIndex:2,background:C.surface}}>Kategori</th>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,position:"sticky",top:0,zIndex:2,background:C.surface}}>Baslangic</th>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,position:"sticky",top:0,zIndex:2,background:C.surface}}>Bitis</th>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:"right",position:"sticky",top:0,zIndex:2,background:C.surface}}>Sure</th>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,position:"sticky",top:0,zIndex:2,background:C.surface}}>Operator</th>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,position:"sticky",top:0,zIndex:2,background:C.surface}}>Neden</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedEvents.map((e,idx)=>{
+                    const categoryKey=String(e.category||"diger");
+                    const categoryInfo=categoryMeta[categoryKey]||categoryMeta.diger;
+                    return (
+                      <tr key={e.id||`${e.machine}_${idx}`} style={{borderBottom:`1px solid ${C.border}`}}>
+                        <td style={{padding:"10px 12px",textAlign:"center",fontSize:11,color:C.muted2,fontWeight:700}}>{listStart+idx+1}</td>
+                        <td style={{padding:"10px 12px",fontWeight:700,color:C.text}}>{e.machine||"-"}</td>
+                        <td style={{padding:"10px 12px",color:C.text}}>
+                          <div style={{fontWeight:700}}>{e.typeCode||"-"}</div>
+                          <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{e.typeName||"-"}</div>
+                        </td>
+                        <td style={{padding:"10px 12px"}}><Badge label={categoryInfo.label} color={categoryInfo.color}/></td>
+                        <td style={{padding:"10px 12px",color:C.muted2}}>{String(e.startAt||e.date||"-").slice(0,16).replace("T"," ")}</td>
+                        <td style={{padding:"10px 12px",color:C.muted2}}>{String(e.endAt||"-").slice(0,16).replace("T"," ")}</td>
+                        <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:C.warn}}>{safeNum(e.durationMin)} dk</td>
+                        <td style={{padding:"10px 12px",color:C.muted2}}>{e.operatorId||"-"}</td>
+                        <td style={{padding:"10px 12px",color:C.muted2,maxWidth:260,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}} title={e.reason||""}>{e.reason||"-"}</td>
+                      </tr>
+                    );
+                  })}
+                  {sortedEvents.length===0&&(
+                    <tr>
+                      <td colSpan={9} style={{padding:"26px 12px",textAlign:"center",color:C.muted2}}>Filtreye uygun durus kaydi yok.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:8}}>
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+              <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Top 10 Durus Nedeni (Pareto)</div>
+              {pareto.map((p,idx)=>(
+                <div key={p.key} style={{padding:"7px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,display:"flex",justifyContent:"space-between",gap:8}}>
+                  <div style={{color:C.text}}>{idx+1}. {p.key}</div>
+                  <div style={{color:C.muted2}}>{p.min} dk ({p.count})</div>
+                </div>
+              ))}
+              {pareto.length===0&&<div style={{fontSize:12,color:C.muted2}}>Durus kaydi yok.</div>}
+            </div>
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+              <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Durus Tipi Tanimi</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:8}}>
+                <input style={inputSt} value={typeForm.code} onChange={e=>setTypeForm(f=>({...f,code:e.target.value}))} placeholder="DT-KOD"/>
+                <input style={inputSt} value={typeForm.name} onChange={e=>setTypeForm(f=>({...f,name:e.target.value}))} placeholder="Tip Adi"/>
+                <select style={inputSt} value={typeForm.category} onChange={e=>setTypeForm(f=>({...f,category:e.target.value}))}><option value="ariza">Ariza</option><option value="malzeme">Malzeme</option><option value="program">Program</option><option value="mola">Mola</option><option value="temizlik">Temizlik</option><option value="diger">Diger</option></select>
+                <button onClick={saveType} style={{...btnSt("green"),padding:"8px 12px",fontSize:12}}>Ekle</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -17433,8 +18251,19 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
           <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Parca Iz Kaydi</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
-            <div><span style={labelSt}>Is Emri</span><select style={inputSt} value={traceForm.orderId} onChange={e=>setTraceForm(f=>({...f,orderId:e.target.value}))}><option value="">Secin</option>{orders.map(o=><option key={o.id} value={o.id}>{o.code} · {o.partNo||o.name}</option>)}</select></div>
-            <div><span style={labelSt}>Tezgah</span><select style={inputSt} value={traceForm.machine} onChange={e=>setTraceForm(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+            <div>
+              <span style={labelSt}>Is Emri</span>
+              <SearchableSelect
+                value={traceForm.orderId}
+                onChange={v=>setTraceForm(f=>({...f,orderId:v}))}
+                placeholder="Secin"
+                options={orders.map(o=>({value:o.id,label:`${o.code} · ${o.partNo||o.name}`}))}
+              />
+            </div>
+            <div>
+              <span style={labelSt}>Tezgah</span>
+              <SearchableSelect value={traceForm.machine} onChange={v=>setTraceForm(f=>({...f,machine:v}))} options={machines.map(m=>({value:m,label:m}))}/>
+            </div>
             <div><span style={labelSt}>Operator</span><input style={inputSt} value={traceForm.operatorId} onChange={e=>setTraceForm(f=>({...f,operatorId:e.target.value}))}/></div>
             <div><span style={labelSt}>NC Versiyon</span><input style={inputSt} value={traceForm.programVersion} onChange={e=>setTraceForm(f=>({...f,programVersion:e.target.value}))}/></div>
             <div><span style={labelSt}>Seri/Lot No</span><input style={inputSt} value={traceForm.serialNo} onChange={e=>setTraceForm(f=>({...f,serialNo:e.target.value}))}/></div>
@@ -17452,7 +18281,15 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
           <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Muayene ve Hurda Girisi</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-            <div><span style={labelSt}>Iz Kaydi</span><select style={inputSt} value={inspForm.traceId} onChange={e=>setInspForm(f=>({...f,traceId:e.target.value}))}><option value="">Secin</option>{traces.slice(0,120).map(t=><option key={t.id} value={t.id}>{t.orderCode} · {t.serialNo}</option>)}</select></div>
+            <div>
+              <span style={labelSt}>Iz Kaydi</span>
+              <SearchableSelect
+                value={inspForm.traceId}
+                onChange={v=>setInspForm(f=>({...f,traceId:v}))}
+                placeholder="Secin"
+                options={traces.slice(0,120).map(t=>({value:t.id,label:`${t.orderCode} · ${t.serialNo}`}))}
+              />
+            </div>
             <div><span style={labelSt}>Sonuc</span><select style={inputSt} value={inspForm.result} onChange={e=>setInspForm(f=>({...f,result:e.target.value}))}><option value="pass">Gecti</option><option value="fail">Kaldi</option></select></div>
             <div><span style={labelSt}>Hurda Adedi</span><input style={inputSt} type="number" min="0" value={inspForm.scrapQty} onChange={e=>setInspForm(f=>({...f,scrapQty:e.target.value}))}/></div>
             <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Olcumler</span><input style={inputSt} value={inspForm.measurements} onChange={e=>setInspForm(f=>({...f,measurements:e.target.value}))}/></div>
@@ -17474,17 +18311,21 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr .4fr 1fr",gap:8}}>
               <div>
                 <span style={labelSt}>Onayli Siparisten Gelen Is Emri</span>
-                <select style={inputSt} value={balloonForm.orderId} onChange={e=>{setBalloonForm(f=>({...f,orderId:e.target.value,page:"1"}));setBalloonPreview(null);setBalloonError("");}}>
-                  <option value="">Secin</option>
-                  {pdfOrders.map(o=><option key={o.id} value={o.id}>{o.code} · {o.partNo||o.name||"-"}</option>)}
-                </select>
+                <SearchableSelect
+                  value={balloonForm.orderId}
+                  onChange={v=>{setBalloonForm(f=>({...f,orderId:v,page:"1"}));setBalloonPreview(null);setBalloonError("");}}
+                  placeholder="Secin"
+                  options={pdfOrders.map(o=>({value:o.id,label:`${o.code} · ${o.partNo||o.name||"-"}`}))}
+                />
               </div>
               <div>
                 <span style={labelSt}>Teknik Resim PDF</span>
-                <select style={inputSt} value={balloonForm.fileId} onChange={e=>{setBalloonForm(f=>({...f,fileId:e.target.value}));setBalloonPreview(null);setBalloonError("");}}>
-                  <option value="">Secin</option>
-                  {selectedPdfFiles.map(f=><option key={f._pickId} value={f._pickId}>{f.name||"drawing.pdf"}</option>)}
-                </select>
+                <SearchableSelect
+                  value={balloonForm.fileId}
+                  onChange={v=>{setBalloonForm(f=>({...f,fileId:v}));setBalloonPreview(null);setBalloonError("");}}
+                  placeholder="Secin"
+                  options={selectedPdfFiles.map(f=>({value:f._pickId,label:f.name||"drawing.pdf"}))}
+                />
               </div>
               <div>
                 <span style={labelSt}>Sayfa</span>
@@ -17492,10 +18333,12 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
               </div>
               <div>
                 <span style={labelSt}>Kayitli Balon Calismasi</span>
-                <select style={inputSt} value={faiForm.balloonRunId||""} onChange={e=>{const id=e.target.value;setFaiForm(f=>({...f,balloonRunId:id}));bindSelectedBalloonRunToFai(id);}}>
-                  <option value="">Secin</option>
-                  {orderBalloonRuns.map(r=><option key={r.id} value={r.id}>{r.fileName||"PDF"} · S{r.page||1} · {r.dimensionCount||0} olcu</option>)}
-                </select>
+                <SearchableSelect
+                  value={faiForm.balloonRunId||""}
+                  onChange={id=>{setFaiForm(f=>({...f,balloonRunId:id}));bindSelectedBalloonRunToFai(id);}}
+                  placeholder="Secin"
+                  options={[{value:"",label:"Secin"},...orderBalloonRuns.map(r=>({value:r.id,label:`${r.fileName||"PDF"} · S${r.page||1} · ${r.dimensionCount||0} olcu`}))]}
+                />
               </div>
             </div>
             <div style={{display:"flex",gap:8,justifyContent:"space-between",marginTop:8,flexWrap:"wrap"}}>
@@ -17592,10 +18435,26 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
             )}
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-            <div><span style={labelSt}>Is Emri</span><select style={inputSt} value={faiForm.orderId} onChange={e=>setFaiForm(f=>({...f,orderId:e.target.value}))}><option value="">Secin</option>{orders.map(o=><option key={o.id} value={o.id}>{o.code}</option>)}</select></div>
+            <div>
+              <span style={labelSt}>Is Emri</span>
+              <SearchableSelect
+                value={faiForm.orderId}
+                onChange={v=>setFaiForm(f=>({...f,orderId:v}))}
+                placeholder="Secin"
+                options={orders.map(o=>({value:o.id,label:o.code||"-"}))}
+              />
+            </div>
             <div><span style={labelSt}>Parca No</span><input style={inputSt} value={faiForm.partNo} onChange={e=>setFaiForm(f=>({...f,partNo:e.target.value}))}/></div>
             <div><span style={labelSt}>Durum</span><select style={inputSt} value={faiForm.status} onChange={e=>setFaiForm(f=>({...f,status:e.target.value}))}><option value="draft">Taslak</option><option value="pending">Beklemede</option><option value="approved">Onayli</option><option value="rejected">Reddedildi</option></select></div>
-            <div><span style={labelSt}>Balon Calismasi</span><select style={inputSt} value={faiForm.balloonRunId||""} onChange={e=>{const id=e.target.value;setFaiForm(f=>({...f,balloonRunId:id}));if(id){bindSelectedBalloonRunToFai(id);}else{setEditableBalloons([]);setBalloonPreview(null);}}}><option value="">Yok</option>{balloonRuns.filter(r=>!faiForm.orderId||r.orderId===faiForm.orderId).map(r=><option key={r.id} value={r.id}>{r.orderCode||"-"} · {r.fileName||"PDF"} · {r.dimensionCount||0}</option>)}</select></div>
+            <div>
+              <span style={labelSt}>Balon Calismasi</span>
+              <SearchableSelect
+                value={faiForm.balloonRunId||""}
+                onChange={id=>{setFaiForm(f=>({...f,balloonRunId:id}));if(id){bindSelectedBalloonRunToFai(id);}else{setEditableBalloons([]);setBalloonPreview(null);}}}
+                placeholder="Yok"
+                options={[{value:"",label:"Yok"},...balloonRuns.filter(r=>!faiForm.orderId||r.orderId===faiForm.orderId).map(r=>({value:r.id,label:`${r.orderCode||"-"} · ${r.fileName||"PDF"} · ${r.dimensionCount||0}`}))]}
+              />
+            </div>
             <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Not</span><textarea rows={2} style={{...inputSt,minHeight:62,resize:"vertical"}} value={faiForm.note} onChange={e=>setFaiForm(f=>({...f,note:e.target.value}))}/></div>
           </div>
           <div style={{display:"flex",justifyContent:"space-between",marginTop:10,flexWrap:"wrap",gap:8}}>
@@ -17955,7 +18814,8 @@ function FinanceModule({currentUser,filtersVisible=true}){
   useEffect(()=>{
     setFinancePageIdx(prev=>Math.max(1,Math.min(prev,financeTotalPages)));
   },[financeTotalPages]);
-  const pagedFinanceRows=sorted.slice((financePageIdx-1)*Math.max(1,financeRowsPerPage),(financePageIdx-1)*Math.max(1,financeRowsPerPage)+Math.max(1,financeRowsPerPage));
+  const financeListStart=(financePageIdx-1)*Math.max(1,financeRowsPerPage);
+  const pagedFinanceRows=sorted.slice(financeListStart,financeListStart+Math.max(1,financeRowsPerPage));
   const openTahsilatMap=sumByCurrency(rows.filter(r=>(r.flow||"tahsilat")==="tahsilat"&&statusBucket(r)==="planned"));
   const openOdemeMap=sumByCurrency(rows.filter(r=>(r.flow||"tahsilat")==="odeme"&&statusBucket(r)==="planned"));
   const doneTahsilatMap=sumByCurrency(rows.filter(r=>(r.flow||"tahsilat")==="tahsilat"&&statusBucket(r)==="completed"));
@@ -17973,7 +18833,10 @@ function FinanceModule({currentUser,filtersVisible=true}){
     toggleColumn:toggleFinanceFlowTableColumn,
     resetColumns:resetFinanceFlowTableColumns,
   }=useTableColumnLayout("finance_flow_list",FINANCE_FLOW_LIST_COLUMNS);
-  const renderFinanceFlowCell=(row,col)=>{
+  const renderFinanceFlowCell=(row,col,rowNo)=>{
+    if(col.id==="row_no"){
+      return <td key={col.id} style={{padding:"8px 10px",fontSize:11,color:C.muted2,textAlign:"center",fontWeight:700}}>{rowNo}</td>;
+    }
     if(col.id==="dates"){
       return (
         <td key={col.id} style={{padding:"8px 10px"}}>
@@ -18111,9 +18974,9 @@ function FinanceModule({currentUser,filtersVisible=true}){
               </tr>
             </thead>
             <tbody>
-              {pagedFinanceRows.map(row=>(
+              {pagedFinanceRows.map((row,idx)=>(
                 <tr key={row.id} style={{borderBottom:`1px solid ${C.border}`}}>
-                  {visibleFinanceFlowTableColumns.map(col=>renderFinanceFlowCell(row,col))}
+                  {visibleFinanceFlowTableColumns.map(col=>renderFinanceFlowCell(row,col,financeListStart+idx+1))}
                 </tr>
               ))}
               {sorted.length===0&&(
@@ -18282,13 +19145,13 @@ function ProgramAndEnergyModule({currentUser,machines=DEFAULT_MACHINES}) {
             <input style={inputSt} placeholder="Program Kodu" value={pf.code} onChange={e=>setPf(f=>({...f,code:e.target.value}))}/>
             <input style={inputSt} placeholder="Program Adi" value={pf.name} onChange={e=>setPf(f=>({...f,name:e.target.value}))}/>
             <input style={inputSt} placeholder="Versiyon" value={pf.version} onChange={e=>setPf(f=>({...f,version:e.target.value}))}/>
-            <select style={inputSt} value={pf.machine} onChange={e=>setPf(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
+            <SearchableSelect value={pf.machine} onChange={v=>setPf(f=>({...f,machine:v}))} options={machines.map(m=>({value:m,label:m}))}/>
           </div>
           <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}><button onClick={saveProgram} style={{...btnSt("primary"),padding:"7px 11px",fontSize:12}}>Program Kaydet</button></div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginTop:10}}>
-            <select style={inputSt} value={tf.programId} onChange={e=>setTf(f=>({...f,programId:e.target.value}))}><option value="">Program secin</option>{programs.slice(0,200).map(p=><option key={p.id} value={p.id}>{p.code} · {p.version}</option>)}</select>
-            <select style={inputSt} value={tf.machine} onChange={e=>setTf(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
-            <select style={inputSt} value={tf.orderId} onChange={e=>setTf(f=>({...f,orderId:e.target.value}))}><option value="">Is emri (opsiyonel)</option>{orders.slice(0,120).map(o=><option key={o.id} value={o.id}>{o.code}</option>)}</select>
+            <SearchableSelect value={tf.programId} onChange={v=>setTf(f=>({...f,programId:v}))} placeholder="Program secin" options={[{value:"",label:"Program secin"},...programs.slice(0,200).map(p=>({value:p.id,label:`${p.code} · ${p.version}`}))]}/>
+            <SearchableSelect value={tf.machine} onChange={v=>setTf(f=>({...f,machine:v}))} options={machines.map(m=>({value:m,label:m}))}/>
+            <SearchableSelect value={tf.orderId} onChange={v=>setTf(f=>({...f,orderId:v}))} placeholder="Is emri (opsiyonel)" options={[{value:"",label:"Is emri (opsiyonel)"},...orders.slice(0,120).map(o=>({value:o.id,label:o.code||"-"}))]}/>
           </div>
           <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}><button onClick={saveTransfer} style={{...btnSt("green"),padding:"7px 11px",fontSize:12}}>Transfer Kaydet</button></div>
           <div style={{fontSize:12,color:C.muted2,marginTop:8}}>Program: {programs.length} · Transfer: {transfers.length}</div>
@@ -18298,7 +19161,7 @@ function ProgramAndEnergyModule({currentUser,machines=DEFAULT_MACHINES}) {
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
             <input style={inputSt} placeholder="kgCO2/kWh" value={cfg.emission} onChange={e=>setCfg(f=>({...f,emission:e.target.value}))}/>
             <input style={inputSt} placeholder="TRY/kWh" value={cfg.unitCost} onChange={e=>setCfg(f=>({...f,unitCost:e.target.value}))}/>
-            <select style={inputSt} value={ef.machine} onChange={e=>setEf(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
+            <SearchableSelect value={ef.machine} onChange={v=>setEf(f=>({...f,machine:v}))} options={machines.map(m=>({value:m,label:m}))}/>
             <input style={inputSt} type="date" value={ef.date} onChange={e=>setEf(f=>({...f,date:e.target.value}))}/>
             <input style={inputSt} type="number" min="0" placeholder="kWh" value={ef.kwh} onChange={e=>setEf(f=>({...f,kwh:e.target.value}))}/>
             <input style={inputSt} type="number" min="0" placeholder="Calisma dk" value={ef.runtimeMin} onChange={e=>setEf(f=>({...f,runtimeMin:e.target.value}))}/>
@@ -18504,7 +19367,7 @@ function ToolCycleAnalyticsModule({currentUser,machines=DEFAULT_MACHINES}) {
 
             {createMode==="offset"&&(
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
-                <div><span style={labelSt}>Tezgah</span><select style={inputSt} value={of.machine} onChange={e=>setOf(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+                <div><span style={labelSt}>Tezgah</span><SearchableSelect value={of.machine} onChange={v=>setOf(f=>({...f,machine:v}))} options={machines.map(m=>({value:m,label:m}))}/></div>
                 <div><span style={labelSt}>Takim Kodu</span><input style={inputSt} value={of.toolCode} onChange={e=>setOf(f=>({...f,toolCode:e.target.value}))}/></div>
                 <div><span style={labelSt}>Program Kodu</span><input style={inputSt} value={of.programCode} onChange={e=>setOf(f=>({...f,programCode:e.target.value}))}/></div>
                 <div><span style={labelSt}>Geometri</span><input style={inputSt} type="number" value={of.geometry} onChange={e=>setOf(f=>({...f,geometry:e.target.value}))}/></div>
@@ -18514,8 +19377,8 @@ function ToolCycleAnalyticsModule({currentUser,machines=DEFAULT_MACHINES}) {
 
             {createMode==="cycle"&&(
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
-                <div><span style={labelSt}>Tezgah</span><select style={inputSt} value={cf.machine} onChange={e=>setCf(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
-                <div><span style={labelSt}>Is Emri</span><select style={inputSt} value={cf.orderId} onChange={e=>setCf(f=>({...f,orderId:e.target.value}))}><option value="">Is emri (opsiyonel)</option>{orders.slice(0,120).map(o=><option key={o.id} value={o.id}>{o.code}</option>)}</select></div>
+                <div><span style={labelSt}>Tezgah</span><SearchableSelect value={cf.machine} onChange={v=>setCf(f=>({...f,machine:v}))} options={machines.map(m=>({value:m,label:m}))}/></div>
+                <div><span style={labelSt}>Is Emri</span><SearchableSelect value={cf.orderId} onChange={v=>setCf(f=>({...f,orderId:v}))} placeholder="Is emri (opsiyonel)" options={[{value:"",label:"Is emri (opsiyonel)"},...orders.slice(0,120).map(o=>({value:o.id,label:o.code||"-"}))]}/></div>
                 <div><span style={labelSt}>Planlanan sn</span><input style={inputSt} type="number" value={cf.plannedSec} onChange={e=>setCf(f=>({...f,plannedSec:e.target.value}))}/></div>
                 <div><span style={labelSt}>Gercek sn</span><input style={inputSt} type="number" value={cf.actualSec} onChange={e=>setCf(f=>({...f,actualSec:e.target.value}))}/></div>
                 <div><span style={labelSt}>Bos sn</span><input style={inputSt} type="number" value={cf.idleSec} onChange={e=>setCf(f=>({...f,idleSec:e.target.value}))}/></div>
@@ -18633,8 +19496,8 @@ function ClosedLoopWarehouseModule({currentUser,machines=DEFAULT_MACHINES}) {
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
           <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Olcum Geri Besleme</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-            <select style={inputSt} value={ff.orderId} onChange={e=>setFf(f=>({...f,orderId:e.target.value}))}><option value="">Is emri</option>{orders.slice(0,120).map(o=><option key={o.id} value={o.id}>{o.code}</option>)}</select>
-            <select style={inputSt} value={ff.machine} onChange={e=>setFf(f=>({...f,machine:e.target.value}))}>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select>
+            <SearchableSelect value={ff.orderId} onChange={v=>setFf(f=>({...f,orderId:v}))} placeholder="Is emri" options={[{value:"",label:"Is emri"},...orders.slice(0,120).map(o=>({value:o.id,label:o.code||"-"}))]}/>
+            <SearchableSelect value={ff.machine} onChange={v=>setFf(f=>({...f,machine:v}))} options={machines.map(m=>({value:m,label:m}))}/>
             <input style={inputSt} placeholder="Program" value={ff.programCode} onChange={e=>setFf(f=>({...f,programCode:e.target.value}))}/>
             <input style={inputSt} placeholder="Takim" value={ff.toolCode} onChange={e=>setFf(f=>({...f,toolCode:e.target.value}))}/>
             <input style={inputSt} type="number" placeholder="Hedef" value={ff.target} onChange={e=>setFf(f=>({...f,target:e.target.value}))}/>
@@ -18655,7 +19518,7 @@ function ClosedLoopWarehouseModule({currentUser,machines=DEFAULT_MACHINES}) {
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
           <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Depo Hareketi</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-            <select style={inputSt} value={mf.materialId} onChange={e=>setMf(f=>({...f,materialId:e.target.value}))}><option value="">Malzeme secin</option>{materials.map(m=><option key={m.id} value={m.id}>{m.code} · {m.name} (Stok {safeNum(m.stock)})</option>)}</select>
+            <SearchableSelect value={mf.materialId} onChange={v=>setMf(f=>({...f,materialId:v}))} placeholder="Malzeme secin" options={[{value:"",label:"Malzeme secin"},...materials.map(m=>({value:m.id,label:`${m.code} · ${m.name} (Stok ${safeNum(m.stock)})`}))]}/>
             <select style={inputSt} value={mf.moveType} onChange={e=>setMf(f=>({...f,moveType:e.target.value}))}><option value="in">Giris</option><option value="out">Cikis</option></select>
             <input style={inputSt} type="number" placeholder="Miktar" value={mf.qty} onChange={e=>setMf(f=>({...f,qty:e.target.value}))}/>
             <input style={inputSt} placeholder="Lot No" value={mf.lotNo} onChange={e=>setMf(f=>({...f,lotNo:e.target.value}))}/>
@@ -18726,6 +19589,7 @@ function App() {
   const [purchaseFilterOpen,setPurchaseFilterOpen]=useState(true);
   const [partsFilterOpen,setPartsFilterOpen]=useState(true);
   const [financeFilterOpen,setFinanceFilterOpen]=useState(true);
+  const [downtimeFilterOpen,setDowntimeFilterOpen]=useState(true);
   const [topNotifCount,setTopNotifCount]=useState(0);
   const [globalSortMode,setGlobalSortMode]=useState("group");
   const [topContentSortMode,setTopContentSortMode]=useState("date_desc");
@@ -19112,6 +19976,14 @@ function App() {
         {id:"date_asc",label:"Vade (Eskiden Yeniye)"},
       ],
     },
+    downtime:{
+      filterKey:"downtime",
+      sortDefault:"date_desc",
+      sortChoices:[
+        {id:"date_desc",label:"Durus (Yeniden Eskiye)"},
+        {id:"date_asc",label:"Durus (Eskiden Yeniye)"},
+      ],
+    },
   };
   const activeContentAction=contentActionConfig[tab]||null;
   const hasContentFilters=Boolean(activeContentAction?.filterKey);
@@ -19237,7 +20109,7 @@ function App() {
     if(tab==="purchase"||tab==="purchase_requests") return <PurchasingModule currentUser={currentUser} filtersVisible={purchaseFilterOpen} defaultView="requests"/>;
     if(tab==="purchase_suppliers") return <PurchasingModule currentUser={currentUser} filtersVisible={purchaseFilterOpen} defaultView="suppliers"/>;
     if(tab==="purchase_quotes") return <PurchasingModule currentUser={currentUser} filtersVisible={purchaseFilterOpen} defaultView="quotes"/>;
-    if(tab==="downtime") return <DowntimeModule currentUser={currentUser} machines={machines}/>;
+    if(tab==="downtime") return <DowntimeModule currentUser={currentUser} machines={machines} filtersVisible={downtimeFilterOpen}/>;
     if(tab==="quality") return <QualityTraceabilityModule currentUser={currentUser} machines={machines}/>;
     if(tab==="notifications") return <NotificationCenterModule currentUser={currentUser}/>;
     if(tab==="finance") return <FinanceModule currentUser={currentUser} filtersVisible={financeFilterOpen}/>;
@@ -19518,6 +20390,7 @@ function App() {
     materials:materialsFilterOpen,
     parts:partsFilterOpen,
     finance:financeFilterOpen,
+    downtime:downtimeFilterOpen,
   };
   const topFiltersOpen=hasContentFilters
     ? Boolean(filterOpenByKey[activeContentAction?.filterKey||""])
@@ -19558,6 +20431,10 @@ function App() {
     }
     if(activeContentAction?.filterKey==="finance"){
       setFinanceFilterOpen(v=>!v);
+      return;
+    }
+    if(activeContentAction?.filterKey==="downtime"){
+      setDowntimeFilterOpen(v=>!v);
       return;
     }
   };
@@ -19648,6 +20525,7 @@ function App() {
             setMaterialsFilterOpen(false);
             setPartsFilterOpen(false);
             setFinanceFilterOpen(false);
+            setDowntimeFilterOpen(false);
             if(layoutMode==="desktop") setDesktopMenuCollapsed(false);
           }} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>
             Temizle
