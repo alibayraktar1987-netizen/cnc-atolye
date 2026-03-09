@@ -5786,6 +5786,23 @@ function Customers({filtersVisible=true,availableTabIds=[],onOpenRelatedRecord=(
         }
         return;
       }
+      if(d.type==="open_record"){
+        const targetId=String(d.recordId||d.customerId||"").trim();
+        const targetCode=String(d.recordCode||"").trim().toUpperCase();
+        const targetName=String(d.customerName||d.search||"").trim();
+        const searchText=String(d.search||targetCode||targetName||"").trim();
+        setShowCustomerModal(false);
+        if(searchText) setSearch(searchText);
+        const targetCustomer=customers.find(row=>String(row.id||"")===targetId)
+          || customers.find(row=>String(row.code||"").trim().toUpperCase()===targetCode)
+          || customers.find(row=>normalizeCustomerKey(row.name||"")===normalizeCustomerKey(targetName));
+        if(targetCustomer){
+          setSelectedCustomerId(targetCustomer.id||"");
+        }else{
+          setSelectedCustomerId("");
+        }
+        return;
+      }
       if(d.type==="new"){
         setEditId(null);
         setForm({...emptyForm,code:nextCustomerCode()});
@@ -8212,7 +8229,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
 // ============================================================
 //  SALES MANAGEMENT V2
 // ============================================================
-function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders,defaultView="orders",filtersVisible=true}) {
+function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders,defaultView="orders",filtersVisible=true,availableTabIds=[],onOpenRelatedRecord=()=>{}}) {
   const makeQuickPartForm=(seed={})=>({
     partNo:String(seed.partNo||"").trim().toUpperCase(),
     name:String(seed.name||"").trim(),
@@ -8269,6 +8286,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   const [customerEditId,setCustomerEditId]=useState("");
   const [priceEditId,setPriceEditId]=useState("");
   const [quoteEditId,setQuoteEditId]=useState("");
+  const [selectedSalesOrderId,setSelectedSalesOrderId]=useState("");
   const [showQuoteModal,setShowQuoteModal]=useState(false);
   const [showOrderModal,setShowOrderModal]=useState(false);
   const [showCreatePartModal,setShowCreatePartModal]=useState(false);
@@ -8298,6 +8316,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   });
   const quoteCurrencies=(salesCurrencies.list||[]).filter(x=>x.enabled);
   const defaultQuoteCurrency=(quoteCurrencies.find(x=>x.code===salesCurrencies.defaultCurrency)?.code)||quoteCurrencies[0]?.code||"TRY";
+  const availableTabSet=useMemo(()=>new Set(Array.isArray(availableTabIds)?availableTabIds:[]),[availableTabIds]);
   const currencyMetaMap={};
   quoteCurrencies.forEach(row=>{currencyMetaMap[row.code]=row;});
   function formatByCurrency(value,currencyCode){
@@ -8385,6 +8404,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
         const searchText=String(d.search||d.customerName||targetCode||"").trim();
         if(d.tab==="quotes"){
           setView("quotes");
+          setSelectedSalesOrderId("");
           setQuoteStatusFilter("all");
           setQuoteDateFrom("");
           setQuoteDateTo("");
@@ -8405,12 +8425,20 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
           setSearch(searchText);
           setShowQuoteModal(false);
           setShowOrderModal(false);
+          const targetOrder=salesOrders.find(row=>String(row.id||"")===targetId)
+            || salesOrders.find(row=>String(row.code||"").trim().toUpperCase()===targetCode);
+          if(targetOrder){
+            openSalesOrderDetail(targetOrder);
+          }else{
+            setSelectedSalesOrderId("");
+          }
         }
         return;
       }
       if(d.type==="new"){
         if(d.tab==="quotes"){
           setView("quotes");
+          setSelectedSalesOrderId("");
           setQuoteEditId("");
           setQuoteForm({
             code:nextCode("TKL",quotes,/^TKL-(\d+)$/),
@@ -8425,6 +8453,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
           setShowQuoteModal(true);
         } else {
           setView("orders");
+          setSelectedSalesOrderId("");
           setOrderForm({
             code:nextCode("SIP",salesOrders,/^SIP-(\d+)$/),
             customerId:"",
@@ -8493,6 +8522,12 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   function resolvePartFromLine(line){
     if(!line) return null;
     return findPartById(line.partId)||findPartByNo(line.partNo)||null;
+  }
+  function openSalesOrderDetail(order){
+    if(!order) return;
+    setSelectedSalesOrderId(order.id||"");
+    setShowQuoteModal(false);
+    setShowOrderModal(false);
   }
   function makePartSnapshot(part){
     if(!part) return null;
@@ -9528,6 +9563,51 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   const orderListStart=(orderListPageIdx-1)*Math.max(1,orderRowsPerPage);
   const pagedQuoteRows=filteredQuotes.slice(quoteListStart,quoteListStart+Math.max(1,quoteRowsPerPage));
   const pagedOrderRows=filteredOrders.slice(orderListStart,orderListStart+Math.max(1,orderRowsPerPage));
+  const selectedSalesOrder=salesOrders.find(row=>row.id===selectedSalesOrderId)||null;
+  const selectedSalesOrderCustomer=selectedSalesOrder?customers.find(row=>row.id===selectedSalesOrder.customerId)||null:null;
+  const selectedSalesOrderQuote=selectedSalesOrder?(
+    quotes.find(row=>String(row.id||"")===String(selectedSalesOrder.sourceQuoteId||""))
+    || quotes.find(row=>String(row.code||"").trim().toUpperCase()===String(selectedSalesOrder.sourceQuoteCode||"").trim().toUpperCase())
+    || null
+  ):null;
+  const selectedSalesOrderWorkOrders=useMemo(()=>{
+    if(!selectedSalesOrder) return [];
+    const orderId=String(selectedSalesOrder.id||"").trim();
+    const orderCode=String(selectedSalesOrder.code||"").trim().toUpperCase();
+    return workOrders.filter(row=>{
+      const sourceId=String(row.sourceSalesOrderId||"").trim();
+      const sourceCode=String(row.sourceSalesOrderCode||"").trim().toUpperCase();
+      return (orderId&&sourceId===orderId)||(orderCode&&sourceCode===orderCode);
+    });
+  },[selectedSalesOrder,workOrders]);
+  const selectedSalesOrderLines=useMemo(()=>{
+    if(!selectedSalesOrder) return [];
+    return (selectedSalesOrder.lines||[]).map((line,idx)=>{
+      const linkedPart=resolvePartFromLine(line);
+      const linePartId=String(line.partId||linkedPart?.id||"").trim();
+      const linePartNo=normalizePartNo(line.partNo||linkedPart?.partNo||"");
+      const linkedWorkOrder=selectedSalesOrderWorkOrders.find(row=>{
+        const workOrderPartId=String(row.partId||"").trim();
+        const workOrderPartNo=normalizePartNo(row.partNo||"");
+        if(linePartId&&workOrderPartId&&linePartId===workOrderPartId) return true;
+        return Boolean(linePartNo)&&linePartNo===workOrderPartNo;
+      })||null;
+      return {id:`${selectedSalesOrder.id||"sales"}_${idx}`,line,linkedPart,linkedWorkOrder};
+    });
+  },[parts,selectedSalesOrder,selectedSalesOrderWorkOrders]);
+  const selectedSalesStatusMeta=selectedSalesOrder?getSalesStatusMeta(selectedSalesOrder.status):null;
+  const selectedSalesRemainingQty=selectedSalesOrder?Math.max(0,safeNum(selectedSalesOrder.qty)-safeNum(selectedSalesOrder.deliveredQty)):0;
+  const selectedSalesOpenWorkOrders=selectedSalesOrderWorkOrders.filter(row=>isOpenOrderStatus(row.status)).length;
+  useEffect(()=>{
+    if(selectedSalesOrderId&&!salesOrders.some(row=>row.id===selectedSalesOrderId)){
+      setSelectedSalesOrderId("");
+    }
+  },[salesOrders,selectedSalesOrderId]);
+  useEffect(()=>{
+    if(view!=="orders"&&selectedSalesOrderId){
+      setSelectedSalesOrderId("");
+    }
+  },[view,selectedSalesOrderId]);
   const quoteStatusCounts={
     all:quotes.length,
     offer:quotes.filter(x=>(x.status||"")==="offer").length,
@@ -9651,7 +9731,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     }
     if(col.id==="actions"){
       return (
-        <td key={col.id} style={{padding:"10px 12px"}}>
+        <td key={col.id} onClick={e=>e.stopPropagation()} style={{padding:"10px 12px"}}>
           <div style={{display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
             <button onClick={()=>printOrder(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>PDF</button>
             <button onClick={()=>duplicateSalesOrder(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Kopyala</button>
@@ -9887,6 +9967,161 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
         </div>
       )}
 
+      {selectedSalesOrder&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(8,12,18,.40)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:56,padding:14}} onClick={()=>setSelectedSalesOrderId("")}>
+          <div style={{width:"100%",maxWidth:1180,maxHeight:"92vh",overflowY:"auto",background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:14,boxShadow:"0 24px 56px rgba(0,0,0,.34)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap",marginBottom:12}}>
+              <div>
+                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <div style={{fontWeight:800,color:C.text,fontSize:18}}>{selectedSalesOrder.code||"Siparis"}</div>
+                  {selectedSalesStatusMeta&&<Badge label={selectedSalesStatusMeta.label} color={selectedSalesStatusMeta.color}/>}
+                </div>
+                <div style={{fontSize:12,color:C.muted2,marginTop:4}}>
+                  {(selectedSalesOrder.customerName||selectedSalesOrderCustomer?.name||"-")}
+                  {selectedSalesOrder.dueDate?` · Termin: ${selectedSalesOrder.dueDate}`:""}
+                  {selectedSalesOrder.sourceQuoteCode?` · Teklif: ${selectedSalesOrder.sourceQuoteCode}`:""}
+                </div>
+                {selectedSalesOrder.note&&<div style={{fontSize:12,color:C.muted2,marginTop:6,maxWidth:820}}>{selectedSalesOrder.note}</div>}
+              </div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <button onClick={()=>printOrder(selectedSalesOrder)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>PDF</button>
+                <button onClick={()=>setSelectedSalesOrderId("")} style={{...btnSt("primary"),padding:"7px 10px",fontSize:12}}>Kapat</button>
+              </div>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:8,marginBottom:12}}>
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Siparis Tutari</div><div style={{fontSize:22,fontWeight:800,color:C.text,marginTop:3}}>{formatByCurrency(selectedSalesOrder.totalAmount,selectedSalesOrder.currency||defaultQuoteCurrency)}</div></div>
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Satir Sayisi</div><div style={{fontSize:22,fontWeight:800,color:C.text,marginTop:3}}>{selectedSalesOrderLines.length}</div></div>
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Kalan Miktar</div><div style={{fontSize:22,fontWeight:800,color:C.text,marginTop:3}}>{selectedSalesRemainingQty}</div></div>
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Is Emirleri</div><div style={{fontSize:22,fontWeight:800,color:C.text,marginTop:3}}>{selectedSalesOrderWorkOrders.length}</div><div style={{fontSize:11,color:C.muted2,marginTop:4}}>Acik: {selectedSalesOpenWorkOrders}</div></div>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12}}>
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8}}>
+                  <div>
+                    <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase"}}>Bagli Kayitlar</div>
+                    <div style={{fontWeight:700,color:C.text}}>Firma ve Teklif</div>
+                  </div>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                  <button
+                    onClick={()=>availableTabSet.has("customers")&&onOpenRelatedRecord({tabId:"customers",recordId:selectedSalesOrder.customerId||selectedSalesOrderCustomer?.id||"",recordCode:selectedSalesOrderCustomer?.code||"",recordKind:"customer",customerId:selectedSalesOrder.customerId||"",customerName:selectedSalesOrder.customerName||selectedSalesOrderCustomer?.name||"",search:selectedSalesOrder.customerName||selectedSalesOrderCustomer?.name||""})}
+                    disabled={!availableTabSet.has("customers")}
+                    style={{...btnSt("ghost"),padding:"10px 11px",textAlign:"left",display:"flex",flexDirection:"column",alignItems:"stretch",gap:3,opacity:availableTabSet.has("customers")?1:0.6,cursor:availableTabSet.has("customers")?"pointer":"not-allowed"}}
+                  >
+                    <span style={{fontSize:12,fontWeight:800,color:C.text}}>{selectedSalesOrder.customerName||selectedSalesOrderCustomer?.name||"Firma"}</span>
+                    <span style={{fontSize:11,color:C.muted2}}>{selectedSalesOrderCustomer?.code||selectedSalesOrder.customerId||"Firma kartina git"}</span>
+                  </button>
+                  <button
+                    onClick={()=>selectedSalesOrderQuote&&availableTabSet.has("quotes")&&onOpenRelatedRecord({tabId:"quotes",recordId:selectedSalesOrderQuote.id||selectedSalesOrder.sourceQuoteId||"",recordCode:selectedSalesOrderQuote.code||selectedSalesOrder.sourceQuoteCode||"",recordKind:"quote",customerId:selectedSalesOrder.customerId||"",customerName:selectedSalesOrder.customerName||"",search:selectedSalesOrderQuote?.code||selectedSalesOrder.sourceQuoteCode||""})}
+                    disabled={!selectedSalesOrderQuote||!availableTabSet.has("quotes")}
+                    style={{...btnSt("ghost"),padding:"10px 11px",textAlign:"left",display:"flex",flexDirection:"column",alignItems:"stretch",gap:3,opacity:(selectedSalesOrderQuote&&availableTabSet.has("quotes"))?1:0.6,cursor:(selectedSalesOrderQuote&&availableTabSet.has("quotes"))?"pointer":"not-allowed"}}
+                  >
+                    <span style={{fontSize:12,fontWeight:800,color:C.text}}>{selectedSalesOrderQuote?.code||selectedSalesOrder.sourceQuoteCode||"Kaynak Teklif Yok"}</span>
+                    <span style={{fontSize:11,color:C.muted2}}>{selectedSalesOrderQuote?`${selectedSalesOrderQuote.customerName||"-"} · ${selectedSalesOrderQuote.validUntil||"-"}`:"Bu siparis manuel olusturulmus olabilir."}</span>
+                  </button>
+                </div>
+              </div>
+
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8}}>
+                  <div>
+                    <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase"}}>Operasyon</div>
+                    <div style={{fontWeight:700,color:C.text}}>Is Emirleri</div>
+                  </div>
+                  <Badge label={`${selectedSalesOrderWorkOrders.length} Kayit`} color={C.warn}/>
+                </div>
+                {selectedSalesOrderWorkOrders.length===0&&<div style={{fontSize:12,color:C.muted2,padding:"8px 2px"}}>Bu siparis icin olusan is emri bulunamadi.</div>}
+                <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                  {selectedSalesOrderWorkOrders.map(order=>(
+                    <button
+                      key={order.id}
+                      onClick={()=>availableTabSet.has("orders")&&onOpenRelatedRecord({tabId:"orders",recordId:order.id||"",recordCode:order.code||"",recordKind:"work_order",customerId:selectedSalesOrder.customerId||"",customerName:selectedSalesOrder.customerName||"",search:order.code||selectedSalesOrder.code||""})}
+                      disabled={!availableTabSet.has("orders")}
+                      style={{...btnSt("ghost"),padding:"10px 11px",textAlign:"left",display:"flex",flexDirection:"column",alignItems:"stretch",gap:3,opacity:availableTabSet.has("orders")?1:0.6,cursor:availableTabSet.has("orders")?"pointer":"not-allowed"}}
+                    >
+                      <span style={{fontSize:12,fontWeight:800,color:C.text}}>{order.code||"-"} {order.name?`· ${order.name}`:""}</span>
+                      <span style={{fontSize:11,color:C.muted2}}>{[order.partNo||"",order.dueDate?`Termin: ${order.dueDate}`:"",getOrderStatusMeta(order.status).label].filter(Boolean).join(" · ")}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12,gridColumn:"1 / -1"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+                  <div>
+                    <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase"}}>Siparis Satirlari</div>
+                    <div style={{fontWeight:700,color:C.text}}>Parca ve Teslim Bilgileri</div>
+                  </div>
+                  <Badge label={`${selectedSalesOrderLines.length} Satir`} color={C.accent}/>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr",gap:8}}>
+                  {selectedSalesOrderLines.map(item=>{
+                    const line=item.line||{};
+                    const canOpenPart=Boolean(item.linkedPart||line.partNo)&&availableTabSet.has("parts");
+                    const canOpenWorkOrder=Boolean(item.linkedWorkOrder)&&availableTabSet.has("orders");
+                    const lineNet=(safeNum(line.qty)*safeNum(line.unitPrice))*(1-(safeNum(line.discountPct)/100));
+                    return (
+                      <div key={item.id} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                        <div style={{minWidth:0,flex:"1 1 420px"}}>
+                          <div style={{fontSize:12,fontWeight:800,color:C.text}}>{line.partNo||"-"} {line.partName?`· ${line.partName}`:""}</div>
+                          <div style={{fontSize:11,color:C.muted2,marginTop:3}}>
+                            {[line.revision?`Rev ${line.revision}`:"",line.material||item.linkedPart?.material||"",line.dueDate?`Termin: ${line.dueDate}`:"",`Adet: ${safeNum(line.qty)}`].filter(Boolean).join(" · ")}
+                          </div>
+                          <div style={{fontSize:11,color:C.muted2,marginTop:3}}>
+                            {item.linkedWorkOrder?`Is Emri: ${item.linkedWorkOrder.code||"-"}`:"Bagli is emri yok"} · {formatByCurrency(lineNet,selectedSalesOrder.currency||defaultQuoteCurrency)}
+                          </div>
+                        </div>
+                        <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                          <button
+                            onClick={()=>canOpenPart&&onOpenRelatedRecord({tabId:"parts",recordId:item.linkedPart?.id||line.partId||"",recordCode:item.linkedPart?.partNo||line.partNo||"",recordKind:"part",customerId:selectedSalesOrder.customerId||"",customerName:selectedSalesOrder.customerName||"",search:item.linkedPart?.partNo||line.partNo||selectedSalesOrder.code||""})}
+                            disabled={!canOpenPart}
+                            style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11,opacity:canOpenPart?1:0.6,cursor:canOpenPart?"pointer":"not-allowed"}}
+                          >
+                            Parca
+                          </button>
+                          <button
+                            onClick={()=>canOpenWorkOrder&&onOpenRelatedRecord({tabId:"orders",recordId:item.linkedWorkOrder?.id||"",recordCode:item.linkedWorkOrder?.code||"",recordKind:"work_order",customerId:selectedSalesOrder.customerId||"",customerName:selectedSalesOrder.customerName||"",search:item.linkedWorkOrder?.code||selectedSalesOrder.code||""})}
+                            disabled={!canOpenWorkOrder}
+                            style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11,opacity:canOpenWorkOrder?1:0.6,cursor:canOpenWorkOrder?"pointer":"not-allowed"}}
+                          >
+                            Is Emri
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12,gridColumn:"1 / -1"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+                  <div>
+                    <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase"}}>Sevkiyat ve Belgeler</div>
+                    <div style={{fontWeight:700,color:C.text}}>Teslim Gecmisi</div>
+                  </div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    {selectedSalesOrder.dispatchRef&&<Badge label={`Irsaliye ${selectedSalesOrder.dispatchRef}`} color={C.accent}/>}
+                    {selectedSalesOrder.invoiceRef&&<Badge label={`Fatura ${selectedSalesOrder.invoiceRef}`} color={C.green}/>}
+                  </div>
+                </div>
+                {(selectedSalesOrder.deliveries||[]).length===0&&<div style={{fontSize:12,color:C.muted2,padding:"8px 2px"}}>Henuz teslim kaydi yok.</div>}
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8}}>
+                  {(selectedSalesOrder.deliveries||[]).map(delivery=>(
+                    <div key={delivery.id||`${delivery.date}_${delivery.qty}`} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}>
+                      <div style={{fontSize:12,fontWeight:800,color:C.text}}>{delivery.date||"-"}</div>
+                      <div style={{fontSize:11,color:C.muted2,marginTop:3}}>Teslim miktari: {safeNum(delivery.qty)}</div>
+                      <div style={{fontSize:11,color:C.muted2,marginTop:3}}>{delivery.note||"Not yok"}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {view==="orders"&&(
         <div ref={salesListPanelRef} style={salesSplitWrapStyle}>
           {filtersVisible&&(
@@ -9947,8 +10182,14 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                     {pagedOrderRows.map((o,idx)=>{
                       const rowNo=orderListStart+idx+1;
                       const remaining=Math.max(0,safeNum(o.qty)-safeNum(o.deliveredQty));
+                      const isActive=selectedSalesOrderId===o.id;
                       return (
-                        <tr key={o.id} style={{borderBottom:`1px solid ${C.border}`}}>
+                        <tr
+                          key={o.id}
+                          onClick={()=>openSalesOrderDetail(o)}
+                          title="Kaydi ac"
+                          style={{borderBottom:`1px solid ${C.border}`,background:isActive?(C.accent+"14"):(idx%2===0?C.card:C.surface),cursor:"pointer"}}
+                        >
                           {visibleOrderTableColumns.map(col=>renderSalesOrderTableCell(o,remaining,col,rowNo))}
                         </tr>
                       );
@@ -22163,7 +22404,7 @@ function App() {
     if(tab==="customers") return <Customers filtersVisible={customersFilterOpen} availableTabIds={tabs.map(t=>t.id)} onOpenRelatedRecord={handleCustomerRelatedOpen}/>;
     if(tab==="materials") return <MaterialLibrary filtersVisible={materialsFilterOpen}/>;
     if(tab==="parts") return <PartProductManagement currentUser={currentUser} machines={machines} filtersVisible={partsFilterOpen}/>;
-    if(tab==="sales") return <SalesManagement currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")} defaultView="orders" filtersVisible={salesFilterOpen}/>;
+    if(tab==="sales") return <SalesManagement currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")} defaultView="orders" filtersVisible={salesFilterOpen} availableTabIds={tabs.map(t=>t.id)} onOpenRelatedRecord={handleCustomerRelatedOpen}/>;
     if(tab==="rapor") return <Report currentUser={currentUser} machines={machines}/>;
     if(tab==="tools") return <ToolStock currentUser={currentUser} machines={machines} filtersVisible={toolsFilterOpen}/>;
     if(tab==="orders") return <WorkOrders currentUser={currentUser} machines={machines} filtersVisible={ordersFilterOpen}/>;
@@ -22183,7 +22424,7 @@ function App() {
     }}/>;
     if(tab==="cncmonitor") return <CncMonitorWall currentUser={currentUser} machines={machines}/>;
     if(tab==="mrp") return <MRPRunModule currentUser={currentUser}/>;
-    if(tab==="quotes") return <SalesManagement currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")} defaultView="quotes" filtersVisible={salesFilterOpen}/>;
+    if(tab==="quotes") return <SalesManagement currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")} defaultView="quotes" filtersVisible={salesFilterOpen} availableTabIds={tabs.map(t=>t.id)} onOpenRelatedRecord={handleCustomerRelatedOpen}/>;
     if(tab==="purchase"||tab==="purchase_requests") return <PurchasingModule currentUser={currentUser} filtersVisible={purchaseFilterOpen} defaultView="requests"/>;
     if(tab==="purchase_suppliers") return <PurchasingModule currentUser={currentUser} filtersVisible={purchaseFilterOpen} defaultView="suppliers"/>;
     if(tab==="purchase_quotes") return <PurchasingModule currentUser={currentUser} filtersVisible={purchaseFilterOpen} defaultView="quotes"/>;
