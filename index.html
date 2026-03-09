@@ -3373,6 +3373,16 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
         <div style={{fontWeight:700,color:C.text,fontSize:14}}>Gorev Listesi</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginLeft:"auto"}}>
+          <Badge label={`Benim Acik: ${myOpenCount}`} color={myOpenCount>0?C.warn:C.green}/>
+          <Badge label={`Devam Eden: ${activeCount}`} color={activeCount>0?C.warn:C.muted2}/>
+          <Badge label={`Geciken: ${overdueCount}`} color={overdueCount>0?C.red:C.green}/>
+          <Badge label={`Tamamlanan: ${doneCount}`} color={C.green}/>
+          <button onClick={openCalendarPage} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,display:"inline-flex",alignItems:"center",gap:6}}>
+            <span style={{width:14,height:14,display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon name="planning" size={13}/></span>
+            Takvim
+          </button>
+        </div>
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end",marginBottom:10}}>
         <div style={{minWidth:220,flex:"1 1 320px"}}>
@@ -3463,6 +3473,7 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
           Gorev Takvimi
         </div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+          <button onClick={openTaskListPage} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Gorev Listesi</button>
           <button onClick={()=>shiftCalendarMonth(-1)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>&lt;</button>
           <input style={{...inputSt,padding:"7px 9px",fontSize:12,minWidth:140}} type="month" value={calendarMonthSafe} onChange={e=>setCalendarMonth(e.target.value||monthStr())}/>
           <button onClick={()=>shiftCalendarMonth(1)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>&gt;</button>
@@ -3566,38 +3577,6 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
 
   return (
     <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
-      <div style={{
-        background:C.card,
-        border:`1px solid ${C.border}`,
-        borderRadius:14,
-        padding:12,
-        ...(effectiveAssignmentPage==="list"
-          ? {flex:1,minHeight:0,display:"flex",flexDirection:"column",overflow:"hidden"}
-          : {}),
-      }}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-          <div>
-            <div style={{fontSize:11,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Calisan Takibi</div>
-            <div style={{fontSize:18,fontWeight:800,color:C.text}}>
-              {effectiveAssignmentPage==="calendar"?"Gorev Takvimi":"Gorevlendirme Merkezi"}
-            </div>
-          </div>
-          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-            <Badge label={`Benim Acik: ${myOpenCount}`} color={myOpenCount>0?C.warn:C.green}/>
-            <Badge label={`Devam Eden: ${activeCount}`} color={activeCount>0?C.warn:C.muted2}/>
-            <Badge label={`Geciken: ${overdueCount}`} color={overdueCount>0?C.red:C.green}/>
-            <Badge label={`Tamamlanan: ${doneCount}`} color={C.green}/>
-            <button onClick={openCalendarPage} style={{...(effectiveAssignmentPage==="calendar"?btnSt("primary"):btnSt("ghost")),padding:"8px 12px",fontSize:12,display:"inline-flex",alignItems:"center",gap:6}}>
-              <span style={{width:14,height:14,display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon name="planning" size={13}/></span>
-              Takvim
-            </button>
-            {effectiveAssignmentPage!=="list"&&(
-              <button onClick={openTaskListPage} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Listeye Don</button>
-            )}
-          </div>
-        </div>
-      </div>
-
       {canAssign&&showCreateTaskModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.62)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:70,padding:14}} onClick={closeCreateTaskPage}>
           <div style={{width:"100%",maxWidth:1080,maxHeight:"92vh",overflowY:"auto",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}} onClick={e=>e.stopPropagation()}>
