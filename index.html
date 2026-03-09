@@ -14967,6 +14967,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const [planDateTo,setPlanDateTo]=useState("");
   const [showGanttDetail,setShowGanttDetail]=useState(false);
   const ganttRef=useRef(null);
+  const boardDragPayloadRef=useRef(null);
 
   const load=useCallback(async()=>{
     setLoading(true);
@@ -15656,6 +15657,35 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     };
   }
 
+  function setBoardDragPayload(payload){
+    const next=(payload&&typeof payload==="object")?payload:null;
+    boardDragPayloadRef.current=next;
+    setDragBoardSegmentId(next&&next.type==="board-segment"?String(next.segmentId||""):"");
+    setDragBoardOrderId(next&&next.type==="board-order"?String(next.orderId||""):"");
+  }
+  function clearBoardDragPayload(){
+    boardDragPayloadRef.current=null;
+    setDragBoardSegmentId("");
+    setDragBoardOrderId("");
+  }
+  function startBoardSegmentDrag(e,segmentId){
+    const payload={type:"board-segment",segmentId:String(segmentId||"")};
+    const raw=JSON.stringify(payload);
+    if(e&&e.dataTransfer){
+      e.dataTransfer.setData("text/plain",raw);
+      e.dataTransfer.effectAllowed="move";
+    }
+    setBoardDragPayload(payload);
+  }
+  function startBoardOrderDrag(e,orderId){
+    const payload={type:"board-order",orderId:String(orderId||"")};
+    const raw=JSON.stringify(payload);
+    if(e&&e.dataTransfer){
+      e.dataTransfer.setData("text/plain",raw);
+      e.dataTransfer.effectAllowed="copyMove";
+    }
+    setBoardDragPayload(payload);
+  }
   function readBoardDragPayload(e){
     const raw=(e&&e.dataTransfer&&e.dataTransfer.getData)?(e.dataTransfer.getData("text/plain")||""):"";
     if(raw){
@@ -15665,9 +15695,21 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
         if(payload&&payload.type==="board-order"&&payload.orderId) return {type:"board-order",orderId:String(payload.orderId)};
       }catch{}
     }
+    const refPayload=boardDragPayloadRef.current;
+    if(refPayload&&refPayload.type==="board-segment"&&refPayload.segmentId) return {type:"board-segment",segmentId:String(refPayload.segmentId)};
+    if(refPayload&&refPayload.type==="board-order"&&refPayload.orderId) return {type:"board-order",orderId:String(refPayload.orderId)};
     if(dragBoardSegmentId) return {type:"board-segment",segmentId:String(dragBoardSegmentId)};
     if(dragBoardOrderId) return {type:"board-order",orderId:String(dragBoardOrderId)};
     return null;
+  }
+  function allowBoardDrop(e){
+    const payload=readBoardDragPayload(e);
+    if(!payload) return false;
+    e.preventDefault();
+    if(e&&e.dataTransfer){
+      e.dataTransfer.dropEffect=payload.type==="board-order"?"copy":"move";
+    }
+    return true;
   }
 
   function findNextFreeMachineDate(machine,startDate){
@@ -15918,8 +15960,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     e.preventDefault();
     e.stopPropagation();
     const dragPayload=readBoardDragPayload(e);
-    setDragBoardSegmentId("");
-    setDragBoardOrderId("");
+    clearBoardDragPayload();
     if(!dragPayload) return;
     if(dragPayload.type==="board-order"){
       const sourceOrder=orders.find(o=>o.id===dragPayload.orderId)||null;
@@ -16080,7 +16121,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     if(!card){
       return (
         <div
-          onDragOver={e=>{if(boardDragActive) e.preventDefault();}}
+          onDragOver={allowBoardDrop}
           onDrop={e=>handleBoardDrop(e,{targetMachine})}
           style={{
             minHeight:compact?82:102,
@@ -16108,15 +16149,9 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     return (
       <div
         draggable
-        onDragStart={e=>{
-          const payload=JSON.stringify({type:"board-segment",segmentId:card.id});
-          e.dataTransfer.setData("text/plain",payload);
-          e.dataTransfer.effectAllowed="move";
-          setDragBoardSegmentId(card.id);
-          setDragBoardOrderId("");
-        }}
-        onDragEnd={()=>{setDragBoardSegmentId("");setDragBoardOrderId("");}}
-        onDragOver={e=>{if(boardDragActive) e.preventDefault();}}
+        onDragStart={e=>startBoardSegmentDrag(e,card.id)}
+        onDragEnd={clearBoardDragPayload}
+        onDragOver={allowBoardDrop}
         onDrop={e=>handleBoardDrop(e,{targetSegmentId:card.id,targetMachine:segment?.machine||targetMachine})}
         onClick={()=>setSelectedPlan(card.seedPlan||segment)}
         style={{background:card.tone.bg,border:`1px solid ${isSelected?card.tone.text:card.tone.border}`,borderRadius:11,overflow:"hidden",cursor:"pointer",boxShadow:isSelected?`0 0 0 1px ${card.tone.text}66`:"none",display:"flex",flexDirection:"column",opacity:isDragging?0.56:1,lineHeight:1.2}}
@@ -16247,10 +16282,10 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                           {row.activeSegment?"Calisiyor":(row.segments.length>0?"Kuyrukta":"Bos")}
                         </div>
                       </div>
-                      <div onDragOver={e=>{if(boardDragActive) e.preventDefault();}} onDrop={e=>handleBoardDrop(e,{targetMachine:row.machine})}>
+                      <div onDragOver={allowBoardDrop} onDrop={e=>handleBoardDrop(e,{targetMachine:row.machine})}>
                         {renderBoardSegmentCard(row.activeCard,{targetMachine:row.machine})}
                       </div>
-                      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))",gap:8}} onDragOver={e=>{if(boardDragActive) e.preventDefault();}} onDrop={e=>handleBoardDrop(e,{targetMachine:row.machine})}>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))",gap:8}} onDragOver={allowBoardDrop} onDrop={e=>handleBoardDrop(e,{targetMachine:row.machine})}>
                         {row.nextCards.map(card=>(
                           <div key={card.id}>
                             {renderBoardSegmentCard(card,{compact:true,targetMachine:row.machine})}
@@ -16392,15 +16427,27 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                       title={isPlanned?"Bu is emri planlama ekraninda zaten mevcut.":""}
                       onDragStart={e=>{
                         if(!dragEnabled) return;
-                        const payload=JSON.stringify({type:"board-order",orderId:order.id});
-                        e.dataTransfer.setData("text/plain",payload);
-                        e.dataTransfer.effectAllowed="copyMove";
-                        setDragBoardOrderId(order.id);
-                        setDragBoardSegmentId("");
+                        startBoardOrderDrag(e,order.id);
                       }}
-                      onDragEnd={()=>{if(dragEnabled) setDragBoardOrderId("");}}
-                      style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"5px 7px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:6,flexWrap:"wrap",cursor:dragEnabled?"grab":"default",opacity:dragBoardOrderId===order.id?0.58:1}}
+                      onDragEnd={()=>{if(dragEnabled) clearBoardDragPayload();}}
+                      style={{background:C.card,border:`1px solid ${dragBoardOrderId===order.id?C.accent:C.border}`,borderRadius:10,padding:"5px 7px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:6,flexWrap:"wrap",cursor:dragEnabled?"grab":"default",opacity:dragBoardOrderId===order.id?0.58:1,boxShadow:dragBoardOrderId===order.id?`0 0 0 2px ${rgbaFromHex(C.accent,0.14)}`:"none"}}
                     >
+                      <div
+                        draggable={dragEnabled}
+                        onDragStart={e=>{
+                          e.stopPropagation();
+                          if(!dragEnabled) return;
+                          startBoardOrderDrag(e,order.id);
+                        }}
+                        onDragEnd={e=>{
+                          e.stopPropagation();
+                          if(dragEnabled) clearBoardDragPayload();
+                        }}
+                        title={dragEnabled?"Tezgaha surukle":"Planli is emri"}
+                        style={{width:24,alignSelf:"stretch",display:"flex",alignItems:"center",justifyContent:"center",borderRadius:8,border:`1px dashed ${dragEnabled?C.accent:C.border}`,background:dragEnabled?(C.accent+"12"):C.surface,color:dragEnabled?C.accent:C.muted2,fontSize:11,fontWeight:800,letterSpacing:1,cursor:dragEnabled?"grab":"not-allowed",userSelect:"none",flex:"0 0 auto"}}
+                      >
+                        ::
+                      </div>
                       <div style={{minWidth:190,flex:1}}>
                         <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
                           <span style={{fontWeight:800,color:C.text,fontFamily:"monospace",fontSize:11.5}}>{order.code||"-"}</span>
