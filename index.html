@@ -656,6 +656,115 @@ function applyThemeMode(mode){
   const next=THEME_PRESETS[mode]||THEME_PRESETS.light;
   Object.assign(C,next);
 }
+const GLOBAL_TOP_SEARCH_SOURCES = [
+  {collection:"orders",tabId:"orders",moduleLabel:"Is Emirleri",primary:["code","orderNo","name"],secondary:["customerName","status","dueDate","priority","machines"],search:["code","orderNo","name","customerName","status","priority","note","machines","id"]},
+  {collection:"salesQuotes",tabId:"quotes",moduleLabel:"Teklif Yonetimi",primary:["quoteNo","code","name"],secondary:["customerName","status","validUntil","dueDate"],search:["quoteNo","code","name","customerName","status","note","partName","id"]},
+  {collection:"salesOrders",tabId:"sales",moduleLabel:"Satis Siparisleri",primary:["orderNo","code","name"],secondary:["customerName","status","dueDate"],search:["orderNo","code","name","customerName","status","note","id"]},
+  {collection:"parts",tabId:"parts",moduleLabel:"Parca Yonetimi",primary:["partNo","code","name"],secondary:["customerName","revision","materialName"],search:["partNo","code","name","customerName","revision","materialName","description","id"]},
+  {collection:"materials",tabId:"materials",moduleLabel:"Malzeme Kutuphanesi",primary:["code","name","materialCode"],secondary:["category","grade","supplierName"],search:["code","name","materialCode","category","grade","supplierName","note","id"]},
+  {collection:"customers",tabId:"customers",moduleLabel:"Musteriler",primary:["name","code","customerCode"],secondary:["city","contactName","phone"],search:["name","code","customerCode","contactName","email","phone","city","country","id"]},
+  {collection:"toolStock",tabId:"tools",moduleLabel:"Takim Yonetimi",primary:["code","toolCode","name"],secondary:["type","brand","supplierCode","supplierName"],search:["code","toolCode","name","type","brand","supplierCode","supplierName","coating","id"]},
+  {collection:"purchaseRequests",tabId:"purchase_requests",moduleLabel:"Talep ve PO",primary:["requestNo","code","materialName"],secondary:["status","supplierName","needDate"],search:["requestNo","code","materialName","status","supplierName","needDate","note","id"]},
+  {collection:"suppliers",tabId:"purchase_suppliers",moduleLabel:"Tedarikciler",primary:["name","code","supplierCode"],secondary:["group","contactName","city"],search:["name","code","supplierCode","contactName","email","phone","city","country","id"]},
+  {collection:"supplierQuotes",tabId:"purchase_quotes",moduleLabel:"Tedarikci Teklifleri",primary:["quoteNo","code","materialName"],secondary:["supplierName","status","validUntil"],search:["quoteNo","code","materialName","supplierName","status","note","id"]},
+  {collection:"employeeTasks",tabId:"assignments",moduleLabel:"Calisan Gorevlendirme",primary:["title","taskNo","code"],secondary:["assigneeName","status","dueDate"],search:["title","taskNo","code","assigneeName","status","dueDate","machine","note","id"]},
+  {collection:"downtimeEvents",tabId:"downtime",moduleLabel:"Durus Yonetimi",primary:["machine","reason","code"],secondary:["category","status","date"],search:["machine","reason","code","category","status","operatorName","date","id"]},
+  {collection:"qualityInspections",tabId:"quality",moduleLabel:"Kalite ve Izlenebilirlik",primary:["inspectionNo","orderCode","partNo"],secondary:["status","machine","date"],search:["inspectionNo","orderCode","partNo","status","machine","inspectorName","date","id"]},
+  {collection:"entries",tabId:"giris",moduleLabel:"Uretim Girisi",primary:["orderCode","machine","operatorName"],secondary:["date","shift","status"],search:["orderCode","machine","operatorName","date","shift","status","note","id"]},
+  {collection:"plans",tabId:"planning",moduleLabel:"Planlama",primary:["orderCode","machine","startDate"],secondary:["endDate","orderName","orderCustomerName"],search:["orderCode","machine","startDate","endDate","orderName","orderCustomerName","note","id"]},
+  {collection:"mpsPlans",tabId:"planning",moduleLabel:"Planlama",primary:["planNo","code","name"],secondary:["status","dueDate","machine"],search:["planNo","code","name","status","dueDate","machine","id"]},
+  {collection:"purchaseOrders",tabId:"purchase_requests",moduleLabel:"Talep ve PO",primary:["poNo","code","supplierName"],secondary:["status","orderDate","dueDate"],search:["poNo","code","supplierName","status","orderDate","dueDate","materialName","id"]},
+  {collection:"goodsReceipts",tabId:"purchase_requests",moduleLabel:"Talep ve PO",primary:["receiptNo","code","supplierName"],secondary:["date","status","materialName"],search:["receiptNo","code","supplierName","date","status","materialName","id"]},
+  {collection:"customerPrices",tabId:"quotes",moduleLabel:"Teklif Yonetimi",primary:["partNo","partName","customerName"],secondary:["currency","unitPrice","updatedAt"],search:["partNo","partName","customerName","currency","unitPrice","id"]},
+  {collection:"toolMovements",tabId:"tools",moduleLabel:"Takim Yonetimi",primary:["toolCode","code","moveType"],secondary:["qty","date","location"],search:["toolCode","code","moveType","qty","date","location","id"]},
+  {collection:"partTraceability",tabId:"quality",moduleLabel:"Kalite ve Izlenebilirlik",primary:["traceNo","orderCode","partNo"],secondary:["status","date","machine"],search:["traceNo","orderCode","partNo","status","date","machine","id"]},
+  {collection:"faiRecords",tabId:"quality",moduleLabel:"Kalite ve Izlenebilirlik",primary:["recordNo","orderCode","partNo"],secondary:["status","createdAt","customerName"],search:["recordNo","orderCode","partNo","status","createdAt","customerName","id"]},
+  {collection:"faiBalloonRuns",tabId:"quality",moduleLabel:"Kalite ve Izlenebilirlik",primary:["runNo","orderCode","partNo"],secondary:["status","createdAt"],search:["runNo","orderCode","partNo","status","createdAt","id"]},
+  {collection:"financeLedger",tabId:"finance",moduleLabel:"Finans",primary:["code","documentNo","description"],secondary:["type","amount","dueDate"],search:["code","documentNo","description","type","amount","dueDate","id"]},
+  {collection:"customReports",tabId:"rapor",moduleLabel:"Raporlar",primary:["name","code","source"],secondary:["updatedAt","createdBy","chartType"],search:["name","code","source","updatedAt","createdBy","chartType","id"]},
+  {collection:"ncPrograms",tabId:"progenergy",moduleLabel:"Program ve Enerji",primary:["programNo","name","machine"],secondary:["version","updatedAt","status"],search:["programNo","name","machine","version","updatedAt","status","id"]},
+  {collection:"programTransfers",tabId:"progenergy",moduleLabel:"Program ve Enerji",primary:["programNo","machine","status"],secondary:["startedAt","completedAt","operatorName"],search:["programNo","machine","status","startedAt","completedAt","operatorName","id"]},
+  {collection:"energyReadings",tabId:"progenergy",moduleLabel:"Program ve Enerji",primary:["machine","date","shift"],secondary:["kwh","cost","status"],search:["machine","date","shift","kwh","cost","status","id"]},
+  {collection:"cycleLogs",tabId:"toolcycle",moduleLabel:"Takim ve Cevrim",primary:["machine","orderCode","toolCode"],secondary:["cycleTime","status","date"],search:["machine","orderCode","toolCode","cycleTime","status","date","id"]},
+  {collection:"toolOffsets",tabId:"toolcycle",moduleLabel:"Takim ve Cevrim",primary:["machine","toolCode","offsetNo"],secondary:["updatedAt","status"],search:["machine","toolCode","offsetNo","updatedAt","status","id"]},
+  {collection:"measurementFeedback",tabId:"closedloop",moduleLabel:"Olcum ve Depo",primary:["orderCode","partNo","status"],secondary:["date","machine","operatorName"],search:["orderCode","partNo","status","date","machine","operatorName","id"]},
+  {collection:"warehouseMoves",tabId:"closedloop",moduleLabel:"Olcum ve Depo",primary:["materialCode","lotNo","moveType"],secondary:["qty","date","location"],search:["materialCode","lotNo","moveType","qty","date","location","id"]},
+  {collection:"machineConnectors",tabId:"machineprep",moduleLabel:"Makina Hazirlik",primary:["machine","name","connectorType"],secondary:["status","updatedAt"],search:["machine","name","connectorType","status","updatedAt","id"]},
+  {collection:"machineTelemetryMock",tabId:"cncmonitor",moduleLabel:"CNC Izleme",primary:["machine","status","program"],secondary:["timestamp","oee"],search:["machine","status","program","timestamp","oee","id"]},
+  {collection:"notifications",tabId:"assignments",moduleLabel:"Calisan Gorevlendirme",primary:["title","message","type"],secondary:["status","createdAt","targetUserId"],search:["title","message","type","status","createdAt","targetUserId","id"]},
+];
+const SEARCH_CHAR_MAP = {
+  "ç":"c","Ç":"c","ğ":"g","Ğ":"g","ı":"i","İ":"i","ö":"o","Ö":"o","ş":"s","Ş":"s","ü":"u","Ü":"u",
+};
+function normalizeSearchKeyword(value){
+  const raw=String(value||"").trim().toLocaleLowerCase("tr");
+  if(!raw) return "";
+  let out="";
+  for(const ch of raw) out+=Object.prototype.hasOwnProperty.call(SEARCH_CHAR_MAP,ch)?SEARCH_CHAR_MAP[ch]:ch;
+  out=out.replace(/[^a-z0-9._\-/:\s]/g," ");
+  return out.replace(/\s+/g," ").trim();
+}
+function toSearchValue(value){
+  if(value===undefined||value===null) return "";
+  if(Array.isArray(value)) return value.map(v=>toSearchValue(v)).filter(Boolean).join(" ");
+  if(typeof value==="object"){
+    if(Object.prototype.hasOwnProperty.call(value,"label")) return toSearchValue(value.label);
+    if(Object.prototype.hasOwnProperty.call(value,"name")) return toSearchValue(value.name);
+    return Object.values(value).map(v=>toSearchValue(v)).filter(Boolean).join(" ");
+  }
+  return String(value).trim();
+}
+function fieldValueByKey(row,key){
+  const path=String(key||"").trim();
+  if(!path) return "";
+  const parts=path.split(".");
+  let cur=row;
+  for(const part of parts){
+    if(cur===undefined||cur===null) return "";
+    cur=cur[part];
+  }
+  return toSearchValue(cur);
+}
+function collectSearchValues(row,fields=[]){
+  const out=[];
+  fields.forEach(field=>{
+    const val=fieldValueByKey(row,field);
+    if(val) out.push(val);
+  });
+  return out;
+}
+function firstSearchValue(row,fields=[],fallback="Kayit"){
+  const values=collectSearchValues(row,fields);
+  const first=values.find(Boolean);
+  return first||fallback;
+}
+function buildGlobalSearchEntry(source,row,index){
+  if(!source||!row) return null;
+  const rid=String(row.id||`${source.collection}_${index}`).trim();
+  const title=firstSearchValue(row,source.primary,`${source.moduleLabel||"Kayit"} #${index+1}`);
+  const subtitle=collectSearchValues(row,source.secondary).slice(0,3).join(" · ");
+  const haystack=[
+    title,
+    subtitle,
+    ...collectSearchValues(row,source.search),
+    rid,
+    source.collection,
+    source.moduleLabel,
+  ].join(" ");
+  const searchText=normalizeSearchKeyword(haystack);
+  if(!searchText) return null;
+  return {
+    uid:`${source.collection}:${rid}`,
+    rowId:rid,
+    tabId:source.tabId,
+    moduleLabel:source.moduleLabel,
+    title,
+    subtitle,
+    searchText,
+    titleText:normalizeSearchKeyword(title),
+    sortStamp:String(row.updatedAt||row.createdAt||row.date||row.dueDate||""),
+  };
+}
 const ORDER_STATUS_OPTIONS = [
   { id:"planned", label:"Planlandi", color:C.accent },
   { id:"in_production", label:"Uretimde", color:C.green },
@@ -15426,6 +15535,7 @@ function MRPDashboard({
   onCreateNewRecord=()=>{},
   roleLabel="Kullanici",
   layoutMode="desktop",
+  globalSearch=null,
 }){
   const [loading,setLoading]=useState(true);
   const [machineQuery,setMachineQuery]=useState("");
@@ -15908,12 +16018,22 @@ function MRPDashboard({
     acc[key]=(acc[key]||0)+1;
     return acc;
   },{running:0,idle:0,setup:0,alarm:0,offline:0});
-  const machineQueryText=String(machineQuery||"").trim().toLowerCase();
+  const hasGlobalSearch=Boolean(globalSearch&&typeof globalSearch.onChange==="function");
+  const dashboardSearchQuery=hasGlobalSearch?String(globalSearch.query||""):String(machineQuery||"");
+  const dashboardSearchOpen=hasGlobalSearch?Boolean(globalSearch.open):false;
+  const dashboardSearchExpanded=hasGlobalSearch
+    ? Boolean(globalSearch.expanded||dashboardSearchOpen||dashboardSearchQuery.trim()!=="")
+    : dashboardSearchQuery.trim()!=="";
+  const dashboardSearchGroups=hasGlobalSearch&&Array.isArray(globalSearch.groups)?globalSearch.groups:[];
+  const dashboardSearchLoading=hasGlobalSearch?Boolean(globalSearch.loading):false;
+  const dashboardSearchTotal=hasGlobalSearch?Math.max(0,Math.floor(safeNum(globalSearch.total))):0;
+  const dashboardSearchFirstResult=hasGlobalSearch?(globalSearch.firstResult||null):null;
+  const machineQueryText=normalizeSearchKeyword(dashboardSearchQuery);
   const filteredMachineRows=machineRowsSorted.filter(row=>{
     const meta=statusMeta(row.status);
     if(statusFilter!=="all"&&meta.key!==statusFilter) return false;
     if(!machineQueryText) return true;
-    const hay=[row.machineName,row.program,meta.label].join(" ").toLowerCase();
+    const hay=normalizeSearchKeyword([row.machineName,row.program,meta.label].join(" "));
     return hay.includes(machineQueryText);
   });
   const machineCount=machineRowsSorted.length;
@@ -15986,7 +16106,7 @@ function MRPDashboard({
 
   return (
     <div style={{padding:"0 0 12px",display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{position:"sticky",top:8,zIndex:24,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:commandBarTone.heroShadow}}>
+      <div style={{position:"sticky",top:8,zIndex:24,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:dashboardSearchOpen?"visible":"hidden",boxShadow:commandBarTone.heroShadow}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",background:commandBarTone.heroBg}}>
           <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
             <div style={{width:40,height:40,borderRadius:10,background:"rgba(255,255,255,.16)",border:`1px solid ${commandBarTone.heroChipBorder}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
@@ -16007,9 +16127,67 @@ function MRPDashboard({
             </div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <div style={{position:"relative",minWidth:isNarrow?190:250}}>
+            <div
+              ref={hasGlobalSearch?globalSearch.containerRef:null}
+              style={{position:"relative",minWidth:isNarrow?190:(dashboardSearchExpanded?420:250),transition:"min-width .18s ease"}}
+            >
               <span style={{position:"absolute",left:10,top:7,width:15,height:15,color:commandBarTone.heroMuted,display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon name="search" size={14}/></span>
-              <input value={machineQuery} onChange={e=>setMachineQuery(e.target.value)} placeholder="Kayitlarda ara..." style={{...inputSt,padding:"8px 10px 8px 30px",fontSize:12,minWidth:isNarrow?190:250,background:commandBarTone.heroFieldBg,borderColor:commandBarTone.heroFieldBorder,color:commandBarTone.heroText}}/>
+              <input
+                value={dashboardSearchQuery}
+                onChange={e=>{
+                  const next=e.target.value;
+                  if(hasGlobalSearch) globalSearch.onChange(next);
+                  else setMachineQuery(next);
+                }}
+                onFocus={()=>{if(hasGlobalSearch) globalSearch.onFocus();}}
+                onClick={()=>{if(hasGlobalSearch) globalSearch.onFocus();}}
+                onKeyDown={e=>{
+                  if(!hasGlobalSearch) return;
+                  if(e.key==="Escape"){
+                    e.preventDefault();
+                    globalSearch.onOpenChange(false);
+                    return;
+                  }
+                  if(e.key==="Enter"&&dashboardSearchFirstResult){
+                    e.preventDefault();
+                    globalSearch.onSelect(dashboardSearchFirstResult);
+                  }
+                }}
+                placeholder={hasGlobalSearch?"Tum kayitlarda ara...":"Kayitlarda ara..."}
+                style={{...inputSt,padding:"8px 10px 8px 30px",fontSize:12,minWidth:isNarrow?190:(dashboardSearchExpanded?420:250),background:commandBarTone.heroFieldBg,borderColor:commandBarTone.heroFieldBorder,color:commandBarTone.heroText,transition:"min-width .18s ease"}}
+              />
+              {hasGlobalSearch&&dashboardSearchOpen&&(
+                <div style={{position:"absolute",left:0,right:0,top:"calc(100% + 7px)",zIndex:42,background:C.card,border:`1px solid ${C.border}`,borderRadius:12,boxShadow:"0 16px 34px rgba(0,0,0,.24)",maxHeight:420,overflow:"hidden"}}>
+                  <div style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,background:C.surface2}}>
+                    <div style={{fontSize:11,color:C.muted2,fontWeight:700,letterSpacing:.5,textTransform:"uppercase"}}>Global Arama</div>
+                    <div style={{fontSize:11,color:C.muted2}}>{dashboardSearchTotal} sonuc</div>
+                  </div>
+                  <div className="mrp-scrollbar" style={{maxHeight:366,overflowY:"auto",padding:"8px"}}>
+                    {normalizeSearchKeyword(dashboardSearchQuery).length<2&&(
+                      <div style={{padding:"10px 8px",fontSize:12,color:C.muted2}}>Aramak icin en az 2 karakter yazin.</div>
+                    )}
+                    {normalizeSearchKeyword(dashboardSearchQuery).length>=2&&dashboardSearchLoading&&(
+                      <div style={{padding:"10px 8px",fontSize:12,color:C.muted2}}>Kayitlar taraniyor...</div>
+                    )}
+                    {normalizeSearchKeyword(dashboardSearchQuery).length>=2&&!dashboardSearchLoading&&dashboardSearchGroups.length===0&&(
+                      <div style={{padding:"10px 8px",fontSize:12,color:C.muted2}}>Sonuc bulunamadi.</div>
+                    )}
+                    {normalizeSearchKeyword(dashboardSearchQuery).length>=2&&!dashboardSearchLoading&&dashboardSearchGroups.map(group=>(
+                      <div key={group.tabId} style={{marginBottom:8}}>
+                        <div style={{fontSize:11,color:C.muted2,fontWeight:800,letterSpacing:.6,textTransform:"uppercase",padding:"4px 6px"}}>{group.moduleLabel}</div>
+                        <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                          {group.items.map(item=>(
+                            <button key={item.uid} onClick={()=>globalSearch.onSelect(item)} style={{...btnSt("ghost"),width:"100%",padding:"7px 8px",textAlign:"left",display:"flex",flexDirection:"column",alignItems:"stretch",gap:2}}>
+                              <span style={{fontSize:12,color:C.text,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.title||"-"}</span>
+                              {item.subtitle&&<span style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.subtitle}</span>}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <button onClick={()=>setDashboardEditMode(v=>!v)} title="Yeni aksiyon" style={{border:`1px solid ${commandBarTone.heroChipBorder}`,background:commandBarTone.heroChipBg,color:commandBarTone.heroText,padding:"8px 10px",fontSize:14,minWidth:34,borderRadius:8,cursor:"pointer"}}>{dashboardEditMode?"×":"+"}</button>
             {quickActions.map(act=>(
@@ -16049,7 +16227,16 @@ function MRPDashboard({
           </div>
           <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
             <input type="date" value={quickDate} onChange={e=>setQuickDate(e.target.value||today)} style={{...inputSt,padding:"7px 9px",fontSize:12,width:150}}/>
-            <button onClick={()=>{setMachineQuery("");setStatusFilter("all");setSortMode("status");}} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Temizle</button>
+            <button onClick={()=>{
+              if(hasGlobalSearch){
+                globalSearch.onChange("");
+                globalSearch.onOpenChange(false);
+              }else{
+                setMachineQuery("");
+              }
+              setStatusFilter("all");
+              setSortMode("status");
+            }} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Temizle</button>
             <button onClick={onCreateNewRecord} style={{...btnSt("primary"),padding:"7px 12px",fontSize:12,minWidth:140}}>Yeni Kayit Olustur</button>
             <button onClick={()=>setDashboardEditMode(v=>!v)} style={{...(dashboardEditMode?btnSt("green"):btnSt("ghost")),padding:"7px 10px",fontSize:12}}>
               {dashboardEditMode?"Duzenleme Bitti":"Sayfayi Duzenle"}
@@ -19794,8 +19981,16 @@ function App() {
   const [desktopMenuCollapsed,setDesktopMenuCollapsed]=useState(false);
   const [kioskMachine,setKioskMachine]=useState(()=>detectLockedMachineFromUrl());
   const [dashboardCreateModalOpen,setDashboardCreateModalOpen]=useState(false);
+  const [globalSearchQuery,setGlobalSearchQuery]=useState("");
+  const [globalSearchOpen,setGlobalSearchOpen]=useState(false);
+  const [globalSearchLoading,setGlobalSearchLoading]=useState(false);
+  const [globalSearchVersion,setGlobalSearchVersion]=useState(0);
   const tabFromUrlAppliedRef=useRef(false);
   const machinesRef=useRef(DEFAULT_MACHINES);
+  const globalSearchContainerRef=useRef(null);
+  const globalSearchIndexRef=useRef([]);
+  const globalSearchPromiseRef=useRef(null);
+  const globalSearchLoadedAtRef=useRef(0);
   useEffect(()=>{machinesRef.current=machines;},[machines]);
 
   useEffect(()=>{
@@ -19932,6 +20127,13 @@ function App() {
       if(typeof document!=="undefined") document.removeEventListener("visibilitychange",onVisibility);
     };
   },[currentUser]);
+  useEffect(()=>{
+    globalSearchIndexRef.current=[];
+    globalSearchLoadedAtRef.current=0;
+    setGlobalSearchVersion(v=>v+1);
+    setGlobalSearchQuery("");
+    setGlobalSearchOpen(false);
+  },[currentUser?.id]);
 
   const updateMachines=useCallback(async(list)=>{
     const next=normalizeMachineList(list);
@@ -20085,6 +20287,117 @@ function App() {
   },[visibleTabs]);
   const visibleGroups=groupOrder.filter(g=>groupedTabs[g]&&groupedTabs[g].length>0);
   const currentRoleLabel=(USER_ROLES.find(r=>r.id===userForPerm.role)||{label:userForPerm.role||"-"}).label;
+  const tabLabelById=useMemo(()=>Object.fromEntries(tabs.map(t=>[t.id,t.label||t.id])),[tabs]);
+  const tabOrderById=useMemo(()=>Object.fromEntries(tabs.map((t,idx)=>[t.id,idx])),[tabs]);
+  const ensureGlobalSearchIndex=useCallback(async(force=false)=>{
+    const now=Date.now();
+    const cacheFresh=(now-safeNum(globalSearchLoadedAtRef.current))<45000;
+    if(!force&&cacheFresh&&globalSearchIndexRef.current.length>0) return globalSearchIndexRef.current;
+    if(globalSearchPromiseRef.current) return globalSearchPromiseRef.current;
+    const job=(async()=>{
+      setGlobalSearchLoading(true);
+      try{
+        const bundles=await Promise.all(
+          GLOBAL_TOP_SEARCH_SOURCES.map(async source=>{
+            const rows=await window.DB.getAll(source.collection);
+            return {source,rows:Array.isArray(rows)?rows:[]};
+          })
+        );
+        const items=[];
+        bundles.forEach(bundle=>{
+          bundle.rows.forEach((row,idx)=>{
+            const item=buildGlobalSearchEntry(bundle.source,row,idx);
+            if(item) items.push(item);
+          });
+        });
+        globalSearchIndexRef.current=items;
+        globalSearchLoadedAtRef.current=Date.now();
+        setGlobalSearchVersion(v=>v+1);
+        return items;
+      }catch(err){
+        console.error("global search index error",err);
+        globalSearchIndexRef.current=[];
+        globalSearchLoadedAtRef.current=0;
+        setGlobalSearchVersion(v=>v+1);
+        return [];
+      }finally{
+        setGlobalSearchLoading(false);
+      }
+    })();
+    globalSearchPromiseRef.current=job;
+    try{
+      return await job;
+    }finally{
+      globalSearchPromiseRef.current=null;
+    }
+  },[]);
+  const normalizedGlobalSearchQuery=useMemo(()=>normalizeSearchKeyword(globalSearchQuery),[globalSearchQuery]);
+  const globalSearchResults=useMemo(()=>{
+    const q=normalizedGlobalSearchQuery;
+    if(!q||q.length<2) return [];
+    const src=globalSearchIndexRef.current||[];
+    const rows=[];
+    src.forEach(item=>{
+      if(!item||!tabLabelById[item.tabId]) return;
+      if(!String(item.searchText||"").includes(q)) return;
+      const titleText=String(item.titleText||"");
+      let score=0;
+      if(titleText.startsWith(q)) score+=120;
+      if(titleText.includes(q)) score+=60;
+      if(String(item.searchText||"").startsWith(q)) score+=25;
+      rows.push({
+        ...item,
+        moduleLabel:tabLabelById[item.tabId]||item.moduleLabel||item.tabId,
+        score,
+      });
+    });
+    rows.sort((a,b)=>{
+      if((b.score||0)!==(a.score||0)) return (b.score||0)-(a.score||0);
+      const order=(tabOrderById[a.tabId]??999)-(tabOrderById[b.tabId]??999);
+      if(order!==0) return order;
+      const stamp=String(b.sortStamp||"").localeCompare(String(a.sortStamp||""));
+      if(stamp!==0) return stamp;
+      return String(a.title||"").localeCompare(String(b.title||""),"tr");
+    });
+    return rows.slice(0,180);
+  },[normalizedGlobalSearchQuery,tabLabelById,tabOrderById,globalSearchVersion]);
+  const globalSearchGroups=useMemo(()=>{
+    const grouped={};
+    globalSearchResults.forEach(item=>{
+      if(!grouped[item.tabId]){
+        grouped[item.tabId]={
+          tabId:item.tabId,
+          moduleLabel:item.moduleLabel,
+          items:[],
+        };
+      }
+      if(grouped[item.tabId].items.length<8){
+        grouped[item.tabId].items.push(item);
+      }
+    });
+    return Object.values(grouped).sort((a,b)=>(tabOrderById[a.tabId]??999)-(tabOrderById[b.tabId]??999));
+  },[globalSearchResults,tabOrderById]);
+  const globalSearchFirstResult=globalSearchGroups[0]?.items?.[0]||null;
+  const globalSearchExpanded=globalSearchOpen||String(globalSearchQuery||"").trim()!=="";
+  const handleGlobalSearchFocus=useCallback(()=>{
+    setGlobalSearchOpen(true);
+    ensureGlobalSearchIndex(false);
+  },[ensureGlobalSearchIndex]);
+  const handleGlobalSearchChange=useCallback((value)=>{
+    const next=String(value||"");
+    setGlobalSearchQuery(next);
+    setGlobalSearchOpen(true);
+    if(normalizeSearchKeyword(next).length>=2){
+      ensureGlobalSearchIndex(false);
+    }
+  },[ensureGlobalSearchIndex]);
+  const handleGlobalSearchSelect=useCallback((item)=>{
+    if(!item||!item.tabId) return;
+    setTab(item.tabId);
+    setMobileMenuOpen(false);
+    setGlobalSearchOpen(false);
+    setGlobalSearchQuery("");
+  },[]);
   const contentActionConfig={
     orders:{
       filterKey:"orders",
@@ -20227,7 +20540,27 @@ function App() {
   useEffect(()=>{
     setMobileMenuOpen(false);
     setGlobalFilterOpen(false);
+    setGlobalSearchOpen(false);
   },[tab]);
+  useEffect(()=>{
+    if(!globalSearchOpen) return;
+    const onPointerDown=e=>{
+      const node=globalSearchContainerRef.current;
+      if(node&&node.contains(e.target)) return;
+      setGlobalSearchOpen(false);
+    };
+    const onKey=e=>{
+      if(e.key==="Escape") setGlobalSearchOpen(false);
+    };
+    window.addEventListener("mousedown",onPointerDown);
+    window.addEventListener("touchstart",onPointerDown);
+    window.addEventListener("keydown",onKey);
+    return ()=>{
+      window.removeEventListener("mousedown",onPointerDown);
+      window.removeEventListener("touchstart",onPointerDown);
+      window.removeEventListener("keydown",onKey);
+    };
+  },[globalSearchOpen]);
   useEffect(()=>{
     if(!dashboardCreateModalOpen) return;
     const onKey=e=>{
@@ -20299,7 +20632,20 @@ function App() {
     if(tab==="tools") return <ToolStock currentUser={currentUser} machines={machines} filtersVisible={toolsFilterOpen}/>;
     if(tab==="orders") return <WorkOrders currentUser={currentUser} machines={machines} filtersVisible={ordersFilterOpen}/>;
     if(tab==="users") return <AdminUsers currentUser={currentUser} machines={machines} currentLogo={logoSrc} onLogoUpdate={updateLogo} themeMode={themeMode} onThemeModeChange={updateTheme} menuCatalog={allTabs} menuVisibility={menuVisibility} onMenuVisibilityChange={setMenuVisibility}/>;
-    if(tab==="dashboard") return <MRPDashboard currentUser={currentUser} machines={machines} logoSrc={logoSrc} themeMode={themeMode} onLogout={logout} onQuickAction={handleTopQuickAction} onCreateNewRecord={handleDashboardCreateRecord} roleLabel={currentRoleLabel} layoutMode={layoutMode}/>;
+    if(tab==="dashboard") return <MRPDashboard currentUser={currentUser} machines={machines} logoSrc={logoSrc} themeMode={themeMode} onLogout={logout} onQuickAction={handleTopQuickAction} onCreateNewRecord={handleDashboardCreateRecord} roleLabel={currentRoleLabel} layoutMode={layoutMode} globalSearch={{
+      query:globalSearchQuery,
+      open:globalSearchOpen,
+      loading:globalSearchLoading,
+      groups:globalSearchGroups,
+      total:globalSearchResults.length,
+      expanded:globalSearchExpanded,
+      firstResult:globalSearchFirstResult,
+      containerRef:globalSearchContainerRef,
+      onFocus:handleGlobalSearchFocus,
+      onChange:handleGlobalSearchChange,
+      onSelect:handleGlobalSearchSelect,
+      onOpenChange:setGlobalSearchOpen,
+    }}/>;
     if(tab==="cncmonitor") return <CncMonitorWall currentUser={currentUser} machines={machines}/>;
     if(tab==="mrp") return <MRPRunModule currentUser={currentUser}/>;
     if(tab==="quotes") return <SalesManagement currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")} defaultView="quotes" filtersVisible={salesFilterOpen}/>;
@@ -20636,7 +20982,7 @@ function App() {
     }
   };
   const topBar=(
-    <div className="mrp-topbar" style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:appCommandBarTone.heroShadow}}>
+    <div className="mrp-topbar" style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:globalSearchOpen?"visible":"hidden",boxShadow:appCommandBarTone.heroShadow}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",background:appCommandBarTone.heroBg}}>
         <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
           <div style={{width:40,height:40,borderRadius:10,background:"rgba(255,255,255,.16)",border:`1px solid ${appCommandBarTone.heroChipBorder}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
@@ -20655,9 +21001,68 @@ function App() {
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-          <div style={{position:"relative",minWidth:isMobile?0:250,flex:isMobile?"1 1 100%":"0 0 auto"}}>
+          <div
+            ref={globalSearchContainerRef}
+            style={{
+              position:"relative",
+              minWidth:isMobile?0:(globalSearchExpanded?420:250),
+              width:isMobile?"100%":undefined,
+              flex:isMobile?"1 1 100%":"0 0 auto",
+              transition:"min-width .18s ease",
+            }}
+          >
             <span style={{position:"absolute",left:10,top:7,width:15,height:15,color:appCommandBarTone.heroMuted,display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon name="search" size={14}/></span>
-            <input value={menuQuery} onChange={e=>setMenuQuery(e.target.value)} placeholder="Modul veya kayit ara..." style={{...inputSt,padding:"8px 10px 8px 30px",fontSize:12,minWidth:isMobile?0:250,width:isMobile?"100%":undefined,background:appCommandBarTone.heroFieldBg,borderColor:appCommandBarTone.heroFieldBorder,color:appCommandBarTone.heroText}}/>
+            <input
+              value={globalSearchQuery}
+              onChange={e=>handleGlobalSearchChange(e.target.value)}
+              onFocus={handleGlobalSearchFocus}
+              onClick={handleGlobalSearchFocus}
+              onKeyDown={e=>{
+                if(e.key==="Escape"){
+                  e.preventDefault();
+                  setGlobalSearchOpen(false);
+                  return;
+                }
+                if(e.key==="Enter"&&globalSearchFirstResult){
+                  e.preventDefault();
+                  handleGlobalSearchSelect(globalSearchFirstResult);
+                }
+              }}
+              placeholder="Tum kayitlarda ara..."
+              style={{...inputSt,padding:"8px 10px 8px 30px",fontSize:12,minWidth:isMobile?0:(globalSearchExpanded?420:250),width:isMobile?"100%":undefined,background:appCommandBarTone.heroFieldBg,borderColor:appCommandBarTone.heroFieldBorder,color:appCommandBarTone.heroText,transition:"min-width .18s ease"}}
+            />
+            {globalSearchOpen&&(
+              <div style={{position:"absolute",left:0,right:0,top:"calc(100% + 7px)",zIndex:42,background:C.card,border:`1px solid ${C.border}`,borderRadius:12,boxShadow:"0 16px 34px rgba(0,0,0,.24)",maxHeight:420,overflow:"hidden"}}>
+                <div style={{padding:"9px 10px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,background:C.surface2}}>
+                  <div style={{fontSize:11,color:C.muted2,fontWeight:700,letterSpacing:.5,textTransform:"uppercase"}}>Global Arama</div>
+                  <div style={{fontSize:11,color:C.muted2}}>{globalSearchResults.length} sonuc</div>
+                </div>
+                <div className="mrp-scrollbar" style={{maxHeight:366,overflowY:"auto",padding:"8px"}}>
+                  {normalizeSearchKeyword(globalSearchQuery).length<2&&(
+                    <div style={{padding:"10px 8px",fontSize:12,color:C.muted2}}>Aramak icin en az 2 karakter yazin.</div>
+                  )}
+                  {normalizeSearchKeyword(globalSearchQuery).length>=2&&globalSearchLoading&&(
+                    <div style={{padding:"10px 8px",fontSize:12,color:C.muted2}}>Kayitlar taraniyor...</div>
+                  )}
+                  {normalizeSearchKeyword(globalSearchQuery).length>=2&&!globalSearchLoading&&globalSearchGroups.length===0&&(
+                    <div style={{padding:"10px 8px",fontSize:12,color:C.muted2}}>Sonuc bulunamadi.</div>
+                  )}
+                  {normalizeSearchKeyword(globalSearchQuery).length>=2&&!globalSearchLoading&&globalSearchGroups.map(group=>(
+                    <div key={group.tabId} style={{marginBottom:8}}>
+                      <div style={{fontSize:11,color:C.muted2,fontWeight:800,letterSpacing:.6,textTransform:"uppercase",padding:"4px 6px"}}>{group.moduleLabel}</div>
+                      <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                        {group.items.map(item=>(
+                          <button key={item.uid} onClick={()=>handleGlobalSearchSelect(item)} style={{...btnSt("ghost"),width:"100%",padding:"7px 8px",textAlign:"left",display:"flex",flexDirection:"column",alignItems:"stretch",gap:2}}>
+                            <span style={{fontSize:12,color:C.text,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.title||"-"}</span>
+                            {item.subtitle&&<span style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.subtitle}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           {isMobile&&(
             <button onClick={()=>setMobileMenuOpen(true)} style={{border:`1px solid ${appCommandBarTone.heroChipBorder}`,background:appCommandBarTone.heroChipBg,color:appCommandBarTone.heroText,padding:"7px 10px",fontSize:12,borderRadius:8,cursor:"pointer",minWidth:72}}>
@@ -20708,6 +21113,8 @@ function App() {
           <button onClick={()=>{
             setMenuQuery("");
             setMenuGroupFilter("all");
+            setGlobalSearchQuery("");
+            setGlobalSearchOpen(false);
             if(hasContentSorting){
               applyTopSortMode(topSortDefault);
             } else {
