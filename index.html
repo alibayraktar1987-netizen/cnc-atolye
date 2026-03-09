@@ -639,7 +639,6 @@ const DEFAULT_BRANDING_SETTINGS = {
   logo:"",
   themeMode:"light",
   menuAccentColor:"#3AAFA9",
-  topBarAccentColor:"#2B7A78",
 };
 const MENU_COLOR_PRESETS = [
   { id:"teal", label:"Turkuaz", color:"#3AAFA9" },
@@ -1139,7 +1138,6 @@ function normalizeBrandingSettings(raw){
     logo:typeof src.logo==="string"?src.logo:"",
     themeMode:["light","dark"].includes(src.themeMode)?src.themeMode:DEFAULT_BRANDING_SETTINGS.themeMode,
     menuAccentColor:normalizeHexColor(src.menuAccentColor,DEFAULT_BRANDING_SETTINGS.menuAccentColor),
-    topBarAccentColor:normalizeHexColor(src.topBarAccentColor||src.menuAccentColor,DEFAULT_BRANDING_SETTINGS.topBarAccentColor),
   };
 }
 function normalizeOperationIcon(icon,fallback){
@@ -1252,7 +1250,7 @@ function buildMenuColorTheme(baseColor,mode="light"){
   };
 }
 function buildTopBarTone(baseColor,mode="light"){
-  const accent=normalizeHexColor(baseColor,DEFAULT_BRANDING_SETTINGS.topBarAccentColor);
+  const accent=normalizeHexColor(baseColor,DEFAULT_BRANDING_SETTINGS.menuAccentColor);
   const darkMode=mode==="dark";
   const heroBg=darkMode
     ? mixHexColors("#20252D",accent,0.34)
@@ -3688,7 +3686,7 @@ function SupplierGroupSettings({currentUser}) {
 // ============================================================
 //  ADMIN USERS
 // ============================================================
-function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="light",menuAccentColor=DEFAULT_BRANDING_SETTINGS.menuAccentColor,onMenuAccentColorChange=()=>{},topBarAccentColor=DEFAULT_BRANDING_SETTINGS.topBarAccentColor,onTopBarAccentColorChange=()=>{},onThemeModeChange=()=>{},menuCatalog=[],menuVisibility,onMenuVisibilityChange}) {
+function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="light",menuAccentColor=DEFAULT_BRANDING_SETTINGS.menuAccentColor,onMenuAccentColorChange=()=>{},onThemeModeChange=()=>{},menuCatalog=[],menuVisibility,onMenuVisibilityChange}) {
   const [users,setUsers]=useState([]);
   const [loading,setLoading]=useState(true);
   const [expanded,setExpanded]=useState(null);
@@ -3696,8 +3694,6 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
   const [logoLoading,setLogoLoading]=useState(false);
   const [brandingMenuColor,setBrandingMenuColor]=useState(()=>normalizeHexColor(menuAccentColor,DEFAULT_BRANDING_SETTINGS.menuAccentColor));
   const [brandingMenuSaving,setBrandingMenuSaving]=useState(false);
-  const [brandingTopBarColor,setBrandingTopBarColor]=useState(()=>normalizeHexColor(topBarAccentColor,DEFAULT_BRANDING_SETTINGS.topBarAccentColor));
-  const [brandingTopBarSaving,setBrandingTopBarSaving]=useState(false);
   const [quoteTemplate,setQuoteTemplate]=useState(DEFAULT_QUOTE_TEMPLATE);
   const [templateSaving,setTemplateSaving]=useState(false);
   const [menuConfig,setMenuConfig]=useState(()=>normalizeMenuVisibilityConfig(menuVisibility||{}));
@@ -3724,9 +3720,6 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
   useEffect(()=>{
     setBrandingMenuColor(normalizeHexColor(menuAccentColor,DEFAULT_BRANDING_SETTINGS.menuAccentColor));
   },[menuAccentColor]);
-  useEffect(()=>{
-    setBrandingTopBarColor(normalizeHexColor(topBarAccentColor,DEFAULT_BRANDING_SETTINGS.topBarAccentColor));
-  },[topBarAccentColor]);
 
   async function update(id,patch) {
     await window.DB.updateDoc("users",id,patch);
@@ -3797,15 +3790,6 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
     if(ok===false){alert("Tema rengi kaydedilemedi.");return;}
     setBrandingMenuColor(normalized);
     alert("Tema rengi kaydedildi.");
-  }
-  async function saveTopBarAccent(){
-    const normalized=normalizeHexColor(brandingTopBarColor,DEFAULT_BRANDING_SETTINGS.topBarAccentColor);
-    setBrandingTopBarSaving(true);
-    const ok=await onTopBarAccentColorChange(normalized);
-    setBrandingTopBarSaving(false);
-    if(ok===false){alert("Ust menu rengi kaydedilemedi.");return;}
-    setBrandingTopBarColor(normalized);
-    alert("Ust menu rengi kaydedildi.");
   }
   async function saveQuoteTemplate(){
     setTemplateSaving(true);
@@ -3912,10 +3896,9 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
   const hiddenMenuSet=useMemo(()=>new Set((menuConfig&&Array.isArray(menuConfig.hiddenTabs))?menuConfig.hiddenTabs:[]),[menuConfig]);
   const menuVisibleCount=menuRows.filter(row=>MENU_ALWAYS_VISIBLE_TAB_IDS.includes(row.id)||!hiddenMenuSet.has(row.id)).length;
   const normalizedMenuAccentColor=normalizeHexColor(brandingMenuColor,DEFAULT_BRANDING_SETTINGS.menuAccentColor);
-  const normalizedTopBarAccentColor=normalizeHexColor(brandingTopBarColor,DEFAULT_BRANDING_SETTINGS.topBarAccentColor);
   const appPreviewTone=buildAppTheme(themeMode,normalizedMenuAccentColor);
   const menuPreviewTone=buildMenuColorTheme(normalizedMenuAccentColor,themeMode);
-  const topBarPreviewTone=buildTopBarTone(normalizedTopBarAccentColor,themeMode);
+  const topBarPreviewTone=buildTopBarTone(normalizedMenuAccentColor,themeMode);
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
 
   const settingsTabs=[
@@ -3979,7 +3962,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
               </button>
             </div>
             <div style={{marginTop:14,paddingTop:12,borderTop:`1px solid ${C.border}`}}>
-              <div style={{fontSize:12,color:C.muted2,marginBottom:10}}>Uygulamanin ana rengini secin. Sol menu, primary butonlar, aktif sekmeler ve vurgu alanlari bu renkten otomatik uretilir.</div>
+              <div style={{fontSize:12,color:C.muted2,marginBottom:10}}>Uygulamanin ana rengini secin. Sol menu, ust menu, primary butonlar, aktif sekmeler ve vurgu alanlari bu renkten otomatik uretilir.</div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:12,alignItems:"start"}}>
                 <div>
                   <span style={labelSt}>Tema Ana Rengi</span>
@@ -4011,38 +3994,6 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
                   <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}>
                     <button onClick={saveMenuAccent} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={brandingMenuSaving}>{brandingMenuSaving?"Kaydediliyor...":"Tema Rengini Kaydet"}</button>
                     <button onClick={()=>setBrandingMenuColor(DEFAULT_BRANDING_SETTINGS.menuAccentColor)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}} disabled={brandingMenuSaving}>Varsayilan</button>
-                  </div>
-                  <div style={{marginTop:14,paddingTop:12,borderTop:`1px solid ${C.border}`}}>
-                    <span style={labelSt}>Ust Menu Rengi</span>
-                    <div style={{display:"flex",gap:8}}>
-                      <input style={{...inputSt,padding:0,width:50,height:38,flex:"0 0 auto"}} type="color" value={normalizedTopBarAccentColor} onChange={e=>setBrandingTopBarColor(e.target.value)}/>
-                      <input style={{...inputSt,flex:1}} value={brandingTopBarColor} onChange={e=>setBrandingTopBarColor(e.target.value)} placeholder="#2B7A78"/>
-                    </div>
-                    <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}>
-                      {MENU_COLOR_PRESETS.map(opt=>(
-                        <button
-                          key={`topbar_${opt.id}`}
-                          onClick={()=>setBrandingTopBarColor(opt.color)}
-                          style={{
-                            ...btnSt("ghost"),
-                            padding:"7px 10px",
-                            fontSize:12,
-                            display:"inline-flex",
-                            alignItems:"center",
-                            gap:7,
-                            borderColor:normalizedTopBarAccentColor===opt.color?C.accent:C.border,
-                            color:normalizedTopBarAccentColor===opt.color?C.accent:C.text,
-                          }}
-                        >
-                          <span style={{width:12,height:12,borderRadius:99,background:opt.color,display:"inline-block",border:`1px solid ${C.border}`}}/>
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                    <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}>
-                      <button onClick={saveTopBarAccent} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={brandingTopBarSaving}>{brandingTopBarSaving?"Kaydediliyor...":"Ust Menu Rengini Kaydet"}</button>
-                      <button onClick={()=>setBrandingTopBarColor(DEFAULT_BRANDING_SETTINGS.topBarAccentColor)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}} disabled={brandingTopBarSaving}>Varsayilan</button>
-                    </div>
                   </div>
                 </div>
                 <div style={{background:appPreviewTone.card,border:`1px solid ${appPreviewTone.border}`,borderRadius:12,padding:12,color:appPreviewTone.text,boxShadow:themeMode==="dark"?"0 18px 36px rgba(0,0,0,.26)":"0 16px 30px rgba(15,23,42,.08)"}}>
@@ -6160,7 +6111,7 @@ function Customers({filtersVisible=true,availableTabIds=[],onOpenRelatedRecord=(
               <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Acik Isler</div><div style={{fontSize:24,fontWeight:800,color:C.text,marginTop:3}}>{selectedCustomerWorkOrders.filter(row=>isOpenOrderStatus(row.status)).length}</div></div>
             </div>
 
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12}}>
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
               <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8}}>
                   <div>
@@ -6170,22 +6121,36 @@ function Customers({filtersVisible=true,availableTabIds=[],onOpenRelatedRecord=(
                   <Badge label={`${selectedCustomerParts.length} Kayit`} color={C.accent}/>
                 </div>
                 {selectedCustomerParts.length===0&&<div style={{fontSize:12,color:C.muted2,padding:"8px 2px"}}>Bu firmaya bagli parca karti bulunamadi.</div>}
-                <div style={{display:"flex",flexDirection:"column",gap:7}}>
-                  {selectedCustomerParts.map(part=>{
-                    const canOpen=availableTabSet.has("parts");
-                    return (
-                      <button
-                        key={part.id}
-                        onClick={()=>canOpen&&openRelatedRecord({tabId:"parts",recordId:part.id,recordCode:part.partNo||"",recordKind:"part",customerId:selectedCustomer.id,customerName:selectedCustomer.name,search:part.partNo||selectedCustomer.name})}
-                        disabled={!canOpen}
-                        style={{...btnSt("ghost"),padding:"10px 11px",textAlign:"left",display:"flex",flexDirection:"column",alignItems:"stretch",gap:3,opacity:canOpen?1:0.6,cursor:canOpen?"pointer":"not-allowed"}}
-                      >
-                        <span style={{fontSize:12,fontWeight:800,color:C.text}}>{part.partNo||"-"} {part.name?`· ${part.name}`:""}</span>
-                        <span style={{fontSize:11,color:C.muted2}}>{[part.material||"",part.revision?`Rev ${part.revision}`:"",customerPartDimensionLabel(part)].filter(Boolean).join(" · ")||"Parca karti"}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                {selectedCustomerParts.length>0&&(
+                  <div style={{border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",background:C.surface}}>
+                    <div style={{overflowX:"auto"}}>
+                      <div style={{minWidth:720}}>
+                        <div style={{display:"grid",gridTemplateColumns:"minmax(140px,1fr) minmax(220px,1.3fr) minmax(260px,1.7fr)",gap:10,padding:"8px 12px",background:C.surface2,borderBottom:`1px solid ${C.border}`,fontSize:10,fontWeight:800,color:C.muted2,letterSpacing:.7,textTransform:"uppercase"}}>
+                          <span>Parca No</span>
+                          <span>Parca Adi</span>
+                          <span>Detay</span>
+                        </div>
+                        {selectedCustomerParts.map((part,idx)=>{
+                          const canOpen=availableTabSet.has("parts");
+                          const detailText=[part.material||"",part.revision?`Rev ${part.revision}`:"",customerPartDimensionLabel(part)].filter(Boolean).join(" · ")||"Parca karti";
+                          return (
+                            <button
+                              key={part.id}
+                              type="button"
+                              onClick={()=>canOpen&&openRelatedRecord({tabId:"parts",recordId:part.id,recordCode:part.partNo||"",recordKind:"part",customerId:selectedCustomer.id,customerName:selectedCustomer.name,search:part.partNo||selectedCustomer.name})}
+                              disabled={!canOpen}
+                              style={{width:"100%",display:"grid",gridTemplateColumns:"minmax(140px,1fr) minmax(220px,1.3fr) minmax(260px,1.7fr)",gap:10,alignItems:"center",padding:"10px 12px",border:"none",borderBottom:idx===selectedCustomerParts.length-1?"none":`1px solid ${C.border}`,background:"transparent",textAlign:"left",fontFamily:"inherit",cursor:canOpen?"pointer":"not-allowed",opacity:canOpen?1:0.6}}
+                            >
+                              <span style={{fontSize:12,fontWeight:800,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{part.partNo||"-"}</span>
+                              <span style={{fontSize:12,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{part.name||"-"}</span>
+                              <span style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{detailText}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
@@ -6197,29 +6162,42 @@ function Customers({filtersVisible=true,availableTabIds=[],onOpenRelatedRecord=(
                   <Badge label={`${selectedCustomerSalesRows.length} Kayit`} color={C.green}/>
                 </div>
                 {selectedCustomerSalesRows.length===0&&<div style={{fontSize:12,color:C.muted2,padding:"8px 2px"}}>Bu firmaya bagli satis kaydi bulunamadi.</div>}
-                <div style={{display:"flex",flexDirection:"column",gap:7}}>
-                  {selectedCustomerSalesRows.map(item=>{
-                    const canOpen=availableTabSet.has(item.tabId);
-                    return (
-                      <button
-                        key={`${item.kind}_${item.id}`}
-                        onClick={()=>canOpen&&openRelatedRecord({tabId:item.tabId,recordId:item.id,recordCode:item.code,recordKind:item.kind,customerId:selectedCustomer.id,customerName:selectedCustomer.name,search:item.searchValue})}
-                        disabled={!canOpen}
-                        style={{...btnSt("ghost"),padding:"10px 11px",textAlign:"left",display:"flex",flexDirection:"column",alignItems:"stretch",gap:4,opacity:canOpen?1:0.6,cursor:canOpen?"pointer":"not-allowed"}}
-                      >
-                        <span style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
-                          <span style={{fontSize:12,fontWeight:800,color:C.text}}>{item.code}</span>
-                          <span style={{display:"inline-flex",alignItems:"center",padding:"2px 8px",borderRadius:999,background:item.tone+"18",border:`1px solid ${item.tone}44`,fontSize:10,fontWeight:700,color:item.tone}}>{item.kind==="quote"?"Teklif":"Siparis"}</span>
-                        </span>
-                        <span style={{fontSize:11,color:C.text}}>{item.title||"-"}</span>
-                        <span style={{fontSize:11,color:C.muted2}}>{item.subtitle||"-"}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                {selectedCustomerSalesRows.length>0&&(
+                  <div style={{border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",background:C.surface}}>
+                    <div style={{overflowX:"auto"}}>
+                      <div style={{minWidth:840}}>
+                        <div style={{display:"grid",gridTemplateColumns:"minmax(140px,1fr) minmax(110px,.7fr) minmax(220px,1.4fr) minmax(260px,1.6fr)",gap:10,padding:"8px 12px",background:C.surface2,borderBottom:`1px solid ${C.border}`,fontSize:10,fontWeight:800,color:C.muted2,letterSpacing:.7,textTransform:"uppercase"}}>
+                          <span>Kod</span>
+                          <span>Tip</span>
+                          <span>Baslik</span>
+                          <span>Detay</span>
+                        </div>
+                        {selectedCustomerSalesRows.map((item,idx)=>{
+                          const canOpen=availableTabSet.has(item.tabId);
+                          return (
+                            <button
+                              key={`${item.kind}_${item.id}`}
+                              type="button"
+                              onClick={()=>canOpen&&openRelatedRecord({tabId:item.tabId,recordId:item.id,recordCode:item.code,recordKind:item.kind,customerId:selectedCustomer.id,customerName:selectedCustomer.name,search:item.searchValue})}
+                              disabled={!canOpen}
+                              style={{width:"100%",display:"grid",gridTemplateColumns:"minmax(140px,1fr) minmax(110px,.7fr) minmax(220px,1.4fr) minmax(260px,1.6fr)",gap:10,alignItems:"center",padding:"10px 12px",border:"none",borderBottom:idx===selectedCustomerSalesRows.length-1?"none":`1px solid ${C.border}`,background:"transparent",textAlign:"left",fontFamily:"inherit",cursor:canOpen?"pointer":"not-allowed",opacity:canOpen?1:0.6}}
+                            >
+                              <span style={{fontSize:12,fontWeight:800,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.code}</span>
+                              <span style={{display:"inline-flex",alignItems:"center",justifyContent:"flex-start"}}>
+                                <span style={{display:"inline-flex",alignItems:"center",padding:"2px 8px",borderRadius:999,background:item.tone+"18",border:`1px solid ${item.tone}44`,fontSize:10,fontWeight:700,color:item.tone}}>{item.kind==="quote"?"Teklif":"Siparis"}</span>
+                              </span>
+                              <span style={{fontSize:12,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.title||"-"}</span>
+                              <span style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.subtitle||"-"}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12,gridColumn:"1 / -1"}}>
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
                   <div>
                     <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase"}}>Operasyon</div>
@@ -6228,27 +6206,41 @@ function Customers({filtersVisible=true,availableTabIds=[],onOpenRelatedRecord=(
                   <Badge label={`${selectedCustomerWorkOrders.length} Kayit`} color={C.warn}/>
                 </div>
                 {selectedCustomerWorkOrders.length===0&&<div style={{fontSize:12,color:C.muted2,padding:"8px 2px"}}>Bu firmaya bagli is emri bulunamadi.</div>}
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:8}}>
-                  {selectedCustomerWorkOrders.map(order=>{
-                    const meta=getOrderStatusMeta(order.status);
-                    const canOpen=availableTabSet.has("orders");
-                    return (
-                      <button
-                        key={order.id}
-                        onClick={()=>canOpen&&openRelatedRecord({tabId:"orders",recordId:order.id,recordCode:order.code||"",recordKind:"work_order",customerId:selectedCustomer.id,customerName:selectedCustomer.name,search:order.code||selectedCustomer.name})}
-                        disabled={!canOpen}
-                        style={{...btnSt("ghost"),padding:"10px 11px",textAlign:"left",display:"flex",flexDirection:"column",alignItems:"stretch",gap:4,opacity:canOpen?1:0.6,cursor:canOpen?"pointer":"not-allowed"}}
-                      >
-                        <span style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
-                          <span style={{fontSize:12,fontWeight:800,color:C.text}}>{order.code||"-"}</span>
-                          <span style={{display:"inline-flex",alignItems:"center",padding:"2px 8px",borderRadius:999,background:(meta.color||C.muted2)+"18",border:`1px solid ${(meta.color||C.muted2)}44`,fontSize:10,fontWeight:700,color:meta.color||C.muted2}}>{meta.label||order.status||"-"}</span>
-                        </span>
-                        <span style={{fontSize:11,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{order.name||"-"}</span>
-                        <span style={{fontSize:11,color:C.muted2}}>{[order.partNo||"",order.material||"",order.dueDate?`Termin: ${order.dueDate}`:""].filter(Boolean).join(" · ")||"Is emri"}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                {selectedCustomerWorkOrders.length>0&&(
+                  <div style={{border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",background:C.surface}}>
+                    <div style={{overflowX:"auto"}}>
+                      <div style={{minWidth:920}}>
+                        <div style={{display:"grid",gridTemplateColumns:"minmax(140px,1fr) minmax(160px,.9fr) minmax(220px,1.3fr) minmax(280px,1.7fr)",gap:10,padding:"8px 12px",background:C.surface2,borderBottom:`1px solid ${C.border}`,fontSize:10,fontWeight:800,color:C.muted2,letterSpacing:.7,textTransform:"uppercase"}}>
+                          <span>Kod</span>
+                          <span>Durum</span>
+                          <span>Is Emri</span>
+                          <span>Detay</span>
+                        </div>
+                        {selectedCustomerWorkOrders.map((order,idx)=>{
+                          const meta=getOrderStatusMeta(order.status);
+                          const canOpen=availableTabSet.has("orders");
+                          const detailText=[order.partNo||"",order.material||"",order.dueDate?`Termin: ${order.dueDate}`:""].filter(Boolean).join(" · ")||"Is emri";
+                          return (
+                            <button
+                              key={order.id}
+                              type="button"
+                              onClick={()=>canOpen&&openRelatedRecord({tabId:"orders",recordId:order.id,recordCode:order.code||"",recordKind:"work_order",customerId:selectedCustomer.id,customerName:selectedCustomer.name,search:order.code||selectedCustomer.name})}
+                              disabled={!canOpen}
+                              style={{width:"100%",display:"grid",gridTemplateColumns:"minmax(140px,1fr) minmax(160px,.9fr) minmax(220px,1.3fr) minmax(280px,1.7fr)",gap:10,alignItems:"center",padding:"10px 12px",border:"none",borderBottom:idx===selectedCustomerWorkOrders.length-1?"none":`1px solid ${C.border}`,background:"transparent",textAlign:"left",fontFamily:"inherit",cursor:canOpen?"pointer":"not-allowed",opacity:canOpen?1:0.6}}
+                            >
+                              <span style={{fontSize:12,fontWeight:800,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{order.code||"-"}</span>
+                              <span style={{display:"inline-flex",alignItems:"center",justifyContent:"flex-start"}}>
+                                <span style={{display:"inline-flex",alignItems:"center",padding:"2px 8px",borderRadius:999,background:(meta.color||C.muted2)+"18",border:`1px solid ${(meta.color||C.muted2)}44`,fontSize:10,fontWeight:700,color:meta.color||C.muted2}}>{meta.label||order.status||"-"}</span>
+                              </span>
+                              <span style={{fontSize:12,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{order.name||"-"}</span>
+                              <span style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{detailText}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -6839,6 +6831,9 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
   const [parts,setParts]=useState([]);
   const [customers,setCustomers]=useState([]);
   const [materials,setMaterials]=useState([]);
+  const [workOrders,setWorkOrders]=useState([]);
+  const [salesOrders,setSalesOrders]=useState([]);
+  const [entries,setEntries]=useState([]);
   const [operationTypes,setOperationTypes]=useState(DEFAULT_ROUTING_OPERATION_TYPES);
   const [loading,setLoading]=useState(true);
   const [search,setSearch]=useState("");
@@ -6870,15 +6865,21 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
   }=useViewportPanelMetrics(partListPanelRef,{minHeight:340,bottomGap:14,narrowWidth:1180});
 
   const load=useCallback(async()=>{
-    const [p,m,c,opDoc]=await Promise.all([
+    const [p,m,c,o,s,en,opDoc]=await Promise.all([
       window.DB.getAll("parts"),
       window.DB.getAll("materials"),
       window.DB.getAll("customers"),
+      window.DB.getAll("orders"),
+      window.DB.getAll("salesOrders"),
+      window.DB.getAll("entries"),
       window.DB.getDoc("config","routingOperationTypes"),
     ]);
     setParts(p.sort((a,b)=>(a.partNo||"").localeCompare(b.partNo||"","tr")));
     setMaterials(m.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
     setCustomers(c.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    setWorkOrders(o.sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||""))));
+    setSalesOrders(s.sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||""))));
+    setEntries(en.sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||""))));
     setOperationTypes(normalizeRoutingOperationTypes(opDoc||{}));
     setLoading(false);
   },[]);
@@ -6980,6 +6981,26 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
         return db.localeCompare(da);
       })
     : [];
+  const normalizePartRecordKey=value=>String(value||"").trim().toUpperCase();
+  const partRecordMatches=(part,row)=>{
+    if(!part||!row) return false;
+    const rowSnapshot=(row.partSnapshot&&typeof row.partSnapshot==="object")?row.partSnapshot:null;
+    const partId=String(part.id||"").trim();
+    const rowPartId=String(row.partId||rowSnapshot?.partId||"").trim();
+    if(partId&&rowPartId&&partId===rowPartId) return true;
+    const partNo=normalizePartRecordKey(part.partNo);
+    const rowPartNo=normalizePartRecordKey(row.partNo||rowSnapshot?.partNo||"");
+    if(partNo&&rowPartNo&&partNo===rowPartNo) return true;
+    const customerPartCode=normalizePartRecordKey(part.customerPartCode);
+    const rowCustomerPartCode=normalizePartRecordKey(row.customerPartCode||rowSnapshot?.customerPartCode||"");
+    return Boolean(customerPartCode)&&Boolean(rowCustomerPartCode)&&customerPartCode===rowCustomerPartCode;
+  };
+  const formatHistoryStamp=value=>{
+    const raw=String(value||"").trim();
+    if(!raw) return "-";
+    if(raw.includes("T")) return raw.slice(0,16).replace("T"," ");
+    return raw;
+  };
   const getPartCompanyName=(part)=>{
     const fromId=String(customerById[String(part?.customerId||"")]?.name||"").trim();
     if(fromId) return fromId;
@@ -6995,6 +7016,83 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     });
     return String(sorted[0]?.customerName||"").trim();
   };
+  const selectedPartWorkOrders=useMemo(()=>{
+    if(!selectedPart) return [];
+    return [...workOrders]
+      .filter(row=>partRecordMatches(selectedPart,row))
+      .sort((a,b)=>{
+        const da=String(a?.updatedAt||a?.createdAt||a?.dueDate||"");
+        const db=String(b?.updatedAt||b?.createdAt||b?.dueDate||"");
+        return db.localeCompare(da);
+      });
+  },[selectedPart,workOrders]);
+  const selectedPartWorkOrderByCode=useMemo(()=>{
+    const map={};
+    selectedPartWorkOrders.forEach(row=>{
+      const key=normalizePartRecordKey(row.code||"");
+      if(key) map[key]=row;
+    });
+    return map;
+  },[selectedPartWorkOrders]);
+  const selectedPartProductionHistory=useMemo(()=>{
+    const orderCodes=new Set(Object.keys(selectedPartWorkOrderByCode));
+    if(orderCodes.size===0) return [];
+    return entries
+      .filter(row=>orderCodes.has(normalizePartRecordKey(row.jobCode||row.orderCode||"")))
+      .map(row=>{
+        const linkedOrder=selectedPartWorkOrderByCode[normalizePartRecordKey(row.jobCode||row.orderCode||"")]||null;
+        return {
+          id:row.id||`${row.jobCode||"entry"}_${row.createdAt||row.date||Math.random()}`,
+          stamp:String(row.createdAt||row.date||""),
+          dateLabel:formatHistoryStamp(row.createdAt||row.date||""),
+          orderCode:row.jobCode||linkedOrder?.code||"-",
+          orderName:linkedOrder?.name||row.jobName||"-",
+          machine:row.machine||linkedOrder?.machines?.[0]||"-",
+          operatorName:row.operatorName||row.operatorId||"-",
+          goodQty:Math.max(0,safeNum(row.correct)),
+          scrapQty:Math.max(0,safeNum(row.wrong)),
+          totalQty:Math.max(0,safeNum(row.correct)+safeNum(row.wrong)),
+          shift:row.shiftLabel||row.shift||"",
+        };
+      })
+      .sort((a,b)=>String(b.stamp||"").localeCompare(String(a.stamp||"")));
+  },[entries,selectedPartWorkOrderByCode]);
+  const selectedPartDeliveryHistory=useMemo(()=>{
+    if(!selectedPart) return [];
+    const rows=[];
+    salesOrders.forEach(order=>{
+      const orderLines=Array.isArray(order.lines)?order.lines:[];
+      const matchedLines=orderLines.filter(line=>partRecordMatches(selectedPart,line));
+      if(matchedLines.length===0) return;
+      const matchedLineQty=matchedLines.reduce((sum,line)=>sum+Math.max(0,safeNum(line.qty)),0);
+      (order.deliveries||[]).forEach((delivery,idx)=>{
+        const stamp=String(delivery?.createdAt||delivery?.date||order?.updatedAt||order?.createdAt||"");
+        const directPartDelivery=orderLines.length===1&&matchedLines.length===1;
+        rows.push({
+          id:delivery.id||`${order.id||order.code||"sales"}_${idx}`,
+          stamp,
+          dateLabel:formatHistoryStamp(delivery?.createdAt||delivery?.date||order?.updatedAt||order?.createdAt||""),
+          orderCode:order.code||"-",
+          customerName:order.customerName||getPartCompanyName(selectedPart)||"-",
+          deliveryQty:Math.max(0,safeNum(delivery?.qty)),
+          matchedLineQty,
+          dueDate:order.dueDate||"",
+          note:String(delivery?.note||"").trim(),
+          scope:directPartDelivery?"part":"order",
+          lineCount:orderLines.length,
+        });
+      });
+    });
+    return rows.sort((a,b)=>String(b.stamp||"").localeCompare(String(a.stamp||"")));
+  },[salesOrders,selectedPart]);
+  const selectedPartProductionTotals=useMemo(()=>selectedPartProductionHistory.reduce((acc,row)=>{
+    acc.goodQty+=row.goodQty;
+    acc.scrapQty+=row.scrapQty;
+    acc.totalQty+=row.totalQty;
+    return acc;
+  },{goodQty:0,scrapQty:0,totalQty:0}),[selectedPartProductionHistory]);
+  const selectedPartDeliveryOrderScopeCount=selectedPartDeliveryHistory.filter(row=>row.scope==="order").length;
+  const selectedPartDeliveryDirectScopeCount=Math.max(0,selectedPartDeliveryHistory.length-selectedPartDeliveryOrderScopeCount);
   const partStatusOptions=[
     {id:"all",label:"Tum Parcalar"},
     {id:"bom",label:"BOM Olan"},
@@ -8212,6 +8310,129 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
                         <div style={{textAlign:"right"}}>%{safeNum(row.discountPct).toFixed(2)}</div>
                         <div style={{textAlign:"right",fontWeight:700}}>{safeNum(row.netUnitPrice).toFixed(2)} {row.currency||"TRY"}</div>
                         <div style={{textAlign:"right"}}>{safeNum(row.qty)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+                <div>
+                  <div style={{fontWeight:700,color:C.text}}>Uretim Gecmisi</div>
+                  <div style={{fontSize:11,color:C.muted2,marginTop:2}}>Bu parcaya bagli is emirlerinden gelen uretim girisleri.</div>
+                </div>
+                <div style={{fontSize:11,color:C.muted2}}>Kayit: {selectedPartProductionHistory.length}</div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8,marginBottom:10}}>
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}>
+                  <div style={{fontSize:11,color:C.muted2}}>Dogru Uretim</div>
+                  <div style={{fontSize:20,fontWeight:800,color:C.text,marginTop:3}}>{selectedPartProductionTotals.goodQty}</div>
+                </div>
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}>
+                  <div style={{fontSize:11,color:C.muted2}}>Hurda</div>
+                  <div style={{fontSize:20,fontWeight:800,color:C.warn,marginTop:3}}>{selectedPartProductionTotals.scrapQty}</div>
+                </div>
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}>
+                  <div style={{fontSize:11,color:C.muted2}}>Toplam Giris</div>
+                  <div style={{fontSize:20,fontWeight:800,color:C.text,marginTop:3}}>{selectedPartProductionTotals.totalQty}</div>
+                </div>
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}>
+                  <div style={{fontSize:11,color:C.muted2}}>Bagli Is Emri</div>
+                  <div style={{fontSize:20,fontWeight:800,color:C.text,marginTop:3}}>{selectedPartWorkOrders.length}</div>
+                </div>
+              </div>
+              {selectedPartProductionHistory.length===0&&<div style={{fontSize:12,color:C.muted2}}>Bu parca icin uretim girisi bulunamadi.</div>}
+              {selectedPartProductionHistory.length>0&&(
+                <div style={{overflowX:"auto"}}>
+                  <div style={{minWidth:920,display:"flex",flexDirection:"column",gap:6}}>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1.2fr .9fr .9fr .6fr .6fr .6fr",gap:6,fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.5,fontWeight:700,padding:"0 2px"}}>
+                      <div>Tarih</div>
+                      <div>Is Emri</div>
+                      <div>Tezgah</div>
+                      <div>Operator</div>
+                      <div style={{textAlign:"right"}}>Dogru</div>
+                      <div style={{textAlign:"right"}}>Hurda</div>
+                      <div style={{textAlign:"right"}}>Toplam</div>
+                    </div>
+                    {selectedPartProductionHistory.slice(0,60).map((row,idx)=>(
+                      <div key={row.id||idx} style={{display:"grid",gridTemplateColumns:"1fr 1.2fr .9fr .9fr .6fr .6fr .6fr",gap:6,alignItems:"center",padding:"8px 10px",background:idx%2===0?C.surface:C.card,border:`1px solid ${C.border}`,borderRadius:10,fontSize:12,color:C.text}}>
+                        <div style={{color:C.muted2}}>
+                          {row.dateLabel}
+                          {row.shift?` · ${row.shift}`:""}
+                        </div>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{row.orderCode||"-"}</div>
+                          <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{row.orderName||"-"}</div>
+                        </div>
+                        <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{row.machine||"-"}</div>
+                        <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:C.muted2}}>{row.operatorName||"-"}</div>
+                        <div style={{textAlign:"right",fontWeight:700,color:C.green}}>{row.goodQty}</div>
+                        <div style={{textAlign:"right",fontWeight:700,color:C.warn}}>{row.scrapQty}</div>
+                        <div style={{textAlign:"right",fontWeight:700}}>{row.totalQty}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+                <div>
+                  <div style={{fontWeight:700,color:C.text}}>Teslim Gecmisi</div>
+                  <div style={{fontSize:11,color:C.muted2,marginTop:2}}>Bu parcayi iceren satis siparislerindeki teslim kayitlari.</div>
+                </div>
+                <div style={{fontSize:11,color:C.muted2}}>Kayit: {selectedPartDeliveryHistory.length}</div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8,marginBottom:10}}>
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}>
+                  <div style={{fontSize:11,color:C.muted2}}>Dogrudan Parca</div>
+                  <div style={{fontSize:20,fontWeight:800,color:C.text,marginTop:3}}>{selectedPartDeliveryDirectScopeCount}</div>
+                </div>
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}>
+                  <div style={{fontSize:11,color:C.muted2}}>Siparis Geneli</div>
+                  <div style={{fontSize:20,fontWeight:800,color:C.text,marginTop:3}}>{selectedPartDeliveryOrderScopeCount}</div>
+                </div>
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}>
+                  <div style={{fontSize:11,color:C.muted2}}>Son Teslim</div>
+                  <div style={{fontSize:14,fontWeight:800,color:C.text,marginTop:6}}>{selectedPartDeliveryHistory[0]?.dateLabel||"-"}</div>
+                </div>
+              </div>
+              {selectedPartDeliveryOrderScopeCount>0&&(
+                <div style={{marginBottom:10,padding:"9px 10px",borderRadius:10,border:`1px solid ${C.warn}55`,background:`${C.warn}12`,fontSize:11,color:C.text}}>
+                  Bazi teslimler siparis geneli kaydedildigi icin miktar ilgili siparis teslimini gosterir. Parca satir miktari ayri kolonda verilir.
+                </div>
+              )}
+              {selectedPartDeliveryHistory.length===0&&<div style={{fontSize:12,color:C.muted2}}>Bu parca icin teslim kaydi bulunamadi.</div>}
+              {selectedPartDeliveryHistory.length>0&&(
+                <div style={{overflowX:"auto"}}>
+                  <div style={{minWidth:900,display:"flex",flexDirection:"column",gap:6}}>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1.1fr .8fr .7fr .7fr 1.3fr",gap:6,fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.5,fontWeight:700,padding:"0 2px"}}>
+                      <div>Tarih</div>
+                      <div>Siparis</div>
+                      <div>Kapsam</div>
+                      <div style={{textAlign:"right"}}>Teslim</div>
+                      <div style={{textAlign:"right"}}>Parca Satiri</div>
+                      <div>Not</div>
+                    </div>
+                    {selectedPartDeliveryHistory.slice(0,60).map((row,idx)=>(
+                      <div key={row.id||idx} style={{display:"grid",gridTemplateColumns:"1fr 1.1fr .8fr .7fr .7fr 1.3fr",gap:6,alignItems:"center",padding:"8px 10px",background:idx%2===0?C.surface:C.card,border:`1px solid ${C.border}`,borderRadius:10,fontSize:12,color:C.text}}>
+                        <div style={{color:C.muted2}}>
+                          {row.dateLabel}
+                          {row.dueDate?` · Termin ${row.dueDate}`:""}
+                        </div>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{row.orderCode||"-"}</div>
+                          <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{row.customerName||"-"}</div>
+                        </div>
+                        <div>
+                          <span style={{display:"inline-flex",alignItems:"center",padding:"3px 8px",borderRadius:999,border:`1px solid ${row.scope==="part"?C.green:C.warn}44`,background:`${row.scope==="part"?C.green:C.warn}18`,fontSize:10,fontWeight:700,color:row.scope==="part"?C.green:C.warn}}>
+                            {row.scope==="part"?"Dogrudan Parca":"Siparis Geneli"}
+                          </span>
+                        </div>
+                        <div style={{textAlign:"right",fontWeight:700}}>{row.deliveryQty}</div>
+                        <div style={{textAlign:"right",color:C.muted2}}>{row.matchedLineQty}</div>
+                        <div style={{color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{row.note||"-"}</div>
                       </div>
                     ))}
                   </div>
@@ -17296,6 +17517,7 @@ function MRPDashboard({
   machines=DEFAULT_MACHINES,
   logoSrc=LOGO_SRC,
   themeMode="light",
+  menuAccentColor=DEFAULT_BRANDING_SETTINGS.menuAccentColor,
   onLogout=()=>{},
   onQuickAction=()=>{},
   onCreateNewRecord=()=>{},
@@ -17836,31 +18058,7 @@ function MRPDashboard({
   ];
   const hasReportWidgets=dashboardWidgetRows.length>0;
   const showReportWidgetArea=hasReportWidgets||dashboardEditMode;
-  const commandBarTone=themeMode==="dark"
-    ? {
-      heroBg:"#2A3038",
-      heroText:"#F2F4F7",
-      heroMuted:"rgba(242,244,247,.82)",
-      heroFieldBg:"rgba(255,255,255,.08)",
-      heroFieldBorder:"rgba(255,255,255,.24)",
-      heroChipBg:"rgba(255,255,255,.07)",
-      heroChipBorder:"rgba(255,255,255,.20)",
-      heroShadow:"0 16px 34px rgba(0,0,0,.42)",
-      subBg:"#232931",
-      subBorder:"rgba(255,255,255,.10)",
-    }
-    : {
-      heroBg:"#2B7A78",
-      heroText:"#FEFFFF",
-      heroMuted:"rgba(254,255,255,.90)",
-      heroFieldBg:"rgba(255,255,255,.22)",
-      heroFieldBorder:"rgba(255,255,255,.44)",
-      heroChipBg:"rgba(255,255,255,.16)",
-      heroChipBorder:"rgba(255,255,255,.38)",
-      heroShadow:"0 14px 30px rgba(23,82,73,.20)",
-      subBg:"#DEF2F1",
-      subBorder:"#CBE3E1",
-    };
+  const commandBarTone=buildTopBarTone(menuAccentColor,themeMode);
   const lastLoadText=lastLoadedAt?new Intl.DateTimeFormat("tr-TR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(new Date(lastLoadedAt)):"-";
   const userLabel=String(currentUser?.fullName||"").trim();
   const layoutBadge=layoutMode==="desktop"?"DESKTOP":(layoutMode==="tablet"?"TABLET":"MOBIL");
@@ -21683,7 +21881,6 @@ function App() {
   const [tab,setTab]=useState("dashboard");
   const [themeMode,setThemeMode]=useState("light");
   const [menuAccentColor,setMenuAccentColor]=useState(DEFAULT_BRANDING_SETTINGS.menuAccentColor);
-  const [topBarAccentColor,setTopBarAccentColor]=useState(DEFAULT_BRANDING_SETTINGS.topBarAccentColor);
   const [menuVisibility,setMenuVisibility]=useState(()=>normalizeMenuVisibilityConfig({}));
   const [machines,setMachines]=useState(DEFAULT_MACHINES);
   const [logoSrc,setLogoSrc]=useState(LOGO_SRC);
@@ -21750,7 +21947,6 @@ function App() {
       setLogoSrc(brandingConfig.logo||LOGO_SRC);
       setThemeMode(brandingConfig.themeMode);
       setMenuAccentColor(brandingConfig.menuAccentColor);
-      setTopBarAccentColor(brandingConfig.topBarAccentColor);
       const session=window.Session.get();
       if(session){
         const u=await window.DB.getDoc("users",session.username);
@@ -21895,17 +22091,6 @@ function App() {
     const ok=await window.DB.setDoc("config","branding",{menuAccentColor:normalized});
     if(!ok){
       setMenuAccentColor(previous);
-      return false;
-    }
-    return true;
-  }
-  async function updateTopBarAccentColor(color){
-    const normalized=normalizeHexColor(color,DEFAULT_BRANDING_SETTINGS.topBarAccentColor);
-    const previous=topBarAccentColor;
-    setTopBarAccentColor(normalized);
-    const ok=await window.DB.setDoc("config","branding",{topBarAccentColor:normalized});
-    if(!ok){
-      setTopBarAccentColor(previous);
       return false;
     }
     return true;
@@ -22155,6 +22340,11 @@ function App() {
     return Object.values(grouped).sort((a,b)=>(tabOrderById[a.tabId]??999)-(tabOrderById[b.tabId]??999));
   },[globalSearchResults,tabOrderById]);
   const globalSearchFirstResult=globalSearchGroups[0]?.items?.[0]||null;
+  const handleGlobalSearchOpenChange=useCallback((nextOpen)=>{
+    const isOpen=Boolean(nextOpen);
+    setGlobalSearchOpen(isOpen);
+    if(!isOpen) setGlobalSearchQuery("");
+  },[]);
   const handleGlobalSearchFocus=useCallback(()=>{
     setGlobalSearchOpen(true);
     ensureGlobalSearchIndex(false);
@@ -22324,10 +22514,10 @@ function App() {
     const onPointerDown=e=>{
       const node=globalSearchContainerRef.current;
       if(node&&node.contains(e.target)) return;
-      setGlobalSearchOpen(false);
+      handleGlobalSearchOpenChange(false);
     };
     const onKey=e=>{
-      if(e.key==="Escape") setGlobalSearchOpen(false);
+      if(e.key==="Escape") handleGlobalSearchOpenChange(false);
     };
     window.addEventListener("mousedown",onPointerDown);
     window.addEventListener("touchstart",onPointerDown);
@@ -22337,7 +22527,7 @@ function App() {
       window.removeEventListener("touchstart",onPointerDown);
       window.removeEventListener("keydown",onKey);
     };
-  },[globalSearchOpen]);
+  },[globalSearchOpen,handleGlobalSearchOpenChange]);
   useEffect(()=>{
     if(!dashboardCreateModalOpen) return;
     const onKey=e=>{
@@ -22408,8 +22598,8 @@ function App() {
     if(tab==="rapor") return <Report currentUser={currentUser} machines={machines}/>;
     if(tab==="tools") return <ToolStock currentUser={currentUser} machines={machines} filtersVisible={toolsFilterOpen}/>;
     if(tab==="orders") return <WorkOrders currentUser={currentUser} machines={machines} filtersVisible={ordersFilterOpen}/>;
-    if(tab==="users") return <AdminUsers currentUser={currentUser} machines={machines} currentLogo={logoSrc} onLogoUpdate={updateLogo} themeMode={themeMode} onThemeModeChange={updateTheme} menuAccentColor={menuAccentColor} onMenuAccentColorChange={updateMenuAccentColor} topBarAccentColor={topBarAccentColor} onTopBarAccentColorChange={updateTopBarAccentColor} menuCatalog={allTabs} menuVisibility={menuVisibility} onMenuVisibilityChange={setMenuVisibility}/>;
-    if(tab==="dashboard") return <MRPDashboard currentUser={currentUser} machines={machines} logoSrc={logoSrc} themeMode={themeMode} onLogout={logout} onQuickAction={handleTopQuickAction} onCreateNewRecord={handleDashboardCreateRecord} roleLabel={currentRoleLabel} layoutMode={layoutMode} globalSearch={{
+    if(tab==="users") return <AdminUsers currentUser={currentUser} machines={machines} currentLogo={logoSrc} onLogoUpdate={updateLogo} themeMode={themeMode} onThemeModeChange={updateTheme} menuAccentColor={menuAccentColor} onMenuAccentColorChange={updateMenuAccentColor} menuCatalog={allTabs} menuVisibility={menuVisibility} onMenuVisibilityChange={setMenuVisibility}/>;
+    if(tab==="dashboard") return <MRPDashboard currentUser={currentUser} machines={machines} logoSrc={logoSrc} themeMode={themeMode} menuAccentColor={menuAccentColor} onLogout={logout} onQuickAction={handleTopQuickAction} onCreateNewRecord={handleDashboardCreateRecord} roleLabel={currentRoleLabel} layoutMode={layoutMode} globalSearch={{
       query:globalSearchQuery,
       open:globalSearchOpen,
       loading:globalSearchLoading,
@@ -22420,7 +22610,7 @@ function App() {
       onFocus:handleGlobalSearchFocus,
       onChange:handleGlobalSearchChange,
       onSelect:handleGlobalSearchSelect,
-      onOpenChange:setGlobalSearchOpen,
+      onOpenChange:handleGlobalSearchOpenChange,
     }}/>;
     if(tab==="cncmonitor") return <CncMonitorWall currentUser={currentUser} machines={machines}/>;
     if(tab==="mrp") return <MRPRunModule currentUser={currentUser}/>;
@@ -22609,7 +22799,7 @@ function App() {
     {id:"compact",label:"Liste",icon:"\u2630"},
     {id:"table",label:"Tablo",icon:"\u25A4"},
   ];
-  const appCommandBarTone=buildTopBarTone(topBarAccentColor,themeMode);
+  const appCommandBarTone=buildTopBarTone(menuAccentColor,themeMode);
   const appHeroGridColumns=layoutMode==="desktop"
     ? "minmax(220px,1fr) minmax(280px,500px) auto"
     : (layoutMode==="tablet"?"minmax(0,1fr) auto":"1fr");
@@ -22764,7 +22954,7 @@ function App() {
             onChange={handleGlobalSearchChange}
             onFocus={handleGlobalSearchFocus}
             onSelect={handleGlobalSearchSelect}
-            onOpenChange={setGlobalSearchOpen}
+            onOpenChange={handleGlobalSearchOpenChange}
             placeholder="Tum kayitlarda ara..."
             layoutMode={layoutMode}
             helperText="Tum sayfalarda ve modullerde aramayi buradan yonetin."
