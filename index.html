@@ -12274,6 +12274,36 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const rowCardStyle={background:opTheme.cardBgSoft,border:`1px solid ${opTheme.borderStrong}`,borderRadius:8,padding:"7px 8px"};
   const themedInputStyle={background:opTheme.inputBg,borderColor:opTheme.borderStrong,color:opTheme.text};
   const statStripStyle={display:"grid",gridTemplateColumns:kioskMode?"repeat(4,minmax(0,1fr))":"repeat(auto-fit,minmax(140px,1fr))",gap:8};
+  const telemetryUpdatedRaw=machineTelemetry?.collectedAtUtc||machineTelemetry?.createdAt||machineTelemetry?.machineLocalTime||"";
+  const telemetryUpdatedLabel=(()=>{
+    if(!telemetryUpdatedRaw) return "-";
+    const d=new Date(telemetryUpdatedRaw);
+    if(Number.isNaN(d.getTime())){
+      const raw=String(telemetryUpdatedRaw||"").trim();
+      return raw.includes("T")?raw.slice(0,16).replace("T"," "):raw||"-";
+    }
+    return new Intl.DateTimeFormat("tr-TR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}).format(d);
+  })();
+  const machineDisplayName=stationTag||form.machine||"-";
+  const docsPreview=selectedOrderFiles.slice(0,4);
+  const stockedToolsPreview=stockedTools.slice(0,6);
+  const standardHeroStyle={
+    border:`1px solid ${rgbaFromHex(C.accent,0.24)}`,
+    borderRadius:16,
+    padding:16,
+    background:`linear-gradient(135deg, ${rgbaFromHex(C.accent,0.16)} 0%, ${rgbaFromHex(C.accent,0.05)} 42%, ${C.card} 100%)`,
+    boxShadow:"0 18px 34px rgba(15,23,42,.08)",
+  };
+  const standardSectionTitleStyle={fontSize:15,fontWeight:800,color:C.text};
+  const standardSectionHintStyle={fontSize:12,color:C.muted2,marginTop:2};
+  const standardMetricGridStyle={display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10};
+  const standardMetricCardStyle={...rowCardStyle,padding:"12px 13px",display:"flex",flexDirection:"column",gap:4,boxShadow:"0 8px 20px rgba(15,23,42,.04)"};
+  const standardMainLayoutStyle={display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-start"};
+  const standardPrimaryCardStyle={...sectionCardStyle,padding:14,display:"flex",flexDirection:"column",gap:12,flex:"1 1 720px",minWidth:0};
+  const standardSidebarCardStyle={...sectionCardStyle,padding:14,display:"flex",flexDirection:"column",gap:10,flex:"1 1 340px",minWidth:0};
+  const standardEmptyStateStyle={padding:"14px 12px",borderRadius:10,border:`1px dashed ${C.border}`,background:C.surface2,fontSize:12,color:C.muted2,textAlign:"center"};
+  const standardProgressTrackStyle={height:10,borderRadius:999,background:rgbaFromHex(C.accent,0.12),overflow:"hidden"};
+  const standardProgressFillStyle={height:"100%",borderRadius:999,background:`linear-gradient(90deg, ${C.accent} 0%, ${rgbaFromHex(C.accent,0.72)} 100%)`};
   function fmtDurationLong(totalSec){
     const sec=Math.max(0,Math.floor(safeNum(totalSec)));
     const h=Math.floor(sec/3600);
@@ -12701,7 +12731,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             </div>
           </div>
         )}
-        {showPicker&&!kioskMode&&(
+        {showPicker&&(
           <div style={{position:"fixed",inset:0,background:"rgba(8,12,18,.78)",zIndex:55,display:"flex",alignItems:"center",justifyContent:"center",padding:0}} onClick={()=>{setShowPicker(false);setSearch("");}}>
             <div style={{width:"100%",maxWidth:1120,height:"min(88vh,860px)",background:"#f3f6fb",border:"1px solid #cfd8e4",borderRadius:16,overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 24px 60px rgba(0,0,0,.35)"}} onClick={e=>e.stopPropagation()}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"12px 14px",borderBottom:"1px solid #d4dce7",background:"#fff"}}>
@@ -12801,76 +12831,145 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   return (
     <div style={entryRootStyle}>
       <div style={shellStyle}>
-        {!kioskMode&&(
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap",marginBottom:10}}>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div style={standardHeroStyle}>
+            <div style={{display:"flex",justifyContent:"space-between",gap:16,flexWrap:"wrap",alignItems:"stretch"}}>
+              <div style={{flex:"1 1 420px",minWidth:0,display:"flex",flexDirection:"column",gap:10}}>
+                <div style={{fontSize:11,fontWeight:800,letterSpacing:.8,textTransform:"uppercase",color:C.accent}}>Operasyon Merkezi</div>
+                <div style={{fontSize:28,fontWeight:900,color:C.text,lineHeight:1.08}}>Uretim Girisi</div>
+                <div style={{fontSize:13,color:C.muted,maxWidth:700}}>
+                  Tezgah secimi, is emri ve vardiya girisi ayni akista toplanir. Once operasyon baglamini belirleyin, sonra dogru ve hurda miktarini girip vardiya kaydini onaylayin.
+                </div>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  <span style={{...infoPillStyle,display:"inline-flex",alignItems:"center",gap:6,background:rgbaFromHex(statusMeta.color,0.12),border:`1px solid ${rgbaFromHex(statusMeta.color,0.3)}`,color:statusMeta.color}}>
+                    <span style={{width:10,height:10,borderRadius:"50%",background:statusMeta.color,display:"inline-block"}}/>
+                    {statusMeta.label}
+                  </span>
+                  <span style={{...infoPillStyle,background:C.surface2,color:C.text,border:`1px solid ${C.border}`}}>{selectedDateLabel}</span>
+                  <span style={{...infoPillStyle,background:C.surface2,color:C.text,border:`1px solid ${C.border}`}}>Istasyon: {machineDisplayName}</span>
+                </div>
+              </div>
+              <div style={{flex:"0 1 360px",minWidth:280,display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10}}>
+                <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 13px"}}>
+                  <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Tezgah</div>
+                  <div style={{fontSize:18,fontWeight:800,color:C.text,marginTop:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{form.machine||"-"}</div>
+                </div>
+                <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 13px"}}>
+                  <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Vardiya</div>
+                  <div style={{fontSize:16,fontWeight:800,color:C.text,marginTop:4}}>{selectedShiftMeta.label}</div>
+                  <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{selectedShiftMeta.time}</div>
+                </div>
+                <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 13px"}}>
+                  <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Is Emri</div>
+                  <div style={{fontSize:14,fontWeight:800,color:C.text,marginTop:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{form.selectedOrder?.code||"Secilmedi"}</div>
+                  <div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{form.selectedOrder?.name||"Operasyona is emri baglayin"}</div>
+                </div>
+                <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 13px"}}>
+                  <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Hedef</div>
+                  <div style={{fontSize:18,fontWeight:800,color:C.text,marginTop:4}}>{selectedOrderQty||"-"}</div>
+                  <div style={{fontSize:11,color:C.muted2,marginTop:2}}>Kalan {selectedOrderQty?remainingQty:"-"}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {editId&&(
+            <div style={{background:rgbaFromHex(C.warn,0.14),border:`1px solid ${rgbaFromHex(C.warn,0.34)}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <div>
+                <div style={{fontSize:12,fontWeight:800,color:C.text}}>Duzenleme modu acik</div>
+                <div style={{fontSize:12,color:C.muted2,marginTop:2}}>Kayit onayi verirseniz secili vardiya kaydi guncellenir.</div>
+              </div>
+              <button onClick={()=>{setEditId(null);resetEntryForm();}} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Iptal</button>
+            </div>
+          )}
+
+          <div style={{...sectionCardStyle,padding:14,display:"flex",flexDirection:"column",gap:12}}>
             <div>
-              <div style={{fontSize:17,fontWeight:800,color:C.text}}>Uretim Girisi</div>
-              <div style={{fontSize:12,color:C.muted2,marginTop:2}}>Tezgah, is emri ve vardiya bazli hizli operator kaydi.</div>
+              <div style={standardSectionTitleStyle}>Operasyon baglami</div>
+              <div style={standardSectionHintStyle}>Tezgah, tarih, vardiya ve is emri ayni blokta tutulur. Kayit oncesi bu alanlari netlestirin.</div>
             </div>
-            <div style={{fontSize:12,color:C.muted2,padding:"7px 10px",border:`1px solid ${C.border}`,borderRadius:999,background:C.surface2}}>
-              {selectedDateLabel}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:12}}>
+              <div style={{...rowCardStyle,padding:"12px 13px",display:"flex",flexDirection:"column",gap:10}}>
+                <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700}}>Tezgah Secimi</div>
+                {isMachineLocked?(
+                  <div style={{padding:"11px 12px",borderRadius:10,border:`1px solid ${C.border}`,background:C.card,fontSize:12,color:C.muted}}>
+                    Bu ekran tezgaha ozel calisiyor: <strong style={{color:C.text}}>{form.machine}</strong>
+                  </div>
+                ):(
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                    {machines.map(m=><button key={m} onClick={()=>selectMachine(m)} style={machineChipStyle(form.machine===m)}>{m}</button>)}
+                  </div>
+                )}
+              </div>
+              <div style={{...rowCardStyle,padding:"12px 13px",display:"flex",flexDirection:"column",gap:10}}>
+                <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700}}>Tarih ve Vardiya</div>
+                <input type="date" max={todayStr()} value={form.entryDate} onChange={e=>fv("entryDate",e.target.value||todayStr())} style={{...inputSt,...themedInputStyle,padding:"10px 11px",fontSize:13}}/>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  {shiftOptions.map(s=><button key={s.id} onClick={()=>fv("shift",s.id)} style={shiftButtonStyle(form.shift===s.id)}>{s.label}</button>)}
+                </div>
+              </div>
+              <div style={{...rowCardStyle,padding:"12px 13px",display:"flex",flexDirection:"column",gap:10}}>
+                <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700}}>Is Emri Baglantisi</div>
+                {form.selectedOrder?(
+                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                    <div style={{padding:"11px 12px",borderRadius:10,border:`1px solid ${C.border}`,background:C.card}}>
+                      <div style={{fontFamily:"monospace",fontSize:14,fontWeight:800,color:C.text}}>{form.selectedOrder.code}</div>
+                      <div style={{fontSize:12,color:C.muted,marginTop:3}}>{form.selectedOrder.name||"-"}</div>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+                        <span style={{...infoPillStyle,background:C.surface2,border:`1px solid ${C.border}`,color:C.text}}>Cevrim: {fmtSec(form.selectedOrder.partSec)}</span>
+                        {form.selectedOrder?.material&&<span style={{...infoPillStyle,background:C.surface2,border:`1px solid ${C.border}`,color:C.text}}>{form.selectedOrder.material}</span>}
+                        {form.selectedOrder?.dueDate&&<span style={{...infoPillStyle,background:C.surface2,border:`1px solid ${C.border}`,color:C.text}}>Termin: {form.selectedOrder.dueDate}</span>}
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                      <button onClick={()=>setShowPicker(true)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Is Emrini Degistir</button>
+                      <button onClick={()=>fv("selectedOrder",null)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,borderColor:rgbaFromHex(C.red,0.24),color:C.red}}>Temizle</button>
+                    </div>
+                  </div>
+                ):(
+                  <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                    <div style={standardEmptyStateStyle}>
+                      Aktif kayit icin once is emri secin. Secim ekraninda sadece uygun ve aranabilir is emirleri listelenir.
+                    </div>
+                    <button onClick={()=>setShowPicker(true)} style={{...btnSt("primary"),padding:"10px 12px",fontSize:12,alignSelf:"flex-start"}}>
+                      {orders.length===0?"Aktif is emri yok":"Is Emri Sec"}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        )}
-        <div style={topInfoGridStyle}>
-          <div>
-            <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.7,textTransform:"uppercase"}}>Tezgah</div>
-            <div style={{fontSize:24,fontWeight:800,color:opTheme.text,lineHeight:1.1}}>{form.machine}</div>
-          </div>
-          <div>
-            <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.7,textTransform:"uppercase"}}>Istasyon / Vardiya</div>
-            <div style={{fontSize:17,fontWeight:700,color:opTheme.text}}>
-              {(stationTag||form.machine)} · {selectedShiftMeta.label} · {selectedShiftMeta.time}
-            </div>
-          </div>
-          <div>
-            <div style={{fontSize:11,color:opTheme.textMuted,letterSpacing:.7,textTransform:"uppercase"}}>Is Emri</div>
-            <div style={{fontSize:17,fontWeight:700,color:opTheme.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{form.selectedOrder?.code||"-"}{form.selectedOrder?.name?` | ${form.selectedOrder.name}`:""}</div>
-          </div>
-          <div style={topControlStyle}>
-            <span style={{...infoPillStyle,display:"inline-flex",alignItems:"center",gap:6}}>
-              <span style={{width:10,height:10,borderRadius:"50%",background:statusMeta.color,display:"inline-block"}}/>
-              {statusMeta.label}
-            </span>
-            <input type="date" max={todayStr()} value={form.entryDate} onChange={e=>fv("entryDate",e.target.value||todayStr())} style={{...inputSt,...themedInputStyle,padding:"8px 10px",fontSize:12,width:160}}/>
-            {shiftOptions.map(s=><button key={s.id} onClick={()=>fv("shift",s.id)} style={shiftButtonStyle(form.shift===s.id)}>{s.label}</button>)}
-          </div>
-        </div>
 
-        {editId&&(
-          <div style={{marginTop:8,background:"rgba(255,225,143,.2)",border:`1px solid ${opTheme.warn}88`,borderRadius:10,padding:"8px 10px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-            <span style={{fontSize:12,color:opTheme.warn,fontWeight:700}}>Düzenleme modu açık</span>
-            <button onClick={()=>{setEditId(null);resetEntryForm();}} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>İptal</button>
-          </div>
-        )}
-
-        {isMachineLocked?(
-          <div style={{marginTop:8,padding:"8px 10px",borderRadius:10,border:`1px solid ${opTheme.border}`,background:"rgba(255,255,255,.08)",fontSize:12,color:opTheme.textDim}}>
-            Bu ekran tezgaha ozel calisiyor: <strong style={{color:opTheme.text}}>{form.machine}</strong>
-          </div>
-        ):(
-          <div style={{marginTop:8,display:"flex",gap:7,flexWrap:"wrap"}}>
-            {machines.map(m=><button key={m} onClick={()=>selectMachine(m)} style={machineChipStyle(form.machine===m)}>{m}</button>)}
-          </div>
-        )}
-
-        <div style={contentStackStyle}>
-          <div style={statStripStyle}>
-            <div style={{...rowCardStyle,padding:"8px 10px"}}>
-              <div style={{fontSize:10,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Durum</div>
-              <div style={{fontSize:15,fontWeight:800,color:statusMeta.color,marginTop:2}}>{statusMeta.label}</div>
+          <div style={standardMetricGridStyle}>
+            <div style={standardMetricCardStyle}>
+              <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Makine Durumu</div>
+              <div style={{fontSize:18,fontWeight:900,color:statusMeta.color}}>{statusMeta.label}</div>
+              <div style={{fontSize:11,color:C.muted}}>Son veri: {telemetryUpdatedLabel}</div>
             </div>
-            <div style={{...rowCardStyle,padding:"8px 10px"}}>
-              <div style={{fontSize:10,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Uretilen</div>
-              <div style={{fontSize:15,fontWeight:800,color:opTheme.text,marginTop:2}}>{producedQty}</div>
+            <div style={standardMetricCardStyle}>
+              <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Dogru Parca</div>
+              <div style={{fontSize:22,fontWeight:900,color:C.text}}>{producedQty}</div>
+              <div style={{fontSize:11,color:C.muted}}>Bugun kaydedilen uretilen adet</div>
             </div>
-            <div style={{...rowCardStyle,padding:"8px 10px"}}>
-              <div style={{fontSize:10,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Hurda</div>
-              <div style={{fontSize:15,fontWeight:800,color:opTheme.danger,marginTop:2}}>{scrapQty}</div>
+            <div style={standardMetricCardStyle}>
+              <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Hurda</div>
+              <div style={{fontSize:22,fontWeight:900,color:C.red}}>{scrapQty}</div>
+              <div style={{fontSize:11,color:C.muted}}>Toplam hatali adet</div>
             </div>
-            <div style={{...rowCardStyle,padding:"8px 10px"}}>
-              <div style={{fontSize:10,color:opTheme.textMuted,textTransform:"uppercase",letterSpacing:.6}}>Kalite</div>
-              <div style={{fontSize:15,fontWeight:800,color:qualityPct<90?opTheme.warn:opTheme.text,marginTop:2}}>%{qualityPct}</div>
+            <div style={standardMetricCardStyle}>
+              <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Kalite</div>
+              <div style={{fontSize:22,fontWeight:900,color:qualityPct<90?C.warn:C.text}}>%{qualityPct}</div>
+              <div style={{fontSize:11,color:C.muted}}>Dogru / toplam uretim orani</div>
+            </div>
+            <div style={standardMetricCardStyle}>
+              <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Kalan</div>
+              <div style={{fontSize:22,fontWeight:900,color:C.text}}>{selectedOrderQty?remainingQty:"-"}</div>
+              <div style={{fontSize:11,color:C.muted}}>Siparis hedefi baz alinir</div>
+            </div>
+            <div style={standardMetricCardStyle}>
+              <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Ilerleme</div>
+              <div style={{fontSize:22,fontWeight:900,color:C.text}}>{selectedOrderQty?`%${progressPct}`:"-"}</div>
+              <div style={{fontSize:11,color:C.muted}}>Secili is emrine gore tamamlanma</div>
             </div>
           </div>
 
