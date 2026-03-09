@@ -1335,6 +1335,196 @@ function dataUrlToUint8Array(dataUrl) {
   for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
   return bytes;
 }
+function escapeRegExp(value) {
+  return String(value||"").replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+}
+function normalizePdfLookupText(value){
+  return String(value||"")
+    .toLocaleLowerCase("tr")
+    .replace(/ı/g,"i")
+    .replace(/ğ/g,"g")
+    .replace(/ü/g,"u")
+    .replace(/ş/g,"s")
+    .replace(/ö/g,"o")
+    .replace(/ç/g,"c")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g,"")
+    .replace(/[^a-z0-9./:+-]+/g," ")
+    .replace(/\s+/g," ")
+    .trim();
+}
+function sanitizePdfFieldValue(value){
+  return String(value||"")
+    .replace(/\s+/g," ")
+    .replace(/^[\s:=;,\-]+/,"")
+    .replace(/[\s:=;,\-]+$/,"")
+    .trim();
+}
+function collectPdfTextLines(items){
+  const rows=[];
+  (items||[]).forEach(item=>{
+    const text=String(item?.str||"").replace(/\s+/g," ").trim();
+    if(!text) return;
+    const tr=Array.isArray(item?.transform)?item.transform:[1,0,0,1,0,0];
+    rows.push({text,x:safeNum(tr[4]),y:safeNum(tr[5])});
+  });
+  rows.sort((a,b)=>{
+    const dy=b.y-a.y;
+    if(Math.abs(dy)>3) return dy;
+    return a.x-b.x;
+  });
+  const grouped=[];
+  rows.forEach(row=>{
+    const last=grouped[grouped.length-1];
+    if(last&&Math.abs(last.y-row.y)<=3){
+      last.items.push(row);
+      last.y=(last.y+row.y)/2;
+      return;
+    }
+    grouped.push({y:row.y,items:[row]});
+  });
+  return grouped
+    .map(group=>{
+      const parts=[...group.items]
+        .sort((a,b)=>a.x-b.x)
+        .map(item=>item.text);
+      return parts.join(" ").replace(/\s+/g," ").trim();
+    })
+    .filter(Boolean);
+}
+async function extractPdfTextFromDocument(file,{maxPages=3}={}){
+  if(!(file&&file.data)) throw new Error("PDF dosyasi bulunamadi.");
+  const pdfLibSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+  const pdfWorkerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  const ok=await ensureExternalScript(pdfLibSrc,()=>Boolean(window.pdfjsLib&&window.pdfjsLib.getDocument));
+  if(!ok||!window.pdfjsLib||!window.pdfjsLib.getDocument) throw new Error("PDF motoru yuklenemedi.");
+  if(window.pdfjsLib.GlobalWorkerOptions) window.pdfjsLib.GlobalWorkerOptions.workerSrc=pdfWorkerSrc;
+  const task=window.pdfjsLib.getDocument({data:dataUrlToUint8Array(file.data)});
+  const pdf=await task.promise;
+  const pageCount=Math.max(1,Number(pdf.numPages)||1);
+  const lines=[];
+  const textParts=[];
+  for(let pageNo=1;pageNo<=Math.min(pageCount,Math.max(1,Number(maxPages)||3));pageNo++){
+    const page=await pdf.getPage(pageNo);
+    const textContent=await page.getTextContent();
+    const pageLines=collectPdfTextLines(textContent.items||[]);
+    pageLines.forEach(text=>lines.push({page:pageNo,text}));
+    textParts.push(pageLines.join("\n"));
+  }
+  return {
+    pageCount,
+    text:textParts.join("\n\n"),
+    lines,
+  };
+}
+const PDF_PART_FIELD_LABELS={
+  name:["parca adi","parca ismi","parca tanimi","urun adi","part name","item name","part description"],
+  material:["malzeme","malzeme tanimi","material","material description","hammadde"],
+  customerPartCode:["parca no","parca kodu","drawing no","drawing number","part no","part number","stok no"],
+  revision:["revizyon","revision","rev"],
+  customerName:["musteri","customer","firma"],
+  partDiameterMm:["parca capi","cap","diameter"],
+  partLengthMm:["parca uzunlugu","uzunluk","length","boy"],
+};
+const PDF_PART_ALL_LABELS=Array.from(
+  new Set(Object.values(PDF_PART_FIELD_LABELS).flat().map(normalizePdfLookupText).filter(Boolean))
+);
+function matchPdfLabelInLine(normalizedLine,label){
+  if(!normalizedLine||!label) return false;
+  const pattern=new RegExp(`(?:^|\\s)${escapeRegExp(label).replace(/ /g,"\\s+")}(?:$|\\s|[:=-])`);
+  return pattern.test(normalizedLine);
+}
+function isPdfLikelyFieldLabel(normalizedLine){
+  if(!normalizedLine) return false;
+  return PDF_PART_ALL_LABELS.some(label=>{
+    if(normalizedLine===label) return true;
+    if(normalizedLine.startsWith(`${label}:`)) return true;
+    if(normalizedLine.startsWith(`${label} -`)) return true;
+    return false;
+  });
+}
+function extractValueAfterPdfLabel(rawLine,label){
+  const cleaned=sanitizePdfFieldValue(rawLine);
+  if(!cleaned) return "";
+  const rawWords=cleaned.split(/\s+/);
+  const labelWords=String(label||"").split(/\s+/);
+  if(rawWords.length>labelWords.length){
+    const lead=normalizePdfLookupText(rawWords.slice(0,labelWords.length).join(" "));
+    if(lead===label){
+      return sanitizePdfFieldValue(rawWords.slice(labelWords.length).join(" "));
+    }
+  }
+  const separatorMatch=cleaned.match(/[:=\-]\s*(.+)$/);
+  return sanitizePdfFieldValue(separatorMatch?.[1]||"");
+}
+function pdfValueContainsAnotherLabel(value,activeLabels=[]){
+  const normalized=normalizePdfLookupText(value);
+  if(!normalized) return false;
+  return PDF_PART_ALL_LABELS.some(label=>!activeLabels.includes(label)&&matchPdfLabelInLine(normalized,label));
+}
+function findPdfLabeledValue(lines,labels){
+  const activeLabels=(labels||[]).map(normalizePdfLookupText).filter(Boolean);
+  for(let i=0;i<(lines||[]).length;i++){
+    const raw=String(lines[i]?.text||lines[i]||"").trim();
+    if(!raw) continue;
+    const normalized=normalizePdfLookupText(raw);
+    const matchedLabel=activeLabels.find(label=>matchPdfLabelInLine(normalized,label));
+    if(!matchedLabel) continue;
+    const direct=extractValueAfterPdfLabel(raw,matchedLabel);
+    if(direct&&!isPdfLikelyFieldLabel(normalizePdfLookupText(direct))&&!pdfValueContainsAnotherLabel(direct,activeLabels)){
+      return direct;
+    }
+    const nextRaw=sanitizePdfFieldValue(lines[i+1]?.text||lines[i+1]||"");
+    const nextNorm=normalizePdfLookupText(nextRaw);
+    if(nextRaw&&!isPdfLikelyFieldLabel(nextNorm)&&!pdfValueContainsAnotherLabel(nextRaw,activeLabels)) return nextRaw;
+  }
+  return "";
+}
+function parsePdfMetricValue(value){
+  const match=String(value||"").replace(/,/g,".").match(/(\d{1,5}(?:\.\d{1,3})?)/);
+  if(!match) return null;
+  const parsed=Number(match[1]);
+  return Number.isFinite(parsed)?parsed:null;
+}
+function extractPdfDimensionPair(value){
+  const match=String(value||"").replace(/,/g,".").match(/(?:Ø|ø)?\s*(\d{1,5}(?:\.\d{1,3})?)\s*[xX]\s*(\d{1,5}(?:\.\d{1,3})?)/);
+  if(!match) return {partDiameterMm:null,partLengthMm:null};
+  return {
+    partDiameterMm:Number(match[1]),
+    partLengthMm:Number(match[2]),
+  };
+}
+function derivePdfFallbackPartName(fileName){
+  return String(fileName||"")
+    .replace(/\.[^.]+$/,"")
+    .replace(/[_\-]+/g," ")
+    .replace(/\s+/g," ")
+    .trim();
+}
+function guessPartFieldsFromPdf({text="",lines=[],fileName=""}={}){
+  const textLines=Array.isArray(lines)&&lines.length>0
+    ? lines.map(line=>typeof line==="string"?{page:1,text:line}:line).filter(line=>String(line?.text||"").trim())
+    : String(text||"").split(/\n+/).map(raw=>({page:1,text:raw})).filter(line=>String(line.text||"").trim());
+  const name=sanitizePdfFieldValue(findPdfLabeledValue(textLines,PDF_PART_FIELD_LABELS.name)||derivePdfFallbackPartName(fileName));
+  const material=sanitizePdfFieldValue(findPdfLabeledValue(textLines,PDF_PART_FIELD_LABELS.material));
+  const customerPartCode=sanitizePdfFieldValue(findPdfLabeledValue(textLines,PDF_PART_FIELD_LABELS.customerPartCode)).toUpperCase();
+  const revisionRaw=sanitizePdfFieldValue(findPdfLabeledValue(textLines,PDF_PART_FIELD_LABELS.revision));
+  const customerName=sanitizePdfFieldValue(findPdfLabeledValue(textLines,PDF_PART_FIELD_LABELS.customerName));
+  const diameterLabel=parsePdfMetricValue(findPdfLabeledValue(textLines,PDF_PART_FIELD_LABELS.partDiameterMm));
+  const lengthLabel=parsePdfMetricValue(findPdfLabeledValue(textLines,PDF_PART_FIELD_LABELS.partLengthMm));
+  const dimensionPairSource=textLines.find(line=>/(?:Ø|ø)?\s*\d{1,5}(?:[.,]\d{1,3})?\s*[xX]\s*\d{1,5}(?:[.,]\d{1,3})?/.test(String(line.text||"")))?.text||"";
+  const dimensionPair=extractPdfDimensionPair(dimensionPairSource);
+  const revision=sanitizePdfFieldValue(String(revisionRaw||"").replace(/^(revizyon|revision|rev)\s*/i,"")).toUpperCase();
+  return {
+    name,
+    material,
+    customerPartCode,
+    revision,
+    customerName,
+    partDiameterMm:diameterLabel??dimensionPair.partDiameterMm,
+    partLengthMm:lengthLabel??dimensionPair.partLengthMm,
+  };
+}
 function normalizeDimensionToken(token){
   return String(token||"").replace(/\s+/g," ").trim().replace(/,+/g,",").replace(/\.+/g,".");
 }
@@ -6164,6 +6354,14 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
   const [selectedPartId,setSelectedPartId]=useState("");
   const [uploading,setUploading]=useState(false);
   const [showPartModal,setShowPartModal]=useState(false);
+  const [partEntryMode,setPartEntryMode]=useState("manual");
+  const [partPdfImportBusy,setPartPdfImportBusy]=useState(false);
+  const [partPdfImportError,setPartPdfImportError]=useState("");
+  const [partPdfImportSummary,setPartPdfImportSummary]=useState(null);
+  const [bulkPartImports,setBulkPartImports]=useState([]);
+  const [bulkPartImportBusy,setBulkPartImportBusy]=useState(false);
+  const [bulkPartImportSaving,setBulkPartImportSaving]=useState(false);
+  const [bulkPartImportError,setBulkPartImportError]=useState("");
   const [partForm,setPartForm]=useState(emptyPartForm);
   const [bomForm,setBomForm]=useState({componentType:"raw_material",componentCode:"",componentName:"",qtyPer:"1",scrapPct:"0",cutLengthMm:"0",barDiameterMm:"0"});
   const [routingForm,setRoutingForm]=useState({operationTypeId:"",machine:machines[0]||"CNC-1",setupSec:"300",cycleSec:"60",ncProgram:"",tooling:""});
@@ -6224,6 +6422,11 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
       if(d.type==="new"){
         setPartPage("list");
         setSelectedPartId("");
+        setPartEntryMode("manual");
+        setPartPdfImportBusy(false);
+        setPartPdfImportError("");
+        setPartPdfImportSummary(null);
+        resetBulkPartImportState();
         setPartForm({...emptyPartForm,partNo:nextPartNo()});
         setShowPartModal(true);
         window.scrollTo({top:0,behavior:"smooth"});
@@ -6343,6 +6546,133 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     if(lengthText) chips.push(`Uzunluk ${lengthText} mm`);
     return chips.join(" · ");
   };
+  const partEntryOptions=[
+    {id:"manual",label:"Manuel Giris",desc:"Alanlari elle doldur, dogrudan kaydet."},
+    {id:"pdf",label:"PDF'den Giris",desc:"Teknik resimden alanlari otomatik doldur."},
+    {id:"bulk",label:"Toplu PDF Yukle",desc:"Birden fazla PDF sec, taslak listeyle toplu kaydet."},
+  ];
+  const visiblePartEntryOptions=selectedPartId
+    ? partEntryOptions.filter(option=>option.id!=="bulk")
+    : partEntryOptions;
+  const resetPartPdfImportState=()=>{
+    setPartPdfImportBusy(false);
+    setPartPdfImportError("");
+    setPartPdfImportSummary(null);
+  };
+  const resetBulkPartImportState=()=>{
+    setBulkPartImportBusy(false);
+    setBulkPartImportSaving(false);
+    setBulkPartImportError("");
+    setBulkPartImports([]);
+  };
+  const mergeImportedPartDocument=(docs,doc)=>{
+    const key=`${String(doc?.name||"").toLowerCase()}|${Number(doc?.size)||0}|${String(doc?.type||"").toLowerCase()}`;
+    const rest=(Array.isArray(docs)?docs:[]).filter(item=>{
+      const itemKey=`${String(item?.name||"").toLowerCase()}|${Number(item?.size)||0}|${String(item?.type||"").toLowerCase()}`;
+      return itemKey!==key;
+    });
+    return [doc,...rest];
+  };
+  async function createPartDocumentFromFile(file){
+    return {
+      id:`doc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`,
+      name:file.name,
+      size:file.size,
+      type:file.type||"",
+      data:await fileToBase64(file),
+      uploadedAt:new Date().toISOString(),
+    };
+  }
+  function buildPartPdfImportSummary(file,parsed,pdfInfo){
+    const fields=[
+      parsed.customerPartCode?{label:"Parca Kodu",value:parsed.customerPartCode}:null,
+      parsed.name?{label:"Parca Adi",value:parsed.name}:null,
+      parsed.material?{label:"Malzeme",value:parsed.material}:null,
+      parsed.revision?{label:"Revizyon",value:parsed.revision}:null,
+      parsed.customerName?{label:"Musteri",value:parsed.customerName}:null,
+      parsed.partDiameterMm?{label:"Parca Capi",value:`${formatMmValue(parsed.partDiameterMm)} mm`}:null,
+      parsed.partLengthMm?{label:"Parca Uzunlugu",value:`${formatMmValue(parsed.partLengthMm)} mm`}:null,
+    ].filter(Boolean);
+    return {
+      fileName:file?.name||"",
+      pageCount:Math.max(1,safeNum(pdfInfo?.pageCount)||1),
+      fields,
+    };
+  }
+  function buildBulkImportDraft(file,doc,parsed,pdfInfo,errorMessage=""){
+    const matchedCustomer=parsed.customerName
+      ? customers.find(c=>normalizeCustomerKey(c.name)===normalizeCustomerKey(parsed.customerName))||null
+      : null;
+    const summary=buildPartPdfImportSummary(file,parsed,pdfInfo);
+    return {
+      id:`bulk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`,
+      partNo:"",
+      customerPartCode:parsed.customerPartCode||"",
+      customerId:matchedCustomer?.id||"",
+      customerName:parsed.customerName||"",
+      name:parsed.name||derivePdfFallbackPartName(file?.name||""),
+      material:parsed.material||"",
+      revision:parsed.revision||"A",
+      setupSec:emptyPartForm.setupSec,
+      cycleSec:emptyPartForm.cycleSec,
+      partDiameterMm:parsed.partDiameterMm?formatMmValue(parsed.partDiameterMm):"",
+      partLengthMm:parsed.partLengthMm?formatMmValue(parsed.partLengthMm):"",
+      ncProgramVersion:emptyPartForm.ncProgramVersion,
+      documents:doc?[doc]:[],
+      notes:"",
+      sourceFileName:file?.name||"",
+      pageCount:Math.max(1,safeNum(pdfInfo?.pageCount)||1),
+      summaryFields:Array.isArray(summary.fields)?summary.fields:[],
+      importError:errorMessage||"",
+    };
+  }
+  function assignBulkDraftPartNos(drafts,existingDrafts=[]){
+    const virtualParts=[
+      ...parts,
+      ...(Array.isArray(existingDrafts)?existingDrafts:[]).map(item=>({partNo:item.partNo})),
+    ];
+    return (Array.isArray(drafts)?drafts:[]).map(draft=>{
+      const partNo=nextPartNo(virtualParts);
+      virtualParts.push({partNo});
+      return {...draft,partNo};
+    });
+  }
+  function buildPartPayload({source,existing=null,resolvedCustomerId="",resolvedCustomerName=""}){
+    const existingBreakdown=(existing&&typeof existing.costBreakdown==="object"&&existing.costBreakdown)?existing.costBreakdown:{};
+    const preservedRawUnitCost=Math.max(0,safeNum(existing?.rawUnitCost));
+    const preservedLaborRateHour=Math.max(0,safeNum(existing?.laborRateHour));
+    const preservedMachineRateHour=Math.max(0,safeNum(existing?.machineRateHour));
+    const preservedMaterialCost=Math.max(0,safeNum(existingBreakdown.materialCost));
+    const preservedLaborCost=Math.max(0,safeNum(existingBreakdown.laborCost));
+    const preservedMachineCost=Math.max(0,safeNum(existingBreakdown.machineCost));
+    const preservedUnitCost=Math.max(0,safeNum(existing?.unitCost));
+    return {
+      partNo:(String(source?.partNo||"").trim().toUpperCase()||nextPartNo()),
+      customerPartCode:String(source?.customerPartCode||"").trim().toUpperCase(),
+      customerId:resolvedCustomerId,
+      customerName:resolvedCustomerName,
+      name:String(source?.name||"").trim(),
+      material:String(source?.material||"").trim(),
+      revision:(String(source?.revision||"A").trim().toUpperCase()||"A"),
+      setupSec:Math.max(0,safeNum(source?.setupSec)),
+      cycleSec:Math.max(0,safeNum(source?.cycleSec)),
+      partDiameterMm:Math.max(0,safeNum(source?.partDiameterMm)),
+      partLengthMm:Math.max(0,safeNum(source?.partLengthMm)),
+      rawUnitCost:preservedRawUnitCost,
+      laborRateHour:preservedLaborRateHour,
+      machineRateHour:preservedMachineRateHour,
+      ncProgramVersion:(String(source?.ncProgramVersion||"V1").trim().toUpperCase()||"V1"),
+      unitCost:preservedUnitCost,
+      costBreakdown:{materialCost:preservedMaterialCost,laborCost:preservedLaborCost,machineCost:preservedMachineCost},
+      documents:Array.isArray(source?.documents)?source.documents:[],
+      notes:String(source?.notes||"").trim(),
+      bomLines:Array.isArray(existing?.bomLines)?existing.bomLines:[],
+      routingOps:Array.isArray(existing?.routingOps)?existing.routingOps:[],
+      priceHistory:Array.isArray(existing?.priceHistory)?existing.priceHistory:[],
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser.id,
+    };
+  }
   const findMaterialForBom=(code,name)=>{
     const codeKey=normalized(code);
     const nameKey=normalized(name);
@@ -6395,6 +6725,9 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     setPartPage("detail");
   };
   const openEditPartModal=(part)=>{
+    setPartEntryMode("manual");
+    resetPartPdfImportState();
+    resetBulkPartImportState();
     if(part){
       setSelectedPartId(part.id||"");
       loadPartToForm(part);
@@ -6515,15 +6848,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     try{
       const docs=[];
       for(const file of files){
-        const data=await fileToBase64(file);
-        docs.push({
-          id:`doc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`,
-          name:file.name,
-          size:file.size,
-          type:file.type||"",
-          data,
-          uploadedAt:new Date().toISOString(),
-        });
+        docs.push(await createPartDocumentFromFile(file));
       }
       setPartForm(f=>({...f,documents:[...(f.documents||[]),...docs]}));
     }finally{
@@ -6532,6 +6857,235 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     }
   }
   const removePartDocument=(docId)=>setPartForm(f=>({...f,documents:(f.documents||[]).filter(d=>d.id!==docId)}));
+  async function importPartFromPdf(e){
+    const file=Array.from(e.target.files||[])[0];
+    if(!file) return;
+    if(!isPdfFile(file)){
+      alert("Lutfen yalnizca PDF dosyasi secin.");
+      e.target.value="";
+      return;
+    }
+    if(file.size>8*1024*1024){
+      alert(`"${file.name}" 8MB limitini asiyor.`);
+      e.target.value="";
+      return;
+    }
+    setPartEntryMode("pdf");
+    setPartPdfImportBusy(true);
+    setPartPdfImportError("");
+    setPartPdfImportSummary(null);
+    try{
+      const doc=await createPartDocumentFromFile(file);
+      const pdfInfo=await extractPdfTextFromDocument(doc,{maxPages:3});
+      const parsed=guessPartFieldsFromPdf({text:pdfInfo.text,lines:pdfInfo.lines,fileName:file.name});
+      const summary=buildPartPdfImportSummary(file,parsed,pdfInfo);
+      setPartForm(prev=>{
+        const matchedCustomer=parsed.customerName
+          ? customers.find(c=>normalizeCustomerKey(c.name)===normalizeCustomerKey(parsed.customerName))||null
+          : null;
+        return {
+          ...prev,
+          customerPartCode:parsed.customerPartCode||prev.customerPartCode,
+          customerId:matchedCustomer?.id||prev.customerId||"",
+          customerName:parsed.customerName||prev.customerName,
+          name:parsed.name||prev.name,
+          material:parsed.material||prev.material,
+          revision:parsed.revision||prev.revision,
+          partDiameterMm:parsed.partDiameterMm?formatMmValue(parsed.partDiameterMm):prev.partDiameterMm,
+          partLengthMm:parsed.partLengthMm?formatMmValue(parsed.partLengthMm):prev.partLengthMm,
+          documents:mergeImportedPartDocument(prev.documents,doc),
+        };
+      });
+      setPartPdfImportSummary(summary);
+      if(summary.fields.length===0){
+        setPartPdfImportError("PDF eklendi ancak otomatik doldurulabilecek net alan bulunamadi. Formu manuel tamamlayabilirsiniz.");
+      }
+    }catch(err){
+      setPartPdfImportError(err?.message||"PDF okunamadi.");
+    }finally{
+      setPartPdfImportBusy(false);
+      e.target.value="";
+    }
+  }
+  const updateBulkImportItem=(itemId,key,value)=>{
+    setBulkPartImports(prev=>prev.map(item=>{
+      if(item.id!==itemId) return item;
+      if(key==="customerName"){
+        const typed=String(value||"");
+        const matched=customers.find(c=>normalizeCustomerKey(c.name)===normalizeCustomerKey(typed))||null;
+        return {...item,customerName:typed,customerId:matched?.id||"",importError:""};
+      }
+      if(key==="revision"){
+        return {...item,revision:String(value||"").toUpperCase(),importError:""};
+      }
+      return {...item,[key]:value,importError:""};
+    }));
+  };
+  const removeBulkImportItem=(itemId)=>{
+    setBulkPartImports(prev=>prev.filter(item=>item.id!==itemId));
+  };
+  async function importBulkPartsFromPdf(e){
+    const files=Array.from(e.target.files||[]);
+    if(files.length===0) return;
+    setPartEntryMode("bulk");
+    setBulkPartImportBusy(true);
+    setBulkPartImportError("");
+    try{
+      const drafts=[];
+      const issues=[];
+      for(const file of files){
+        if(!isPdfFile(file)){
+          issues.push(`${file.name}: PDF degil.`);
+          continue;
+        }
+        if(file.size>8*1024*1024){
+          issues.push(`${file.name}: 8MB limitini asiyor.`);
+          continue;
+        }
+        let doc=null;
+        try{
+          doc=await createPartDocumentFromFile(file);
+          const pdfInfo=await extractPdfTextFromDocument(doc,{maxPages:3});
+          const parsed=guessPartFieldsFromPdf({text:pdfInfo.text,lines:pdfInfo.lines,fileName:file.name});
+          drafts.push(buildBulkImportDraft(file,doc,parsed,pdfInfo,""));
+        }catch(err){
+          if(!doc) doc=await createPartDocumentFromFile(file);
+          drafts.push(buildBulkImportDraft(
+            file,
+            doc,
+            {name:derivePdfFallbackPartName(file.name),revision:"A"},
+            {pageCount:1},
+            err?.message||"PDF okunamadi."
+          ));
+        }
+      }
+      if(drafts.length===0){
+        setBulkPartImportError(issues.join(" ")||"Toplu yuklemede islenecek PDF bulunamadi.");
+        return;
+      }
+      setBulkPartImports(prev=>[
+        ...prev,
+        ...assignBulkDraftPartNos(drafts,prev),
+      ]);
+      if(issues.length>0) setBulkPartImportError(issues.join(" "));
+    }finally{
+      setBulkPartImportBusy(false);
+      e.target.value="";
+    }
+  }
+  async function saveBulkParts(){
+    if(bulkPartImports.length===0){
+      alert("Toplu kayit icin once PDF secin.");
+      return;
+    }
+    setBulkPartImportSaving(true);
+    setBulkPartImportError("");
+    try{
+      const existingCustomerMap={};
+      customers.forEach(customer=>{
+        const byId=String(customer?.id||"").trim();
+        const byName=normalizeCustomerKey(customer?.name);
+        if(byId) existingCustomerMap[`id:${byId}`]=customer;
+        if(byName) existingCustomerMap[`name:${byName}`]=customer;
+      });
+      const missingCustomerNames=Array.from(new Set(
+        bulkPartImports
+          .map(item=>String(item.customerName||"").trim())
+          .filter(Boolean)
+          .filter(name=>!existingCustomerMap[`name:${normalizeCustomerKey(name)}`])
+      ));
+      const createdCustomers=[];
+      const customerPool=[...customers];
+      if(missingCustomerNames.length>0){
+        const shouldCreate=confirm(`${missingCustomerNames.join(", ")} musterileri kayitli degil. Toplu kayit icin olusturulsun mu?`);
+        if(!shouldCreate){
+          setBulkPartImportError("Kayitli olmayan musteriler icin toplu kayit iptal edildi.");
+          return;
+        }
+        for(const name of missingCustomerNames){
+          const customerPayload={
+            name,
+            code:nextCustomerCode(customerPool),
+            contact:"",
+            phone:"",
+            email:"",
+            notes:"Parca toplu PDF yuklemesinden otomatik olusturuldu.",
+            updatedAt:new Date().toISOString(),
+          };
+          const customerId=await window.DB.addDoc("customers",customerPayload);
+          if(!customerId){
+            alert(`"${name}" musterisi olusturulamadi. Toplu kayit durduruldu.`);
+            return;
+          }
+          const createdCustomer={id:customerId,...customerPayload,createdAt:new Date().toISOString()};
+          customerPool.push(createdCustomer);
+          createdCustomers.push(createdCustomer);
+          existingCustomerMap[`id:${customerId}`]=createdCustomer;
+          existingCustomerMap[`name:${normalizeCustomerKey(name)}`]=createdCustomer;
+        }
+      }
+      if(createdCustomers.length>0){
+        setCustomers(prev=>[...prev,...createdCustomers].sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+      }
+
+      const existingPartNos=new Set(parts.map(part=>String(part.partNo||"").trim().toUpperCase()).filter(Boolean));
+      const createdParts=[];
+      const failedItems=[];
+      for(const item of bulkPartImports){
+        const cleanName=String(item.name||"").trim();
+        let computedPartNo=String(item.partNo||"").trim().toUpperCase();
+        if(!computedPartNo||existingPartNos.has(computedPartNo)){
+          computedPartNo=nextPartNo([...parts,...createdParts]);
+        }
+        if(!cleanName){
+          failedItems.push({...item,importError:"Parca adi bos oldugu icin kaydedilemedi."});
+          continue;
+        }
+        if(existingPartNos.has(computedPartNo)){
+          failedItems.push({...item,importError:`${computedPartNo} zaten kayitli.`});
+          continue;
+        }
+        const pickedCustomer=String(item.customerId||"").trim()
+          ? existingCustomerMap[`id:${String(item.customerId||"").trim()}`]||null
+          : null;
+        const typedCustomerName=String(item.customerName||"").trim();
+        const matchedCustomer=!pickedCustomer&&typedCustomerName
+          ? existingCustomerMap[`name:${normalizeCustomerKey(typedCustomerName)}`]||null
+          : pickedCustomer;
+        const payload=buildPartPayload({
+          source:{...item,partNo:computedPartNo,name:cleanName},
+          existing:null,
+          resolvedCustomerId:matchedCustomer?.id||"",
+          resolvedCustomerName:matchedCustomer?.name||typedCustomerName,
+        });
+        const id=await window.DB.addDoc("parts",payload);
+        if(!id){
+          const err=window.DB.getLastError?window.DB.getLastError():"";
+          failedItems.push({...item,importError:err||"Veritabani kaydi olusmadi."});
+          continue;
+        }
+        existingPartNos.add(computedPartNo);
+        await addAuditLog(currentUser.id,"part",id,"create",null,payload,{module:"parts",source:"bulk_pdf"});
+        createdParts.push({id,...payload,createdAt:new Date().toISOString()});
+      }
+      if(createdParts.length>0){
+        setParts(prev=>[...prev,...createdParts].sort((a,b)=>(a.partNo||"").localeCompare(b.partNo||"","tr")));
+        setPartPage("list");
+      }
+      if(failedItems.length===0){
+        resetBulkPartImportState();
+        setPartEntryMode("manual");
+        setShowPartModal(false);
+        if(createdParts.length>0) alert(`${createdParts.length} parca toplu olarak kaydedildi.`);
+        return;
+      }
+      setBulkPartImports(failedItems);
+      setBulkPartImportError(`${createdParts.length} parca kaydedildi, ${failedItems.length} satir duzeltme bekliyor.`);
+      if(createdParts.length>0) alert(`${createdParts.length} parca kaydedildi. Kalan satirlari duzeltip tekrar deneyebilirsiniz.`);
+    }finally{
+      setBulkPartImportSaving(false);
+    }
+  }
 
   async function savePart(){
     if(!partForm.name.trim()){alert("Parca adi zorunlu.");return;}
@@ -6568,40 +7122,12 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
         setPartForm(f=>({...f,customerId:customerId,customerName:createdCustomer.name}));
       }
     }
-    const existingBreakdown=(existing&&typeof existing.costBreakdown==="object"&&existing.costBreakdown)?existing.costBreakdown:{};
-    const preservedRawUnitCost=Math.max(0,safeNum(existing?.rawUnitCost));
-    const preservedLaborRateHour=Math.max(0,safeNum(existing?.laborRateHour));
-    const preservedMachineRateHour=Math.max(0,safeNum(existing?.machineRateHour));
-    const preservedMaterialCost=Math.max(0,safeNum(existingBreakdown.materialCost));
-    const preservedLaborCost=Math.max(0,safeNum(existingBreakdown.laborCost));
-    const preservedMachineCost=Math.max(0,safeNum(existingBreakdown.machineCost));
-    const preservedUnitCost=Math.max(0,safeNum(existing?.unitCost));
-    const payload={
-      partNo:computedPartNo,
-      customerPartCode:String(partForm.customerPartCode||"").trim().toUpperCase(),
-      customerId:resolvedCustomerId,
-      customerName:resolvedCustomerName,
-      name:partForm.name.trim(),
-      material:partForm.material.trim(),
-      revision:(partForm.revision||"A").trim().toUpperCase(),
-      setupSec:Math.max(0,safeNum(partForm.setupSec)),
-      cycleSec:Math.max(0,safeNum(partForm.cycleSec)),
-      partDiameterMm:Math.max(0,safeNum(partForm.partDiameterMm)),
-      partLengthMm:Math.max(0,safeNum(partForm.partLengthMm)),
-      rawUnitCost:preservedRawUnitCost,
-      laborRateHour:preservedLaborRateHour,
-      machineRateHour:preservedMachineRateHour,
-      ncProgramVersion:(partForm.ncProgramVersion||"V1").trim().toUpperCase(),
-      unitCost:preservedUnitCost,
-      costBreakdown:{materialCost:preservedMaterialCost,laborCost:preservedLaborCost,machineCost:preservedMachineCost},
-      documents:Array.isArray(partForm.documents)?partForm.documents:[],
-      notes:partForm.notes.trim(),
-      bomLines:Array.isArray(existing?.bomLines)?existing.bomLines:[],
-      routingOps:Array.isArray(existing?.routingOps)?existing.routingOps:[],
-      priceHistory:Array.isArray(existing?.priceHistory)?existing.priceHistory:[],
-      updatedAt:new Date().toISOString(),
-      updatedBy:currentUser.id,
-    };
+    const payload=buildPartPayload({
+      source:{...partForm,partNo:computedPartNo},
+      existing,
+      resolvedCustomerId,
+      resolvedCustomerName,
+    });
     if(existing){
       const ok=await window.DB.updateDoc("parts",existing.id,{...existing,...payload});
       if(!ok){alert("Parca guncellenemedi.");return;}
@@ -6865,82 +7391,231 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
                 <button onClick={()=>setShowPartModal(false)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
               </div>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-              <div><span style={labelSt}>Parca No (Otomatik)</span><input style={{...inputSt,background:C.surface,color:C.muted2}} value={partForm.partNo||nextPartNo()} readOnly/></div>
-              <div><span style={labelSt}>Parca Musteri Kodu</span><input style={inputSt} value={partForm.customerPartCode} onChange={e=>fv("customerPartCode",e.target.value)} placeholder="MUS-PRC-001"/></div>
-              <div><span style={labelSt}>Parca Adi *</span><input style={inputSt} value={partForm.name} onChange={e=>fv("name",e.target.value)} placeholder="Govde"/></div>
-              <div>
-                <span style={labelSt}>Musteri (Secim)</span>
-                <SearchableSelect
-                  value={partForm.customerId||""}
-                  onChange={id=>{
-                    const picked=customers.find(c=>c.id===id)||null;
-                    setPartForm(f=>({...f,customerId:id,customerName:picked?.name||f.customerName||""}));
-                  }}
-                  placeholder="Musteri secin..."
-                  options={customers.map(c=>({value:c.id,label:`${c.name}${c.code?` (${c.code})`:""}`}))}
-                />
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8,marginBottom:12}}>
+              {visiblePartEntryOptions.map(option=>{
+                const active=partEntryMode===option.id;
+                return (
+                  <button
+                    key={option.id}
+                    onClick={()=>setPartEntryMode(option.id)}
+                    style={{
+                      border:`1px solid ${active?C.accent:C.border}`,
+                      background:active?`${C.accent}14`:C.surface,
+                      color:C.text,
+                      borderRadius:12,
+                      padding:"12px 14px",
+                      textAlign:"left",
+                      cursor:"pointer",
+                      fontFamily:"inherit",
+                    }}
+                  >
+                    <div style={{fontSize:13,fontWeight:800,color:active?C.accent:C.text}}>{option.label}</div>
+                    <div style={{fontSize:11,color:C.muted2,marginTop:4,lineHeight:1.45}}>{option.desc}</div>
+                  </button>
+                );
+              })}
+            </div>
+            {partEntryMode==="pdf"&&(
+              <div style={{marginBottom:12,padding:12,borderRadius:12,border:`1px solid ${C.border}`,background:C.surface}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+                  <div style={{minWidth:220,flex:"1 1 320px"}}>
+                    <div style={{fontSize:13,fontWeight:800,color:C.text}}>PDF'den Alanlari Doldur</div>
+                    <div style={{fontSize:11,color:C.muted2,marginTop:4,lineHeight:1.5}}>
+                      Ilk 3 sayfa taranir. Parca adi, malzeme, revizyon, kod ve olcu alanlari bulunursa forma otomatik yazilir.
+                    </div>
+                  </div>
+                  <label style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:partPdfImportBusy?"progress":"pointer",opacity:partPdfImportBusy?0.7:1}}>
+                    {partPdfImportBusy?"PDF Okunuyor...":"PDF Sec ve Doldur"}
+                    <input type="file" accept="application/pdf,.pdf" style={{display:"none"}} onChange={importPartFromPdf} disabled={partPdfImportBusy}/>
+                  </label>
+                </div>
+                {partPdfImportError&&(
+                  <div style={{marginTop:10,padding:"9px 10px",borderRadius:10,border:`1px solid ${C.red}55`,background:`${C.red}12`,fontSize:11,color:C.red}}>
+                    {partPdfImportError}
+                  </div>
+                )}
+                {partPdfImportSummary&&(
+                  <div style={{marginTop:10,padding:"10px 11px",borderRadius:10,border:`1px solid ${C.border}`,background:C.card}}>
+                    <div style={{fontSize:11,color:C.muted2}}>
+                      {partPdfImportSummary.fileName||"PDF"} · {partPdfImportSummary.pageCount} sayfa tarandi
+                    </div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>
+                      {partPdfImportSummary.fields.length>0 ? partPdfImportSummary.fields.map(field=>(
+                        <span key={`${field.label}_${field.value}`} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"5px 8px",borderRadius:999,border:`1px solid ${C.border}`,background:C.surface,fontSize:11,color:C.text}}>
+                          <strong style={{color:C.muted2,fontWeight:700}}>{field.label}:</strong> {field.value}
+                        </span>
+                      )) : (
+                        <span style={{fontSize:11,color:C.muted2}}>Algilanan alan yok. Formu manuel doldurabilirsiniz.</span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
-              <div>
-                <span style={labelSt}>Musteri Adi</span>
-                <input
-                  style={inputSt}
-                  value={partForm.customerName}
-                  onChange={e=>{
-                    const typed=e.target.value;
-                    const matched=customers.find(c=>normalizeCustomerKey(c.name)===normalizeCustomerKey(typed))||null;
-                    setPartForm(f=>({...f,customerName:typed,customerId:matched?.id||""}));
-                  }}
-                  placeholder="Listede yoksa yazin"
-                />
-                <div style={{fontSize:10,color:C.muted2,marginTop:3}}>Kaydetmede listede yoksa yeni musteri olusturma onayi sorulur.</div>
-              </div>
-              <div><span style={labelSt}>Revizyon</span><input style={inputSt} value={partForm.revision} onChange={e=>fv("revision",e.target.value)}/></div>
-              <div>
-                <span style={labelSt}>Malzeme</span>
-                <SearchableSelect
-                  value={partForm.material}
-                  onChange={v=>fv("material",v)}
-                  placeholder="Malzeme secin..."
-                  options={materials.map(m=>({value:m.name||"",label:`${m.code?`${m.code} - `:""}${m.name||""}`}))}
-                />
-              </div>
-              <div><span style={labelSt}>Cevrim (sn)</span><input style={inputSt} type="number" min="0" value={partForm.cycleSec} onChange={e=>fv("cycleSec",e.target.value)}/></div>
-              <div><span style={labelSt}>Parca Capi (mm)</span><input style={inputSt} type="number" min="0" step="0.01" value={partForm.partDiameterMm} onChange={e=>fv("partDiameterMm",e.target.value)}/></div>
-              <div><span style={labelSt}>Parca Uzunlugu (mm)</span><input style={inputSt} type="number" min="0" step="0.01" value={partForm.partLengthMm} onChange={e=>fv("partLengthMm",e.target.value)}/></div>
-              <div><span style={labelSt}>NC Program Versiyon</span><input style={inputSt} value={partForm.ncProgramVersion} onChange={e=>fv("ncProgramVersion",e.target.value)} placeholder="V1"/></div>
-              <div>
-                <span style={labelSt}>Dosyalar</span>
-                <label style={{...inputSt,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
-                  <span style={{fontSize:12,color:C.muted2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{uploading?"Yukleniyor...":"Dosya sec (coklu)"}</span>
-                  <span style={{fontSize:11,color:C.accent}}>{(partForm.documents||[]).length} dosya</span>
-                  <input type="file" multiple style={{display:"none"}} onChange={pickPartDocuments}/>
-                </label>
-                <div style={{fontSize:11,color:C.muted2,marginTop:4}}>Istedigin kadar dosya ekleyebilirsin (STEP/PDF/Resim vb).</div>
-                {(partForm.documents||[]).length>0&&(
-                  <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:5,maxHeight:120,overflowY:"auto",paddingRight:4}}>
-                    {(partForm.documents||[]).map(doc=>(
-                      <div key={doc.id||doc.name} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 7px"}}>
-                        <div style={{fontSize:11,color:C.muted2,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                          {doc.name||"dosya"}{doc.size?` (${Math.max(1,Math.round((Number(doc.size)||0)/1024))} KB)`:""}
+            )}
+            {partEntryMode==="bulk"&&(
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                <div style={{padding:12,borderRadius:12,border:`1px solid ${C.border}`,background:C.surface}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+                    <div style={{minWidth:220,flex:"1 1 360px"}}>
+                      <div style={{fontSize:13,fontWeight:800,color:C.text}}>Toplu PDF'den Parca Ekle</div>
+                      <div style={{fontSize:11,color:C.muted2,marginTop:4,lineHeight:1.5}}>
+                        Birden fazla PDF sec. Her dosya icin bir parca taslagi olusturulur; alanlari duzeltip hepsini tek seferde kaydedebilirsin.
+                      </div>
+                    </div>
+                    <label style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:bulkPartImportBusy?"progress":"pointer",opacity:bulkPartImportBusy?0.7:1}}>
+                      {bulkPartImportBusy?"PDF'ler Okunuyor...":"PDF'leri Sec"}
+                      <input type="file" accept="application/pdf,.pdf" multiple style={{display:"none"}} onChange={importBulkPartsFromPdf} disabled={bulkPartImportBusy||bulkPartImportSaving}/>
+                    </label>
+                  </div>
+                  {bulkPartImportError&&(
+                    <div style={{marginTop:10,padding:"9px 10px",borderRadius:10,border:`1px solid ${C.warn}66`,background:`${C.warn}12`,fontSize:11,color:C.text}}>
+                      {bulkPartImportError}
+                    </div>
+                  )}
+                </div>
+                {bulkPartImports.length===0?(
+                  <div style={{padding:"18px 14px",borderRadius:12,border:`1px dashed ${C.border}`,background:C.surface,fontSize:12,color:C.muted2,textAlign:"center"}}>
+                    Henuz toplu PDF secilmedi.
+                  </div>
+                ):(
+                  <div style={{display:"flex",flexDirection:"column",gap:10,maxHeight:"52vh",overflowY:"auto",paddingRight:2}}>
+                    {bulkPartImports.map((item,idx)=>(
+                      <div key={item.id} style={{border:`1px solid ${C.border}`,borderRadius:12,padding:12,background:C.surface}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,flexWrap:"wrap"}}>
+                          <div style={{minWidth:220}}>
+                            <div style={{fontSize:13,fontWeight:800,color:C.text}}>
+                              {item.sourceFileName||`PDF ${idx+1}`}
+                            </div>
+                            <div style={{fontSize:11,color:C.muted2,marginTop:4}}>
+                              {item.partNo||"-"} · {Math.max(1,safeNum(item.pageCount)||1)} sayfa
+                            </div>
+                          </div>
+                          <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                            {item.importError&&<Badge label="Kontrol Gerekli" color={C.warn}/>}
+                            <button onClick={()=>removeBulkImportItem(item.id)} style={{...btnSt("danger"),padding:"6px 9px",fontSize:11}}>Satiri Sil</button>
+                          </div>
                         </div>
-                        <button onClick={()=>removePartDocument(doc.id)} style={{...btnSt("danger"),padding:"3px 7px",fontSize:10}}>Sil</button>
+                        {item.importError&&(
+                          <div style={{marginTop:8,padding:"8px 10px",borderRadius:10,border:`1px solid ${C.warn}55`,background:`${C.warn}14`,fontSize:11,color:C.text}}>
+                            {item.importError}
+                          </div>
+                        )}
+                        {Array.isArray(item.summaryFields)&&item.summaryFields.length>0&&(
+                          <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>
+                            {item.summaryFields.map(field=>(
+                              <span key={`${item.id}_${field.label}_${field.value}`} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 8px",borderRadius:999,border:`1px solid ${C.border}`,background:C.card,fontSize:10,color:C.text}}>
+                                <strong style={{fontWeight:700,color:C.muted2}}>{field.label}:</strong> {field.value}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8,marginTop:10}}>
+                          <div><span style={labelSt}>Parca No</span><input style={{...inputSt,background:C.card,color:C.muted2}} value={item.partNo||""} readOnly/></div>
+                          <div><span style={labelSt}>Parca Musteri Kodu</span><input style={inputSt} value={item.customerPartCode||""} onChange={e=>updateBulkImportItem(item.id,"customerPartCode",e.target.value)} placeholder="MUS-PRC-001"/></div>
+                          <div><span style={labelSt}>Parca Adi *</span><input style={inputSt} value={item.name||""} onChange={e=>updateBulkImportItem(item.id,"name",e.target.value)} placeholder="Govde"/></div>
+                          <div><span style={labelSt}>Musteri Adi</span><input style={inputSt} value={item.customerName||""} onChange={e=>updateBulkImportItem(item.id,"customerName",e.target.value)} placeholder="Firma adi"/></div>
+                          <div><span style={labelSt}>Malzeme</span><input style={inputSt} value={item.material||""} onChange={e=>updateBulkImportItem(item.id,"material",e.target.value)} placeholder="AISI 304"/></div>
+                          <div><span style={labelSt}>Revizyon</span><input style={inputSt} value={item.revision||""} onChange={e=>updateBulkImportItem(item.id,"revision",e.target.value)} placeholder="A"/></div>
+                          <div><span style={labelSt}>Parca Capi (mm)</span><input style={inputSt} type="number" min="0" step="0.01" value={item.partDiameterMm||""} onChange={e=>updateBulkImportItem(item.id,"partDiameterMm",e.target.value)}/></div>
+                          <div><span style={labelSt}>Parca Uzunlugu (mm)</span><input style={inputSt} type="number" min="0" step="0.01" value={item.partLengthMm||""} onChange={e=>updateBulkImportItem(item.id,"partLengthMm",e.target.value)}/></div>
+                        </div>
                       </div>
                     ))}
                   </div>
                 )}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <div style={{fontSize:12,color:C.muted2}}>
+                    Hazir taslak: {bulkPartImports.length}
+                  </div>
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                    {bulkPartImports.length>0&&<button onClick={resetBulkPartImportState} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Listeyi Temizle</button>}
+                    <button onClick={saveBulkParts} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={bulkPartImportBusy||bulkPartImportSaving||bulkPartImports.length===0}>
+                      {bulkPartImportSaving?`Kaydediliyor (${bulkPartImports.length})...`:`Toplu Kaydet (${bulkPartImports.length})`}
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div style={{marginTop:8}}>
-              <span style={labelSt}>Not</span>
-              <textarea rows={2} style={{...inputSt,minHeight:62,resize:"vertical"}} value={partForm.notes} onChange={e=>fv("notes",e.target.value)}/>
-            </div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:10}}>
-              <div style={{fontSize:12,color:C.muted2}}>
-                Maliyet alanlari sadeleştirildi.
-              </div>
-              <button onClick={savePart} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Parca Kaydet/Guncelle</button>
-            </div>
+            )}
+            {partEntryMode!=="bulk"&&(
+              <>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8}}>
+                  <div><span style={labelSt}>Parca No (Otomatik)</span><input style={{...inputSt,background:C.surface,color:C.muted2}} value={partForm.partNo||nextPartNo()} readOnly/></div>
+                  <div><span style={labelSt}>Parca Musteri Kodu</span><input style={inputSt} value={partForm.customerPartCode} onChange={e=>fv("customerPartCode",e.target.value)} placeholder="MUS-PRC-001"/></div>
+                  <div><span style={labelSt}>Parca Adi *</span><input style={inputSt} value={partForm.name} onChange={e=>fv("name",e.target.value)} placeholder="Govde"/></div>
+                  <div>
+                    <span style={labelSt}>Musteri (Secim)</span>
+                    <SearchableSelect
+                      value={partForm.customerId||""}
+                      onChange={id=>{
+                        const picked=customers.find(c=>c.id===id)||null;
+                        setPartForm(f=>({...f,customerId:id,customerName:picked?.name||f.customerName||""}));
+                      }}
+                      placeholder="Musteri secin..."
+                      options={customers.map(c=>({value:c.id,label:`${c.name}${c.code?` (${c.code})`:""}`}))}
+                    />
+                  </div>
+                  <div>
+                    <span style={labelSt}>Musteri Adi</span>
+                    <input
+                      style={inputSt}
+                      value={partForm.customerName}
+                      onChange={e=>{
+                        const typed=e.target.value;
+                        const matched=customers.find(c=>normalizeCustomerKey(c.name)===normalizeCustomerKey(typed))||null;
+                        setPartForm(f=>({...f,customerName:typed,customerId:matched?.id||""}));
+                      }}
+                      placeholder="Listede yoksa yazin"
+                    />
+                    <div style={{fontSize:10,color:C.muted2,marginTop:3}}>Kaydetmede listede yoksa yeni musteri olusturma onayi sorulur.</div>
+                  </div>
+                  <div><span style={labelSt}>Revizyon</span><input style={inputSt} value={partForm.revision} onChange={e=>fv("revision",e.target.value)}/></div>
+                  <div>
+                    <span style={labelSt}>Malzeme</span>
+                    <SearchableSelect
+                      value={partForm.material}
+                      onChange={v=>fv("material",v)}
+                      placeholder="Malzeme secin..."
+                      options={materials.map(m=>({value:m.name||"",label:`${m.code?`${m.code} - `:""}${m.name||""}`}))}
+                    />
+                  </div>
+                  <div><span style={labelSt}>Cevrim (sn)</span><input style={inputSt} type="number" min="0" value={partForm.cycleSec} onChange={e=>fv("cycleSec",e.target.value)}/></div>
+                  <div><span style={labelSt}>Parca Capi (mm)</span><input style={inputSt} type="number" min="0" step="0.01" value={partForm.partDiameterMm} onChange={e=>fv("partDiameterMm",e.target.value)}/></div>
+                  <div><span style={labelSt}>Parca Uzunlugu (mm)</span><input style={inputSt} type="number" min="0" step="0.01" value={partForm.partLengthMm} onChange={e=>fv("partLengthMm",e.target.value)}/></div>
+                  <div><span style={labelSt}>NC Program Versiyon</span><input style={inputSt} value={partForm.ncProgramVersion} onChange={e=>fv("ncProgramVersion",e.target.value)} placeholder="V1"/></div>
+                  <div>
+                    <span style={labelSt}>Dosyalar</span>
+                    <label style={{...inputSt,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
+                      <span style={{fontSize:12,color:C.muted2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{uploading?"Yukleniyor...":"Dosya sec (coklu)"}</span>
+                      <span style={{fontSize:11,color:C.accent}}>{(partForm.documents||[]).length} dosya</span>
+                      <input type="file" multiple style={{display:"none"}} onChange={pickPartDocuments}/>
+                    </label>
+                    <div style={{fontSize:11,color:C.muted2,marginTop:4}}>Istedigin kadar dosya ekleyebilirsin. PDF modunda secilen dosya da burada otomatik listelenir.</div>
+                    {(partForm.documents||[]).length>0&&(
+                      <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:5,maxHeight:120,overflowY:"auto",paddingRight:4}}>
+                        {(partForm.documents||[]).map(doc=>(
+                          <div key={doc.id||doc.name} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 7px"}}>
+                            <div style={{fontSize:11,color:C.muted2,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                              {doc.name||"dosya"}{doc.size?` (${Math.max(1,Math.round((Number(doc.size)||0)/1024))} KB)`:""}
+                            </div>
+                            <button onClick={()=>removePartDocument(doc.id)} style={{...btnSt("danger"),padding:"3px 7px",fontSize:10}}>Sil</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div style={{marginTop:8}}>
+                  <span style={labelSt}>Not</span>
+                  <textarea rows={2} style={{...inputSt,minHeight:62,resize:"vertical"}} value={partForm.notes} onChange={e=>fv("notes",e.target.value)}/>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:10}}>
+                  <div style={{fontSize:12,color:C.muted2}}>
+                    Maliyet alanlari sadeleştirildi.
+                  </div>
+                  <button onClick={savePart} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Parca Kaydet/Guncelle</button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
