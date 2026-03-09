@@ -3660,9 +3660,9 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
     setBrandingMenuSaving(true);
     const ok=await onMenuAccentColorChange(normalized);
     setBrandingMenuSaving(false);
-    if(ok===false){alert("Menu rengi kaydedilemedi.");return;}
+    if(ok===false){alert("Tema rengi kaydedilemedi.");return;}
     setBrandingMenuColor(normalized);
-    alert("Menu rengi kaydedildi.");
+    alert("Tema rengi kaydedildi.");
   }
   async function saveQuoteTemplate(){
     setTemplateSaving(true);
@@ -3769,6 +3769,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
   const hiddenMenuSet=useMemo(()=>new Set((menuConfig&&Array.isArray(menuConfig.hiddenTabs))?menuConfig.hiddenTabs:[]),[menuConfig]);
   const menuVisibleCount=menuRows.filter(row=>MENU_ALWAYS_VISIBLE_TAB_IDS.includes(row.id)||!hiddenMenuSet.has(row.id)).length;
   const normalizedMenuAccentColor=normalizeHexColor(brandingMenuColor,DEFAULT_BRANDING_SETTINGS.menuAccentColor);
+  const appPreviewTone=buildAppTheme(themeMode,normalizedMenuAccentColor);
   const menuPreviewTone=buildMenuColorTheme(normalizedMenuAccentColor,themeMode);
   if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yükleniyor...</div>;
 
@@ -3833,10 +3834,10 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
               </button>
             </div>
             <div style={{marginTop:14,paddingTop:12,borderTop:`1px solid ${C.border}`}}>
-              <div style={{fontSize:12,color:C.muted2,marginBottom:10}}>Sol menunun ana rengini secin. Aktif satir, kenarlik ve arka plan tonlari bu renkten otomatik uretilir.</div>
+              <div style={{fontSize:12,color:C.muted2,marginBottom:10}}>Uygulamanin ana rengini secin. Sol menu, primary butonlar, aktif sekmeler ve vurgu alanlari bu renkten otomatik uretilir.</div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:12,alignItems:"start"}}>
                 <div>
-                  <span style={labelSt}>Menu Ana Rengi</span>
+                  <span style={labelSt}>Tema Ana Rengi</span>
                   <div style={{display:"flex",gap:8}}>
                     <input style={{...inputSt,padding:0,width:50,height:38,flex:"0 0 auto"}} type="color" value={normalizedMenuAccentColor} onChange={e=>setBrandingMenuColor(e.target.value)}/>
                     <input style={{...inputSt,flex:1}} value={brandingMenuColor} onChange={e=>setBrandingMenuColor(e.target.value)} placeholder="#3AAFA9"/>
@@ -3863,16 +3864,24 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
                     ))}
                   </div>
                   <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}>
-                    <button onClick={saveMenuAccent} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={brandingMenuSaving}>{brandingMenuSaving?"Kaydediliyor...":"Menu Rengini Kaydet"}</button>
+                    <button onClick={saveMenuAccent} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={brandingMenuSaving}>{brandingMenuSaving?"Kaydediliyor...":"Tema Rengini Kaydet"}</button>
                     <button onClick={()=>setBrandingMenuColor(DEFAULT_BRANDING_SETTINGS.menuAccentColor)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}} disabled={brandingMenuSaving}>Varsayilan</button>
                   </div>
                 </div>
-                <div style={{background:menuPreviewTone.bg,border:`1px solid ${menuPreviewTone.border}`,borderRadius:12,padding:12,color:menuPreviewTone.text,boxShadow:menuPreviewTone.shellShadow}}>
-                  <div style={{fontSize:11,color:menuPreviewTone.muted,letterSpacing:.7,textTransform:"uppercase",fontWeight:700,marginBottom:8}}>Menu Onizleme</div>
-                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                    <div style={{padding:"9px 10px",borderRadius:8,background:menuPreviewTone.activeBg,border:`1px solid ${menuPreviewTone.activeBorder}`,color:menuPreviewTone.activeText,fontWeight:700}}>Dashboard</div>
-                    <div style={{padding:"9px 10px",borderRadius:8,background:menuPreviewTone.bgSoft,border:`1px solid ${menuPreviewTone.border}`,color:menuPreviewTone.text}}>Planlama</div>
-                    <div style={{padding:"9px 10px",borderRadius:8,border:`1px dashed ${menuPreviewTone.border}`,color:menuPreviewTone.muted}}>Secilen tonla baglantili ara renkler otomatik ayarlanir.</div>
+                <div style={{background:appPreviewTone.card,border:`1px solid ${appPreviewTone.border}`,borderRadius:12,padding:12,color:appPreviewTone.text,boxShadow:themeMode==="dark"?"0 18px 36px rgba(0,0,0,.26)":"0 16px 30px rgba(15,23,42,.08)"}}>
+                  <div style={{fontSize:11,color:appPreviewTone.muted,letterSpacing:.7,textTransform:"uppercase",fontWeight:700,marginBottom:8}}>Tema Onizleme</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:10}}>
+                    <button style={{border:`1px solid ${appPreviewTone.accent}`,background:appPreviewTone.accent,color:readableTextFor(appPreviewTone.accent),borderRadius:8,padding:"8px 12px",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>Yeni Kayit</button>
+                    <button style={{border:`1px solid ${appPreviewTone.border}`,background:appPreviewTone.surface,color:appPreviewTone.text,borderRadius:8,padding:"8px 12px",fontSize:12,fontWeight:600,fontFamily:"inherit"}}>Iptal</button>
+                    <span style={{display:"inline-flex",alignItems:"center",padding:"8px 10px",borderRadius:999,background:appPreviewTone.accentDim,color:appPreviewTone.accent,fontSize:11,fontWeight:700}}>Aktif Filtre</span>
+                  </div>
+                  <div style={{background:menuPreviewTone.bg,border:`1px solid ${menuPreviewTone.border}`,borderRadius:10,padding:10,color:menuPreviewTone.text,boxShadow:menuPreviewTone.shellShadow}}>
+                    <div style={{fontSize:10,color:menuPreviewTone.muted,letterSpacing:.7,textTransform:"uppercase",fontWeight:700,marginBottom:7}}>Sol Menu</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                      <div style={{padding:"9px 10px",borderRadius:8,background:menuPreviewTone.activeBg,border:`1px solid ${menuPreviewTone.activeBorder}`,color:menuPreviewTone.activeText,fontWeight:700}}>Dashboard</div>
+                      <div style={{padding:"9px 10px",borderRadius:8,background:menuPreviewTone.bgSoft,border:`1px solid ${menuPreviewTone.border}`,color:menuPreviewTone.text}}>Planlama</div>
+                      <div style={{padding:"9px 10px",borderRadius:8,border:`1px dashed ${menuPreviewTone.border}`,color:menuPreviewTone.muted}}>Secilen ton uygulama genelinde kullanilir.</div>
+                    </div>
                   </div>
                 </div>
               </div>
