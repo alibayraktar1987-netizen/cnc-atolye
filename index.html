@@ -2817,7 +2817,7 @@ function GlobalSearchHero({
   const overlayWidth=isMobile
     ? "min(calc(100vw - 20px), 100%)"
     : (isTablet?"min(760px, calc(100vw - 48px))":"min(920px, calc(100vw - 72px))");
-  const groupGridColumns=isMobile?"1fr":(isTablet?"1fr":"repeat(2,minmax(0,1fr))");
+  const groupGridColumns="1fr";
   useEffect(()=>{
     if(!open) return;
     const prevOverflow=typeof document!=="undefined"?document.body.style.overflow:"";
