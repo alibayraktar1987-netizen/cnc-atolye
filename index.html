@@ -15320,7 +15320,6 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
     load();
   }
 
-  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
   const toYmd=value=>{
     const raw=String(value||"").trim();
     if(!raw) return "";
@@ -15588,6 +15587,8 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
     if(col.id==="quality") return <td key={col.id} style={{padding:"8px 10px",color:s.qualityPct<90?C.warn:C.green,textAlign:"right"}}>%{s.qualityPct}</td>;
     return null;
   };
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
 
   return (
     <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
@@ -16936,8 +16937,6 @@ function FinanceModule({currentUser,filtersVisible=true}){
     setRows(prev=>prev.map(x=>x.id===row.id?{...x,...patch}:x));
   }
 
-  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
-
   const q=search.trim().toLowerCase();
   const filtered=rows.filter(row=>{
     if(flowFilter!=="all"&&(row.flow||"tahsilat")!==flowFilter) return false;
@@ -17040,6 +17039,8 @@ function FinanceModule({currentUser,filtersVisible=true}){
     }
     return null;
   };
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
 
   return (
     <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
