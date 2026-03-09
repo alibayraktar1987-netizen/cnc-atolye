@@ -597,6 +597,18 @@ const PART_LIBRARY_LIST_COLUMNS = [
   {id:"unit_cost",label:"Birim Maliyet",width:150,align:"right"},
   {id:"files",label:"Dosya",width:90,align:"right"},
 ];
+const TASK_ASSIGNMENT_LIST_COLUMNS = [
+  {id:"task",label:"Gorev",width:320,required:true},
+  {id:"assignee",label:"Calisan",width:180},
+  {id:"machine",label:"Tezgah",width:140},
+  {id:"order",label:"Is Emri",width:148},
+  {id:"due",label:"Termin",width:128},
+  {id:"status",label:"Durum",width:140},
+  {id:"priority",label:"Oncelik",width:120},
+  {id:"recurrence",label:"Tekrar",width:136},
+  {id:"updated",label:"Guncelleme",width:138},
+  {id:"actions",label:"Islem",width:340,align:"right",required:true},
+];
 const PURCHASE_REQUEST_LIST_COLUMNS = [
   {id:"request",label:"Talep",width:320,required:true},
   {id:"qty_date",label:"Miktar / Tarih",width:170},
@@ -3009,6 +3021,8 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
   const [query,setQuery]=useState("");
   const [filterStatus,setFilterStatus]=useState("all");
   const [filterAssignee,setFilterAssignee]=useState("all");
+  const [taskRowsPerPage,setTaskRowsPerPage]=useState(10);
+  const [taskListPageIdx,setTaskListPageIdx]=useState(1);
   const [form,setForm]=useState({
     assigneeId:"",
     title:"",
@@ -3020,6 +3034,19 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
     machine:machines[0]||"",
     orderId:"",
   });
+  const taskListPanelRef=useRef(null);
+  const {
+    height:taskListPanelHeight,
+    isNarrow:taskListPanelsStacked,
+  }=useViewportPanelMetrics(taskListPanelRef,{minHeight:340,bottomGap:14,narrowWidth:1180});
+  const {
+    columns:taskListTableColumns,
+    visibleColumns:visibleTaskListTableColumns,
+    tableMinWidth:taskListTableMinWidth,
+    moveColumn:moveTaskListTableColumn,
+    toggleColumn:toggleTaskListTableColumn,
+    resetColumns:resetTaskListTableColumns,
+  }=useTableColumnLayout("task_assignment_list",TASK_ASSIGNMENT_LIST_COLUMNS);
   const canAssign=hasPermission(currentUser,"assign_tasks")||currentUser.role==="admin"||hasPermission(currentUser,"approve_users");
 
   const load=useCallback(async()=>{
@@ -3125,6 +3152,15 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
     ].join(" ").toLowerCase();
     return hay.includes(queryText);
   });
+  const taskTotalPages=Math.max(1,Math.ceil(filteredTasks.length/Math.max(1,taskRowsPerPage)));
+  useEffect(()=>{
+    setTaskListPageIdx(1);
+  },[query,filterStatus,filterAssignee,taskRowsPerPage]);
+  useEffect(()=>{
+    setTaskListPageIdx(prev=>Math.max(1,Math.min(prev,taskTotalPages)));
+  },[taskTotalPages]);
+  const taskListStart=(taskListPageIdx-1)*Math.max(1,taskRowsPerPage);
+  const pagedTasks=filteredTasks.slice(taskListStart,taskListStart+Math.max(1,taskRowsPerPage));
   useEffect(()=>{
     if(!canAssign&&calendarScope!=="me"){
       setCalendarScope("me");
@@ -3385,8 +3421,17 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
   const taskSplitWrapStyle={
     display:"flex",
     gap:10,
-    alignItems:"stretch",
+    alignItems:taskListPanelsStacked?"flex-start":"stretch",
     flexWrap:"wrap",
+    ...(taskListPanelsStacked
+      ? {}
+      : {
+        height:taskListPanelHeight,
+        maxHeight:taskListPanelHeight,
+        flex:1,
+        minHeight:0,
+        overflow:"hidden",
+      }),
   };
   const taskFilterPanelStyle={
     flex:"0 0 250px",
@@ -3399,6 +3444,15 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
     display:"flex",
     flexDirection:"column",
     gap:10,
+    ...(taskListPanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+        overflowY:"auto",
+        overscrollBehavior:"contain",
+        scrollbarGutter:"stable",
+      }),
   };
   const taskListColumnStyle={
     flex:"1 1 760px",
@@ -3406,10 +3460,94 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
     display:"flex",
     flexDirection:"column",
     gap:8,
+    ...(taskListPanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+      }),
+  };
+  const taskTableCardStyle={
+    background:C.surface,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    overflow:"hidden",
+    display:"flex",
+    flexDirection:"column",
+    ...(taskListPanelsStacked?{}:{flex:1,minHeight:0}),
+  };
+  const taskTableScrollStyle=taskListPanelsStacked
+    ? {overflowX:"auto"}
+    : {overflow:"auto",flex:1,minHeight:0,overscrollBehavior:"contain"};
+  const taskListGridTemplate=useMemo(
+    ()=>visibleTaskListTableColumns.map(col=>`${Math.max(84,safeNum(col.width)||140)}px`).join(" "),
+    [visibleTaskListTableColumns]
+  );
+  const renderTaskListCell=(task,col)=>{
+    const sMeta=statusMeta(task.status||"open");
+    const pMeta=priorityMeta(task.priority||"medium");
+    const due=String(task.dueDate||"");
+    const isOverdue=due&&due<todayStr()&&!["done","cancelled"].includes(task.status||"");
+    const canAct=canAssign||task.assigneeId===currentUser.id;
+    const isRecurring=(task.recurrenceMode==="weekly"||task.recurrenceMode==="monthly")&&Number(task.recurrenceCount||0)>1;
+    const recurrenceLabel=task.recurrenceMode==="weekly"?"Haftalik":"Aylik";
+    if(col.id==="task"){
+      return (
+        <div style={{minWidth:0}}>
+          <div style={{fontSize:12,fontWeight:800,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{task.title||"-"}</div>
+          <div style={{fontSize:10,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+            {task.detail|| (task.assignedByName?`Atayan: ${task.assignedByName}`:"-")}
+          </div>
+        </div>
+      );
+    }
+    if(col.id==="assignee"){
+      return <div style={{fontSize:11,color:C.text,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{task.assigneeName||task.assigneeId||"-"}</div>;
+    }
+    if(col.id==="machine"){
+      return <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{task.machine||"-"}</div>;
+    }
+    if(col.id==="order"){
+      return <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{task.orderCode||"-"}</div>;
+    }
+    if(col.id==="due"){
+      return <div style={{fontSize:11,color:isOverdue?C.red:C.muted2,fontWeight:isOverdue?700:500}}>{due||"-"}</div>;
+    }
+    if(col.id==="status"){
+      return <Badge label={sMeta.label} color={sMeta.color}/>;
+    }
+    if(col.id==="priority"){
+      return <Badge label={pMeta.label} color={pMeta.color}/>;
+    }
+    if(col.id==="recurrence"){
+      return (
+        <div style={{fontSize:11,color:C.muted2}}>
+          {isRecurring
+            ? `${recurrenceLabel}${task.recurrenceIndex&&task.recurrenceCount?` (${task.recurrenceIndex}/${task.recurrenceCount})`:""}`
+            : "-"}
+        </div>
+      );
+    }
+    if(col.id==="updated"){
+      const stamp=String(task.updatedAt||task.createdAt||"");
+      return <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap"}}>{stamp?stamp.slice(0,16).replace("T"," "):"-"}</div>;
+    }
+    if(col.id==="actions"){
+      return (
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+          {canAct&&task.status==="open"&&<button onClick={()=>updateTaskStatus(task,"in_progress")} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Basla</button>}
+          {canAct&&["open","in_progress"].includes(task.status||"")&&<button onClick={()=>updateTaskStatus(task,"done")} style={{...btnSt("green"),padding:"5px 8px",fontSize:11}}>Tamamla</button>}
+          {canAct&&task.status==="done"&&<button onClick={()=>updateTaskStatus(task,"open")} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Yeniden Ac</button>}
+          {canAssign&&task.status!=="cancelled"&&<button onClick={()=>updateTaskStatus(task,"cancelled")} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Iptal</button>}
+          {canAssign&&<button onClick={()=>deleteTask(task)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Sil</button>}
+        </div>
+      );
+    }
+    return null;
   };
 
   const taskListPanel=(
-    <div style={taskSplitWrapStyle}>
+    <div ref={taskListPanelRef} style={taskSplitWrapStyle}>
       <div style={taskFilterPanelStyle}>
         <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Gorevler</div>
         <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Gorev, calisan, tezgah, is emri ara"/>
@@ -3440,7 +3578,13 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
 
       <div style={taskListColumnStyle}>
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-          <div style={{fontWeight:700,color:C.text,fontSize:14}}>Gorev Listesi</div>
+          <TableColumnEditor
+            title="Gorev Listesi"
+            columns={taskListTableColumns}
+            onToggle={toggleTaskListTableColumn}
+            onMove={moveTaskListTableColumn}
+            onReset={resetTaskListTableColumns}
+          />
           <div style={{display:"flex",gap:6,flexWrap:"wrap",marginLeft:"auto"}}>
             <Badge label={`Benim Acik: ${myOpenCount}`} color={myOpenCount>0?C.warn:C.green}/>
             <Badge label={`Devam Eden: ${activeCount}`} color={activeCount>0?C.warn:C.muted2}/>
@@ -3450,63 +3594,51 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES}) {
               <span style={{width:14,height:14,display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon name="planning" size={13}/></span>
               Takvim
             </button>
+            <ListRowPager
+              rowsPerPage={taskRowsPerPage}
+              page={taskListPageIdx}
+              pageCount={taskTotalPages}
+              onRowsPerPageChange={setTaskRowsPerPage}
+              onPrev={()=>setTaskListPageIdx(p=>Math.max(1,p-1))}
+              onNext={()=>setTaskListPageIdx(p=>Math.min(taskTotalPages,p+1))}
+            />
           </div>
         </div>
 
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:10}}>
-          {filteredTasks.length===0&&(
-            <div style={{padding:"26px 10px",textAlign:"center",fontSize:12,color:C.muted2,border:`1px dashed ${C.border}`,borderRadius:10}}>
-              Gosterilecek gorev bulunamadi.
-            </div>
-          )}
-
-          {filteredTasks.length>0&&(
-            <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              {filteredTasks.map(task=>{
-                const sMeta=statusMeta(task.status||"open");
-                const pMeta=priorityMeta(task.priority||"medium");
-                const due=String(task.dueDate||"");
-                const isOverdue=due&&due<todayStr()&&!["done","cancelled"].includes(task.status||"");
-                const canAct=canAssign||task.assigneeId===currentUser.id;
-                const isRecurring=(task.recurrenceMode==="weekly"||task.recurrenceMode==="monthly")&&Number(task.recurrenceCount||0)>1;
-                const recurrenceLabel=task.recurrenceMode==="weekly"?"Haftalik":"Aylik";
-                return (
-                  <div key={task.id} style={{border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px",background:C.surface}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
-                      <div style={{minWidth:220,flex:1}}>
-                        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-                          <div style={{fontWeight:800,color:C.text,fontSize:14}}>{task.title||"-"}</div>
-                          <Badge label={sMeta.label} color={sMeta.color}/>
-                          <Badge label={pMeta.label} color={pMeta.color}/>
-                        </div>
-                        {task.detail&&<div style={{fontSize:12,color:C.text,marginTop:4,whiteSpace:"pre-wrap"}}>{task.detail}</div>}
-                        <div style={{display:"flex",gap:6,flexWrap:"wrap",fontSize:11,color:C.muted2,marginTop:5}}>
-                          <span>Calisan: <strong>{task.assigneeName||task.assigneeId||"-"}</strong></span>
-                          {task.machine&&<span>Tezgah: <strong>{task.machine}</strong></span>}
-                          {task.orderCode&&<span>Is Emri: <strong>{task.orderCode}</strong></span>}
-                          {task.assignedByName&&<span>Atayan: <strong>{task.assignedByName}</strong></span>}
-                          {due&&<span style={{color:isOverdue?C.red:C.muted2}}>Termin: <strong>{due}</strong></span>}
-                          {isRecurring&&(
-                            <span>
-                              Tekrar: <strong>{recurrenceLabel}</strong>
-                              {task.recurrenceIndex&&task.recurrenceCount?` (${task.recurrenceIndex}/${task.recurrenceCount})`:""}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                        {canAct&&task.status==="open"&&<button onClick={()=>updateTaskStatus(task,"in_progress")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Basla</button>}
-                        {canAct&&["open","in_progress"].includes(task.status||"")&&<button onClick={()=>updateTaskStatus(task,"done")} style={{...btnSt("green"),padding:"6px 10px",fontSize:12}}>Tamamla</button>}
-                        {canAct&&task.status==="done"&&<button onClick={()=>updateTaskStatus(task,"open")} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Yeniden Ac</button>}
-                        {canAssign&&task.status!=="cancelled"&&<button onClick={()=>updateTaskStatus(task,"cancelled")} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Iptal</button>}
-                        {canAssign&&<button onClick={()=>deleteTask(task)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Sil</button>}
-                      </div>
-                    </div>
+        <div style={taskTableCardStyle}>
+          <div style={taskTableScrollStyle}>
+            <div style={{minWidth:taskListTableMinWidth}}>
+              <div style={{display:"grid",gridTemplateColumns:taskListGridTemplate,gap:8,padding:"9px 10px",borderBottom:`1px solid ${C.border}`,background:C.card,fontSize:10,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700,position:"sticky",top:0,zIndex:2}}>
+                {visibleTaskListTableColumns.map(col=>(
+                  <div key={col.id} style={{textAlign:col.align||"left",whiteSpace:"nowrap"}}>
+                    {col.label}
                   </div>
-                );
-              })}
+                ))}
+              </div>
+              {pagedTasks.map((task,idx)=>(
+                <div
+                  key={task.id}
+                  style={{
+                    display:"grid",
+                    gridTemplateColumns:taskListGridTemplate,
+                    gap:8,
+                    padding:"10px 10px",
+                    borderBottom:`1px solid ${C.border}`,
+                    background:((taskListStart+idx)%2===0)?C.surface:C.card,
+                    color:C.text,
+                    alignItems:"center",
+                  }}
+                >
+                  {visibleTaskListTableColumns.map(col=>(
+                    <div key={col.id} style={{minWidth:0,textAlign:col.align||"left"}}>
+                      {renderTaskListCell(task,col)}
+                    </div>
+                  ))}
+                </div>
+              ))}
+              {filteredTasks.length===0&&<div style={{fontSize:12,color:C.muted2,padding:"12px 10px"}}>Filtreye uygun gorev bulunamadi.</div>}
             </div>
-          )}
+          </div>
         </div>
       </div>
     </div>
