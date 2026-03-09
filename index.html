@@ -14055,16 +14055,14 @@ function MRPDashboard({
   const pendingPr=data.prs.filter(r=>!["received","cancelled","closed"].includes(r.status||""));
   const unresolvedNotifs=data.notifs.filter(n=>!["resolved","closed"].includes(n.status||""));
   const lowLifeTools=data.tools.filter(t=>t.remainingLifePct!==undefined&&t.remainingLifePct!==null&&safeNum(t.remainingLifePct)<=20);
-  const dashboardNotifCount=useMemo(()=>{
+  const dashboardNotifCount=(data.notifs||[]).filter(n=>{
+    const status=String(n?.status||"new").toLowerCase();
+    if(status!=="new") return false;
+    const target=String(n?.targetUserId||"").trim();
+    if(!target) return true;
     const uid=String(currentUser?.id||"").trim();
-    return (data.notifs||[]).filter(n=>{
-      const status=String(n?.status||"new").toLowerCase();
-      if(status!=="new") return false;
-      const target=String(n?.targetUserId||"").trim();
-      if(!target) return true;
-      return Boolean(uid)&&target===uid;
-    }).length;
-  },[data.notifs,currentUser?.id]);
+    return Boolean(uid)&&target===uid;
+  }).length;
 
   const latestTelemetry={};
   [...data.telemetry].sort((a,b)=>(b.collectedAtUtc||"").localeCompare(a.collectedAtUtc||"")).forEach(t=>{
