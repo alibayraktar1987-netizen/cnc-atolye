@@ -1178,6 +1178,797 @@ function normalizeQuoteTemplate(raw){
     showLogo:Boolean(src.showLogo),
   };
 }
+const DOCUMENT_TEMPLATE_TYPES = [
+  {id:"quote",label:"Teklif Formu",description:"Fiyat teklifi ve onay oncesi ticari belge olarak kullanilir."},
+  {id:"order",label:"Siparis Formu",description:"Musteri onayli siparis ve teklif donusumu icin kullanilir."},
+  {id:"workOrder",label:"Is Emri Formu",description:"Atolye ici uretim akisi ve operasyon takibi icin kullanilir."},
+];
+const DOCUMENT_TEMPLATE_BLOCK_TYPES = [
+  {id:"brandHeader",label:"Marka Basligi"},
+  {id:"text",label:"Metin"},
+  {id:"fieldRow",label:"Alan Satiri"},
+  {id:"infoGrid",label:"Bilgi Kutusu"},
+  {id:"table",label:"Tablo"},
+  {id:"summaryList",label:"Ozet Kutusu"},
+  {id:"divider",label:"Ayirici"},
+  {id:"spacer",label:"Bosluk"},
+];
+const DOCUMENT_TEMPLATE_TABLE_SOURCES = {
+  items:{
+    id:"items",
+    label:"Siparis Kalemleri",
+    columns:[
+      {label:"No",token:"lineNo",align:"center"},
+      {label:"Urun / Parca",token:"name",align:"left"},
+      {label:"Birim Fiyat",token:"unitPrice",align:"right"},
+      {label:"Adet",token:"qty",align:"right"},
+      {label:"Toplam",token:"total",align:"right"},
+    ],
+  },
+  operations:{
+    id:"operations",
+    label:"Operasyon Akisi",
+    columns:[
+      {label:"Sira",token:"seq",align:"center"},
+      {label:"Operasyon",token:"name",align:"left"},
+      {label:"Makina",token:"machine",align:"left"},
+      {label:"Kurulum",token:"setup",align:"right"},
+      {label:"Cevrim",token:"cycle",align:"right"},
+    ],
+  },
+  materials:{
+    id:"materials",
+    label:"Malzeme Listesi",
+    columns:[
+      {label:"Kod",token:"code",align:"left"},
+      {label:"Malzeme",token:"name",align:"left"},
+      {label:"Lot",token:"lotNo",align:"left"},
+      {label:"Miktar",token:"qty",align:"right"},
+      {label:"Birim",token:"unit",align:"center"},
+    ],
+  },
+};
+const DOCUMENT_TEMPLATE_VARIABLE_GROUPS = [
+  {
+    id:"company",
+    label:"Sirket",
+    templates:["quote","order","workOrder"],
+    items:[
+      {token:"company.name",label:"Sirket Adi"},
+      {token:"company.address",label:"Sirket Adresi"},
+      {token:"company.phone",label:"Sirket Telefon"},
+      {token:"company.email",label:"Sirket E-Posta"},
+      {token:"company.taxOffice",label:"Sirket Vergi Dairesi"},
+      {token:"company.taxNo",label:"Sirket Vergi No"},
+      {token:"salesRep.name",label:"Satis Temsilcisi"},
+    ],
+  },
+  {
+    id:"customer",
+    label:"Musteri",
+    templates:["quote","order","workOrder"],
+    items:[
+      {token:"customer.name",label:"Musteri Adi"},
+      {token:"customer.address",label:"Musteri Adresi"},
+      {token:"customer.phone",label:"Musteri Telefon"},
+      {token:"customer.email",label:"Musteri E-Posta"},
+      {token:"customer.taxOffice",label:"Musteri Vergi Dairesi"},
+      {token:"customer.taxNo",label:"Musteri Vergi No"},
+      {token:"customer.contact",label:"Musteri Yetkilisi"},
+    ],
+  },
+  {
+    id:"quote",
+    label:"Teklif",
+    templates:["quote"],
+    items:[
+      {token:"quote.code",label:"Teklif No"},
+      {token:"quote.date",label:"Teklif Tarihi"},
+      {token:"quote.validUntil",label:"Gecerlilik Tarihi"},
+      {token:"quote.deliveryDate",label:"Teslim Tarihi"},
+      {token:"quote.currency",label:"Para Birimi"},
+      {token:"quote.paymentTerms",label:"Odeme Kosulu"},
+      {token:"quote.revision",label:"Revizyon"},
+    ],
+  },
+  {
+    id:"order",
+    label:"Siparis",
+    templates:["order","workOrder"],
+    items:[
+      {token:"order.code",label:"Siparis No"},
+      {token:"order.date",label:"Siparis Tarihi"},
+      {token:"order.validUntil",label:"Gecerlilik Tarihi"},
+      {token:"order.deliveryDate",label:"Teslim Tarihi"},
+      {token:"order.currency",label:"Para Birimi"},
+      {token:"order.paymentTerms",label:"Odeme Plani"},
+    ],
+  },
+  {
+    id:"workOrder",
+    label:"Is Emri",
+    templates:["workOrder"],
+    items:[
+      {token:"workOrder.code",label:"Is Emri No"},
+      {token:"workOrder.releaseDate",label:"Acilis Tarihi"},
+      {token:"workOrder.machine",label:"Tezgah"},
+      {token:"workOrder.shift",label:"Vardiya"},
+      {token:"workOrder.priority",label:"Oncelik"},
+      {token:"workOrder.qty",label:"Planlanan Miktar"},
+      {token:"workOrder.completedQty",label:"Tamamlanan Miktar"},
+    ],
+  },
+  {
+    id:"part",
+    label:"Parca ve Rota",
+    templates:["workOrder"],
+    items:[
+      {token:"part.code",label:"Parca Kodu"},
+      {token:"part.name",label:"Parca Adi"},
+      {token:"routing.primaryOperation",label:"Ana Operasyon"},
+      {token:"notes.setup",label:"Kurulum Notu"},
+      {token:"notes.quality",label:"Kalite Notu"},
+      {token:"notes.operator",label:"Operator Notu"},
+    ],
+  },
+  {
+    id:"finance",
+    label:"Tutarlar",
+    templates:["quote","order"],
+    items:[
+      {token:"totals.subTotal",label:"Ara Toplam"},
+      {token:"totals.discount",label:"Indirim"},
+      {token:"totals.tax",label:"KDV"},
+      {token:"totals.grandTotal",label:"Genel Toplam"},
+    ],
+  },
+];
+function makeDocumentTemplateId(prefix="dt"){
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`;
+}
+function normalizeDocumentTemplateSpan(value,fallback=2){
+  const n=Math.max(1,Math.min(2,Math.round(safeNum(value)||fallback||2)));
+  return n===1?1:2;
+}
+function createDocumentTemplateField(label="Alan",token=""){
+  return {id:makeDocumentTemplateId("fld"),label:String(label||"Alan"),token:String(token||"")};
+}
+function createDocumentTemplateColumn(label="Kolon",token="value",align="left"){
+  return {id:makeDocumentTemplateId("col"),label:String(label||"Kolon"),token:String(token||"value"),align:["left","center","right"].includes(align)?align:"left"};
+}
+function documentTableSourcePreset(sourceId){
+  const preset=DOCUMENT_TEMPLATE_TABLE_SOURCES[sourceId]||DOCUMENT_TEMPLATE_TABLE_SOURCES.items;
+  return preset.columns.map(col=>createDocumentTemplateColumn(col.label,col.token,col.align));
+}
+function createDocumentTemplateBlock(type,overrides={}){
+  const baseType=String(type||"text");
+  if(baseType==="brandHeader"){
+    return {
+      id:makeDocumentTemplateId("blk"),
+      type:"brandHeader",
+      span:2,
+      accentColor:"#111827",
+      metaText:"{{company.address}}\n{{company.phone}} · {{company.email}}",
+      rightText:"Belge No: {{order.code}}\nTarih: {{order.date}}",
+      showLogo:true,
+      ...overrides,
+    };
+  }
+  if(baseType==="fieldRow"){
+    return {
+      id:makeDocumentTemplateId("blk"),
+      type:"fieldRow",
+      span:1,
+      label:"Alan",
+      token:"order.code",
+      fontSize:11,
+      valueWeight:700,
+      showBorder:true,
+      ...overrides,
+    };
+  }
+  if(baseType==="infoGrid"){
+    return {
+      id:makeDocumentTemplateId("blk"),
+      type:"infoGrid",
+      span:1,
+      title:"Bilgi Kutusu",
+      columns:1,
+      accentColor:"#111827",
+      items:[
+        createDocumentTemplateField("Alan 1","customer.name"),
+        createDocumentTemplateField("Alan 2","customer.address"),
+      ],
+      ...overrides,
+    };
+  }
+  if(baseType==="table"){
+    return {
+      id:makeDocumentTemplateId("blk"),
+      type:"table",
+      span:2,
+      title:"Tablo",
+      source:"items",
+      rowLimit:6,
+      accentColor:"#111827",
+      columns:documentTableSourcePreset("items"),
+      ...overrides,
+    };
+  }
+  if(baseType==="summaryList"){
+    return {
+      id:makeDocumentTemplateId("blk"),
+      type:"summaryList",
+      span:1,
+      title:"Ozet",
+      accentColor:"#111827",
+      emphasizeLastRow:true,
+      items:[
+        createDocumentTemplateField("Ara Toplam","totals.subTotal"),
+        createDocumentTemplateField("Genel Toplam","totals.grandTotal"),
+      ],
+      ...overrides,
+    };
+  }
+  if(baseType==="divider"){
+    return {
+      id:makeDocumentTemplateId("blk"),
+      type:"divider",
+      span:2,
+      color:"#111827",
+      thickness:1,
+      ...overrides,
+    };
+  }
+  if(baseType==="spacer"){
+    return {
+      id:makeDocumentTemplateId("blk"),
+      type:"spacer",
+      span:2,
+      height:18,
+      ...overrides,
+    };
+  }
+  return {
+    id:makeDocumentTemplateId("blk"),
+    type:"text",
+    span:2,
+    content:"Yeni metin",
+    fontSize:12,
+    weight:600,
+    align:"left",
+    color:"#111827",
+    ...overrides,
+  };
+}
+function createDefaultDocumentTemplate(templateId){
+  if(templateId==="quote"){
+    return {
+      id:"quote",
+      pageTitle:"Teklif Formu",
+      blocks:[
+        createDocumentTemplateBlock("brandHeader",{
+          id:"quote_header",
+          metaText:"{{company.address}}\n{{company.phone}} · {{company.email}}",
+          rightText:"Teklif No: {{quote.code}}\nTeklif Tarihi: {{quote.date}}",
+        }),
+        createDocumentTemplateBlock("text",{
+          id:"quote_title",
+          content:"{{document.title}}",
+          fontSize:26,
+          weight:800,
+          color:"#000000",
+        }),
+        createDocumentTemplateBlock("infoGrid",{
+          id:"quote_customer",
+          title:"Musteri Bilgileri",
+          items:[
+            createDocumentTemplateField("Firma Adi","customer.name"),
+            createDocumentTemplateField("Adres","customer.address"),
+            createDocumentTemplateField("Yetkili","customer.contact"),
+            createDocumentTemplateField("Telefon","customer.phone"),
+            createDocumentTemplateField("E-Posta","customer.email"),
+            createDocumentTemplateField("Vergi No","customer.taxNo"),
+          ],
+        }),
+        createDocumentTemplateBlock("infoGrid",{
+          id:"quote_meta",
+          title:"Teklif Ozeti",
+          items:[
+            createDocumentTemplateField("Teklif No","quote.code"),
+            createDocumentTemplateField("Revizyon","quote.revision"),
+            createDocumentTemplateField("Gecerlilik","quote.validUntil"),
+            createDocumentTemplateField("Teslim Tarihi","quote.deliveryDate"),
+            createDocumentTemplateField("Para Birimi","quote.currency"),
+            createDocumentTemplateField("Odeme Kosulu","quote.paymentTerms"),
+          ],
+        }),
+        createDocumentTemplateBlock("table",{
+          id:"quote_items",
+          title:"Teklif Kalemleri",
+          source:"items",
+          columns:documentTableSourcePreset("items"),
+        }),
+        createDocumentTemplateBlock("summaryList",{
+          id:"quote_totals",
+          title:"Finansal Ozet",
+          items:[
+            createDocumentTemplateField("Ara Toplam","totals.subTotal"),
+            createDocumentTemplateField("Indirim","totals.discount"),
+            createDocumentTemplateField("KDV","totals.tax"),
+            createDocumentTemplateField("Genel Toplam","totals.grandTotal"),
+          ],
+        }),
+        createDocumentTemplateBlock("infoGrid",{
+          id:"quote_terms",
+          title:"Notlar ve Kapsam",
+          items:[
+            createDocumentTemplateField("Teklif Notu","quote.note"),
+            createDocumentTemplateField("Teslim Sekli","quote.deliveryMethod"),
+            createDocumentTemplateField("Hazirlayan","salesRep.name"),
+            createDocumentTemplateField("Gecerlilik","quote.validUntil"),
+          ],
+        }),
+        createDocumentTemplateBlock("text",{
+          id:"quote_footer",
+          content:"{{notes.general}}",
+          fontSize:11,
+          weight:400,
+          color:"#374151",
+        }),
+      ],
+    };
+  }
+  if(templateId==="workOrder"){
+    return {
+      id:"workOrder",
+      pageTitle:"Is Emri Formu",
+      blocks:[
+        createDocumentTemplateBlock("brandHeader",{
+          id:"wo_header",
+          metaText:"{{company.address}}\n{{company.phone}} · {{company.email}}",
+          rightText:"Is Emri No: {{workOrder.code}}\nAcilis: {{workOrder.releaseDate}}",
+        }),
+        createDocumentTemplateBlock("text",{
+          id:"wo_title",
+          content:"{{document.title}}",
+          fontSize:24,
+          weight:800,
+          color:"#000000",
+        }),
+        createDocumentTemplateBlock("infoGrid",{
+          id:"wo_workorder_info",
+          title:"Is Emri Bilgileri",
+          items:[
+            createDocumentTemplateField("Is Emri No","workOrder.code"),
+            createDocumentTemplateField("Acilis Tarihi","workOrder.releaseDate"),
+            createDocumentTemplateField("Tezgah","workOrder.machine"),
+            createDocumentTemplateField("Vardiya","workOrder.shift"),
+            createDocumentTemplateField("Oncelik","workOrder.priority"),
+            createDocumentTemplateField("Planlanan Miktar","workOrder.qty"),
+          ],
+        }),
+        createDocumentTemplateBlock("infoGrid",{
+          id:"wo_part_info",
+          title:"Parca ve Musteri",
+          items:[
+            createDocumentTemplateField("Siparis No","order.code"),
+            createDocumentTemplateField("Musteri","customer.name"),
+            createDocumentTemplateField("Parca Kodu","part.code"),
+            createDocumentTemplateField("Parca Adi","part.name"),
+            createDocumentTemplateField("Malzeme","material.name"),
+            createDocumentTemplateField("Lot No","material.lotNo"),
+          ],
+        }),
+        createDocumentTemplateBlock("table",{
+          id:"wo_ops_table",
+          title:"Operasyon Akisi",
+          source:"operations",
+          columns:documentTableSourcePreset("operations"),
+        }),
+        createDocumentTemplateBlock("summaryList",{
+          id:"wo_summary",
+          title:"Uretim Ozeti",
+          items:[
+            createDocumentTemplateField("Planlanan","workOrder.qty"),
+            createDocumentTemplateField("Tamamlanan","workOrder.completedQty"),
+            createDocumentTemplateField("Ana Operasyon","routing.primaryOperation"),
+            createDocumentTemplateField("Operator Notu","notes.operator"),
+          ],
+        }),
+        createDocumentTemplateBlock("infoGrid",{
+          id:"wo_notes",
+          title:"Hazirlik ve Kalite",
+          items:[
+            createDocumentTemplateField("Kurulum Notu","notes.setup"),
+            createDocumentTemplateField("Kalite Notu","notes.quality"),
+            createDocumentTemplateField("Musteri Yetkilisi","customer.contact"),
+            createDocumentTemplateField("Teslim Tarihi","order.deliveryDate"),
+          ],
+        }),
+        createDocumentTemplateBlock("text",{
+          id:"wo_footer",
+          content:"Operasyon akisi boyunca proses kontrol kartlari ve olcum planlari bu is emrine bagli izlenir.",
+          fontSize:11,
+          weight:400,
+          color:"#374151",
+        }),
+      ],
+    };
+  }
+  return {
+    id:"order",
+    pageTitle:"Siparis Formu",
+    blocks:[
+      createDocumentTemplateBlock("brandHeader",{
+        id:"order_header",
+        metaText:"{{company.address}}\n{{company.phone}} · {{company.email}}",
+        rightText:"Siparis No: {{order.code}}\nSiparis Tarihi: {{order.date}}",
+      }),
+      createDocumentTemplateBlock("text",{
+        id:"order_title",
+        content:"{{document.title}}",
+        fontSize:26,
+        weight:800,
+        color:"#000000",
+      }),
+      createDocumentTemplateBlock("infoGrid",{
+        id:"order_customer",
+        title:"Musteri Firma Bilgileri",
+        items:[
+          createDocumentTemplateField("Firma Adi","customer.name"),
+          createDocumentTemplateField("Firma Adresi","customer.address"),
+          createDocumentTemplateField("Vergi Dairesi","customer.taxOffice"),
+          createDocumentTemplateField("Vergi No","customer.taxNo"),
+          createDocumentTemplateField("Telefon","customer.phone"),
+          createDocumentTemplateField("E-Posta","customer.email"),
+          createDocumentTemplateField("Yetkili","customer.contact"),
+        ],
+      }),
+      createDocumentTemplateBlock("infoGrid",{
+        id:"order_company",
+        title:"Satici Firma Bilgileri",
+        items:[
+          createDocumentTemplateField("Firma Adi","company.name"),
+          createDocumentTemplateField("Firma Adresi","company.address"),
+          createDocumentTemplateField("Vergi Dairesi","company.taxOffice"),
+          createDocumentTemplateField("Vergi No","company.taxNo"),
+          createDocumentTemplateField("Telefon","company.phone"),
+          createDocumentTemplateField("E-Posta","company.email"),
+          createDocumentTemplateField("Satis Temsilcisi","salesRep.name"),
+        ],
+      }),
+      createDocumentTemplateBlock("table",{
+        id:"order_items",
+        title:"Siparis Kalemleri",
+        source:"items",
+        columns:documentTableSourcePreset("items"),
+      }),
+      createDocumentTemplateBlock("summaryList",{
+        id:"order_totals",
+        title:"Toplamlar",
+        items:[
+          createDocumentTemplateField("Ara Toplam","totals.subTotal"),
+          createDocumentTemplateField("Indirim","totals.discount"),
+          createDocumentTemplateField("KDV","totals.tax"),
+          createDocumentTemplateField("Genel Toplam","totals.grandTotal"),
+        ],
+      }),
+      createDocumentTemplateBlock("infoGrid",{
+        id:"order_terms",
+        title:"Teslim ve Odeme",
+        items:[
+          createDocumentTemplateField("Teslim Tarihi","order.deliveryDate"),
+          createDocumentTemplateField("Odeme Plani","order.paymentTerms"),
+          createDocumentTemplateField("Para Birimi","order.currency"),
+          createDocumentTemplateField("Gecerlilik","order.validUntil"),
+        ],
+      }),
+      createDocumentTemplateBlock("text",{
+        id:"order_footer",
+        content:"{{notes.general}}",
+        fontSize:11,
+        weight:400,
+        color:"#374151",
+      }),
+    ],
+  };
+}
+function normalizeDocumentTemplateFields(items,fallback){
+  const list=Array.isArray(items)?items:[];
+  const base=(Array.isArray(fallback)&&fallback.length>0)?fallback:[createDocumentTemplateField("Alan","")];
+  const src=list.length>0?list:base;
+  return src.map((item,idx)=>{
+    const fb=base[idx%base.length]||base[0];
+    return {
+      id:String(item?.id||fb?.id||makeDocumentTemplateId("fld")),
+      label:String(item?.label||fb?.label||`Alan ${idx+1}`),
+      token:String(item?.token||fb?.token||""),
+    };
+  });
+}
+function normalizeDocumentTemplateColumns(items,source){
+  const preset=documentTableSourcePreset(source);
+  const list=Array.isArray(items)?items:[];
+  const src=list.length>0?list:preset;
+  return src.map((item,idx)=>{
+    const fb=preset[idx%preset.length]||preset[0];
+    return {
+      id:String(item?.id||fb?.id||makeDocumentTemplateId("col")),
+      label:String(item?.label||fb?.label||`Kolon ${idx+1}`),
+      token:String(item?.token||fb?.token||"value"),
+      align:["left","center","right"].includes(item?.align)?item.align:(fb?.align||"left"),
+    };
+  });
+}
+function normalizeDocumentTemplateBlock(raw){
+  const type=String(raw?.type||"text");
+  const base=createDocumentTemplateBlock(type);
+  if(type==="brandHeader"){
+    return {
+      ...base,
+      ...raw,
+      id:String(raw?.id||base.id),
+      span:2,
+      accentColor:normalizeHexColor(raw?.accentColor,base.accentColor),
+      metaText:String(raw?.metaText??base.metaText),
+      rightText:String(raw?.rightText??base.rightText),
+      showLogo:typeof raw?.showLogo==="boolean"?raw.showLogo:base.showLogo,
+    };
+  }
+  if(type==="fieldRow"){
+    return {
+      ...base,
+      ...raw,
+      id:String(raw?.id||base.id),
+      span:normalizeDocumentTemplateSpan(raw?.span,base.span),
+      label:String(raw?.label??base.label),
+      token:String(raw?.token??base.token),
+      fontSize:Math.max(10,Math.min(18,Math.round(safeNum(raw?.fontSize)||base.fontSize))),
+      valueWeight:[400,500,600,700,800].includes(Math.round(safeNum(raw?.valueWeight)))?Math.round(safeNum(raw?.valueWeight)):base.valueWeight,
+      showBorder:typeof raw?.showBorder==="boolean"?raw.showBorder:base.showBorder,
+    };
+  }
+  if(type==="infoGrid"){
+    return {
+      ...base,
+      ...raw,
+      id:String(raw?.id||base.id),
+      span:normalizeDocumentTemplateSpan(raw?.span,base.span),
+      title:String(raw?.title??base.title),
+      columns:Math.max(1,Math.min(2,Math.round(safeNum(raw?.columns)||base.columns))),
+      accentColor:normalizeHexColor(raw?.accentColor,base.accentColor),
+      items:normalizeDocumentTemplateFields(raw?.items,base.items),
+    };
+  }
+  if(type==="table"){
+    const source=(DOCUMENT_TEMPLATE_TABLE_SOURCES[String(raw?.source||"")])?String(raw.source):base.source;
+    return {
+      ...base,
+      ...raw,
+      id:String(raw?.id||base.id),
+      span:2,
+      title:String(raw?.title??base.title),
+      source,
+      rowLimit:Math.max(2,Math.min(12,Math.round(safeNum(raw?.rowLimit)||base.rowLimit))),
+      accentColor:normalizeHexColor(raw?.accentColor,base.accentColor),
+      columns:normalizeDocumentTemplateColumns(raw?.columns,source),
+    };
+  }
+  if(type==="summaryList"){
+    return {
+      ...base,
+      ...raw,
+      id:String(raw?.id||base.id),
+      span:normalizeDocumentTemplateSpan(raw?.span,base.span),
+      title:String(raw?.title??base.title),
+      accentColor:normalizeHexColor(raw?.accentColor,base.accentColor),
+      emphasizeLastRow:typeof raw?.emphasizeLastRow==="boolean"?raw.emphasizeLastRow:base.emphasizeLastRow,
+      items:normalizeDocumentTemplateFields(raw?.items,base.items),
+    };
+  }
+  if(type==="divider"){
+    return {
+      ...base,
+      ...raw,
+      id:String(raw?.id||base.id),
+      span:2,
+      color:normalizeHexColor(raw?.color,base.color),
+      thickness:Math.max(1,Math.min(6,Math.round(safeNum(raw?.thickness)||base.thickness))),
+    };
+  }
+  if(type==="spacer"){
+    return {
+      ...base,
+      ...raw,
+      id:String(raw?.id||base.id),
+      span:2,
+      height:Math.max(4,Math.min(64,Math.round(safeNum(raw?.height)||base.height))),
+    };
+  }
+  return {
+    ...base,
+    ...raw,
+    id:String(raw?.id||base.id),
+    span:normalizeDocumentTemplateSpan(raw?.span,base.span),
+    content:String(raw?.content??base.content),
+    fontSize:Math.max(10,Math.min(40,Math.round(safeNum(raw?.fontSize)||base.fontSize))),
+    weight:[400,500,600,700,800].includes(Math.round(safeNum(raw?.weight)))?Math.round(safeNum(raw?.weight)):base.weight,
+    align:["left","center","right"].includes(raw?.align)?raw.align:base.align,
+    color:normalizeHexColor(raw?.color,base.color),
+  };
+}
+function normalizeDocumentTemplate(templateId,raw){
+  const base=createDefaultDocumentTemplate(templateId);
+  const blocks=Array.isArray(raw?.blocks)&&raw.blocks.length>0
+    ? raw.blocks.map(block=>normalizeDocumentTemplateBlock(block))
+    : base.blocks.map(block=>normalizeDocumentTemplateBlock(block));
+  return {
+    id:templateId,
+    pageTitle:String(raw?.pageTitle||base.pageTitle),
+    blocks,
+  };
+}
+function normalizeDocumentTemplateLibrary(raw){
+  const src=(raw&&typeof raw==="object")?raw:{};
+  const templateSrc=(src.templates&&typeof src.templates==="object")?src.templates:src;
+  const templates={};
+  DOCUMENT_TEMPLATE_TYPES.forEach(row=>{
+    templates[row.id]=normalizeDocumentTemplate(row.id,templateSrc?.[row.id]||null);
+  });
+  return {
+    templates,
+    updatedAt:String(src.updatedAt||""),
+    updatedBy:String(src.updatedBy||""),
+  };
+}
+function getValueByPath(obj,path){
+  const parts=String(path||"").split(".").map(x=>x.trim()).filter(Boolean);
+  let cur=obj;
+  for(const key of parts){
+    if(cur===null||cur===undefined) return undefined;
+    cur=cur[key];
+  }
+  return cur;
+}
+function resolveDocumentTemplateToken(token,data,row=null){
+  const key=String(token||"").trim();
+  if(!key) return "";
+  const rowValue=row?getValueByPath(row,key):undefined;
+  const picked=rowValue!==undefined?rowValue:getValueByPath(data,key);
+  if(Array.isArray(picked)) return picked.join(", ");
+  if(picked===null||picked===undefined) return "";
+  return String(picked);
+}
+function renderDocumentTemplateText(text,data,row=null){
+  const source=String(text||"");
+  return source.replace(/\{\{\s*([^}]+)\s*\}\}/g,(_,token)=>resolveDocumentTemplateToken(token,data,row)||"-");
+}
+function buildDocumentTemplateSampleData(templateId,companyProfile={}){
+  const companyName=String(companyProfile?.companyName||"ABBA TEKNOLOJI").trim()||"ABBA TEKNOLOJI";
+  const companyAddress=String(companyProfile?.companyAddress||"Kordonboyu Mah. Ankara Cad. No:147 Kartal / Istanbul").trim();
+  const companyPhone=String(companyProfile?.companyPhone||"+90 530 319 34 69").trim();
+  const companyEmail=String(companyProfile?.companyEmail||"info@abbateknoloji.com").trim();
+  const common={
+    company:{
+      name:companyName,
+      address:companyAddress,
+      phone:companyPhone,
+      email:companyEmail,
+      taxOffice:"Kartal",
+      taxNo:"0011697094",
+    },
+    customer:{
+      name:"Teklifler Fatura A.S.",
+      address:"Ikitelli Organize Sanayi Bolgesi, Basaksehir / Istanbul",
+      phone:"+90 212 555 11 22",
+      email:"satinalma@teklifler.com",
+      taxOffice:"Ikitelli",
+      taxNo:"3456789012",
+      contact:"Merve Aydin",
+    },
+    salesRep:{name:"Ali Kaya"},
+    notes:{
+      general:"Belge uzerindeki fiyatlar aksi belirtilmedikce KDV harictir. Sevkiyat oncesi termin teyidi yapilir.",
+      setup:"Baglama aparatlari OP-10 oncesi hazir edilmelidir.",
+      quality:"Ilk parca onayi olmadan seri uretime gecilmez.",
+      operator:"Takim omru kritik seviyeye geldiginde vardiya sefine bilgi veriniz.",
+    },
+  };
+  if(templateId==="quote"){
+    return {
+      ...common,
+      document:{title:"TEKLIF FORMU"},
+      quote:{
+        code:"TKL-2026-041",
+        date:"2026-03-10",
+        validUntil:"2026-03-20",
+        deliveryDate:"2026-03-28",
+        currency:"TRY",
+        paymentTerms:"%40 Pesin / %60 Teslimat Sonrasi 15 Gun",
+        revision:"R1",
+        deliveryMethod:"Ex-work Istanbul",
+        note:"Fiyatlara montaj dahil degildir. Nakliye musterinin onayi ile ayrica fiyatlandirilir.",
+      },
+      items:[
+        {lineNo:"1",name:"Flans Govde Isleme",unitPrice:"1.150 TL",qty:"120",total:"138.000 TL"},
+        {lineNo:"2",name:"Baglanti Aparati",unitPrice:"295 TL",qty:"24",total:"7.080 TL"},
+        {lineNo:"3",name:"Kalite Raporlama",unitPrice:"1.250 TL",qty:"1",total:"1.250 TL"},
+      ],
+      totals:{
+        subTotal:"146.330 TL",
+        discount:"6.330 TL",
+        tax:"28.000 TL",
+        grandTotal:"168.000 TL",
+      },
+    };
+  }
+  if(templateId==="workOrder"){
+    return {
+      ...common,
+      document:{title:"IS EMRI FORMU"},
+      order:{
+        code:"SIP-2026-014",
+        date:"2026-03-10",
+        deliveryDate:"2026-03-21",
+      },
+      workOrder:{
+        code:"WO-2026-087",
+        releaseDate:"2026-03-10",
+        machine:"CNC-5",
+        shift:"Gunduz",
+        priority:"Yuksek",
+        qty:"120 Adet",
+        completedQty:"38 Adet",
+      },
+      part:{
+        code:"PRT-0452",
+        name:"Flans Govde",
+      },
+      material:{
+        code:"MLZ-6061",
+        name:"Aluminyum 6061",
+        lotNo:"LOT-24-0310",
+      },
+      routing:{
+        primaryOperation:"OP-20 Kaba Isleme",
+      },
+      operations:[
+        {seq:"10",name:"Kesim ve Hazirlik",machine:"Testere",setup:"12 dk",cycle:"4 dk"},
+        {seq:"20",name:"Kaba Isleme",machine:"CNC-5",setup:"25 dk",cycle:"8 dk"},
+        {seq:"30",name:"Delik Delme ve Kilavuz",machine:"CNC-2",setup:"14 dk",cycle:"6 dk"},
+        {seq:"40",name:"Olcum ve Kontrol",machine:"Kalite",setup:"5 dk",cycle:"3 dk"},
+      ],
+      materials:[
+        {code:"MLZ-6061",name:"Aluminyum Lama",lotNo:"LOT-24-0310",qty:"2",unit:"Cubuk"},
+        {code:"SARF-01",name:"Kesme Yagi",lotNo:"STK-0081",qty:"1",unit:"Lt"},
+      ],
+    };
+  }
+  return {
+    ...common,
+    document:{title:"SIPARIS FORMU"},
+    order:{
+      code:"SIP-2026-014",
+      date:"2026-03-10",
+      validUntil:"2026-03-17",
+      deliveryDate:"2026-03-21",
+      currency:"TRY",
+      paymentTerms:"%30 Avans / %70 Sevk Oncesi",
+    },
+    items:[
+      {lineNo:"1",name:"Flans Govde",unitPrice:"1.250 TL",qty:"120",total:"150.000 TL"},
+      {lineNo:"2",name:"Baglanti Aparati",unitPrice:"320 TL",qty:"24",total:"7.680 TL"},
+      {lineNo:"3",name:"Kalite Raporu",unitPrice:"850 TL",qty:"1",total:"850 TL"},
+    ],
+    totals:{
+      subTotal:"158.530 TL",
+      discount:"8.530 TL",
+      tax:"30.000 TL",
+      grandTotal:"180.000 TL",
+    },
+  };
+}
 function hexToRgb(hex,fallback={r:87,g:190,b:144}){
   const clean=String(hex||"").replace("#","").trim();
   if(!/^[0-9a-fA-F]{6}$/.test(clean)) return fallback;
@@ -3738,6 +4529,352 @@ function SupplierGroupSettings({currentUser}) {
   );
 }
 
+function DocumentTemplateSettings({currentUser,currentLogo="",companyProfile={}}){
+  const normalizedCompanyProfile=normalizeQuoteTemplate(companyProfile||{});
+  const [templateLibrary,setTemplateLibrary]=useState(()=>normalizeDocumentTemplateLibrary({}));
+  const [activeTemplateId,setActiveTemplateId]=useState("order");
+  const [selectedBlockId,setSelectedBlockId]=useState("");
+  const [blockDraft,setBlockDraft]=useState("");
+  const [blockDraftError,setBlockDraftError]=useState("");
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+
+  const load=useCallback(async()=>{
+    const doc=await window.DB.getDoc("config","documentTemplates");
+    setTemplateLibrary(normalizeDocumentTemplateLibrary(doc||{}));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  const activeTemplate=templateLibrary.templates?.[activeTemplateId]||normalizeDocumentTemplate(activeTemplateId,{});
+  const activeBlocks=Array.isArray(activeTemplate?.blocks)?activeTemplate.blocks:[];
+  const sampleData=useMemo(
+    ()=>buildDocumentTemplateSampleData(activeTemplateId,normalizedCompanyProfile),
+    [
+      activeTemplateId,
+      normalizedCompanyProfile.companyName,
+      normalizedCompanyProfile.companyAddress,
+      normalizedCompanyProfile.companyPhone,
+      normalizedCompanyProfile.companyEmail,
+    ]
+  );
+  const variableGroups=useMemo(
+    ()=>DOCUMENT_TEMPLATE_VARIABLE_GROUPS.filter(group=>(group.templates||[]).includes(activeTemplateId)),
+    [activeTemplateId]
+  );
+  const selectedBlock=activeBlocks.find(block=>block.id===selectedBlockId)||null;
+
+  useEffect(()=>{
+    if(activeBlocks.length===0){
+      setSelectedBlockId("");
+      setBlockDraft("");
+      return;
+    }
+    const nextId=activeBlocks.some(block=>block.id===selectedBlockId)?selectedBlockId:activeBlocks[0].id;
+    if(nextId!==selectedBlockId) setSelectedBlockId(nextId);
+  },[activeTemplateId,activeBlocks.length,activeBlocks.map(block=>block.id).join("|"),selectedBlockId]);
+  useEffect(()=>{
+    if(!selectedBlock){
+      setBlockDraft("");
+      setBlockDraftError("");
+      return;
+    }
+    const {id,...rest}=selectedBlock;
+    setBlockDraft(JSON.stringify(rest,null,2));
+    setBlockDraftError("");
+  },[selectedBlockId,selectedBlock&&JSON.stringify(selectedBlock)]);
+
+  function updateActiveTemplate(mutator){
+    setTemplateLibrary(prev=>{
+      const current=prev.templates?.[activeTemplateId]||normalizeDocumentTemplate(activeTemplateId,{});
+      const next=normalizeDocumentTemplate(activeTemplateId,mutator(current));
+      return {...prev,templates:{...(prev.templates||{}),[activeTemplateId]:next}};
+    });
+  }
+  function updateBlock(blockId,mutator){
+    updateActiveTemplate(current=>({
+      ...current,
+      blocks:(current.blocks||[]).map(block=>block.id===blockId?normalizeDocumentTemplateBlock(mutator(block)):block),
+    }));
+  }
+  function addBlock(type){
+    const nextBlock=normalizeDocumentTemplateBlock(createDocumentTemplateBlock(type));
+    updateActiveTemplate(current=>({...current,blocks:[...(current.blocks||[]),nextBlock]}));
+    setSelectedBlockId(nextBlock.id);
+  }
+  function removeBlock(blockId){
+    updateActiveTemplate(current=>({...current,blocks:(current.blocks||[]).filter(block=>block.id!==blockId)}));
+    if(selectedBlockId===blockId) setSelectedBlockId("");
+  }
+  function moveBlock(blockId,delta){
+    updateActiveTemplate(current=>{
+      const rows=[...(current.blocks||[])];
+      const idx=rows.findIndex(block=>block.id===blockId);
+      const nextIdx=idx+delta;
+      if(idx<0||nextIdx<0||nextIdx>=rows.length) return current;
+      const [picked]=rows.splice(idx,1);
+      rows.splice(nextIdx,0,picked);
+      return {...current,blocks:rows};
+    });
+  }
+  function resetActiveTemplate(){
+    setTemplateLibrary(prev=>({
+      ...prev,
+      templates:{...(prev.templates||{}),[activeTemplateId]:normalizeDocumentTemplate(activeTemplateId,createDefaultDocumentTemplate(activeTemplateId))},
+    }));
+    setSelectedBlockId("");
+  }
+  async function saveTemplates(){
+    const normalized=normalizeDocumentTemplateLibrary(templateLibrary||{});
+    const payload={...normalized,updatedAt:new Date().toISOString(),updatedBy:currentUser?.id||""};
+    setSaving(true);
+    const ok=await window.DB.setDoc("config","documentTemplates",payload);
+    setSaving(false);
+    if(!ok){alert("Belge sablonlari kaydedilemedi.");return;}
+    setTemplateLibrary(normalized);
+    alert("Belge sablonlari kaydedildi.");
+  }
+  function applyBlockDraft(){
+    if(!selectedBlock) return;
+    try{
+      const parsed=JSON.parse(blockDraft||"{}");
+      updateBlock(selectedBlock.id,()=>({id:selectedBlock.id,...parsed}));
+      setBlockDraftError("");
+    }catch(err){
+      setBlockDraftError("JSON gecersiz.");
+    }
+  }
+  function insertVariableToken(token){
+    if(!selectedBlock){alert("Once bir blok secin.");return;}
+    const tokenText=`{{${token}}}`;
+    if(selectedBlock.type==="text"){
+      updateBlock(selectedBlock.id,block=>({...block,content:`${block.content||""}${block.content?" ":""}${tokenText}`}));
+      return;
+    }
+    if(selectedBlock.type==="fieldRow"){
+      updateBlock(selectedBlock.id,block=>({...block,token}));
+      return;
+    }
+    if(selectedBlock.type==="brandHeader"){
+      updateBlock(selectedBlock.id,block=>({...block,rightText:`${block.rightText||""}${block.rightText?"\n":""}${tokenText}`}));
+      return;
+    }
+    setBlockDraft(prev=>`${prev||""}\n`);
+    alert("Bu blok tipi icin tokeni JSON editorden ilgili alana ekleyin.");
+  }
+  function blockLabel(block){
+    const typeLabel=(DOCUMENT_TEMPLATE_BLOCK_TYPES.find(row=>row.id===block.type)||{label:block.type}).label;
+    const hint=block.title||block.label||block.content||"";
+    return `${typeLabel}${hint?` · ${String(hint).slice(0,22)}`:""}`;
+  }
+  function renderPreviewBlock(block){
+    const selected=selectedBlockId===block.id;
+    const accent=normalizeHexColor(block.accentColor||block.color||"#111827","#111827");
+    const frameStyle={
+      gridColumn:block.span===2?"1 / -1":"span 1",
+      border:selected?`1px solid ${C.accent}`:"1px solid transparent",
+      borderRadius:10,
+      padding:selected?8:7,
+      background:selected?rgbaFromHex(C.accent,0.05):"transparent",
+      cursor:"pointer",
+    };
+    if(block.type==="brandHeader"){
+      return (
+        <div key={block.id} onClick={()=>setSelectedBlockId(block.id)} style={frameStyle}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,paddingBottom:10,borderBottom:`2px solid ${accent}`}}>
+            <div style={{display:"flex",gap:12,alignItems:"flex-start",minWidth:0}}>
+              {block.showLogo&&(
+                <div style={{width:80,height:80,border:`1px solid ${rgbaFromHex(accent,0.18)}`,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",background:"#fff",flex:"0 0 auto"}}>
+                  {String(currentLogo||"").startsWith("data:image/")
+                    ? <img src={currentLogo} alt="Logo" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}}/>
+                    : <FactorabMark size={52} variant="light"/>}
+                </div>
+              )}
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:28,fontWeight:800,color:"#111827",lineHeight:1.05}}>{sampleData.company?.name||"Sirket"}</div>
+                <div style={{fontSize:11,color:"#4B5563",whiteSpace:"pre-wrap",marginTop:6,lineHeight:1.4}}>
+                  {renderDocumentTemplateText(block.metaText,sampleData)}
+                </div>
+              </div>
+            </div>
+            <div style={{minWidth:180,maxWidth:220,border:`1px solid ${rgbaFromHex(accent,0.22)}`,borderRadius:8,padding:"10px 12px",background:rgbaFromHex(accent,0.05),fontSize:11,color:"#111827",fontWeight:700,whiteSpace:"pre-wrap",lineHeight:1.45}}>
+              {renderDocumentTemplateText(block.rightText,sampleData)}
+            </div>
+          </div>
+        </div>
+      );
+    }
+    if(block.type==="text"){
+      return <div key={block.id} onClick={()=>setSelectedBlockId(block.id)} style={frameStyle}><div style={{fontSize:block.fontSize,fontWeight:block.weight,textAlign:block.align,color:block.color,whiteSpace:"pre-wrap",lineHeight:1.28}}>{renderDocumentTemplateText(block.content,sampleData)}</div></div>;
+    }
+    if(block.type==="fieldRow"){
+      return <div key={block.id} onClick={()=>setSelectedBlockId(block.id)} style={frameStyle}><div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"baseline",paddingBottom:block.showBorder?6:0,borderBottom:block.showBorder?`1px solid ${rgbaFromHex(accent,0.2)}`:"none",fontSize:block.fontSize}}><span style={{color:"#4B5563"}}>{block.label||"Alan"}</span><span style={{color:"#111827",fontWeight:block.valueWeight}}>{resolveDocumentTemplateToken(block.token,sampleData)||"-"}</span></div></div>;
+    }
+    if(block.type==="infoGrid"){
+      return (
+        <div key={block.id} onClick={()=>setSelectedBlockId(block.id)} style={frameStyle}>
+          <div style={{border:`1px solid ${rgbaFromHex(accent,0.18)}`,borderRadius:10,overflow:"hidden",background:"#fff"}}>
+            <div style={{background:rgbaFromHex(accent,0.1),padding:"7px 10px",fontSize:11,fontWeight:800,color:"#111827",letterSpacing:.3,textTransform:"uppercase"}}>{block.title||"Bilgi Kutusu"}</div>
+            <div style={{display:"grid",gridTemplateColumns:block.columns===2?"1fr 1fr":"1fr",gap:8,padding:10}}>
+              {(block.items||[]).map(item=><div key={item.id} style={{display:"grid",gridTemplateColumns:"110px 1fr",gap:8,fontSize:11,alignItems:"start"}}><div style={{color:"#4B5563"}}>{item.label||"Alan"}</div><div style={{color:"#111827",fontWeight:700,wordBreak:"break-word"}}>{resolveDocumentTemplateToken(item.token,sampleData)||"-"}</div></div>)}
+            </div>
+          </div>
+        </div>
+      );
+    }
+    if(block.type==="table"){
+      const rows=Array.isArray(sampleData?.[block.source])?sampleData[block.source]:[];
+      const visibleRows=rows.slice(0,Math.max(1,block.rowLimit||6));
+      return (
+        <div key={block.id} onClick={()=>setSelectedBlockId(block.id)} style={frameStyle}>
+          <div style={{border:`1px solid ${rgbaFromHex(accent,0.18)}`,borderRadius:10,overflow:"hidden",background:"#fff"}}>
+            <div style={{background:rgbaFromHex(accent,0.1),padding:"7px 10px",fontSize:11,fontWeight:800,color:"#111827",letterSpacing:.3,textTransform:"uppercase"}}>{block.title||"Tablo"}</div>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+              <thead><tr style={{background:"#F3F4F6",color:"#374151"}}>{(block.columns||[]).map(col=><th key={col.id} style={{padding:"7px 8px",borderBottom:"1px solid #D1D5DB",textAlign:col.align||"left"}}>{col.label||"Kolon"}</th>)}</tr></thead>
+              <tbody>
+                {visibleRows.map((row,idx)=><tr key={`${block.id}_${idx}`} style={{borderBottom:"1px solid #E5E7EB"}}>{(block.columns||[]).map(col=><td key={col.id} style={{padding:"7px 8px",textAlign:col.align||"left",color:"#111827"}}>{resolveDocumentTemplateToken(col.token,sampleData,row)||"-"}</td>)}</tr>)}
+                {visibleRows.length===0&&<tr><td colSpan={(block.columns||[]).length||1} style={{padding:"12px 10px",textAlign:"center",color:"#6B7280"}}>Veri bulunamadi.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+    if(block.type==="summaryList"){
+      return (
+        <div key={block.id} onClick={()=>setSelectedBlockId(block.id)} style={frameStyle}>
+          <div style={{border:`1px solid ${rgbaFromHex(accent,0.18)}`,borderRadius:10,overflow:"hidden",background:"#fff"}}>
+            <div style={{background:rgbaFromHex(accent,0.1),padding:"7px 10px",fontSize:11,fontWeight:800,color:"#111827",letterSpacing:.3,textTransform:"uppercase"}}>{block.title||"Ozet"}</div>
+            <div style={{padding:10}}>
+              {(block.items||[]).map((item,idx,arr)=>{const strong=Boolean(block.emphasizeLastRow)&&idx===arr.length-1;return <div key={item.id} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"6px 0",borderBottom:idx===arr.length-1?"none":"1px solid #E5E7EB",fontSize:11}}><span style={{color:"#4B5563",fontWeight:strong?700:500}}>{item.label||"Alan"}</span><span style={{color:"#111827",fontWeight:strong?800:700,textAlign:"right"}}>{resolveDocumentTemplateToken(item.token,sampleData)||"-"}</span></div>;})}
+            </div>
+          </div>
+        </div>
+      );
+    }
+    if(block.type==="divider"){
+      return <div key={block.id} onClick={()=>setSelectedBlockId(block.id)} style={frameStyle}><div style={{height:block.thickness,background:block.color,borderRadius:999}}/></div>;
+    }
+    return <div key={block.id} onClick={()=>setSelectedBlockId(block.id)} style={{...frameStyle,minHeight:block.height}}><div style={{height:block.height,borderRadius:8,background:"#F8FAFC",border:"1px dashed #CBD5E1"}}/></div>;
+  }
+
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+          <div>
+            <div style={{fontWeight:700,color:C.text}}>Belge Sablon Tasarimcisi</div>
+            <div style={{fontSize:12,color:C.muted2,marginTop:3}}>Siparis ve is emri ciktilari icin blok tabanli A4 tasarim editoru.</div>
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={resetActiveTemplate} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}} disabled={saving}>Varsayilan Sablona Don</button>
+            <button onClick={saveTemplates} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={saving}>{saving?"Kaydediliyor...":"Sablonlari Kaydet"}</button>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:12}}>
+          {DOCUMENT_TEMPLATE_TYPES.map(row=>(
+            <button
+              key={row.id}
+              onClick={()=>setActiveTemplateId(row.id)}
+              style={{border:`1px solid ${activeTemplateId===row.id?C.accent:C.border}`,background:activeTemplateId===row.id?C.accent+"18":C.surface,color:activeTemplateId===row.id?C.accent:C.text,borderRadius:10,padding:"9px 11px",minWidth:180,textAlign:"left",cursor:"pointer"}}
+            >
+              <div style={{fontWeight:700,fontSize:13}}>{row.label}</div>
+              <div style={{fontSize:11,color:activeTemplateId===row.id?C.accent:C.muted2,marginTop:3}}>{row.description}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12,alignItems:"start"}}>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+            <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Bloklar</div>
+            <div style={{display:"flex",flexDirection:"column",gap:7}}>
+              {activeBlocks.map((block,idx)=>(
+                <div key={block.id} style={{border:`1px solid ${selectedBlockId===block.id?C.accent:C.border}`,borderRadius:10,padding:"8px 10px",background:selectedBlockId===block.id?C.accent+"12":C.surface}}>
+                  <button onClick={()=>setSelectedBlockId(block.id)} style={{border:"none",background:"transparent",padding:0,textAlign:"left",width:"100%",fontFamily:"inherit",cursor:"pointer"}}>
+                    <div style={{fontSize:12,fontWeight:700,color:C.text}}>{blockLabel(block)}</div>
+                    <div style={{fontSize:10.5,color:C.muted2,marginTop:2}}>#{idx+1} · {block.span===2?"Tam sayfa":"Yarim sayfa"}</div>
+                  </button>
+                  <div style={{display:"flex",justifyContent:"flex-end",gap:6,marginTop:8}}>
+                    <button onClick={()=>moveBlock(block.id,-1)} style={{...btnSt("ghost"),padding:"4px 7px",fontSize:11}} disabled={idx===0}>^</button>
+                    <button onClick={()=>moveBlock(block.id,1)} style={{...btnSt("ghost"),padding:"4px 7px",fontSize:11}} disabled={idx===activeBlocks.length-1}>v</button>
+                    <button onClick={()=>removeBlock(block.id)} style={{...btnSt("danger"),padding:"4px 7px",fontSize:11}}>Sil</button>
+                  </div>
+                </div>
+              ))}
+              {activeBlocks.length===0&&<div style={{fontSize:12,color:C.muted2}}>Bu sablonda blok yok.</div>}
+            </div>
+          </div>
+
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+            <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Blok Ekle</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {DOCUMENT_TEMPLATE_BLOCK_TYPES.map(type=><button key={type.id} onClick={()=>addBlock(type.id)} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12,textAlign:"left"}}>{type.label}</button>)}
+            </div>
+          </div>
+        </div>
+
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12,minHeight:760}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+            <div>
+              <div style={{fontWeight:700,color:C.text}}>A4 Onizleme</div>
+              <div style={{fontSize:12,color:C.muted2,marginTop:2}}>Sayfa basligi: {activeTemplate.pageTitle||"-"}</div>
+            </div>
+            <input style={{...inputSt,width:220}} value={activeTemplate.pageTitle||""} onChange={e=>updateActiveTemplate(current=>({...current,pageTitle:e.target.value}))} placeholder="Sayfa basligi"/>
+          </div>
+          <div style={{display:"flex",justifyContent:"center",padding:"8px 0"}}>
+            <div style={{width:"100%",maxWidth:794,minHeight:1123,background:"#FFFFFF",border:"1px solid #D1D5DB",borderRadius:14,boxShadow:"0 18px 42px rgba(15,23,42,.12)",padding:24}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10}}>
+                {activeBlocks.map(block=>renderPreviewBlock(block))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8}}>
+              <div style={{fontWeight:700,color:C.text}}>Secili Blok</div>
+              {selectedBlock&&<Badge label={(DOCUMENT_TEMPLATE_BLOCK_TYPES.find(row=>row.id===selectedBlock.type)||{label:selectedBlock.type}).label} color={C.accent}/>}
+            </div>
+            {!selectedBlock&&<div style={{fontSize:12,color:C.muted2}}>Bir blok secin.</div>}
+            {selectedBlock&&(
+              <>
+                <div style={{fontSize:11,color:C.muted2,marginBottom:8}}>Kimlik sabit tutulur. Asagidaki JSON icerigini duzenleyip uygula butonu ile kaydedin.</div>
+                <textarea value={blockDraft} onChange={e=>setBlockDraft(e.target.value)} spellCheck={false} style={{...inputSt,minHeight:320,resize:"vertical",fontFamily:"Consolas, monospace",fontSize:12,lineHeight:1.5}}/>
+                {blockDraftError&&<div style={{fontSize:11,color:C.red,marginTop:8}}>{blockDraftError}</div>}
+                <div style={{display:"flex",justifyContent:"space-between",gap:8,marginTop:10}}>
+                  <button onClick={()=>selectedBlock&&setBlockDraft(JSON.stringify(((b)=>{const {id,...rest}=b;return rest;})(selectedBlock),null,2))} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Taslagi Yenile</button>
+                  <button onClick={applyBlockDraft} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Blok Degisikligini Uygula</button>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8}}>
+              <div style={{fontWeight:700,color:C.text}}>Degisken Kutuphanesi</div>
+              <div style={{fontSize:11,color:C.muted2}}>Tikla ve secili bloga ekle</div>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:10,maxHeight:420,overflowY:"auto",paddingRight:2}}>
+              {variableGroups.map(group=>(
+                <div key={group.id}>
+                  <div style={{fontSize:10.5,color:C.muted2,letterSpacing:.6,textTransform:"uppercase",fontWeight:700,marginBottom:6}}>{group.label}</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                    {(group.items||[]).map(item=><button key={item.token} onClick={()=>insertVariableToken(item.token)} style={{...btnSt("ghost"),padding:"6px 8px",fontSize:11,textAlign:"left"}}>{item.label}</button>)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ============================================================
 //  ADMIN USERS
 // ============================================================
@@ -3960,6 +5097,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
   const settingsTabs=[
     {id:"genel",label:"Genel",desc:"Logo, uygulama gorunumu ve menu ayarlari"},
     {id:"ticari",label:"Ticari",desc:"Teklif sablonu ve para birimi"},
+    {id:"belgeler",label:"Belgeler",desc:"Siparis ve is emri belge sablonlari"},
     {id:"uretim",label:"Uretim",desc:"Operator, kiosk ve rota ayarlari"},
     {id:"tedarik",label:"Tedarik",desc:"Tedarikci grup ayarlari"},
     {id:"bildirim",label:"Bildirim",desc:"Email/SMS kanal ve sunucu ayarlari"},
@@ -4176,6 +5314,13 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
             </div>
           </div>
           <SalesCurrencySettings currentUser={currentUser}/>
+        </>
+      )}
+
+      {settingsView==="belgeler"&&(
+        <>
+          <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Belge Sablonlari</div>
+          <DocumentTemplateSettings currentUser={currentUser} currentLogo={currentLogo} companyProfile={quoteTemplate}/>
         </>
       )}
 
@@ -5937,6 +7082,25 @@ function Customers({filtersVisible=true,availableTabIds=[],onOpenRelatedRecord=(
     }));
     return [...quoteRows,...orderRows].sort((a,b)=>String(b.sortDate||"").localeCompare(String(a.sortDate||"")));
   },[selectedCustomer,selectedCustomerQuotes,selectedCustomerSalesOrders]);
+  const selectedCustomerRevenueStats=useMemo(()=>{
+    if(!selectedCustomer) return {orderCount:0,totalRevenue:0,openRevenue:0,deliveredRevenue:0,averageOrderValue:0};
+    const revenueOrders=selectedCustomerSalesOrders.filter(row=>(row.status||"")!=="cancelled");
+    const orderCount=revenueOrders.length;
+    const totalRevenue=revenueOrders.reduce((sum,row)=>sum+safeNum(row.totalAmount),0);
+    const openRevenue=revenueOrders
+      .filter(row=>(row.status||"")!=="delivered")
+      .reduce((sum,row)=>sum+safeNum(row.totalAmount),0);
+    const deliveredRevenue=revenueOrders
+      .filter(row=>(row.status||"")==="delivered")
+      .reduce((sum,row)=>sum+safeNum(row.totalAmount),0);
+    return {
+      orderCount,
+      totalRevenue,
+      openRevenue,
+      deliveredRevenue,
+      averageOrderValue:orderCount>0?(totalRevenue/orderCount):0,
+    };
+  },[selectedCustomer,selectedCustomerSalesOrders]);
   const openCustomerDetail=customer=>{
     if(!customer?.id) return;
     setSelectedCustomerId(customer.id);
@@ -6171,6 +7335,9 @@ function Customers({filtersVisible=true,availableTabIds=[],onOpenRelatedRecord=(
               <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Satis Kayitlari</div><div style={{fontSize:24,fontWeight:800,color:C.text,marginTop:3}}>{selectedCustomerSalesRows.length}</div></div>
               <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Is Emirleri</div><div style={{fontSize:24,fontWeight:800,color:C.text,marginTop:3}}>{selectedCustomerWorkOrders.length}</div></div>
               <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Acik Isler</div><div style={{fontSize:24,fontWeight:800,color:C.text,marginTop:3}}>{selectedCustomerWorkOrders.filter(row=>isOpenOrderStatus(row.status)).length}</div></div>
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Toplam Ciro</div><div style={{fontSize:24,fontWeight:800,color:C.green,marginTop:3}}>{moneyFmt(selectedCustomerRevenueStats.totalRevenue)}</div><div style={{fontSize:11,color:C.muted2,marginTop:4}}>{selectedCustomerRevenueStats.orderCount} satis siparisi</div></div>
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Acik Siparis Tutari</div><div style={{fontSize:24,fontWeight:800,color:C.warn,marginTop:3}}>{moneyFmt(selectedCustomerRevenueStats.openRevenue)}</div><div style={{fontSize:11,color:C.muted2,marginTop:4}}>Teslim edilmemis siparisler</div></div>
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Ort. Siparis</div><div style={{fontSize:24,fontWeight:800,color:C.text,marginTop:3}}>{moneyFmt(selectedCustomerRevenueStats.averageOrderValue)}</div><div style={{fontSize:11,color:C.muted2,marginTop:4}}>Teslim edilen: {moneyFmt(selectedCustomerRevenueStats.deliveredRevenue)}</div></div>
             </div>
 
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -11378,6 +12545,7 @@ function SalesOrders({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders}) {
 // ============================================================
 function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true}) {
   const [orders,setOrders]=useState([]);
+  const [plans,setPlans]=useState([]);
   const [customers,setCustomers]=useState([]);
   const [materials,setMaterials]=useState([]);
   const [toolMovements,setToolMovements]=useState([]);
@@ -11430,8 +12598,9 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
   };
 
   const load=useCallback(async()=>{
-    const [o,m,c,ml,en,templateDoc,brandingDoc]=await Promise.all([
+    const [o,p,m,c,ml,en,templateDoc,brandingDoc]=await Promise.all([
       window.DB.getAll("orders"),
+      window.DB.getAll("plans"),
       window.DB.getAll("toolMovements"),
       window.DB.getAll("customers"),
       window.DB.getAll("materials"),
@@ -11440,6 +12609,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
       window.DB.getDoc("config","branding"),
     ]);
     setOrders(o.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setPlans(p.sort((a,b)=>(b.date||"").localeCompare(a.date||"")));
     setToolMovements(m.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
     setCustomers(c.sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
     setMaterials(ml.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
@@ -11502,6 +12672,49 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
       note:[e.shift?`Vardiya: ${e.shift}`:"",e.machine?`Tezgah: ${e.machine}`:""].filter(Boolean).join(" · "),
       date:e.date||"",
     }));
+  const workOrderMachineMaps=useMemo(()=>{
+    const planByOrderId={};
+    const planByOrderCode={};
+    const entryByOrderCode={};
+    const pushMachine=(map,key,machine)=>{
+      const token=String(key||"").trim();
+      const machineName=String(machine||"").trim();
+      if(!token||!machineName) return;
+      if(!map[token]) map[token]=[];
+      if(!map[token].includes(machineName)) map[token].push(machineName);
+    };
+    plans.forEach(plan=>{
+      pushMachine(planByOrderId,plan.orderId,plan.machine);
+      pushMachine(planByOrderCode,String(plan.orderCode||"").trim().toUpperCase(),plan.machine);
+    });
+    entries.forEach(entry=>{
+      pushMachine(entryByOrderCode,String(entry.jobCode||"").trim().toUpperCase(),entry.machine);
+    });
+    return {planByOrderId,planByOrderCode,entryByOrderCode};
+  },[entries,plans]);
+  function resolveWorkOrderMachineNames(order){
+    const list=[];
+    const seen=new Set();
+    const append=value=>{
+      const machineName=String(value||"").trim();
+      if(!machineName||seen.has(machineName)) return;
+      seen.add(machineName);
+      list.push(machineName);
+    };
+    if(order?.code){
+      (workOrderMachineMaps.entryByOrderCode[String(order.code).trim().toUpperCase()]||[]).forEach(append);
+      (workOrderMachineMaps.planByOrderCode[String(order.code).trim().toUpperCase()]||[]).forEach(append);
+    }
+    if(order?.id){
+      (workOrderMachineMaps.planByOrderId[String(order.id).trim()]||[]).forEach(append);
+    }
+    (Array.isArray(order?.machines)?order.machines:[]).forEach(append);
+    return list;
+  }
+  function resolveWorkOrderMachineLabel(order){
+    const names=resolveWorkOrderMachineNames(order);
+    return names.length>0?names.join(", "):"-";
+  }
   useEffect(()=>{
     if(!viewOrder){ setViewOrderMoves([]); return; }
     const stockMoves=toolMovements.filter(m=>(m.orderId&&m.orderId===viewOrder.id)||(!m.orderId&&m.orderCode===viewOrder.code));
@@ -11534,7 +12747,6 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
 
   async function save() {
     if(!form.name||!form.partSec){alert("Parça adı ve süre zorunlu!");return;}
-    if(form.machines.length===0){alert("En az bir tezgah seçin!");return;}
     const finalCode=editId?form.code:(form.code||nextOrderCode());
     const pickedCustomer=customers.find(c=>c.id===form.customerId);
     const editingOrder=editId?orders.find(x=>x.id===editId):null;
@@ -11777,11 +12989,13 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
   function buildWorkOrderOperations(order){
     const snapshot=(order?.partSnapshot&&typeof order.partSnapshot==="object")?order.partSnapshot:null;
     const routingOps=Array.isArray(snapshot?.routingOps)?snapshot.routingOps.filter(Boolean):[];
+    const machineNames=resolveWorkOrderMachineNames(order);
+    const fallbackMachine=machineNames[0]||"-";
     if(routingOps.length>0){
       return routingOps.map((op,idx)=>({
         seq:String(op.operationCode||`OP${String((idx+1)*10).padStart(2,"0")}`).trim().toUpperCase(),
         name:String(op.operationName||op.operation||`Operasyon ${idx+1}`).trim(),
-        machine:String(op.machine||"").trim()||((order?.machines||[])[0]||"-"),
+        machine:String(op.machine||"").trim()||fallbackMachine,
         setupSec:Math.max(0,safeNum(op.setupSec)),
         cycleSec:Math.max(0,safeNum(op.cycleSec)),
         ncProgram:String(op.ncProgram||snapshot?.ncProgramVersion||"").trim(),
@@ -11791,7 +13005,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
     return [{
       seq:"OP10",
       name:"Uretim Operasyonu",
-      machine:(order?.machines||[]).join(", ")||"-",
+      machine:resolveWorkOrderMachineLabel(order),
       setupSec:Math.max(0,safeNum(snapshot?.setupSec)),
       cycleSec:Math.max(0,safeNum(snapshot?.cycleSec)||safeNum(order?.partSec)),
       ncProgram:String(snapshot?.ncProgramVersion||"").trim(),
@@ -11835,7 +13049,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
       ["Termin",order.dueDate||"-"],
       ["Oncelik",(PRIORITY_OPTIONS.find(p=>p.id===order.priority)||{}).label||"-"],
       ["Malzeme",order.material||"-"],
-      ["Tezgah",((order.machines||[]).join(", "))||"-"],
+      ["Tezgah",resolveWorkOrderMachineLabel(order)],
       ["Kurulum / Cevrim",`${setupText||"-"} / ${cycleText||"-"}`],
       ["Parca Olculeri",`Cap ${partDiameterText} mm · Boy ${partLengthText} mm · Cubuk ${barLengthText} mm`],
       ["NC Program Rev",snapshot?.ncProgramVersion||"-"],
@@ -12211,7 +13425,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
       {label:"Kaynak",value:viewOrder.sourceType==="sales_auto"?"Siparisten Otomatik":"Manuel"},
       {label:"Parca Suresi",value:fmtSec(viewOrder.partSec)},
       {label:"Maks Uretim/Gun",value:viewOrder.partSec?`${Math.floor(EFFECTIVE_SECONDS/viewOrder.partSec)} adet`:"-"},
-      {label:"Tezgahlar",value:(viewOrder.machines||[]).join(", ")||"-"},
+      {label:"Tezgah Bilgisi",value:resolveWorkOrderMachineLabel(viewOrder)},
       {label:"Bagimliliklar",value:(viewOrder.dependencies||[]).join(", ")||"-"},
       {label:"Notlar",value:viewOrder.notes||"-"},
     ];
@@ -12368,10 +13582,11 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
           {form.partSec>0&&<div style={{color:C.muted2,fontSize:11,marginTop:5}}>› Maks: <span style={{color:C.accent,fontWeight:700}}>{Math.floor(EFFECTIVE_SECONDS/Number(form.partSec))} adet</span>/gün ({fmtSec(Number(form.partSec))}/parça)</div>}
         </div>
         <div>
-          <span style={labelSt}>Tezgah Ataması *</span>
+          <span style={labelSt}>Tezgah Bilgisi (Opsiyonel)</span>
           <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
             {machines.map(m=><button key={m} onClick={()=>toggleMachine(m)} style={chip(form.machines.includes(m))}>{m}</button>)}
           </div>
+          <div style={{fontSize:11,color:C.muted2,marginTop:5}}>Planlamada kilit olarak kullanilmaz; sadece bilgi ve oncelikli tercih olarak saklanir.</div>
         </div>
         <div>
           <span style={labelSt}>Bagimli Is Emirleri</span>
@@ -16212,8 +17427,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     });
   function openPlanModalForOrder(order){
     if(!order) return;
-    const orderMachines=Array.isArray(order.machines)?order.machines:[];
-    const pickedMachine=orderMachines.find(m=>machines.includes(m))||(machines[0]||"CNC-1");
+    const pickedMachine=resolveOrderMachines(order)[0]||(machines[0]||"CNC-1");
     const baseDate=order.dueDate||todayStr();
     setEditId(null);
     setSelectedPlan(null);
@@ -16228,7 +17442,16 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   }
   function resolveOrderMachines(order){
     const orderMachines=Array.isArray(order?.machines)?order.machines.filter(m=>machines.includes(m)):[];
-    if(orderMachines.length>0) return orderMachines;
+    const ordered=[...orderMachines,...machines];
+    const unique=[];
+    const seen=new Set();
+    ordered.forEach(machine=>{
+      const key=String(machine||"").trim();
+      if(!key||seen.has(key)) return;
+      seen.add(key);
+      unique.push(key);
+    });
+    if(unique.length>0) return unique;
     if(Array.isArray(machines)&&machines.length>0) return machines;
     return ["CNC-1"];
   }
@@ -16798,6 +18021,115 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     const all=buildPlanSegments(plans);
     return all.find(seg=>(seg.plans||[]).some(x=>x.id===plan.id))||null;
   }
+  function resolvePlanDateWindow(startDate,endDate){
+    const dates=getDateRange(startDate,endDate);
+    const safeDates=dates.length>0?dates:[String(startDate||endDate||todayStr())];
+    return {
+      dates:safeDates,
+      startDate:String(safeDates[0]||todayStr()),
+      endDate:String(safeDates[safeDates.length-1]||safeDates[0]||todayStr()),
+      days:Math.max(1,safeDates.length),
+    };
+  }
+  async function saveEditedPlanSegment(seg,picked){
+    if(!seg||!picked) return null;
+    const sourceMachine=String(seg.machine||"");
+    const targetMachine=String(form.machine||sourceMachine);
+    if(!sourceMachine||!targetMachine) return null;
+    const desiredWindow=resolvePlanDateWindow(form.startDate,form.endDate);
+    const seedPlan=(seg.plans||[])[0]||{};
+    const editedSeed={
+      ...seedPlan,
+      machine:targetMachine,
+      orderId:picked.id,
+      orderCode:picked.code,
+      orderName:picked.name,
+      orderPartSec:Number(picked.partSec)||0,
+      orderCustomerName:picked.customerName||"",
+      note:form.note.trim(),
+      status:seedPlan.status||"planned",
+      createdBy:seedPlan.createdBy||currentUser.id,
+      updatedAt:new Date().toISOString(),
+    };
+    const sourceSpecs=buildMachineQueueSpecs(sourceMachine);
+    const sourceIdx=findQueueSpecIndexForSegment(sourceSpecs,seg);
+    if(sourceIdx<0){
+      alert("Düzenlenecek plan bulunamadi.");
+      return null;
+    }
+    if(sourceMachine===targetMachine){
+      const nextSpecs=[...sourceSpecs];
+      nextSpecs[sourceIdx]={
+        ...nextSpecs[sourceIdx],
+        machine:targetMachine,
+        seed:editedSeed,
+        startDate:desiredWindow.startDate,
+        endDate:desiredWindow.endDate,
+        days:desiredWindow.days,
+      };
+      const scheduled=applySequentialDatesToSpecs(nextSpecs,{anchorIndex:sourceIdx,forceStartDate:desiredWindow.startDate});
+      const ok=await persistMachineQueueFromSpecs(targetMachine,scheduled,sourceIdx);
+      if(!ok) return null;
+      if(selectedPlan) setSelectedPlan(null);
+      return {
+        machine:targetMachine,
+        startDate:scheduled[sourceIdx]?.startDate||desiredWindow.startDate,
+        endDate:scheduled[sourceIdx]?.endDate||desiredWindow.endDate,
+      };
+    }
+    const movingSpecSeed=sourceSpecs[sourceIdx]||null;
+    if(!movingSpecSeed) return null;
+    const movingToken=String(movingSpecSeed.token||getSegmentToken(seg));
+    const sourceRemain=sourceSpecs.filter((_,idx)=>idx!==sourceIdx);
+    const sourceAnchor=sourceRemain.length>0?Math.min(sourceIdx,sourceRemain.length-1):0;
+    const sourceForceStart=sourceRemain.length>0&&sourceIdx===0
+      ? String(seg.startDate||sourceRemain[0]?.startDate||todayStr())
+      : "";
+    const sourceScheduled=sourceRemain.length>0
+      ? applySequentialDatesToSpecs(sourceRemain,{anchorIndex:sourceAnchor,forceStartDate:sourceForceStart})
+      : [];
+    const targetSpecs=buildMachineQueueSpecs(targetMachine);
+    const insertIdx=findInsertIndexForDate(targetSpecs,desiredWindow.startDate);
+    const targetNext=[...targetSpecs];
+    targetNext.splice(insertIdx,0,{
+      ...movingSpecSeed,
+      token:movingToken,
+      machine:targetMachine,
+      seed:editedSeed,
+      startDate:desiredWindow.startDate,
+      endDate:desiredWindow.endDate,
+      days:desiredWindow.days,
+      planIds:[],
+    });
+    const targetScheduled=applySequentialDatesToSpecs(targetNext,{anchorIndex:insertIdx,forceStartDate:desiredWindow.startDate});
+    const movedIds=(movingSpecSeed.planIds||[]).filter(Boolean);
+    const okSource=await persistMachineQueueFromSpecs(sourceMachine,sourceScheduled,sourceAnchor);
+    if(!okSource) return null;
+    if(sourceRemain.length>0&&movedIds.length>0){
+      for(const id of movedIds){
+        const ok=await window.DB.deleteDoc("plans",id);
+        if(!ok){
+          alert("Plan guncellenemedi.");
+          await refreshPlans();
+          return null;
+        }
+      }
+      const movedSet=new Set(movedIds);
+      setPlans(prev=>prev.filter(p=>!movedSet.has(p.id)));
+    }
+    const okTarget=await persistMachineQueueFromSpecs(targetMachine,targetScheduled,insertIdx);
+    if(!okTarget){
+      await refreshPlans();
+      return null;
+    }
+    const updatedIdx=targetScheduled.findIndex(spec=>String(spec?.token||"")===movingToken);
+    if(selectedPlan) setSelectedPlan(null);
+    return {
+      machine:targetMachine,
+      startDate:targetScheduled[updatedIdx]?.startDate||desiredWindow.startDate,
+      endDate:targetScheduled[updatedIdx]?.endDate||desiredWindow.endDate,
+    };
+  }
 
   async function savePlan(){
     if(!form.startDate||!form.endDate){alert("Tarih aralığı seçin!");return;}
@@ -16805,12 +18137,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     if(!form.orderId){alert("İş emri seçin!");return;}
     const picked=orders.find(o=>o.id===form.orderId);
     if(!picked){alert("Geçerli bir iş emri seçin!");return;}
-    const planDates=editId?[form.startDate]:getDateRange(form.startDate,form.endDate);
-    const duplicateDates=planDates.filter(dt=>plans.some(p=>p.id!==editId&&p.date===dt&&p.machine===form.machine));
-    if(duplicateDates.length>0){
-      alert(`Bu tezgah için plan zaten var: ${duplicateDates.slice(0,5).join(", ")}${duplicateDates.length>5?" ...":""}`);
-      return;
-    }
+    const plannedWindow=resolvePlanDateWindow(form.startDate,form.endDate);
     const baseData={
       machine:form.machine,
       orderId:picked.id,
@@ -16826,40 +18153,20 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     if(editId){
       const seg=buildPlanSegments(plans).find(s=>(s.plans||[]).some(x=>x.id===editId))||null;
       if(!seg||!seg.plans||seg.plans.length===0){alert("Düzenlenecek plan bulunamadı.");return;}
-      const segIds=new Set(seg.plans.map(x=>x.id));
-      const targetDates=getDateRange(form.startDate,form.endDate);
-      const duplicateDates=targetDates.filter(dt=>plans.some(p=>!segIds.has(p.id)&&p.date===dt&&p.machine===form.machine));
-      if(duplicateDates.length>0){
-        alert(`Bu tezgah için plan zaten var: ${duplicateDates.slice(0,5).join(", ")}${duplicateDates.length>5?" ...":""}`);
-        return;
-      }
-      for(const old of seg.plans){
-        const ok=await window.DB.deleteDoc("plans",old.id);
-        if(!ok){alert("Plan güncellenemedi (silme).");await refreshPlans();return;}
-      }
-      const recreated=[];
-      for(const dt of targetDates){
-        const data={
-          ...baseData,
-          date:dt,
-          week:weekStart(parseYmdLocal(dt)),
-          month:monthStr(parseYmdLocal(dt)),
-        };
-        const id=await window.DB.addDoc("plans",data);
-        if(!id){alert("Plan güncellenemedi (ekleme).");await refreshPlans();return;}
-        recreated.push({id,...data});
-      }
-      setPlans(prev=>{
-        const cleaned=prev.filter(x=>!segIds.has(x.id));
-        return [...recreated.reverse(),...cleaned];
-      });
+      const applied=await saveEditedPlanSegment(seg,picked);
+      if(!applied) return;
       setEditId(null);
-      setForm({...emptyForm,machine:form.machine,startDate:form.startDate,endDate:form.endDate});
+      setForm({...emptyForm,machine:applied.machine,startDate:applied.startDate,endDate:applied.endDate});
       setShowPlanModal(false);
       return;
     }
+    const duplicateDates=plannedWindow.dates.filter(dt=>plans.some(p=>p.date===dt&&p.machine===form.machine));
+    if(duplicateDates.length>0){
+      alert(`Bu tezgah için plan zaten var: ${duplicateDates.slice(0,5).join(", ")}${duplicateDates.length>5?" ...":""}`);
+      return;
+    }
     const created=[];
-    for(const dt of planDates){
+    for(const dt of plannedWindow.dates){
       const data={
         ...baseData,
         date:dt,
@@ -16868,7 +18175,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       };
       const id=await window.DB.addDoc("plans",data);
       if(!id){
-        alert(`Plan kaydı sırasında hata oluştu. Oluşan kayıt: ${created.length}/${planDates.length}`);
+        alert(`Plan kaydı sırasında hata oluştu. Oluşan kayıt: ${created.length}/${plannedWindow.dates.length}`);
         break;
       }
       created.push({id,...data});
@@ -17824,7 +19131,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                           {order.name||"-"}{order.customerName?` · ${order.customerName}`:""}
                         </div>
                         <div style={{fontSize:10.5,color:C.muted2,marginTop:1,lineHeight:1.2}}>
-                          Termin: {order.dueDate||"-"} · Tezgah: {Array.isArray(order.machines)&&order.machines.length>0?order.machines.join(", "):"-"}
+                          Termin: {order.dueDate||"-"} · Kayitli Tezgah: {Array.isArray(order.machines)&&order.machines.length>0?order.machines.join(", "):"Serbest"}
                         </div>
                       </div>
                       <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
