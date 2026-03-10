@@ -705,7 +705,7 @@ const GLOBAL_TOP_SEARCH_SOURCES = [
   {collection:"orders",tabId:"orders",moduleLabel:"Is Emirleri",primary:["code","orderNo","name"],secondary:["customerName","status","dueDate","priority","machines"],search:["code","orderNo","name","customerName","status","priority","note","machines","id"]},
   {collection:"salesQuotes",tabId:"quotes",moduleLabel:"Teklif Yonetimi",primary:["quoteNo","code","name"],secondary:["customerName","status","validUntil","dueDate"],search:["quoteNo","code","name","customerName","status","note","partName","id"]},
   {collection:"salesOrders",tabId:"sales",moduleLabel:"Satis Siparisleri",primary:["orderNo","code","name"],secondary:["customerName","status","dueDate"],search:["orderNo","code","name","customerName","status","note","id"]},
-  {collection:"parts",tabId:"parts",moduleLabel:"Parca Yonetimi",primary:["partNo","code","name"],secondary:["customerName","revision","materialName"],search:["partNo","code","name","customerName","revision","materialName","description","id"]},
+  {collection:"parts",tabId:"parts",moduleLabel:"Ürün/Parça Merkezi",primary:["partNo","code","name"],secondary:["customerName","revision","materialName"],search:["partNo","code","name","customerName","revision","materialName","description","id"]},
   {collection:"materials",tabId:"materials",moduleLabel:"Malzeme Kutuphanesi",primary:["code","name","materialCode"],secondary:["category","grade","supplierName"],search:["code","name","materialCode","category","grade","supplierName","note","id"]},
   {collection:"customers",tabId:"customers",moduleLabel:"Musteriler",primary:["name","code","customerCode"],secondary:["city","contactName","phone"],search:["name","code","customerCode","contactName","email","phone","city","country","id"]},
   {collection:"toolStock",tabId:"tools",moduleLabel:"Takim Yonetimi",primary:["code","toolCode","name"],secondary:["type","brand","supplierCode","supplierName"],search:["code","toolCode","name","type","brand","supplierCode","supplierName","coating","id"]},
@@ -3880,7 +3880,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
       };
     });
     const rows=Object.values(map);
-    const groupOrder=["Planlama","Operasyon","Tedarik ve Stok","Analiz ve Yonetim","Sistem"];
+    const groupOrder=["Genel","Ticari","Planlama","Operasyon","Kalite","Stok ve Tedarik","Analiz","Sistem"];
     rows.sort((a,b)=>{
       const ai=groupOrder.indexOf(a.group);
       const bi=groupOrder.indexOf(b.group);
@@ -22511,30 +22511,30 @@ function App() {
       ];
     }
     return [
-      {id:"dashboard",icon:"dashboard",label:"Gösterge Paneli",group:"Planlama",enabled:(canEntry||canOrders||canReport||canSales||canPurchasing)},
+      {id:"dashboard",icon:"dashboard",label:"Gösterge Paneli",group:"Genel",enabled:(canEntry||canOrders||canReport||canSales||canPurchasing)},
+      {id:"customers",icon:"customers",label:"Musteriler",group:"Ticari",enabled:(canCustomers||canSales)},
+      {id:"quotes",icon:"quotes",label:"Teklif Yonetimi",group:"Ticari",enabled:canSales},
+      {id:"sales",icon:"sales",label:"Satis Siparisleri",group:"Ticari",enabled:canSales},
+      {id:"parts",icon:"parts",label:"Ürün/Parça Merkezi",group:"Planlama",enabled:canPlanning},
       {id:"planning",icon:"planning",label:"Planlama",group:"Planlama",enabled:canPlanning},
-      {id:"parts",icon:"parts",label:"Parça Yönetimi",group:"Planlama",enabled:canPlanning},
-      {id:"quotes",icon:"quotes",label:"Teklif Yonetimi",group:"Planlama",enabled:canSales},
-      {id:"sales",icon:"sales",label:"Satis Siparisleri",group:"Planlama",enabled:canSales},
-      {id:"orders",icon:"orders",label:"Is Emirleri",group:"Operasyon",enabled:canOrders},
+      {id:"orders",icon:"orders",label:"Is Emirleri",group:"Planlama",enabled:canOrders},
       {id:"giris",icon:"giris",label:"Uretim Girisi",group:"Operasyon",enabled:canEntry},
       {id:"assignments",icon:"tasks",label:"Calisan Gorevlendirme",group:"Operasyon",enabled:true},
       {id:"cncmonitor",icon:"monitor",label:"CNC Izleme",group:"Operasyon",enabled:canMonitor},
       {id:"downtime",icon:"downtime",label:"Durus Yonetimi",group:"Operasyon",enabled:canDowntime},
-      {id:"quality",icon:"quality",label:"Kalite ve Izlenebilirlik",group:"Operasyon",enabled:canQuality},
-      {id:"materials",icon:"materials",label:"Malzeme Kutuphanesi",group:"Tedarik ve Stok",enabled:(canOrders||canPurchasing)},
-      {id:"tools",icon:"tools",label:"Takim Yonetimi",group:"Tedarik ve Stok",enabled:canTools},
-      {id:"customers",icon:"customers",label:"Musteriler",group:"Tedarik ve Stok",enabled:(canCustomers||canSales)},
-      {id:"purchase_requests",icon:"purchase",label:"Talep ve PO",group:"Satin Alma",enabled:canPurchasing},
-      {id:"purchase_suppliers",icon:"customers",label:"Tedarikciler",group:"Satin Alma",enabled:canPurchasing},
-      {id:"purchase_quotes",icon:"quotes",label:"Teklifler",group:"Satin Alma",enabled:canPurchasing},
-      {id:"rapor",icon:"rapor",label:"Raporlar",group:"Analiz ve Yonetim",enabled:canReport},
-      {id:"finance",icon:"cost",label:"Finans",group:"Analiz ve Yonetim",enabled:(canSales||canPurchasing||canReport)},
-      {id:"cost",icon:"cost",label:"Maliyetleme",group:"Analiz ve Yonetim",enabled:(canOrders||canReport||canSales)},
-      {id:"materialquote",icon:"cost",label:"Malzeme Teklif",group:"Analiz ve Yonetim",enabled:(canOrders||canSales||canPurchasing||canReport)},
-      {id:"progenergy",icon:"integration",label:"Program ve Enerji",group:"Analiz ve Yonetim",enabled:canSmartFactory},
-      {id:"toolcycle",icon:"tools",label:"Takim ve Cevrim",group:"Operasyon",enabled:canSmartFactory},
-      {id:"closedloop",icon:"quality",label:"Olcum ve Depo",group:"Tedarik ve Stok",enabled:canSmartFactory},
+      {id:"quality",icon:"quality",label:"Kalite ve Izlenebilirlik",group:"Kalite",enabled:canQuality},
+      {id:"materials",icon:"materials",label:"Malzeme Kutuphanesi",group:"Stok ve Tedarik",enabled:(canOrders||canPurchasing)},
+      {id:"tools",icon:"tools",label:"Takim Yonetimi",group:"Stok ve Tedarik",enabled:canTools},
+      {id:"purchase_requests",icon:"purchase",label:"Talep ve PO",group:"Stok ve Tedarik",enabled:canPurchasing},
+      {id:"purchase_suppliers",icon:"customers",label:"Tedarikciler",group:"Stok ve Tedarik",enabled:canPurchasing},
+      {id:"purchase_quotes",icon:"quotes",label:"Teklifler",group:"Stok ve Tedarik",enabled:canPurchasing},
+      {id:"rapor",icon:"rapor",label:"Raporlar",group:"Analiz",enabled:canReport},
+      {id:"finance",icon:"cost",label:"Finans",group:"Analiz",enabled:(canSales||canPurchasing||canReport)},
+      {id:"cost",icon:"cost",label:"Maliyetleme",group:"Analiz",enabled:(canOrders||canReport||canSales)},
+      {id:"materialquote",icon:"cost",label:"Malzeme Teklif",group:"Analiz",enabled:(canOrders||canSales||canPurchasing||canReport)},
+      {id:"progenergy",icon:"integration",label:"Program ve Enerji",group:"Analiz",enabled:canSmartFactory},
+      {id:"toolcycle",icon:"tools",label:"Takim ve Cevrim",group:"Analiz",enabled:canSmartFactory},
+      {id:"closedloop",icon:"quality",label:"Olcum ve Depo",group:"Analiz",enabled:canSmartFactory},
       {id:"machineprep",icon:"machines",label:"Makina Hazirlik",group:"Sistem",enabled:canMachinePrep},
       {id:"integrations",icon:"integration",label:"Entegrasyonlar",group:"Sistem",enabled:(canUsers||isAdmin)},
       {id:"users",icon:"users",label:"Ayarlar ve Guvenlik",group:"Sistem",enabled:canUsers},
@@ -22552,7 +22552,7 @@ function App() {
     {id:"quotes",tabId:"quotes",eventTab:"quotes",label:"Teklif",hint:"Satis teklifi"},
     {id:"sales",tabId:"sales",eventTab:"sales",label:"Satis Siparisi",hint:"Musteri siparisi"},
     {id:"planning",tabId:"planning",eventTab:"planning",label:"Planlama",hint:"Plan kaydi"},
-    {id:"parts",tabId:"parts",eventTab:"parts",label:"Parca",hint:"Parca kaydi"},
+    {id:"parts",tabId:"parts",eventTab:"parts",label:"Ürün/Parça Merkezi",hint:"Ürün/parça kaydı"},
     {id:"materials",tabId:"materials",eventTab:"materials",label:"Malzeme",hint:"Malzeme karti"},
     {id:"tools",tabId:"tools",eventTab:"tools",label:"Takim",hint:"Takim kaydi"},
     {id:"customers",tabId:"customers",eventTab:"customers",label:"Musteri",hint:"Musteri karti"},
@@ -22568,7 +22568,7 @@ function App() {
         return {...row,moduleLabel:tabMeta?.label||row.label};
       });
   },[dashboardCreateCatalog,tabs]);
-  const groupOrder=["Planlama","Operasyon","Tedarik ve Stok","Satin Alma","Analiz ve Yonetim","Sistem"];
+  const groupOrder=["Genel","Ticari","Planlama","Operasyon","Kalite","Stok ve Tedarik","Analiz","Sistem"];
   const menuGroupCountMap=useMemo(()=>{
     const map={all:tabs.length};
     groupOrder.forEach(g=>{
