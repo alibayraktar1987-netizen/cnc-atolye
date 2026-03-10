@@ -16432,6 +16432,16 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
         planIds:(seg.plans||[]).map(p=>p.id).filter(Boolean),
       }));
   }
+  function findQueueSpecIndexForSegment(machineSpecs,segment){
+    const specs=Array.isArray(machineSpecs)?machineSpecs:[];
+    const segPlanIds=new Set((segment?.plans||[]).map(p=>p.id).filter(Boolean));
+    if(segPlanIds.size>0){
+      const idx=specs.findIndex(spec=>(Array.isArray(spec?.planIds)?spec.planIds:[]).some(id=>segPlanIds.has(id)));
+      if(idx>=0) return idx;
+    }
+    const token=getSegmentToken(segment);
+    return specs.findIndex(spec=>spec.token===token);
+  }
   function applySequentialDatesToSpecs(specs,{anchorIndex=0,forceStartDate=""}={}){
     const rows=(Array.isArray(specs)?specs:[]).map(spec=>({
       ...spec,
@@ -16468,6 +16478,28 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     }
     if(a.length!==b.length) return len;
     return -1;
+  }
+  function firstChangedQueueIndex(before,after){
+    const a=Array.isArray(before)?before:[];
+    const b=Array.isArray(after)?after:[];
+    const len=Math.min(a.length,b.length);
+    for(let i=0;i<len;i+=1){
+      if(String(a[i]?.token||"")!==String(b[i]?.token||"")) return i;
+      if(String(a[i]?.machine||"")!==String(b[i]?.machine||"")) return i;
+      if(String(a[i]?.startDate||"")!==String(b[i]?.startDate||"")) return i;
+      if(String(a[i]?.endDate||"")!==String(b[i]?.endDate||"")) return i;
+      if(Math.max(1,Math.floor(Number(a[i]?.days)||1))!==Math.max(1,Math.floor(Number(b[i]?.days)||1))) return i;
+    }
+    if(a.length!==b.length) return len;
+    return -1;
+  }
+  function findInsertIndexForDate(specs,targetDate){
+    const rows=Array.isArray(specs)?specs:[];
+    const date=String(targetDate||"");
+    for(let i=0;i<rows.length;i+=1){
+      if(date<=String(rows[i]?.endDate||rows[i]?.startDate||"")) return i;
+    }
+    return rows.length;
   }
   async function persistMachineQueueFromSpecs(machine,specs,anchorIndex=0){
     const rows=Array.isArray(specs)?specs:[];
@@ -16529,8 +16561,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     const machine=seg.machine||"";
     if(!machine) return;
     const machineSpecs=buildMachineQueueSpecs(machine);
-    const token=getSegmentToken(seg);
-    const idx=machineSpecs.findIndex(spec=>spec.token===token);
+    const idx=findQueueSpecIndexForSegment(machineSpecs,seg);
     if(idx<0) return;
     const updated=[...machineSpecs];
     updated[idx]={
@@ -16547,6 +16578,114 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     }
     const ok=await persistMachineQueueFromSpecs(machine,scheduled,idx);
     if(ok&&selectedPlan) setSelectedPlan(null);
+  }
+  function readGanttDragPayload(e){
+    const raw=(e&&e.dataTransfer&&e.dataTransfer.getData)?(e.dataTransfer.getData("text/plain")||""):"";
+    const source=raw||dragPlanId||"";
+    if(!source) return null;
+    try{
+      const payload=JSON.parse(source);
+      if(payload&&payload.segmentId&&["start","end","move"].includes(payload.type)){
+        return {type:String(payload.type),segmentId:String(payload.segmentId)};
+      }
+    }catch{}
+    return null;
+  }
+  function allowGanttDrop(e){
+    const payload=readGanttDragPayload(e);
+    if(!payload) return false;
+    e.preventDefault();
+    if(e&&e.dataTransfer){
+      e.dataTransfer.dropEffect="move";
+    }
+    return true;
+  }
+  async function moveSegmentOnGantt(segmentId,targetMachine,targetDate){
+    const seg=segmentById[segmentId]||allSegmentById[segmentId]||null;
+    const nextMachine=String(targetMachine||seg?.machine||"");
+    const desiredStart=String(targetDate||seg?.startDate||"");
+    if(!seg||!nextMachine||!desiredStart) return false;
+    const sourceMachine=String(seg.machine||"");
+    if(!sourceMachine) return false;
+    const sourceSpecs=buildMachineQueueSpecs(sourceMachine);
+    const sourceIdx=findQueueSpecIndexForSegment(sourceSpecs,seg);
+    if(sourceIdx<0) return false;
+    const movingSpecSeed=sourceSpecs[sourceIdx]||null;
+    if(!movingSpecSeed) return false;
+    const movingToken=String(movingSpecSeed.token||getSegmentToken(seg));
+    const movingDays=Math.max(1,Math.floor(Number(movingSpecSeed.days)||1));
+    const movingSpec={
+      ...movingSpecSeed,
+      token:movingToken,
+      machine:nextMachine,
+      startDate:desiredStart,
+      endDate:addDays(desiredStart,movingDays-1),
+      days:movingDays,
+    };
+    const editedIds=new Set((seg.plans||[]).map(p=>p.id));
+    if(sourceMachine===nextMachine){
+      const nextSpecs=sourceSpecs.filter((_,idx)=>idx!==sourceIdx);
+      const insertIdx=findInsertIndexForDate(nextSpecs,desiredStart);
+      nextSpecs.splice(insertIdx,0,movingSpec);
+      const scheduled=applySequentialDatesToSpecs(nextSpecs,{anchorIndex:insertIdx,forceStartDate:desiredStart});
+      const firstChanged=firstChangedQueueIndex(sourceSpecs,scheduled);
+      if(firstChanged<0) return true;
+      const ok=await persistMachineQueueFromSpecs(nextMachine,scheduled,firstChanged);
+      if(!ok) return false;
+      const updatedIdx=scheduled.findIndex(spec=>String(spec?.token||"")===movingToken);
+      if(editId&&editedIds.has(editId)&&updatedIdx>=0){
+        setForm(f=>({...f,machine:nextMachine,startDate:scheduled[updatedIdx].startDate,endDate:scheduled[updatedIdx].endDate}));
+      }
+      if(selectedPlan) setSelectedPlan(null);
+      return true;
+    }
+    const sourceRemain=sourceSpecs.filter((_,idx)=>idx!==sourceIdx);
+    const sourceAnchor=sourceRemain.length>0?Math.min(sourceIdx,sourceRemain.length-1):0;
+    const sourceScheduled=sourceRemain.length>0
+      ? applySequentialDatesToSpecs(sourceRemain,{anchorIndex:sourceAnchor})
+      : [];
+    const targetSpecs=buildMachineQueueSpecs(nextMachine);
+    const insertIdx=findInsertIndexForDate(targetSpecs,desiredStart);
+    const targetNext=[...targetSpecs];
+    targetNext.splice(insertIdx,0,{...movingSpec,planIds:[]});
+    const targetScheduled=applySequentialDatesToSpecs(targetNext,{anchorIndex:insertIdx,forceStartDate:desiredStart});
+    const movedIds=(movingSpecSeed.planIds||[]).filter(Boolean);
+    const okSource=await persistMachineQueueFromSpecs(sourceMachine,sourceScheduled,sourceAnchor);
+    if(!okSource) return false;
+    if(sourceRemain.length>0&&movedIds.length>0){
+      for(const id of movedIds){
+        const ok=await window.DB.deleteDoc("plans",id);
+        if(!ok){
+          alert("Operasyon tasinamadi.");
+          await refreshPlans();
+          return false;
+        }
+      }
+      const movedSet=new Set(movedIds);
+      setPlans(prev=>prev.filter(p=>!movedSet.has(p.id)));
+    }
+    const okTarget=await persistMachineQueueFromSpecs(nextMachine,targetScheduled,insertIdx);
+    if(!okTarget){
+      await refreshPlans();
+      return false;
+    }
+    const updatedIdx=targetScheduled.findIndex(spec=>String(spec?.token||"")===movingToken);
+    if(editId&&editedIds.has(editId)&&updatedIdx>=0){
+      setForm(f=>({...f,machine:nextMachine,startDate:targetScheduled[updatedIdx].startDate,endDate:targetScheduled[updatedIdx].endDate}));
+    }
+    if(selectedPlan) setSelectedPlan(null);
+    return true;
+  }
+  async function handleGanttDrop(e,{targetMachine="",targetDate=""}={}){
+    e.preventDefault();
+    const payload=readGanttDragPayload(e);
+    setDragPlanId(null);
+    if(!payload||!payload.segmentId||!targetDate) return;
+    if(payload.type==="move"){
+      await moveSegmentOnGantt(payload.segmentId,targetMachine,targetDate);
+      return;
+    }
+    await resizeSegment(payload.segmentId,targetDate,payload.type);
   }
 
   async function loadScriptOnce(src,globalName){
@@ -17511,7 +17650,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                       const p=row.byDate[d];
                       const wd=parseYmdLocal(d).getDay();
                       const weekend=wd===0||wd===6;
-                      if(!p) return <div key={d} onDragOver={e=>e.preventDefault()} onDrop={async e=>{e.preventDefault();const raw=e.dataTransfer.getData("text/plain")||dragPlanId;if(!raw) return;let payload=null;try{payload=JSON.parse(raw);}catch{}if(payload&&payload.type&&payload.segmentId){await resizeSegment(payload.segmentId,d,payload.type);}setDragPlanId(null);}} style={{height:20,borderRadius:3,background:weekend?C.surface2:C.surface,border:`1px solid ${C.border}`}}/>;
+                      if(!p) return <div key={d} onDragOver={allowGanttDrop} onDrop={e=>handleGanttDrop(e,{targetMachine:row.machine,targetDate:d})} style={{height:20,borderRadius:3,background:weekend?C.surface2:C.surface,border:`1px solid ${C.border}`}}/>;
                       const col=colorFromOrder(p.orderId||p.orderCode||p.orderName);
                       const opMeta=orderOperationMetaById[p.orderId]||null;
                       const isSelected=p._segmentId===selectedSegmentId;
@@ -17521,9 +17660,17 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                       const cellRadius=edgeLeft?(edgeRight?"3px":"3px 0 0 3px"):(edgeRight?"0 3px 3px 0":"0");
                       return <div
                         key={d}
-                        title={`${d} · ${row.machine} · ${p.orderCode||""} ${p.orderName||""}${p.orderCustomerName?` · ${p.orderCustomerName}`:""}`}
-                        onDragOver={e=>e.preventDefault()}
-                        onDrop={async e=>{e.preventDefault();const raw=e.dataTransfer.getData("text/plain")||dragPlanId;if(!raw) return;let payload=null;try{payload=JSON.parse(raw);}catch{}if(payload&&payload.type&&payload.segmentId){await resizeSegment(payload.segmentId,d,payload.type);}setDragPlanId(null);}}
+                        draggable
+                        title={`${d} · ${row.machine} · ${p.orderCode||""} ${p.orderName||""}${p.orderCustomerName?` · ${p.orderCustomerName}`:""}${p._isStart?" · Surukleyerek tasi":""}`}
+                        onDragStart={e=>{
+                          const payload=JSON.stringify({type:"move",segmentId:p._segmentId});
+                          setDragPlanId(payload);
+                          e.dataTransfer.setData("text/plain",payload);
+                          e.dataTransfer.effectAllowed="move";
+                        }}
+                        onDragEnd={()=>setDragPlanId(null)}
+                        onDragOver={allowGanttDrop}
+                        onDrop={e=>handleGanttDrop(e,{targetMachine:row.machine,targetDate:d})}
                         onClick={()=>setSelectedPlan(p)}
                         style={{
                           height:20,
@@ -17534,20 +17681,40 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                           borderLeft:edgeLeft?`1px solid ${borderColor}99`:"0",
                           borderRight:edgeRight?`1px solid ${borderColor}99`:"0",
                           boxShadow:isSelected?`inset 0 0 0 1px ${C.text}aa`:"none",
-                          cursor:"pointer",
+                          cursor:"grab",
                           position:"relative",
                           marginLeft:edgeLeft?0:-1,
                         }}
                       >
                         {p._isStart&&<span
                           draggable
-                          onDragStart={e=>{const payload=JSON.stringify({type:"start",segmentId:p._segmentId});setDragPlanId(payload);e.dataTransfer.setData("text/plain",payload);}}
+                          onDragStart={e=>{
+                            e.stopPropagation();
+                            const payload=JSON.stringify({type:"start",segmentId:p._segmentId});
+                            setDragPlanId(payload);
+                            e.dataTransfer.setData("text/plain",payload);
+                            e.dataTransfer.effectAllowed="move";
+                          }}
+                          onDragEnd={e=>{
+                            e.stopPropagation();
+                            setDragPlanId(null);
+                          }}
                           title="Başlangıcı sürükle"
                           style={{position:"absolute",left:0,top:0,bottom:0,width:5,background:"rgba(0,0,0,.35)",cursor:"ew-resize"}}
                         />}
                         {p._isEnd&&<span
                           draggable
-                          onDragStart={e=>{const payload=JSON.stringify({type:"end",segmentId:p._segmentId});setDragPlanId(payload);e.dataTransfer.setData("text/plain",payload);}}
+                          onDragStart={e=>{
+                            e.stopPropagation();
+                            const payload=JSON.stringify({type:"end",segmentId:p._segmentId});
+                            setDragPlanId(payload);
+                            e.dataTransfer.setData("text/plain",payload);
+                            e.dataTransfer.effectAllowed="move";
+                          }}
+                          onDragEnd={e=>{
+                            e.stopPropagation();
+                            setDragPlanId(null);
+                          }}
                           title="Bitişi sürükle"
                           style={{position:"absolute",right:0,top:0,bottom:0,width:5,background:"rgba(0,0,0,.35)",cursor:"ew-resize"}}
                         />}
