@@ -20215,14 +20215,6 @@ function DowntimeModule({currentUser,machines=DEFAULT_MACHINES,filtersVisible=tr
   const pagedEvents=sortedEvents.slice(listStart,listStart+Math.max(1,rowsPerPage));
   const totalDurationMin=sortedEvents.reduce((sum,row)=>sum+Math.max(0,safeNum(row.durationMin)),0);
   const avgDurationMin=sortedEvents.length?Math.round(totalDurationMin/sortedEvents.length):0;
-  const paretoMap={};
-  sortedEvents.forEach(e=>{
-    const key=`${e.typeCode||"-"} ${e.typeName||"-"}`;
-    if(!paretoMap[key]) paretoMap[key]={key,count:0,min:0};
-    paretoMap[key].count+=1;
-    paretoMap[key].min+=safeNum(e.durationMin);
-  });
-  const pareto=Object.values(paretoMap).sort((a,b)=>b.min-a.min).slice(0,10);
   const downtimeSplitWrapStyle={
     display:"flex",
     gap:10,
@@ -20414,17 +20406,7 @@ function DowntimeModule({currentUser,machines=DEFAULT_MACHINES,filtersVisible=tr
             </div>
           </div>
 
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:8}}>
-            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
-              <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Top 10 Durus Nedeni (Pareto)</div>
-              {pareto.map((p,idx)=>(
-                <div key={p.key} style={{padding:"7px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,display:"flex",justifyContent:"space-between",gap:8}}>
-                  <div style={{color:C.text}}>{idx+1}. {p.key}</div>
-                  <div style={{color:C.muted2}}>{p.min} dk ({p.count})</div>
-                </div>
-              ))}
-              {pareto.length===0&&<div style={{fontSize:12,color:C.muted2}}>Durus kaydi yok.</div>}
-            </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:8}}>
             <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
               <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Durus Tipi Tanimi</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:8}}>
