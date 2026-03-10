@@ -3870,13 +3870,14 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
   }
   const menuRows=useMemo(()=>{
     const map={};
-    (Array.isArray(menuCatalog)?menuCatalog:[]).forEach(tab=>{
+    (Array.isArray(menuCatalog)?menuCatalog:[]).forEach((tab,idx)=>{
       if(!tab||!tab.id) return;
       if(map[tab.id]) return;
       map[tab.id]={
         id:String(tab.id),
         label:String(tab.label||tab.id),
         group:String(tab.group||"Diger"),
+        order:idx,
       };
     });
     const rows=Object.values(map);
@@ -3889,7 +3890,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
         if(bi<0) return -1;
         return ai-bi;
       }
-      return (a.label||"").localeCompare(b.label||"","tr");
+      return (a.order||0)-(b.order||0);
     });
     return rows;
   },[menuCatalog]);
