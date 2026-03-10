@@ -24886,7 +24886,6 @@ function App() {
       {id:"parts",icon:"parts",label:"Ürün/Parça Merkezi",group:"Planlama",enabled:canPlanning},
       {id:"planning",icon:"planning",label:"Planlama",group:"Planlama",enabled:canPlanning},
       {id:"orders",icon:"orders",label:"Is Emirleri",group:"Planlama",enabled:canOrders},
-      {id:"giris",icon:"giris",label:"Uretim Girisi",group:"Operasyon",enabled:canEntry},
       {id:"assignments",icon:"tasks",label:"Calisan Gorevlendirme",group:"Operasyon",enabled:true},
       {id:"cncmonitor",icon:"monitor",label:"CNC Izleme",group:"Operasyon",enabled:canMonitor},
       {id:"downtime",icon:"downtime",label:"Durus Yonetimi",group:"Operasyon",enabled:canDowntime},
@@ -25336,7 +25335,7 @@ function App() {
   }
 
   function getActiveView() {
-    if(tab==="giris") return <DataEntry currentUser={currentUser} machines={machines}/>;
+    if(tab==="giris"&&isOperatorRole) return <DataEntry currentUser={currentUser} machines={machines}/>;
     if(tab==="assignments") return <TaskAssignmentModule currentUser={currentUser} machines={machines} filtersVisible={assignmentsFilterOpen}/>;
     if(tab==="planning") return <Planning currentUser={currentUser} machines={machines}/>;
     if(tab==="machineprep") return <MachineConnectivityPrep currentUser={currentUser} machines={machines} onMachinesSync={updateMachines}/>;
