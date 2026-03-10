@@ -17287,8 +17287,37 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const planningToday=todayStr();
   const orderById={};
   orders.forEach(o=>{orderById[o.id]=o;});
+  function segmentDisplayStartDate(seg){
+    return String(seg?.displayStartDate||seg?.startDate||planningToday);
+  }
+  function segmentDisplayEndDate(seg){
+    return String(seg?.displayEndDate||seg?.endDate||seg?.displayStartDate||seg?.startDate||planningToday);
+  }
+  function buildBoardDisplaySegments(segs){
+    const rows=Array.isArray(segs)?segs:[];
+    if(rows.length===0) return rows;
+    const activeIdx=rows.findIndex(seg=>segmentDisplayStartDate(seg)<=planningToday&&segmentDisplayEndDate(seg)>=planningToday);
+    if(activeIdx>=0) return rows;
+    const upcomingIdx=rows.findIndex(seg=>segmentDisplayEndDate(seg)>=planningToday);
+    if(upcomingIdx<0) return rows;
+    const firstUpcoming=rows[upcomingIdx];
+    if(segmentDisplayStartDate(firstUpcoming)<=planningToday) return rows;
+    const scheduled=applySequentialDatesToSpecs(
+      rows.map(seg=>({
+        startDate:String(seg?.startDate||planningToday),
+        endDate:String(seg?.endDate||seg?.startDate||planningToday),
+        days:Math.max(1,dayDiff(seg?.startDate||planningToday,seg?.endDate||seg?.startDate||planningToday)+1),
+      })),
+      {anchorIndex:upcomingIdx,forceStartDate:planningToday}
+    );
+    return rows.map((seg,idx)=>idx<upcomingIdx?seg:({
+      ...seg,
+      displayStartDate:scheduled[idx]?.startDate||segmentDisplayStartDate(seg),
+      displayEndDate:scheduled[idx]?.endDate||segmentDisplayEndDate(seg),
+    }));
+  }
   function segmentDurationLabel(seg){
-    const days=Math.max(1,dayDiff(seg.startDate||planningToday,seg.endDate||seg.startDate||planningToday)+1);
+    const days=Math.max(1,dayDiff(segmentDisplayStartDate(seg),segmentDisplayEndDate(seg))+1);
     return days===1?"1 gun":`${days} gun`;
   }
   function machineRowStateLabel(row){
@@ -17300,7 +17329,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     const due=String(orderById[seg.orderId]?.dueDate||"");
     if(!due) return "normal";
     if(due<planningToday) return "critical";
-    if((seg.endDate||seg.startDate||planningToday)>due) return "warning";
+    if(segmentDisplayEndDate(seg)>due) return "warning";
     return "normal";
   }
   function segmentTone(seg){
@@ -17343,8 +17372,10 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     const op=orderOperationMetaById[seg.orderId]||null;
     const tone=segmentTone(seg);
     const qty=Math.max(0,safeNum(ord?.qty));
-    const due=String(ord?.dueDate||seg.endDate||"-");
-    const spanLabel=`${seg.startDate||"-"}${seg.endDate&&seg.endDate!==seg.startDate?` - ${seg.endDate}`:""}`;
+    const due=String(ord?.dueDate||segmentDisplayEndDate(seg)||"-");
+    const displayStart=segmentDisplayStartDate(seg);
+    const displayEnd=segmentDisplayEndDate(seg);
+    const spanLabel=`${displayStart||"-"}${displayEnd&&displayEnd!==displayStart?` - ${displayEnd}`:""}`;
     return {
       id:seg.id,
       orderCode:seg.orderCode||"-",
@@ -17361,19 +17392,20 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     };
   }
   const machineBoardRows=machines.map(machine=>{
-    const segs=filteredPlanSegments
+    const orderedSegs=filteredPlanSegments
       .filter(seg=>seg.machine===machine)
       .sort((a,b)=>{
         const s=String(a.startDate||"").localeCompare(String(b.startDate||""));
         if(s!==0) return s;
         return String(a.orderCode||"").localeCompare(String(b.orderCode||""),"tr");
       });
-    const activeSegment=segs.find(seg=>(seg.startDate||"")<=planningToday&&(seg.endDate||seg.startDate||"")>=planningToday)||null;
+    const segs=buildBoardDisplaySegments(orderedSegs);
+    const activeSegment=segs.find(seg=>segmentDisplayStartDate(seg)<=planningToday&&segmentDisplayEndDate(seg)>=planningToday)||null;
     const nextSegments=segs
       .filter(seg=>!activeSegment||seg.id!==activeSegment.id)
-      .filter(seg=>(seg.endDate||seg.startDate||"")>=planningToday)
+      .filter(seg=>segmentDisplayEndDate(seg)>=planningToday)
       .slice(0,3);
-    const readyHours=activeSegment?Math.max(1,dayDiff(activeSegment.startDate||planningToday,planningToday)+1):0;
+    const readyHours=activeSegment?Math.max(1,dayDiff(segmentDisplayStartDate(activeSegment),planningToday)+1):0;
     return {
       machine,
       segments:segs,
