@@ -17305,9 +17305,17 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
 //  PLANNING
 // ============================================================
 function Planning({currentUser,machines=DEFAULT_MACHINES}) {
+  const planningSpecialLanes=[
+    {id:"TESFIYE",label:"Tesfiye",status:"liquidation",color:C.red},
+    {id:"SEVK",label:"Sevk",status:"shipped",color:C.warn},
+  ];
+  const planningLaneOptions=[...machines.map(machine=>({id:machine,label:machine,isSpecial:false})),...planningSpecialLanes.map(row=>({...row,isSpecial:true}))];
+  const planningLaneIds=planningLaneOptions.map(row=>row.id);
+  const planningSpecialLaneIdSet=new Set(planningSpecialLanes.map(row=>row.id));
   const emptyForm={startDate:todayStr(),endDate:todayStr(),machine:machines[0]||"CNC-1",orderId:"",note:""};
   const [form,setForm]=useState(emptyForm);
   const [orders,setOrders]=useState([]);
+  const [entries,setEntries]=useState([]);
   const [parts,setParts]=useState([]);
   const [plans,setPlans]=useState([]);
   const [sales,setSales]=useState([]);
@@ -17331,18 +17339,31 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const [showGanttDetail,setShowGanttDetail]=useState(false);
   const ganttRef=useRef(null);
   const boardDragPayloadRef=useRef(null);
+  const autoStatusSyncRef=useRef(false);
+  const autoFinishedMoveRef=useRef(false);
+
+  function isPlanningSpecialLane(machine){
+    return planningSpecialLaneIdSet.has(String(machine||"").trim());
+  }
+  function planningLaneLabel(machine){
+    const key=String(machine||"").trim();
+    const meta=planningLaneOptions.find(row=>row.id===key);
+    return meta?.label||key||"-";
+  }
 
   const load=useCallback(async()=>{
     setLoading(true);
-    const [o,p,s,m,partRows,opDoc]=await Promise.all([
+    const [o,p,s,m,partRows,opDoc,entryRows]=await Promise.all([
       window.DB.getAll("orders"),
       window.DB.getAll("plans"),
       window.DB.getAll("salesOrders"),
       window.DB.getAll("mpsPlans"),
       window.DB.getAll("parts"),
       window.DB.getDoc("config","routingOperationTypes"),
+      window.DB.getAll("entries"),
     ]);
-    setOrders(o.filter(x=>isOpenOrderStatus(x.status)));
+    setOrders(o.filter(x=>!["cancelled","passive"].includes(String(x.status||"").toLowerCase())));
+    setEntries(entryRows.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
     setParts(partRows.sort((a,b)=>(a.partNo||"").localeCompare(b.partNo||"","tr")));
     setPlans(p.sort((a,b)=>(b.date||"").localeCompare(a.date||"")));
     setSales(s);
@@ -17372,15 +17393,15 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   },[load,machines]);
 
   useEffect(()=>{
-    if(!machines.includes(form.machine)){
+    if(!planningLaneIds.includes(form.machine)){
       setForm(f=>({...f,machine:machines[0]||"CNC-1"}));
     }
-  },[machines.join(","),form.machine]);
+  },[planningLaneIds.join(","),machines.join(","),form.machine]);
   useEffect(()=>{
-    if(planMachineFilter!=="all"&&!machines.includes(planMachineFilter)){
+    if(planMachineFilter!=="all"&&!planningLaneIds.includes(planMachineFilter)){
       setPlanMachineFilter("all");
     }
-  },[machines.join(","),planMachineFilter]);
+  },[planningLaneIds.join(","),planMachineFilter]);
 
   const fv=(k,v)=>setForm(f=>({...f,[k]:v}));
   const selectedOrder=orders.find(o=>o.id===form.orderId)||null;
@@ -17408,10 +17429,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   }
   const priorityWeight={urgent:0,acil:0,normal:1,low:2,dusuk:2};
   const ordersToPlan=[...orders]
-    .filter(o=>{
-      const planned=isOrderAlreadyInPlanning(o);
-      return !planned || isOrderIncomplete(o);
-    })
+    .filter(o=>isOrderIncomplete(o))
     .sort((a,b)=>{
       const plannedA=isOrderAlreadyInPlanning(a);
       const plannedB=isOrderAlreadyInPlanning(b);
@@ -17510,6 +17528,57 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const allPlanSegments=buildPlanSegments(plans);
   const allSegmentById={};
   allPlanSegments.forEach(seg=>{allSegmentById[seg.id]=seg;});
+  const planSegmentsByOrderId={};
+  const planSegmentsByOrderCode={};
+  allPlanSegments.forEach(seg=>{
+    const orderId=String(seg.orderId||"").trim();
+    const orderCode=String(seg.orderCode||"").trim().toUpperCase();
+    if(orderId){
+      if(!planSegmentsByOrderId[orderId]) planSegmentsByOrderId[orderId]=[];
+      planSegmentsByOrderId[orderId].push(seg);
+    }
+    if(orderCode){
+      if(!planSegmentsByOrderCode[orderCode]) planSegmentsByOrderCode[orderCode]=[];
+      planSegmentsByOrderCode[orderCode].push(seg);
+    }
+  });
+  const productionByOrderCode={};
+  entries.forEach(entry=>{
+    const code=String(entry.jobCode||"").trim().toUpperCase();
+    if(!code) return;
+    if(!productionByOrderCode[code]){
+      productionByOrderCode[code]={total:0,today:0,lastDate:""};
+    }
+    const produced=Math.max(0,safeNum(entry.correct)+safeNum(entry.wrong));
+    productionByOrderCode[code].total+=produced;
+    if(String(entry.date||"")===todayStr()){
+      productionByOrderCode[code].today+=produced;
+    }
+    const entryDate=String(entry.date||"");
+    if(entryDate&&entryDate>String(productionByOrderCode[code].lastDate||"")){
+      productionByOrderCode[code].lastDate=entryDate;
+    }
+  });
+  function getOrderSegments(order){
+    const orderId=String(order?.id||"").trim();
+    const orderCode=String(order?.code||"").trim().toUpperCase();
+    if(orderId&&planSegmentsByOrderId[orderId]) return planSegmentsByOrderId[orderId];
+    if(orderCode&&planSegmentsByOrderCode[orderCode]) return planSegmentsByOrderCode[orderCode];
+    return [];
+  }
+  function getOrderProductionMeta(order){
+    const orderCode=String(order?.code||"").trim().toUpperCase();
+    const row=productionByOrderCode[orderCode]||{total:0,today:0,lastDate:""};
+    const qtyTarget=Math.max(0,safeNum(order?.qty));
+    const isFinished=qtyTarget>0?row.total>=qtyTarget:false;
+    return {
+      producedTotal:row.total,
+      producedToday:row.today,
+      lastEntryDate:String(row.lastDate||""),
+      qtyTarget,
+      isFinished,
+    };
+  }
   const sortedPlanSegments=allPlanSegments;
   const mpsBaseWeek=startOfWeekYmd(todayStr());
   const mpsBuckets=Array.from({length:8},(_,i)=>{
@@ -17572,7 +17641,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     monthSegmentsByMachine[key].push(seg);
   });
   const segmentById={};
-  const ganttRows=machines.map(machine=>{
+  const ganttRows=planningLaneIds.map(machine=>{
     const byDate={};
     const machineSegments=monthSegmentsByMachine[machine]||[];
     machineSegments.forEach(seg=>{
@@ -17836,7 +17905,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     const movingSpecSeed=sourceSpecs[sourceIdx]||null;
     if(!movingSpecSeed) return false;
     const movingToken=String(movingSpecSeed.token||getSegmentToken(seg));
-    const movingDays=Math.max(1,Math.floor(Number(movingSpecSeed.days)||1));
+    const movingDays=isPlanningSpecialLane(nextMachine)?1:Math.max(1,Math.floor(Number(movingSpecSeed.days)||1));
     const movingSpec={
       ...movingSpecSeed,
       token:movingToken,
@@ -17899,12 +17968,31 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     if(selectedPlan) setSelectedPlan(null);
     return true;
   }
+  function resolvePlanningLaneStartDate(targetMachine,baseDate=todayStr(),excludeSegmentId=""){
+    const base=String(baseDate||todayStr());
+    const tail=getMachineTailSegment(targetMachine,excludeSegmentId);
+    if(!tail) return base;
+    const tailEnd=String(tail.endDate||tail.startDate||base);
+    return tailEnd>=base?addDays(tailEnd,1):base;
+  }
+  function canMoveSegmentToPlanningLane(segmentId,targetMachine){
+    if(!isPlanningSpecialLane(targetMachine)) return true;
+    const seg=allSegmentById[segmentId]||null;
+    if(!seg) return false;
+    if(isPlanningSpecialLane(seg.machine)) return true;
+    const order=orderById[seg.orderId]||orderByCode[String(seg.orderCode||"").trim().toUpperCase()]||null;
+    const productionMeta=getOrderProductionMeta(order);
+    if(productionMeta.isFinished) return true;
+    alert("Sadece tamamlanan isler Tesfiye veya Sevk alanina tasinabilir.");
+    return false;
+  }
   async function handleGanttDrop(e,{targetMachine="",targetDate=""}={}){
     e.preventDefault();
     const payload=readGanttDragPayload(e);
     setDragPlanId(null);
     if(!payload||!payload.segmentId||!targetDate) return;
     if(payload.type==="move"){
+      if(!canMoveSegmentToPlanningLane(payload.segmentId,targetMachine)) return;
       await moveSegmentOnGantt(payload.segmentId,targetMachine,targetDate);
       return;
     }
@@ -18318,6 +18406,10 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
 
   async function createPlanFromQueueOrderDrop(order,targetMachine,targetSegmentId=""){
     if(!order||!order.id||!targetMachine) return false;
+    if(isPlanningSpecialLane(targetMachine)){
+      alert("Is emrini once bir uretim tezgahina planlayin. Tamamlanan isler daha sonra Tesfiye veya Sevk alanina alinabilir.");
+      return false;
+    }
     if(isOrderAlreadyInPlanning(order)){
       alert("Bu is emri zaten planlandi.");
       return false;
@@ -18493,7 +18585,8 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     const sourceToken=getSegmentToken(sourceSeg);
     const sourceIdx=sourceSpecs.findIndex(spec=>spec.token===sourceToken);
     if(sourceIdx<0) return false;
-    const movingSpec={...sourceSpecs[sourceIdx],machine:targetMachine};
+    const movingSpecDays=isPlanningSpecialLane(targetMachine)?1:Math.max(1,Math.floor(Number(sourceSpecs[sourceIdx]?.days)||1));
+    const movingSpec={...sourceSpecs[sourceIdx],machine:targetMachine,days:movingSpecDays};
     if(sourceMachine===targetMachine){
       const nextSpecs=sourceSpecs.filter((_,idx)=>idx!==sourceIdx);
       const targetToken=getSegmentToken(targetSeg);
@@ -18524,7 +18617,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       ...movingSpec,
       machine:targetMachine,
       startDate:insertStart,
-      endDate:insertStart,
+      endDate:addDays(insertStart,movingSpecDays-1),
       planIds:[],
     });
     const targetScheduled=applySequentialDatesToSpecs(targetNext,{anchorIndex:targetIdx+1,forceStartDate:insertStart});
@@ -18570,6 +18663,8 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     }
     const sourceSegmentId=dragPayload.segmentId||"";
     if(!sourceSegmentId) return;
+    const dropMachine=targetMachine||(targetSegmentId?(allSegmentById[targetSegmentId]?.machine||""):"");
+    if(dropMachine&&!canMoveSegmentToPlanningLane(sourceSegmentId,dropMachine)) return;
     if(targetSegmentId){
       if(sourceSegmentId===targetSegmentId) return;
       const placed=await placeSegmentAfterSegment(sourceSegmentId,targetSegmentId);
@@ -18584,6 +18679,11 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
         const placed=await placeSegmentAfterSegment(sourceSegmentId,tailSeg.id);
         if(placed) return;
       }
+      if(isPlanningSpecialLane(targetMachine)){
+        const desiredDate=resolvePlanningLaneStartDate(targetMachine,planningToday,sourceSegmentId);
+        await moveSegmentOnGantt(sourceSegmentId,targetMachine,desiredDate);
+        return;
+      }
       await moveSegmentToMachine(sourceSegmentId,targetMachine);
     }
   }
@@ -18593,7 +18693,69 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const selectedPlanOperationMeta=(selectedPlan&&selectedPlan.orderId)?(orderOperationMetaById[selectedPlan.orderId]||null):null;
   const planningToday=todayStr();
   const orderById={};
-  orders.forEach(o=>{orderById[o.id]=o;});
+  const orderByCode={};
+  orders.forEach(o=>{
+    if(o.id) orderById[o.id]=o;
+    const code=String(o.code||"").trim().toUpperCase();
+    if(code) orderByCode[code]=o;
+  });
+  function resolvePlanningOrderStatus(order){
+    const currentStatus=String(order?.status||"planned").toLowerCase();
+    if(["cancelled","passive"].includes(currentStatus)) return currentStatus;
+    const segments=getOrderSegments(order);
+    const hasSevk=segments.some(seg=>String(seg.machine||"")==="SEVK");
+    const hasTesfiye=segments.some(seg=>String(seg.machine||"")==="TESFIYE");
+    const hasProductionLane=segments.some(seg=>!isPlanningSpecialLane(seg.machine));
+    const productionMeta=getOrderProductionMeta(order);
+    if(hasSevk) return "shipped";
+    if(hasTesfiye || productionMeta.isFinished) return "liquidation";
+    if(productionMeta.producedTotal>0) return "in_production";
+    if(hasProductionLane) return "planned";
+    return currentStatus;
+  }
+  useEffect(()=>{
+    if(loading||autoStatusSyncRef.current||orders.length===0) return;
+    const patches=orders
+      .map(order=>{
+        const nextStatus=resolvePlanningOrderStatus(order);
+        return nextStatus&&nextStatus!==String(order.status||"")?{id:order.id,status:nextStatus}:null;
+      })
+      .filter(Boolean);
+    if(patches.length===0) return;
+    autoStatusSyncRef.current=true;
+    (async()=>{
+      const updatedAt=new Date().toISOString();
+      const applied=[];
+      for(const patch of patches){
+        const ok=await window.DB.updateDoc("orders",patch.id,{status:patch.status,updatedAt});
+        if(ok) applied.push(patch);
+      }
+      if(applied.length>0){
+        const appliedMap={};
+        applied.forEach(patch=>{appliedMap[patch.id]=patch.status;});
+        setOrders(prev=>prev.map(order=>appliedMap[order.id]?{...order,status:appliedMap[order.id],updatedAt}:order));
+      }
+      autoStatusSyncRef.current=false;
+    })();
+  },[allPlanSegments,entries,loading,orders]);
+  useEffect(()=>{
+    if(loading||autoFinishedMoveRef.current||allPlanSegments.length===0) return;
+    const candidates=allPlanSegments.filter(seg=>{
+      if(isPlanningSpecialLane(seg.machine)) return false;
+      const order=orderById[seg.orderId]||orderByCode[String(seg.orderCode||"").trim().toUpperCase()]||null;
+      if(!order) return false;
+      const productionMeta=getOrderProductionMeta(order);
+      return productionMeta.isFinished&&productionMeta.producedToday>0;
+    });
+    if(candidates.length===0) return;
+    const nextSegment=candidates[0];
+    autoFinishedMoveRef.current=true;
+    (async()=>{
+      const desiredDate=resolvePlanningLaneStartDate("TESFIYE",planningToday,nextSegment.id);
+      await moveSegmentOnGantt(nextSegment.id,"TESFIYE",desiredDate);
+      autoFinishedMoveRef.current=false;
+    })();
+  },[allPlanSegments,entries,loading,orders,planningToday]);
   function segmentDisplayStartDate(seg){
     return String(seg?.displayStartDate||seg?.startDate||planningToday);
   }
@@ -18628,11 +18790,13 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     return days===1?"1 gun":`${days} gun`;
   }
   function machineRowStateLabel(row){
+    if(isPlanningSpecialLane(row.machine)) return `${planningLaneLabel(row.machine)} | ${row.segments.length} is`;
     if(row.activeSegment) return `Aktif | ${segmentDurationLabel(row.activeSegment)}`;
     if(row.segments.length>0) return `Kuyruk | ${row.segments.length} is`;
     return "Bos";
   }
   function segmentRiskType(seg){
+    if(isPlanningSpecialLane(seg?.machine)) return "normal";
     const due=String(orderById[seg.orderId]?.dueDate||"");
     if(!due) return "normal";
     if(due<planningToday) return "critical";
@@ -18675,11 +18839,11 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   }
   function buildSegmentCard(seg,{active=false}={}){
     if(!seg) return null;
-    const ord=orderById[seg.orderId]||null;
+    const ord=orderById[seg.orderId]||orderByCode[String(seg.orderCode||"").trim().toUpperCase()]||null;
     const op=orderOperationMetaById[seg.orderId]||null;
     const tone=segmentTone(seg);
     const qty=Math.max(0,safeNum(ord?.qty));
-    const due=String(ord?.dueDate||segmentDisplayEndDate(seg)||"-");
+    const due=isPlanningSpecialLane(seg.machine)?"-":String(ord?.dueDate||segmentDisplayEndDate(seg)||"-");
     const displayStart=segmentDisplayStartDate(seg);
     const displayEnd=segmentDisplayEndDate(seg);
     const spanLabel=`${displayStart||"-"}${displayEnd&&displayEnd!==displayStart?` - ${displayEnd}`:""}`;
@@ -18698,7 +18862,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       seedPlan:(seg.plans&&seg.plans[0])?seg.plans[0]:null,
     };
   }
-  const machineBoardRows=machines.map(machine=>{
+  const machineBoardRows=planningLaneIds.map(machine=>{
     const orderedSegs=filteredPlanSegments
       .filter(seg=>seg.machine===machine)
       .sort((a,b)=>{
@@ -18723,12 +18887,13 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       nextCards:nextSegments.map(seg=>buildSegmentCard(seg)),
     };
   });
-  const dueKnownSegments=filteredPlanSegments.filter(seg=>String(orderById[seg.orderId]?.dueDate||"").trim()!=="");
+  const productionSegments=filteredPlanSegments.filter(seg=>!isPlanningSpecialLane(seg.machine));
+  const dueKnownSegments=productionSegments.filter(seg=>String(orderById[seg.orderId]?.dueDate||"").trim()!=="");
   const overdueCount=dueKnownSegments.filter(seg=>String(orderById[seg.orderId]?.dueDate||"")<planningToday).length;
   const behindCount=dueKnownSegments.filter(seg=>(seg.endDate||seg.startDate||planningToday)>String(orderById[seg.orderId]?.dueDate||"")).length;
   const dueTodayCount=dueKnownSegments.filter(seg=>String(orderById[seg.orderId]?.dueDate||"")===planningToday).length;
-  const activeCount=machineBoardRows.filter(r=>Boolean(r.activeSegment)).length;
-  const scheduledCount=filteredPlanSegments.length;
+  const activeCount=machineBoardRows.filter(r=>!isPlanningSpecialLane(r.machine)&&Boolean(r.activeSegment)).length;
+  const scheduledCount=productionSegments.length;
   const onTimePct=dueKnownSegments.length>0?Math.max(0,Math.min(100,Math.round(((dueKnownSegments.length-behindCount)/dueKnownSegments.length)*100))):100;
   const setupCount=machines.reduce((sum,m)=>sum+Math.max(0,((monthSegmentsByMachine[m]||[]).length-1)),0);
   const summaryCards=[
