@@ -23774,6 +23774,11 @@ function FinanceModule({currentUser,filtersVisible=true}){
   const [sortDir,setSortDir]=useState("asc");
   const [financeRowsPerPage,setFinanceRowsPerPage]=useState(10);
   const [financePageIdx,setFinancePageIdx]=useState(1);
+  const financeListPanelRef=useRef(null);
+  const {
+    height:financeListPanelHeight,
+    isNarrow:financeListPanelsStacked,
+  }=useViewportPanelMetrics(financeListPanelRef,{minHeight:340,bottomGap:14,narrowWidth:1180});
 
   const load=useCallback(async()=>{
     const list=await window.DB.getAll("financeLedger");
@@ -23814,6 +23819,13 @@ function FinanceModule({currentUser,filtersVisible=true}){
   }
   function flowLabel(flow){
     return flow==="odeme"?"Odeme":"Tahsilat";
+  }
+  function resetFinanceFilters(){
+    setFlowFilter("all");
+    setStatusFilter("all");
+    setDateFrom("");
+    setDateTo("");
+    setSearch("");
   }
   function amountText(row){
     return `${safeNum(row.amount).toFixed(2)} ${String(row.currency||"TRY").toUpperCase()}`;
@@ -23889,6 +23901,90 @@ function FinanceModule({currentUser,filtersVisible=true}){
   const doneTahsilatText=formatCurrencyMap(doneTahsilatMap);
   const doneOdemeText=formatCurrencyMap(doneOdemeMap);
   const netOpenText=netCurrencyMap(openTahsilatMap,openOdemeMap);
+  const financeFlowOptions=[
+    {id:"all",label:"Tum Akislar",color:C.accent},
+    {id:"tahsilat",label:"Tahsilat",color:C.accent},
+    {id:"odeme",label:"Odeme",color:C.warn},
+  ];
+  const financeStatusOptions=[
+    {id:"all",label:"Tum Durumlar",color:C.accent},
+    {id:"planned",label:"Planlandi",color:C.warn},
+    {id:"completed",label:"Tamamlandi",color:C.green},
+    {id:"cancelled",label:"Iptal",color:C.red},
+  ];
+  const financeFlowCounts={
+    all:rows.length,
+    tahsilat:rows.filter(r=>(r.flow||"tahsilat")==="tahsilat").length,
+    odeme:rows.filter(r=>(r.flow||"tahsilat")==="odeme").length,
+  };
+  const financeStatusCounts={
+    all:rows.length,
+    planned:rows.filter(r=>statusBucket(r)==="planned").length,
+    completed:rows.filter(r=>statusBucket(r)==="completed").length,
+    cancelled:rows.filter(r=>statusBucket(r)==="cancelled").length,
+  };
+  const financeSplitWrapStyle={
+    display:"flex",
+    gap:10,
+    alignItems:financeListPanelsStacked?"flex-start":"stretch",
+    flexWrap:"wrap",
+    ...(financeListPanelsStacked
+      ? {}
+      : {
+        height:financeListPanelHeight,
+        maxHeight:financeListPanelHeight,
+        flex:1,
+        minHeight:0,
+        overflow:"hidden",
+      }),
+  };
+  const financeFilterPanelStyle={
+    flex:"0 0 250px",
+    width:"100%",
+    maxWidth:280,
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    padding:12,
+    display:"flex",
+    flexDirection:"column",
+    gap:10,
+    ...(financeListPanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+        overflowY:"auto",
+        overscrollBehavior:"contain",
+        scrollbarGutter:"stable",
+      }),
+  };
+  const financeListColumnStyle={
+    flex:"1 1 760px",
+    minWidth:0,
+    display:"flex",
+    flexDirection:"column",
+    gap:8,
+    ...(financeListPanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+      }),
+  };
+  const financeTableCardStyle={
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:14,
+    padding:14,
+    overflow:"hidden",
+    display:"flex",
+    flexDirection:"column",
+    ...(financeListPanelsStacked?{}:{flex:1,minHeight:0}),
+  };
+  const financeTableScrollStyle=financeListPanelsStacked
+    ? {overflowX:"auto"}
+    : {overflow:"auto",flex:1,minHeight:0,overscrollBehavior:"contain"};
   const {
     columns:financeFlowTableColumns,
     visibleColumns:visibleFinanceFlowTableColumns,
@@ -23969,87 +24065,82 @@ function FinanceModule({currentUser,filtersVisible=true}){
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Kapanan Odeme</div><div style={{fontSize:18,color:C.red,fontWeight:800}}>{doneOdemeText}</div></div>
       </div>
 
-      {filtersVisible&&(
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
-          <div style={{gridColumn:"1 / -1"}}>
-            <span style={labelSt}>Ara (cari / belge)</span>
-            <input style={inputSt} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Musteri, tedarikci, SIP/PO kodu"/>
-          </div>
-          <div>
-            <span style={labelSt}>Akis</span>
-            <select style={inputSt} value={flowFilter} onChange={e=>setFlowFilter(e.target.value)}>
-              <option value="all">Tum Akislar</option>
-              <option value="tahsilat">Tahsilat</option>
-              <option value="odeme">Odeme</option>
-            </select>
-          </div>
-          <div>
-            <span style={labelSt}>Durum</span>
-            <select style={inputSt} value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
-              <option value="all">Tum Durumlar</option>
-              <option value="planned">Planlandi</option>
-              <option value="completed">Tamamlandi</option>
-              <option value="cancelled">Iptal</option>
-            </select>
-          </div>
-          <div>
-            <span style={labelSt}>Vade Baslangic</span>
-            <input style={inputSt} type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value||"")}/>
-          </div>
-          <div>
-            <span style={labelSt}>Vade Bitis</span>
-            <input style={inputSt} type="date" value={dateTo} onChange={e=>setDateTo(e.target.value||"")}/>
-          </div>
-          <div style={{display:"flex",alignItems:"flex-end"}}>
-            <button onClick={()=>{setFlowFilter("all");setStatusFilter("all");setDateFrom("");setDateTo("");setSearch("");}} style={{...btnSt("ghost"),padding:"9px 10px",fontSize:12,width:"100%"}}>Filtreleri Temizle</button>
-          </div>
-        </div>
-      )}
-
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:8,flexWrap:"wrap"}}>
-          <TableColumnEditor
-            title="Finans Akis Tablosu"
-            columns={financeFlowTableColumns}
-            onToggle={toggleFinanceFlowTableColumn}
-            onMove={moveFinanceFlowTableColumn}
-            onReset={resetFinanceFlowTableColumns}
-          />
-          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginLeft:"auto"}}>
-            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Finans Akisi ({pagedFinanceRows.length} / {sorted.length})</div>
-            <ListRowPager
-              rowsPerPage={financeRowsPerPage}
-              page={financePageIdx}
-              pageCount={financeTotalPages}
-              onRowsPerPageChange={setFinanceRowsPerPage}
-              onPrev={()=>setFinancePageIdx(p=>Math.max(1,p-1))}
-              onNext={()=>setFinancePageIdx(p=>Math.min(financeTotalPages,p+1))}
-            />
-            <div style={{fontSize:12,color:C.accent,fontWeight:700}}>Acik Net: {netOpenText}</div>
-          </div>
-        </div>
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",minWidth:financeFlowTableMinWidth,borderCollapse:"collapse",fontSize:12}}>
-            <thead>
-              <tr style={{background:C.surface2,color:C.muted2,textAlign:"left"}}>
-                {visibleFinanceFlowTableColumns.map(col=>(
-                  <th key={col.id} style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`,textAlign:col.align||"left",whiteSpace:"nowrap"}}>{col.label}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {pagedFinanceRows.map((row,idx)=>(
-                <tr key={row.id} style={{borderBottom:`1px solid ${C.border}`}}>
-                  {visibleFinanceFlowTableColumns.map(col=>renderFinanceFlowCell(row,col,financeListStart+idx+1))}
-                </tr>
+      <div ref={financeListPanelRef} style={financeSplitWrapStyle}>
+        {filtersVisible&&(
+          <div style={financeFilterPanelStyle}>
+            <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Finans</div>
+            <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Cari, belge veya siparis ara"/>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Finans Akisi</div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {financeFlowOptions.map(opt=>(
+                <button key={opt.id} onClick={()=>setFlowFilter(opt.id)} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:flowFilter===opt.id?opt.color:C.border,color:flowFilter===opt.id?opt.color:C.text}}>
+                  <span>{opt.label}</span>
+                  <span style={{fontSize:11,color:C.muted2}}>{financeFlowCounts[opt.id]||0}</span>
+                </button>
               ))}
-              {sorted.length===0&&(
-                <tr>
-                  <td colSpan={Math.max(1,visibleFinanceFlowTableColumns.length)} style={{fontSize:12,color:C.muted2,padding:"20px 10px",textAlign:"center"}}>Filtreye uygun finans satiri yok.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+            </div>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Durum</div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {financeStatusOptions.map(opt=>(
+                <button key={opt.id} onClick={()=>setStatusFilter(opt.id)} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:statusFilter===opt.id?opt.color:C.border,color:statusFilter===opt.id?opt.color:C.text}}>
+                  <span>{opt.label}</span>
+                  <span style={{fontSize:11,color:C.muted2}}>{financeStatusCounts[opt.id]||0}</span>
+                </button>
+              ))}
+            </div>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Vade Araligi</div>
+            <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={dateFrom} onChange={e=>setDateFrom(e.target.value||"")}/>
+            <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={dateTo} onChange={e=>setDateTo(e.target.value||"")}/>
+            <button onClick={resetFinanceFilters} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
+          </div>
+        )}
+        <div style={financeListColumnStyle}>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:0,gap:8,flexWrap:"wrap"}}>
+            <TableColumnEditor
+              title="Finans Akis Tablosu"
+              columns={financeFlowTableColumns}
+              onToggle={toggleFinanceFlowTableColumn}
+              onMove={moveFinanceFlowTableColumn}
+              onReset={resetFinanceFlowTableColumns}
+            />
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginLeft:"auto"}}>
+              <div style={{fontSize:12,color:C.muted2}}>Gosterilen Kayit: {pagedFinanceRows.length} / {sorted.length}</div>
+              <ListRowPager
+                rowsPerPage={financeRowsPerPage}
+                page={financePageIdx}
+                pageCount={financeTotalPages}
+                onRowsPerPageChange={setFinanceRowsPerPage}
+                onPrev={()=>setFinancePageIdx(p=>Math.max(1,p-1))}
+                onNext={()=>setFinancePageIdx(p=>Math.min(financeTotalPages,p+1))}
+              />
+              <div style={{fontSize:12,color:C.accent,fontWeight:700}}>Acik Net: {netOpenText}</div>
+            </div>
+          </div>
+          <div style={financeTableCardStyle}>
+            <div style={financeTableScrollStyle}>
+              <table style={{width:"100%",minWidth:financeFlowTableMinWidth,borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{background:C.surface2,color:C.muted2,textAlign:"left"}}>
+                    {visibleFinanceFlowTableColumns.map(col=>(
+                      <th key={col.id} style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`,textAlign:col.align||"left",whiteSpace:"nowrap",position:"sticky",top:0,zIndex:2,background:C.surface2}}>{col.label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedFinanceRows.map((row,idx)=>(
+                    <tr key={row.id} style={{borderBottom:`1px solid ${C.border}`}}>
+                      {visibleFinanceFlowTableColumns.map(col=>renderFinanceFlowCell(row,col,financeListStart+idx+1))}
+                    </tr>
+                  ))}
+                  {sorted.length===0&&(
+                    <tr>
+                      <td colSpan={Math.max(1,visibleFinanceFlowTableColumns.length)} style={{fontSize:12,color:C.muted2,padding:"20px 10px",textAlign:"center"}}>Filtreye uygun finans satiri yok.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     </div>
