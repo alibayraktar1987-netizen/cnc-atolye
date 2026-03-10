@@ -711,7 +711,6 @@ const GLOBAL_TOP_SEARCH_SOURCES = [
   {collection:"toolStock",tabId:"tools",moduleLabel:"Takim Yonetimi",primary:["code","toolCode","name"],secondary:["type","brand","supplierCode","supplierName"],search:["code","toolCode","name","type","brand","supplierCode","supplierName","coating","id"]},
   {collection:"purchaseRequests",tabId:"purchase_requests",moduleLabel:"Talep ve PO",primary:["requestNo","code","materialName"],secondary:["status","supplierName","needDate"],search:["requestNo","code","materialName","status","supplierName","needDate","note","id"]},
   {collection:"suppliers",tabId:"purchase_suppliers",moduleLabel:"Tedarikciler",primary:["name","code","supplierCode"],secondary:["group","contactName","city"],search:["name","code","supplierCode","contactName","email","phone","city","country","id"]},
-  {collection:"supplierQuotes",tabId:"purchase_quotes",moduleLabel:"Tedarikci Teklifleri",primary:["quoteNo","code","materialName"],secondary:["supplierName","status","validUntil"],search:["quoteNo","code","materialName","supplierName","status","note","id"]},
   {collection:"employeeTasks",tabId:"assignments",moduleLabel:"Calisan Gorevlendirme",primary:["title","taskNo","code"],secondary:["assigneeName","status","dueDate"],search:["title","taskNo","code","assigneeName","status","dueDate","machine","note","id"]},
   {collection:"downtimeEvents",tabId:"downtime",moduleLabel:"Durus Yonetimi",primary:["machine","reason","code"],secondary:["category","status","date"],search:["machine","reason","code","category","status","operatorName","date","id"]},
   {collection:"qualityInspections",tabId:"quality",moduleLabel:"Kalite ve Izlenebilirlik",primary:["inspectionNo","orderCode","partNo"],secondary:["status","machine","date"],search:["inspectionNo","orderCode","partNo","status","machine","inspectorName","date","id"]},
@@ -924,15 +923,7 @@ const PURCHASE_REQUEST_LIST_COLUMNS = [
   {id:"qty_date",label:"Miktar / Tarih",width:170},
   {id:"priority",label:"Oncelik",width:110},
   {id:"status",label:"Durum",width:130},
-  {id:"actions",label:"Islem",width:190,align:"right",required:true},
-];
-const PURCHASE_QUOTE_LIST_COLUMNS = [
-  {id:"row_no",label:"No",width:54,required:true},
-  {id:"request_supplier",label:"Talep / Tedarikci",width:320,required:true},
-  {id:"unit_price",label:"Birim Fiyat",width:140,align:"right"},
-  {id:"total",label:"Toplam",width:150,align:"right"},
-  {id:"lead_term",label:"Lead-Time / Vade",width:170},
-  {id:"actions",label:"Islem",width:130,align:"right",required:true},
+  {id:"actions",label:"Islem",width:290,align:"right",required:true},
 ];
 const PURCHASE_ORDER_LIST_COLUMNS = [
   {id:"row_no",label:"No",width:54,required:true},
@@ -1340,6 +1331,67 @@ function safeNum(v) {
   const n=Number(v);
   return Number.isFinite(n)?n:0;
 }
+const DEFAULT_BAR_LENGTH_MM=3000;
+const BAR_END_TRIM_MM=250;
+const BAR_CUT_GAP_MM=3;
+function formatMetricNumber(value) {
+  const n=Math.round(safeNum(value)*100)/100;
+  if(n<=0) return "";
+  return Number.isInteger(n)?String(n):String(n).replace(/\.?0+$/,"");
+}
+function normalizeInventoryLookupKey(value){
+  return String(value||"")
+    .toLocaleLowerCase("tr")
+    .replace(/ı/g,"i")
+    .replace(/ğ/g,"g")
+    .replace(/ü/g,"u")
+    .replace(/ş/g,"s")
+    .replace(/ö/g,"o")
+    .replace(/ç/g,"c")
+    .replace(/ø/g,"o")
+    .replace(/Ø/g,"o")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g,"")
+    .replace(/[^a-z0-9]+/g," ")
+    .replace(/\s+/g," ")
+    .trim();
+}
+function buildBarMaterialLabel(materialName,diameterMm,barLengthMm=DEFAULT_BAR_LENGTH_MM){
+  const baseName=String(materialName||"").trim()||"Ham Malzeme";
+  const diaText=formatMetricNumber(diameterMm);
+  const barText=formatMetricNumber(barLengthMm||DEFAULT_BAR_LENGTH_MM)||String(DEFAULT_BAR_LENGTH_MM);
+  return `${baseName}${diaText?` O${diaText}`:""} x ${barText} mm Cubuk`;
+}
+function buildBarMaterialSignature({materialName="",diameterMm=0,barLengthMm=DEFAULT_BAR_LENGTH_MM}={}){
+  return [
+    normalizeInventoryLookupKey(materialName),
+    formatMetricNumber(diameterMm)||"0",
+    formatMetricNumber(barLengthMm||DEFAULT_BAR_LENGTH_MM)||String(DEFAULT_BAR_LENGTH_MM),
+  ].join("|");
+}
+function calcCutBarRequirement({qty=0,partLengthMm=0,barLengthMm=DEFAULT_BAR_LENGTH_MM,endTrimMm=BAR_END_TRIM_MM,cutGapMm=BAR_CUT_GAP_MM}={}){
+  const quantity=Math.max(0,safeNum(qty));
+  const partLen=Math.max(0,safeNum(partLengthMm));
+  const barLen=Math.max(0,safeNum(barLengthMm)||DEFAULT_BAR_LENGTH_MM);
+  const trimMm=Math.max(0,safeNum(endTrimMm));
+  const gapMm=Math.max(0,safeNum(cutGapMm));
+  const usableLengthMm=Math.max(0,barLen-trimMm);
+  const pitchMm=partLen>0?(partLen+gapMm):0;
+  const piecesPerBar=(usableLengthMm>0&&pitchMm>0)?Math.floor(usableLengthMm/pitchMm):0;
+  const barCount=(quantity>0&&piecesPerBar>0)?Math.ceil(quantity/piecesPerBar):0;
+  return {
+    qty:quantity,
+    partLengthMm:partLen,
+    barLengthMm:barLen,
+    endTrimMm:trimMm,
+    cutGapMm:gapMm,
+    usableLengthMm,
+    pitchMm,
+    piecesPerBar,
+    barCount,
+    isValid:quantity>0&&partLen>0&&piecesPerBar>0,
+  };
+}
 async function addAuditLog(actorId,entityType,entityId,action,beforeData,afterData,meta={}) {
   try{
     await window.DB.addDoc("auditLogs",{
@@ -1490,6 +1542,7 @@ const PDF_PART_FIELD_LABELS={
   customerName:["musteri","customer","firma"],
   partDiameterMm:["parca capi","cap","diameter"],
   partLengthMm:["parca uzunlugu","uzunluk","length","boy"],
+  barLengthMm:["cubuk boyu","stok boyu","bar length","rod length","ham boy","raw length"],
 };
 const PDF_PART_ALL_LABELS=Array.from(
   new Set(Object.values(PDF_PART_FIELD_LABELS).flat().map(normalizePdfLookupText).filter(Boolean))
@@ -1577,6 +1630,7 @@ function guessPartFieldsFromPdf({text="",lines=[],fileName=""}={}){
   const customerName=sanitizePdfFieldValue(findPdfLabeledValue(textLines,PDF_PART_FIELD_LABELS.customerName));
   const diameterLabel=parsePdfMetricValue(findPdfLabeledValue(textLines,PDF_PART_FIELD_LABELS.partDiameterMm));
   const lengthLabel=parsePdfMetricValue(findPdfLabeledValue(textLines,PDF_PART_FIELD_LABELS.partLengthMm));
+  const barLengthLabel=parsePdfMetricValue(findPdfLabeledValue(textLines,PDF_PART_FIELD_LABELS.barLengthMm));
   const dimensionPairSource=textLines.find(line=>/(?:Ø|ø)?\s*\d{1,5}(?:[.,]\d{1,3})?\s*[xX]\s*\d{1,5}(?:[.,]\d{1,3})?/.test(String(line.text||"")))?.text||"";
   const dimensionPair=extractPdfDimensionPair(dimensionPairSource);
   const revision=sanitizePdfFieldValue(String(revisionRaw||"").replace(/^(revizyon|revision|rev)\s*/i,"")).toUpperCase();
@@ -1588,6 +1642,7 @@ function guessPartFieldsFromPdf({text="",lines=[],fileName=""}={}){
     customerName,
     partDiameterMm:diameterLabel??dimensionPair.partDiameterMm,
     partLengthMm:lengthLabel??dimensionPair.partLengthMm,
+    barLengthMm:barLengthLabel,
   };
 }
 function normalizeDimensionToken(token){
@@ -6831,6 +6886,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     cycleSec:"60",
     partDiameterMm:"",
     partLengthMm:"",
+    barLengthMm:"",
     ncProgramVersion:"V1",
     documents:[],
     notes:"",
@@ -7152,20 +7208,17 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
   },[partTotalPages]);
   const partListStart=(partListPageIdx-1)*Math.max(1,partRowsPerPage);
   const pagedParts=filteredParts.slice(partListStart,partListStart+Math.max(1,partRowsPerPage));
-  const BAR_LENGTH_MM=3000;
+  const BAR_LENGTH_MM=DEFAULT_BAR_LENGTH_MM;
   const normalized=s=>String(s||"").trim().toUpperCase();
-  const formatMmValue=value=>{
-    const n=safeNum(value);
-    if(n<=0) return "";
-    const rounded=Math.round(n*100)/100;
-    return Number.isInteger(rounded)?String(rounded):String(rounded).replace(/\.?0+$/,"");
-  };
+  const formatMmValue=value=>formatMetricNumber(value);
   const partDimensionSummary=part=>{
     const chips=[];
     const diameterText=formatMmValue(part?.partDiameterMm);
     const lengthText=formatMmValue(part?.partLengthMm);
+    const barLengthText=formatMmValue(part?.barLengthMm);
     if(diameterText) chips.push(`Cap ${diameterText} mm`);
     if(lengthText) chips.push(`Uzunluk ${lengthText} mm`);
+    if(barLengthText) chips.push(`Cubuk ${barLengthText} mm`);
     return chips.join(" · ");
   };
   const partEntryOptions=[
@@ -7214,6 +7267,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
       parsed.customerName?{label:"Musteri",value:parsed.customerName}:null,
       parsed.partDiameterMm?{label:"Parca Capi",value:`${formatMmValue(parsed.partDiameterMm)} mm`}:null,
       parsed.partLengthMm?{label:"Parca Uzunlugu",value:`${formatMmValue(parsed.partLengthMm)} mm`}:null,
+      parsed.barLengthMm?{label:"Cubuk Boyu",value:`${formatMmValue(parsed.barLengthMm)} mm`}:null,
     ].filter(Boolean);
     return {
       fileName:file?.name||"",
@@ -7239,6 +7293,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
       cycleSec:emptyPartForm.cycleSec,
       partDiameterMm:parsed.partDiameterMm?formatMmValue(parsed.partDiameterMm):"",
       partLengthMm:parsed.partLengthMm?formatMmValue(parsed.partLengthMm):"",
+      barLengthMm:parsed.barLengthMm?formatMmValue(parsed.barLengthMm):"",
       ncProgramVersion:emptyPartForm.ncProgramVersion,
       documents:doc?[doc]:[],
       notes:"",
@@ -7280,6 +7335,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
       cycleSec:Math.max(0,safeNum(source?.cycleSec)),
       partDiameterMm:Math.max(0,safeNum(source?.partDiameterMm)),
       partLengthMm:Math.max(0,safeNum(source?.partLengthMm)),
+      barLengthMm:Math.max(0,safeNum(source?.barLengthMm)),
       rawUnitCost:preservedRawUnitCost,
       laborRateHour:preservedLaborRateHour,
       machineRateHour:preservedMachineRateHour,
@@ -7515,6 +7571,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
           revision:parsed.revision||prev.revision,
           partDiameterMm:parsed.partDiameterMm?formatMmValue(parsed.partDiameterMm):prev.partDiameterMm,
           partLengthMm:parsed.partLengthMm?formatMmValue(parsed.partLengthMm):prev.partLengthMm,
+          barLengthMm:parsed.barLengthMm?formatMmValue(parsed.barLengthMm):prev.barLengthMm,
           documents:mergeImportedPartDocument(prev.documents,doc),
         };
       });
@@ -7758,21 +7815,22 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
       : (resolvedCustomerName
         ? customers.find(c=>normalizeCustomerKey(c.name)===normalizeCustomerKey(resolvedCustomerName))
         : null);
-    setPartForm({
-      partNo:p.partNo||"",
-      customerPartCode:p.customerPartCode||"",
+      setPartForm({
+        partNo:p.partNo||"",
+        customerPartCode:p.customerPartCode||"",
       customerId:matchedCustomer?.id||directCustomerId||"",
       customerName:matchedCustomer?.name||resolvedCustomerName,
       name:p.name||"",
       material:p.material||"",
       revision:p.revision||"A",
       setupSec:String(p.setupSec??300),
-      cycleSec:String(p.cycleSec??60),
-      partDiameterMm:p.partDiameterMm!==undefined&&p.partDiameterMm!==null?String(p.partDiameterMm):"",
-      partLengthMm:p.partLengthMm!==undefined&&p.partLengthMm!==null?String(p.partLengthMm):"",
-      ncProgramVersion:p.ncProgramVersion||"V1",
-      documents:docs,
-      notes:p.notes||"",
+        cycleSec:String(p.cycleSec??60),
+        partDiameterMm:p.partDiameterMm!==undefined&&p.partDiameterMm!==null?String(p.partDiameterMm):"",
+        partLengthMm:p.partLengthMm!==undefined&&p.partLengthMm!==null?String(p.partLengthMm):"",
+        barLengthMm:p.barLengthMm!==undefined&&p.barLengthMm!==null?String(p.barLengthMm):"",
+        ncProgramVersion:p.ncProgramVersion||"V1",
+        documents:docs,
+        notes:p.notes||"",
     });
   }
 
@@ -8113,6 +8171,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
                           <div><span style={labelSt}>Revizyon</span><input style={inputSt} value={item.revision||""} onChange={e=>updateBulkImportItem(item.id,"revision",e.target.value)} placeholder="A"/></div>
                           <div><span style={labelSt}>Parca Capi (mm)</span><input style={inputSt} type="number" min="0" step="0.01" value={item.partDiameterMm||""} onChange={e=>updateBulkImportItem(item.id,"partDiameterMm",e.target.value)}/></div>
                           <div><span style={labelSt}>Parca Uzunlugu (mm)</span><input style={inputSt} type="number" min="0" step="0.01" value={item.partLengthMm||""} onChange={e=>updateBulkImportItem(item.id,"partLengthMm",e.target.value)}/></div>
+                          <div><span style={labelSt}>Cubuk Boyu (mm)</span><input style={inputSt} type="number" min="0" step="0.01" value={item.barLengthMm||""} onChange={e=>updateBulkImportItem(item.id,"barLengthMm",e.target.value)} placeholder="3000"/></div>
                         </div>
                       </div>
                     ))}
@@ -8162,6 +8221,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
                   <div><span style={labelSt}>Cevrim (sn)</span><input style={inputSt} type="number" min="0" value={partForm.cycleSec} onChange={e=>fv("cycleSec",e.target.value)}/></div>
                   <div><span style={labelSt}>Parca Capi (mm)</span><input style={inputSt} type="number" min="0" step="0.01" value={partForm.partDiameterMm} onChange={e=>fv("partDiameterMm",e.target.value)}/></div>
                   <div><span style={labelSt}>Parca Uzunlugu (mm)</span><input style={inputSt} type="number" min="0" step="0.01" value={partForm.partLengthMm} onChange={e=>fv("partLengthMm",e.target.value)}/></div>
+                  <div><span style={labelSt}>Cubuk Boyu (mm)</span><input style={inputSt} type="number" min="0" step="0.01" value={partForm.barLengthMm} onChange={e=>fv("barLengthMm",e.target.value)} placeholder="3000"/></div>
                   <div><span style={labelSt}>NC Program Versiyon</span><input style={inputSt} value={partForm.ncProgramVersion} onChange={e=>fv("ncProgramVersion",e.target.value)} placeholder="V1"/></div>
                   <div>
                     <span style={labelSt}>Dosyalar</span>
@@ -8465,11 +8525,16 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     revision:String(seed.revision||"A").trim().toUpperCase()||"A",
     setupSec:String(seed.setupSec??300),
     cycleSec:String(seed.cycleSec??60),
+    partDiameterMm:String(seed.partDiameterMm??""),
+    partLengthMm:String(seed.partLengthMm??""),
+    barLengthMm:String(seed.barLengthMm??DEFAULT_BAR_LENGTH_MM),
     notes:String(seed.notes||""),
   });
   const [customers,setCustomers]=useState([]);
   const [customerPrices,setCustomerPrices]=useState([]);
   const [parts,setParts]=useState([]);
+  const [materials,setMaterials]=useState([]);
+  const [purchaseRequests,setPurchaseRequests]=useState([]);
   const [quotes,setQuotes]=useState([]);
   const [salesOrders,setSalesOrders]=useState([]);
   const [workOrders,setWorkOrders]=useState([]);
@@ -8565,10 +8630,12 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   },[]);
 
   const load=useCallback(async()=>{
-    const [c,prices,pList,q,s,wo,templateDoc,brandingDoc,currencyDoc]=await Promise.all([
+    const [c,prices,pList,matList,prList,q,s,wo,templateDoc,brandingDoc,currencyDoc]=await Promise.all([
       window.DB.getAll("customers"),
       window.DB.getAll("customerPrices"),
       window.DB.getAll("parts"),
+      window.DB.getAll("materials"),
+      window.DB.getAll("purchaseRequests"),
       window.DB.getAll("salesQuotes"),
       window.DB.getAll("salesOrders"),
       window.DB.getAll("orders"),
@@ -8584,6 +8651,8 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     setCustomers(c.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
     setCustomerPrices(prices.sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||"")));
     setParts(pList.sort((a,b)=>(a.partNo||"").localeCompare(b.partNo||"","tr")));
+    setMaterials(matList.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    setPurchaseRequests(prList.sort((a,b)=>String(b.updatedAt||b.createdAt||"").localeCompare(String(a.updatedAt||a.createdAt||""))));
     setQuotes(q.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
     setSalesOrders(s.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
     setWorkOrders(wo.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
@@ -8788,6 +8857,9 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       material:String(part.material||"").trim(),
       setupSec:Math.max(0,safeNum(part.setupSec)),
       cycleSec:Math.max(1,safeNum(part.cycleSec)||60),
+      partDiameterMm:Math.max(0,safeNum(part.partDiameterMm)),
+      partLengthMm:Math.max(0,safeNum(part.partLengthMm)),
+      barLengthMm:Math.max(0,safeNum(part.barLengthMm)),
       unitCost:Math.max(0,safeNum(part.unitCost)),
       costBreakdown:{
         materialCost:Math.max(0,safeNum(part.costBreakdown?.materialCost)),
@@ -8862,6 +8934,9 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       name:line.partName||"",
       revision:line.revision||"A",
       cycleSec:line.partSec||"60",
+      partDiameterMm:line.partSnapshot?.partDiameterMm||"",
+      partLengthMm:line.partSnapshot?.partLengthMm||"",
+      barLengthMm:line.partSnapshot?.barLengthMm||DEFAULT_BAR_LENGTH_MM,
     }));
     setShowCreatePartModal(true);
   }
@@ -8894,8 +8969,9 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       setupSec,
       cycleSec,
       qtyPerRaw:1,
-      partDiameterMm:0,
-      partLengthMm:0,
+      partDiameterMm:Math.max(0,safeNum(quickPartForm.partDiameterMm)),
+      partLengthMm:Math.max(0,safeNum(quickPartForm.partLengthMm)),
+      barLengthMm:Math.max(0,safeNum(quickPartForm.barLengthMm)||DEFAULT_BAR_LENGTH_MM),
       rawUnitCost:0,
       laborRateHour:250,
       machineRateHour:600,
@@ -9108,6 +9184,182 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     }));
     return part;
   }
+  function formatBarMm(value){
+    return formatMetricNumber(value);
+  }
+  function buildBarFormulaText(partLengthMm,barLengthMm){
+    return `(${formatBarMm(barLengthMm)||DEFAULT_BAR_LENGTH_MM} - ${BAR_END_TRIM_MM}) / (${formatBarMm(partLengthMm)||0} + ${BAR_CUT_GAP_MM})`;
+  }
+  function findBarMaterialMatch(materialName,diameterMm,barLengthMm){
+    const fullLabel=buildBarMaterialLabel(materialName,diameterMm,barLengthMm);
+    const fullKey=normalizeInventoryLookupKey(fullLabel);
+    const baseKey=normalizeInventoryLookupKey(materialName);
+    const exactMatch=materials.find(m=>{
+      const nameKey=normalizeInventoryLookupKey(m.name||"");
+      const codeKey=normalizeInventoryLookupKey(m.code||"");
+      return (fullKey&&nameKey===fullKey)||(fullKey&&codeKey===fullKey);
+    })||null;
+    if(exactMatch) return {material:exactMatch,matchMode:"exact"};
+    const baseMatch=materials.find(m=>{
+      const nameKey=normalizeInventoryLookupKey(m.name||"");
+      const codeKey=normalizeInventoryLookupKey(m.code||"");
+      return (baseKey&&nameKey===baseKey)||(baseKey&&codeKey===baseKey);
+    })||null;
+    return {material:baseMatch,matchMode:baseMatch?"base":"none"};
+  }
+  function buildLineBarRequirement(line,{fallbackDueDate=todayStr()}={}){
+    const linkedPart=resolvePartFromLine(line);
+    const snapshot=(linkedPart&&typeof linkedPart==="object")
+      ? makePartSnapshot(linkedPart)
+      : ((line&&line.partSnapshot&&typeof line.partSnapshot==="object")?line.partSnapshot:null);
+    const materialName=String(line?.material||snapshot?.material||linkedPart?.material||"").trim();
+    const diameterMm=Math.max(0,safeNum(snapshot?.partDiameterMm??linkedPart?.partDiameterMm));
+    const partLengthMm=Math.max(0,safeNum(snapshot?.partLengthMm??linkedPart?.partLengthMm));
+    const barLengthMm=Math.max(0,safeNum(snapshot?.barLengthMm??linkedPart?.barLengthMm))||DEFAULT_BAR_LENGTH_MM;
+    const qty=Math.max(0,safeNum(line?.qty));
+    const plan=calcCutBarRequirement({qty,partLengthMm,barLengthMm});
+    const materialMatch=findBarMaterialMatch(materialName,diameterMm,barLengthMm);
+    const requestMaterialName=buildBarMaterialLabel(materialName,diameterMm,barLengthMm);
+    const hasIdentity=Boolean(
+      String(line?.partId||"").trim()
+      || String(line?.partNo||snapshot?.partNo||linkedPart?.partNo||"").trim()
+      || String(line?.partName||snapshot?.partName||linkedPart?.name||"").trim()
+      || materialName
+    );
+    let issue="";
+    if(hasIdentity&&qty<=0) issue="Miktar sifirdan buyuk olmali.";
+    else if(hasIdentity&&partLengthMm<=0) issue="Parca uzunlugu tanimli degil.";
+    else if(hasIdentity&&plan.piecesPerBar<=0) issue="Cubuk verimi hesaplanamadi.";
+    return {
+      partId:String(line?.partId||snapshot?.partId||linkedPart?.id||"").trim(),
+      partNo:String(line?.partNo||snapshot?.partNo||linkedPart?.partNo||"").trim().toUpperCase(),
+      partName:String(line?.partName||snapshot?.partName||linkedPart?.name||"").trim(),
+      dueDate:String(line?.dueDate||fallbackDueDate||todayStr()),
+      qty,
+      materialName,
+      diameterMm,
+      partLengthMm,
+      barLengthMm,
+      stockQty:Math.max(0,safeNum(materialMatch.material?.stock)),
+      matchedMaterial:materialMatch.material,
+      materialMatchMode:materialMatch.matchMode,
+      requestMaterialName,
+      materialSignature:buildBarMaterialSignature({materialName,diameterMm,barLengthMm}),
+      formulaText:buildBarFormulaText(partLengthMm,barLengthMm),
+      issue,
+      hasIdentity,
+      ...plan,
+    };
+  }
+  function summarizeBarRequirements(rows,{sourceOrder=null}={}){
+    const activeRequests=(Array.isArray(purchaseRequests)?purchaseRequests:[]).filter(req=>!["received","cancelled","closed"].includes(String(req.status||"")));
+    const grouped={};
+    (Array.isArray(rows)?rows:[]).forEach(row=>{
+      if(!row||!row.isValid||row.barCount<=0) return;
+      const key=row.materialSignature||`${row.requestMaterialName}_${row.partNo||row.partName||""}`;
+      if(!grouped[key]){
+        grouped[key]={
+          key,
+          materialSignature:row.materialSignature,
+          requestMaterialName:row.requestMaterialName,
+          materialName:row.materialName,
+          diameterMm:row.diameterMm,
+          barLengthMm:row.barLengthMm,
+          stockQty:row.stockQty,
+          matchedMaterial:row.matchedMaterial,
+          materialMatchMode:row.materialMatchMode,
+          totalQty:0,
+          totalBarCount:0,
+          partNos:[],
+          needDate:row.dueDate||"",
+        };
+      }
+      grouped[key].totalQty+=row.qty;
+      grouped[key].totalBarCount+=row.barCount;
+      if(row.partNo&&!grouped[key].partNos.includes(row.partNo)) grouped[key].partNos.push(row.partNo);
+      if(row.dueDate&&(!grouped[key].needDate||String(row.dueDate)<String(grouped[key].needDate))) grouped[key].needDate=row.dueDate;
+    });
+    return Object.values(grouped).map(row=>{
+      const sourceOrderId=String(sourceOrder?.id||"").trim();
+      const sourceOrderCode=String(sourceOrder?.code||"").trim().toUpperCase();
+      const openRequestQty=activeRequests
+        .filter(req=>{
+          const reqSignature=String(req.materialSignature||"").trim();
+          const reqOrderId=String(req.sourceOrderId||"").trim();
+          const reqOrderCode=String(req.sourceOrderCode||"").trim().toUpperCase();
+          if(row.materialSignature&&reqSignature&&row.materialSignature!==reqSignature) return false;
+          if(sourceOrderId&&reqOrderId===sourceOrderId) return true;
+          if(sourceOrderCode&&reqOrderCode===sourceOrderCode) return true;
+          return false;
+        })
+        .reduce((sum,req)=>sum+Math.max(0,safeNum(req.qty)),0);
+      return {
+        ...row,
+        openRequestQty,
+        shortageQty:Math.max(0,row.totalBarCount-row.stockQty),
+        shortageAfterRequests:Math.max(0,row.totalBarCount-row.stockQty-openRequestQty),
+      };
+    }).sort((a,b)=>String(a.requestMaterialName||"").localeCompare(String(b.requestMaterialName||""),"tr"));
+  }
+  async function createPurchaseRequestsForSalesOrder(order){
+    if(!order) return;
+    if(!availableTabSet.has("purchase_requests")){
+      alert("Satin alma talebi olusturma yetkisi gorunmuyor.");
+      return;
+    }
+    const requirementRows=summarizeBarRequirements(
+      (Array.isArray(order.lines)?order.lines:[]).map(line=>buildLineBarRequirement(line,{fallbackDueDate:order.dueDate||todayStr()})),
+      {sourceOrder:order}
+    );
+    const shortages=requirementRows.filter(row=>row.shortageAfterRequests>0);
+    if(shortages.length===0){
+      alert("Eksik cubuk ihtiyaci gorunmuyor.");
+      return;
+    }
+    const confirmText=shortages.map(row=>`${row.requestMaterialName}: ${row.shortageAfterRequests} cubuk`).join("\n");
+    if(!confirm(`Siparis icin satin alma talebi olusturulsun mu?\n\n${confirmText}`)) return;
+    const createdRows=[];
+    let failedCount=0;
+    for(let idx=0;idx<shortages.length;idx++){
+      const row=shortages[idx];
+      const ts=Date.now()+idx;
+      const payload={
+        code:`PR-${String(ts).slice(-6)}`,
+        materialId:row.matchedMaterial?.id||"",
+        materialCode:row.matchedMaterial?.code||"",
+        materialName:row.requestMaterialName,
+        materialSignature:row.materialSignature||"",
+        qty:Math.max(0,safeNum(row.shortageAfterRequests)),
+        needDate:row.needDate||order.dueDate||todayStr(),
+        priority:order.priority||"normal",
+        source:"sales_order_bar_shortage",
+        status:"pending",
+        note:`${order.code||"Siparis"} icin cubuk ihtiyaci. Parcalar: ${(row.partNos||[]).join(", ")||"-"}.`,
+        sourceOrderId:order.id||"",
+        sourceOrderCode:order.code||"",
+        sourceCustomerId:order.customerId||"",
+        sourceCustomerName:order.customerName||"",
+        barLengthMm:Math.max(0,safeNum(row.barLengthMm)),
+        partNos:[...(row.partNos||[])],
+        createdBy:currentUser.id,
+        updatedAt:new Date().toISOString(),
+      };
+      const id=await window.DB.addDoc("purchaseRequests",payload);
+      if(!id){
+        failedCount+=1;
+        continue;
+      }
+      createdRows.push({id,...payload,createdAt:new Date().toISOString()});
+    }
+    if(createdRows.length>0){
+      setPurchaseRequests(prev=>[...createdRows,...prev].sort((a,b)=>String(b.updatedAt||b.createdAt||"").localeCompare(String(a.updatedAt||a.createdAt||""))));
+    }
+    if(createdRows.length===0){
+      alert("Satin alma talebi olusturulamadi.");
+      return;
+    }
+    alert(`${createdRows.length} satin alma talebi olusturuldu.${failedCount>0?` ${failedCount} satir olusturulamadi.`:""}`);
+  }
 
   async function saveCustomer(){
     if(!customerForm.name.trim()){alert("Musteri adi zorunlu.");return;}
@@ -9250,6 +9502,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     if(!orderForm.customerId){alert("Musteri secin.");return;}
     if(!orderForm.lines.length){alert("En az bir satir ekleyin.");return;}
     if(orderForm.lines.some(l=>!l.partNo||safeNum(l.qty)<=0)){alert("Satirlarda parca no ve miktar zorunlu.");return;}
+    const targetOrderId=orderEditId;
     const customer=customers.find(c=>c.id===orderForm.customerId);
     const lines=orderForm.lines.map(l=>normalizeSalesLine(l,{dueDateFallback:orderForm.dueDate||todayStr()}));
     const qtyTotal=lines.reduce((sum,l)=>sum+safeNum(l.qty),0);
@@ -9305,7 +9558,9 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       if(!id){alert("Siparis kaydedilemedi.");return;}
       await addAuditLog(currentUser.id,"salesOrder",id,"create_manual",null,payload,{module:"sales"});
       setSalesOrders(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
+      setSelectedSalesOrderId(id);
     }
+    if(targetOrderId) setSelectedSalesOrderId(targetOrderId);
     const nextOrderSeed=orderEditId
       ? salesOrders.map(row=>row.id===orderEditId?{...row,code:payloadBase.code||row.code||""}:row)
       : [...salesOrders,{code:payloadBase.code||orderForm.code||""}];
@@ -9509,6 +9764,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     if(!woResult.createdIds.length){
       alert("Siparis olustu ancak otomatik is emri olusturulamadi. Siparis kartindan tekrar deneyebilirsiniz.");
     }
+    setSelectedSalesOrderId(id);
     setView("orders");
   }
 
@@ -9893,6 +10149,20 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   const orderListStart=(orderListPageIdx-1)*Math.max(1,orderRowsPerPage);
   const pagedQuoteRows=filteredQuotes.slice(quoteListStart,quoteListStart+Math.max(1,quoteRowsPerPage));
   const pagedOrderRows=filteredOrders.slice(orderListStart,orderListStart+Math.max(1,orderRowsPerPage));
+  const quoteLineBarRows=useMemo(
+    ()=>quoteForm.lines
+      .map(line=>buildLineBarRequirement(line,{fallbackDueDate:quoteForm.validUntil||todayStr()}))
+      .filter(row=>row.hasIdentity),
+    [parts,materials,quoteForm.lines,quoteForm.validUntil]
+  );
+  const orderLineBarRows=useMemo(
+    ()=>orderForm.lines
+      .map(line=>buildLineBarRequirement(line,{fallbackDueDate:orderForm.dueDate||todayStr()}))
+      .filter(row=>row.hasIdentity),
+    [materials,orderForm.dueDate,orderForm.lines,parts]
+  );
+  const quoteBarSummaryRows=useMemo(()=>summarizeBarRequirements(quoteLineBarRows),[purchaseRequests,quoteLineBarRows]);
+  const orderBarSummaryRows=useMemo(()=>summarizeBarRequirements(orderLineBarRows),[orderLineBarRows,purchaseRequests]);
   const selectedSalesOrder=salesOrders.find(row=>row.id===selectedSalesOrderId)||null;
   const selectedSalesOrderCustomer=selectedSalesOrder?customers.find(row=>row.id===selectedSalesOrder.customerId)||null:null;
   const selectedSalesOrderQuote=selectedSalesOrder?(
@@ -9925,6 +10195,16 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       return {id:`${selectedSalesOrder.id||"sales"}_${idx}`,line,linkedPart,linkedWorkOrder};
     });
   },[parts,selectedSalesOrder,selectedSalesOrderWorkOrders]);
+  const selectedSalesOrderLineBarRows=useMemo(()=>{
+    if(!selectedSalesOrder) return [];
+    return (selectedSalesOrder.lines||[])
+      .map(line=>buildLineBarRequirement(line,{fallbackDueDate:selectedSalesOrder.dueDate||todayStr()}))
+      .filter(row=>row.hasIdentity);
+  },[materials,parts,selectedSalesOrder]);
+  const selectedSalesOrderMaterialSummary=useMemo(()=>{
+    if(!selectedSalesOrder) return [];
+    return summarizeBarRequirements(selectedSalesOrderLineBarRows,{sourceOrder:selectedSalesOrder});
+  },[purchaseRequests,selectedSalesOrder,selectedSalesOrderLineBarRows]);
   const selectedSalesStatusMeta=selectedSalesOrder?getSalesStatusMeta(selectedSalesOrder.status):null;
   const selectedSalesRemainingQty=selectedSalesOrder?Math.max(0,safeNum(selectedSalesOrder.qty)-safeNum(selectedSalesOrder.deliveredQty)):0;
   const selectedSalesOpenWorkOrders=selectedSalesOrderWorkOrders.filter(row=>isOpenOrderStatus(row.status)).length;
@@ -10385,6 +10665,46 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
               </div>
 
               <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12,gridColumn:"1 / -1"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+                  <div>
+                    <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase"}}>Malzeme Kontrolu</div>
+                    <div style={{fontWeight:700,color:C.text}}>Cubuk Ihtiyaci ve Stok</div>
+                    <div style={{fontSize:11,color:C.muted2,marginTop:3}}>Formul: (Cubuk boyu - {BAR_END_TRIM_MM}) / (Parca uzunlugu + {BAR_CUT_GAP_MM})</div>
+                  </div>
+                  <button
+                    onClick={()=>createPurchaseRequestsForSalesOrder(selectedSalesOrder)}
+                    disabled={!availableTabSet.has("purchase_requests")||selectedSalesOrderMaterialSummary.filter(row=>row.shortageAfterRequests>0).length===0}
+                    style={{...btnSt("primary"),padding:"8px 11px",fontSize:12,opacity:(!availableTabSet.has("purchase_requests")||selectedSalesOrderMaterialSummary.filter(row=>row.shortageAfterRequests>0).length===0)?0.55:1,cursor:(!availableTabSet.has("purchase_requests")||selectedSalesOrderMaterialSummary.filter(row=>row.shortageAfterRequests>0).length===0)?"not-allowed":"pointer"}}
+                  >
+                    Eksik Icin Talep Olustur
+                  </button>
+                </div>
+                <div style={{fontSize:11,color:C.muted2,marginBottom:8}}>Stok alani cubuk adedi olarak yorumlanir. Tam cubuk karti yoksa malzeme adi bazli eslesme kullanilir.</div>
+                {selectedSalesOrderMaterialSummary.length===0&&<div style={{fontSize:12,color:C.muted2,padding:"8px 2px"}}>Hesaplanabilir cubuk ihtiyaci bulunamadi. Parca uzunlugu ve cubuk boyu alanlarini kontrol edin.</div>}
+                <div style={{display:"grid",gridTemplateColumns:"1fr",gap:8}}>
+                  {selectedSalesOrderMaterialSummary.map(row=>(
+                    <div key={row.key} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                      <div style={{minWidth:0,flex:"1 1 420px"}}>
+                        <div style={{fontSize:12,fontWeight:800,color:C.text}}>{row.requestMaterialName}</div>
+                        <div style={{fontSize:11,color:C.muted2,marginTop:3}}>
+                          {[(row.partNos||[]).length>0?`Parcalar: ${(row.partNos||[]).join(", ")}`:"",row.needDate?`Termin: ${row.needDate}`:""].filter(Boolean).join(" · ")}
+                        </div>
+                        <div style={{fontSize:11,color:C.muted2,marginTop:3}}>
+                          {row.materialMatchMode==="exact"?"Stok karti: tam eslesme":(row.materialMatchMode==="base"?"Stok karti: malzeme adi bazli eslesme":"Stok karti bulunamadi")}
+                        </div>
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(74px,1fr))",gap:8,minWidth:300}}>
+                        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 9px"}}><div style={{fontSize:10,color:C.muted2}}>Ihtiyac</div><div style={{fontSize:16,fontWeight:800,color:C.text,marginTop:3}}>{row.totalBarCount}</div></div>
+                        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 9px"}}><div style={{fontSize:10,color:C.muted2}}>Stok</div><div style={{fontSize:16,fontWeight:800,color:C.text,marginTop:3}}>{row.stockQty}</div></div>
+                        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 9px"}}><div style={{fontSize:10,color:C.muted2}}>Acik Talep</div><div style={{fontSize:16,fontWeight:800,color:C.accent,marginTop:3}}>{row.openRequestQty}</div></div>
+                        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 9px"}}><div style={{fontSize:10,color:C.muted2}}>Eksik</div><div style={{fontSize:16,fontWeight:800,color:row.shortageAfterRequests>0?C.red:C.green,marginTop:3}}>{row.shortageAfterRequests}</div></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12,gridColumn:"1 / -1"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
                   <div>
                     <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase"}}>Siparis Satirlari</div>
@@ -10395,6 +10715,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                 <div style={{display:"grid",gridTemplateColumns:"1fr",gap:8}}>
                   {selectedSalesOrderLines.map(item=>{
                     const line=item.line||{};
+                    const barPlan=buildLineBarRequirement(line,{fallbackDueDate:selectedSalesOrder.dueDate||todayStr()});
                     const canOpenPart=Boolean(item.linkedPart||line.partNo)&&availableTabSet.has("parts");
                     const canOpenWorkOrder=Boolean(item.linkedWorkOrder)&&availableTabSet.has("orders");
                     const lineNet=(safeNum(line.qty)*safeNum(line.unitPrice))*(1-(safeNum(line.discountPct)/100));
@@ -10407,6 +10728,11 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                           </div>
                           <div style={{fontSize:11,color:C.muted2,marginTop:3}}>
                             {item.linkedWorkOrder?`Is Emri: ${item.linkedWorkOrder.code||"-"}`:"Bagli is emri yok"} · {formatByCurrency(lineNet,selectedSalesOrder.currency||defaultQuoteCurrency)}
+                          </div>
+                          <div style={{fontSize:11,color:C.muted2,marginTop:3}}>
+                            {barPlan.isValid
+                              ? `Cubuk: ${barPlan.barCount} adet · Cubuk basi ${barPlan.piecesPerBar} parca · ${barPlan.formulaText}`
+                              : `Malzeme hesabi: ${barPlan.issue||"Veri eksik"}`}
                           </div>
                         </div>
                         <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
@@ -10609,6 +10935,46 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                   <option key={p.id||p.partNo} value={p.partNo}>{p.name||""}</option>
                 ))}
               </datalist>
+              {quoteLineBarRows.length>0&&(
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",flexDirection:"column",gap:8}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,flexWrap:"wrap"}}>
+                    <div>
+                      <div style={{fontWeight:700,color:C.text}}>Tahmini Cubuk Ihtiyaci</div>
+                      <div style={{fontSize:11,color:C.muted2,marginTop:3}}>Formul: (Cubuk boyu - {BAR_END_TRIM_MM}) / (Parca uzunlugu + {BAR_CUT_GAP_MM})</div>
+                    </div>
+                    <Badge label={`${quoteBarSummaryRows.reduce((sum,row)=>sum+safeNum(row.totalBarCount),0)} Cubuk`} color={C.accent}/>
+                  </div>
+                  {quoteLineBarRows.map((row,idx)=>(
+                    <div key={`${row.partNo||"quote"}_${idx}`} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 10px",border:`1px solid ${C.border}`,borderRadius:10,background:C.card}}>
+                      <div style={{minWidth:0,flex:"1 1 360px"}}>
+                        <div style={{fontSize:12,fontWeight:800,color:C.text}}>{row.partNo||"-"} {row.partName?`· ${row.partName}`:""}</div>
+                        <div style={{fontSize:11,color:C.muted2,marginTop:3}}>
+                          {[row.materialName||"",row.diameterMm?`Cap ${formatBarMm(row.diameterMm)} mm`:"",row.partLengthMm?`Boy ${formatBarMm(row.partLengthMm)} mm`:"",`Cubuk ${formatBarMm(row.barLengthMm)||DEFAULT_BAR_LENGTH_MM} mm`].filter(Boolean).join(" · ")}
+                        </div>
+                      </div>
+                      <div style={{fontSize:12,fontWeight:700,color:row.isValid?C.accent:C.warn,textAlign:"right"}}>
+                        {row.isValid?`${row.qty} adet -> ${row.piecesPerBar}/cubuk -> ${row.barCount} cubuk`:(row.issue||"Hesap yok")}
+                      </div>
+                    </div>
+                  ))}
+                  {quoteBarSummaryRows.length>0&&(
+                    <div style={{display:"grid",gridTemplateColumns:"1fr",gap:8}}>
+                      <div style={{fontSize:11,color:C.muted2,letterSpacing:.55,textTransform:"uppercase"}}>Malzeme Ozeti</div>
+                      {quoteBarSummaryRows.map(row=>(
+                        <div key={row.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 10px",border:`1px solid ${C.border}`,borderRadius:10,background:C.card}}>
+                          <div style={{minWidth:0,flex:"1 1 320px"}}>
+                            <div style={{fontSize:12,fontWeight:800,color:C.text}}>{row.requestMaterialName}</div>
+                            <div style={{fontSize:11,color:C.muted2,marginTop:3}}>
+                              {[(row.partNos||[]).length>0?`Parcalar: ${(row.partNos||[]).join(", ")}`:"",row.barLengthMm?`Cubuk ${formatBarMm(row.barLengthMm)} mm`:""].filter(Boolean).join(" · ")}
+                            </div>
+                          </div>
+                          <div style={{fontSize:12,fontWeight:700,color:C.accent,textAlign:"right"}}>{row.totalBarCount} cubuk</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <div style={{padding:"12px 14px",borderTop:`1px solid ${C.border}`,display:"flex",justifyContent:"flex-end",gap:8}}>
               <button onClick={closeQuoteModal} style={{...btnSt("ghost"),padding:"9px 13px",fontSize:12}}>Iptal</button>
@@ -10633,6 +10999,9 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
               <div><span style={labelSt}>Parca Adi *</span><input style={inputSt} value={quickPartForm.name} onChange={e=>setQuickPartForm(f=>({...f,name:e.target.value}))} placeholder="Parca adi"/></div>
               <div><span style={labelSt}>Revizyon</span><input style={inputSt} value={quickPartForm.revision} onChange={e=>setQuickPartForm(f=>({...f,revision:e.target.value.toUpperCase()}))} placeholder="A"/></div>
               <div><span style={labelSt}>Malzeme</span><input style={inputSt} value={quickPartForm.material} onChange={e=>setQuickPartForm(f=>({...f,material:e.target.value}))} placeholder="Opsiyonel"/></div>
+              <div><span style={labelSt}>Parca Capi (mm)</span><input style={inputSt} type="number" min="0" step="0.01" value={quickPartForm.partDiameterMm} onChange={e=>setQuickPartForm(f=>({...f,partDiameterMm:e.target.value}))}/></div>
+              <div><span style={labelSt}>Parca Uzunlugu (mm)</span><input style={inputSt} type="number" min="0" step="0.01" value={quickPartForm.partLengthMm} onChange={e=>setQuickPartForm(f=>({...f,partLengthMm:e.target.value}))}/></div>
+              <div><span style={labelSt}>Cubuk Boyu (mm)</span><input style={inputSt} type="number" min="0" step="0.01" value={quickPartForm.barLengthMm} onChange={e=>setQuickPartForm(f=>({...f,barLengthMm:e.target.value}))} placeholder="3000"/></div>
               <div><span style={labelSt}>Kurulum sn</span><input style={inputSt} type="number" min="0" value={quickPartForm.setupSec} onChange={e=>setQuickPartForm(f=>({...f,setupSec:e.target.value}))}/></div>
               <div><span style={labelSt}>Cevrim sn</span><input style={inputSt} type="number" min="1" value={quickPartForm.cycleSec} onChange={e=>setQuickPartForm(f=>({...f,cycleSec:e.target.value}))}/></div>
             </div>
@@ -10709,6 +11078,53 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                 <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Iskonto</div><div style={{fontWeight:800,color:C.warn}}>{moneyFmt(orderTotals.discount)}</div></div>
                 <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Net</div><div style={{fontWeight:800,color:C.accent}}>{moneyFmt(orderTotals.net)}</div></div>
               </div>
+              {orderLineBarRows.length>0&&(
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",flexDirection:"column",gap:8}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,flexWrap:"wrap"}}>
+                    <div>
+                      <div style={{fontWeight:700,color:C.text}}>Siparis Icin Cubuk Ihtiyaci</div>
+                      <div style={{fontSize:11,color:C.muted2,marginTop:3}}>Formul: (Cubuk boyu - {BAR_END_TRIM_MM}) / (Parca uzunlugu + {BAR_CUT_GAP_MM})</div>
+                    </div>
+                    <Badge label={`${orderBarSummaryRows.reduce((sum,row)=>sum+safeNum(row.totalBarCount),0)} Cubuk`} color={C.warn}/>
+                  </div>
+                  {orderLineBarRows.map((row,idx)=>(
+                    <div key={`${row.partNo||"order"}_${idx}`} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 10px",border:`1px solid ${C.border}`,borderRadius:10,background:C.card}}>
+                      <div style={{minWidth:0,flex:"1 1 360px"}}>
+                        <div style={{fontSize:12,fontWeight:800,color:C.text}}>{row.partNo||"-"} {row.partName?`· ${row.partName}`:""}</div>
+                        <div style={{fontSize:11,color:C.muted2,marginTop:3}}>
+                          {[row.materialName||"",row.diameterMm?`Cap ${formatBarMm(row.diameterMm)} mm`:"",row.partLengthMm?`Boy ${formatBarMm(row.partLengthMm)} mm`:"",`Cubuk ${formatBarMm(row.barLengthMm)||DEFAULT_BAR_LENGTH_MM} mm`].filter(Boolean).join(" · ")}
+                        </div>
+                      </div>
+                      <div style={{fontSize:12,fontWeight:700,color:row.isValid?C.warn:C.red,textAlign:"right"}}>
+                        {row.isValid?`${row.qty} adet -> ${row.piecesPerBar}/cubuk -> ${row.barCount} cubuk`:(row.issue||"Hesap yok")}
+                      </div>
+                    </div>
+                  ))}
+                  {orderBarSummaryRows.length>0&&(
+                    <div style={{display:"grid",gridTemplateColumns:"1fr",gap:8}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                        <div style={{fontSize:11,color:C.muted2,letterSpacing:.55,textTransform:"uppercase"}}>Malzeme ve Stok Ozeti</div>
+                        <div style={{fontSize:11,color:C.muted2}}>Siparis kaydindan sonra detay ekranindan eksik icin talep acabilirsiniz.</div>
+                      </div>
+                      {orderBarSummaryRows.map(row=>(
+                        <div key={row.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 10px",border:`1px solid ${C.border}`,borderRadius:10,background:C.card}}>
+                          <div style={{minWidth:0,flex:"1 1 320px"}}>
+                            <div style={{fontSize:12,fontWeight:800,color:C.text}}>{row.requestMaterialName}</div>
+                            <div style={{fontSize:11,color:C.muted2,marginTop:3}}>
+                              {[(row.partNos||[]).length>0?`Parcalar: ${(row.partNos||[]).join(", ")}`:"",row.barLengthMm?`Cubuk ${formatBarMm(row.barLengthMm)} mm`:"",row.materialMatchMode==="exact"?"Tam stok karti":(row.materialMatchMode==="base"?"Malzeme adi eslesmesi":"Stok karti yok")].filter(Boolean).join(" · ")}
+                            </div>
+                          </div>
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(76px,1fr))",gap:8,minWidth:252}}>
+                            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 8px"}}><div style={{fontSize:10,color:C.muted2}}>Ihtiyac</div><div style={{fontSize:15,fontWeight:800,color:C.text,marginTop:3}}>{row.totalBarCount}</div></div>
+                            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 8px"}}><div style={{fontSize:10,color:C.muted2}}>Stok</div><div style={{fontSize:15,fontWeight:800,color:C.text,marginTop:3}}>{row.stockQty}</div></div>
+                            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 8px"}}><div style={{fontSize:10,color:C.muted2}}>Eksik</div><div style={{fontSize:15,fontWeight:800,color:row.shortageQty>0?C.red:C.green,marginTop:3}}>{row.shortageQty}</div></div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <div style={{padding:"12px 14px",borderTop:`1px solid ${C.border}`,display:"flex",justifyContent:"flex-end",gap:8}}>
               <button onClick={closeOrderModal} style={{...btnSt("ghost"),padding:"9px 13px",fontSize:12}}>Iptal</button>
@@ -11313,6 +11729,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
         <td key={col.id} onClick={e=>e.stopPropagation()} style={{padding:"10px 12px"}}>
           <div style={{display:"flex",gap:6,justifyContent:"flex-end",alignItems:"center",flexWrap:"wrap"}}>
             <button onClick={()=>openWorkOrderView(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Goruntule</button>
+            <button onClick={()=>printWorkOrderForm(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Form</button>
             <button onClick={()=>{setForm({code:o.code,name:o.name,partId:o.partId||"",partNo:o.partNo||"",revision:o.revision||"A",customerPartCode:o.customerPartCode||"",partSnapshot:(o.partSnapshot&&typeof o.partSnapshot==="object")?o.partSnapshot:null,customerId:o.customerId||"",material:o.material||"",qty:String(o.qty??"1"),dueDate:o.dueDate||todayStr(),priority:o.priority||"normal",dependencies:o.dependencies||[],partSec:o.partSec,machines:o.machines||[],notes:o.notes||"",files:o.files||[],status:o.status||"planned",sourceType:o.sourceType||"manual"});setEditId(o.id);setShowForm(true);}} style={{...btnSt(),padding:"5px 8px",fontSize:11}}>Duzenle</button>
             <button onClick={()=>duplicateWorkOrder(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Kopyala</button>
             <select style={{...inputSt,width:130,padding:"5px 8px",fontSize:11}} value={o.status||"passive"} onChange={e=>setOrderStatus(o,e.target.value)}>
@@ -11325,6 +11742,324 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
     }
     return null;
   };
+  function escapePrintHtml(value){
+    return String(value??"")
+      .replace(/&/g,"&amp;")
+      .replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;")
+      .replace(/'/g,"&#39;");
+  }
+  function buildWorkOrderToolHistory(order){
+    if(!order) return [];
+    const stockMoves=toolMovements.filter(m=>(m.orderId&&m.orderId===order.id)||(!m.orderId&&m.orderCode===order.code));
+    const entryMoves=entryToolChanges.filter(m=>m.orderCode===order.code);
+    return [...stockMoves,...entryMoves].sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||""));
+  }
+  function buildWorkOrderOperations(order){
+    const snapshot=(order?.partSnapshot&&typeof order.partSnapshot==="object")?order.partSnapshot:null;
+    const routingOps=Array.isArray(snapshot?.routingOps)?snapshot.routingOps.filter(Boolean):[];
+    if(routingOps.length>0){
+      return routingOps.map((op,idx)=>({
+        seq:String(op.operationCode||`OP${String((idx+1)*10).padStart(2,"0")}`).trim().toUpperCase(),
+        name:String(op.operationName||op.operation||`Operasyon ${idx+1}`).trim(),
+        machine:String(op.machine||"").trim()||((order?.machines||[])[0]||"-"),
+        setupSec:Math.max(0,safeNum(op.setupSec)),
+        cycleSec:Math.max(0,safeNum(op.cycleSec)),
+        ncProgram:String(op.ncProgram||snapshot?.ncProgramVersion||"").trim(),
+        tooling:String(op.tooling||"").trim(),
+      }));
+    }
+    return [{
+      seq:"OP10",
+      name:"Uretim Operasyonu",
+      machine:(order?.machines||[]).join(", ")||"-",
+      setupSec:Math.max(0,safeNum(snapshot?.setupSec)),
+      cycleSec:Math.max(0,safeNum(snapshot?.cycleSec)||safeNum(order?.partSec)),
+      ncProgram:String(snapshot?.ncProgramVersion||"").trim(),
+      tooling:"",
+    }];
+  }
+  function buildWorkOrderTravelerHtml(order){
+    const snapshot=(order?.partSnapshot&&typeof order.partSnapshot==="object")?order.partSnapshot:null;
+    const produced=productionByOrder[order.code]||{correct:0,wrong:0,total:0};
+    const qtyTarget=Math.max(0,safeNum(order.qty));
+    const qtyRemaining=qtyTarget>0?Math.max(0,qtyTarget-safeNum(produced.total)):0;
+    const generatedAt=new Date();
+    const generatedAtText=generatedAt.toLocaleString("tr-TR");
+    const operations=buildWorkOrderOperations(order);
+    const toolRows=buildWorkOrderToolHistory(order).slice(0,8);
+    const partDiameterText=formatMetricNumber(snapshot?.partDiameterMm)||"-";
+    const partLengthText=formatMetricNumber(snapshot?.partLengthMm)||"-";
+    const barLengthText=formatMetricNumber(snapshot?.barLengthMm)||"-";
+    const setupText=fmtSec(Math.max(0,safeNum(snapshot?.setupSec)));
+    const cycleText=fmtSec(Math.max(0,safeNum(snapshot?.cycleSec)||safeNum(order.partSec)));
+    const docRows=[
+      ["Is Emri No",order.code||"-"],
+      ["Parca / Urun",order.name||"-"],
+      ["Parca No",order.partNo||"-"],
+      ["Musteri",order.customerName||"-"],
+      ["Revizyon",order.revision||"-"],
+      ["Musteri Parca Kodu",order.customerPartCode||"-"],
+      ["Kaynak Kayit",order.sourceSalesOrderCode||order.copiedFromOrderCode||"-"],
+      ["Durum",getOrderStatusMeta(order.status).label],
+      ["Planlanan Miktar",qtyTarget>0?`${qtyTarget} adet`:"-"],
+      ["Uretilen / Kalan",`${safeNum(produced.total)} / ${qtyRemaining}`],
+      ["Termin",order.dueDate||"-"],
+      ["Oncelik",(PRIORITY_OPTIONS.find(p=>p.id===order.priority)||{}).label||"-"],
+      ["Malzeme",order.material||"-"],
+      ["Tezgah",((order.machines||[]).join(", "))||"-"],
+      ["Kurulum / Cevrim",`${setupText||"-"} / ${cycleText||"-"}`],
+      ["Parca Olculeri",`Cap ${partDiameterText} mm · Boy ${partLengthText} mm · Cubuk ${barLengthText} mm`],
+    ];
+    const documents=(order.files||[]).map(file=>escapePrintHtml(file.name||"-"));
+    const opRowsHtml=operations.map((op,idx)=>`
+      <tr>
+        <td>${escapePrintHtml(op.seq||`OP${idx+1}`)}</td>
+        <td>${escapePrintHtml(op.name||"-")}</td>
+        <td>${escapePrintHtml(op.machine||"-")}</td>
+        <td>${escapePrintHtml(fmtSec(op.setupSec)||"-")}</td>
+        <td>${escapePrintHtml(fmtSec(op.cycleSec)||"-")}</td>
+        <td>${escapePrintHtml(op.ncProgram||"-")}</td>
+        <td>${escapePrintHtml(op.tooling||"-")}</td>
+        <td>${qtyTarget>0?qtyTarget:""}</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+    `).join("");
+    const toolRowsHtml=toolRows.length>0
+      ? toolRows.map(row=>`
+          <tr>
+            <td>${escapePrintHtml(row.toolCode||"-")}</td>
+            <td>${escapePrintHtml(row.toolName||"Takim")}</td>
+            <td>${escapePrintHtml(row.type==="in"?"Giris":(row.type==="out"?"Cikis":"Degisim"))}</td>
+            <td>${escapePrintHtml(row.qty)}</td>
+            <td>${escapePrintHtml(String(row.createdAt||"").slice(0,16).replace("T"," "))}</td>
+            <td>${escapePrintHtml(row.userName||"-")}</td>
+            <td>${escapePrintHtml(row.note||"-")}</td>
+          </tr>
+        `).join("")
+      : `
+          <tr>
+            <td colspan="7" class="muted center">Kayitli takim hareketi yok.</td>
+          </tr>
+        `;
+    const documentHtml=documents.length>0
+      ? `<ul class="doc-list">${documents.map(name=>`<li>${name}</li>`).join("")}</ul>`
+      : `<div class="muted">Ekli teknik dosya yok.</div>`;
+    const notesHtml=escapePrintHtml(order.notes||"-").replace(/\n/g,"<br/>");
+    const infoRowsHtml=docRows.map(([label,value])=>`
+      <div class="info-card">
+        <div class="info-label">${escapePrintHtml(label)}</div>
+        <div class="info-value">${escapePrintHtml(value)}</div>
+      </div>
+    `).join("");
+    return `<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <title>Is Emri Formu - ${escapePrintHtml(order.code||"")}</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #111827; background: #ffffff; }
+    .sheet { width: 100%; margin: 0 auto; }
+    .header { border: 2px solid #111827; padding: 12px 14px; display: grid; grid-template-columns: 1.5fr 1fr; gap: 12px; }
+    .title { font-size: 22px; font-weight: 800; letter-spacing: .6px; }
+    .subtitle { font-size: 11px; color: #4b5563; margin-top: 4px; line-height: 1.45; }
+    .doc-meta { border-left: 1px solid #d1d5db; padding-left: 12px; }
+    .doc-meta table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .doc-meta td { padding: 4px 0; vertical-align: top; }
+    .doc-meta td:first-child { color: #4b5563; width: 110px; }
+    .section { margin-top: 10px; border: 1px solid #111827; }
+    .section-title { background: #111827; color: #ffffff; padding: 7px 10px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; }
+    .section-body { padding: 10px; }
+    .info-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; }
+    .info-card { border: 1px solid #d1d5db; min-height: 60px; padding: 8px 9px; }
+    .info-label { font-size: 10px; color: #4b5563; text-transform: uppercase; letter-spacing: .6px; }
+    .info-value { font-size: 12px; font-weight: 700; margin-top: 5px; line-height: 1.35; word-break: break-word; }
+    table.tbl { width: 100%; border-collapse: collapse; font-size: 10px; }
+    .tbl th, .tbl td { border: 1px solid #9ca3af; padding: 6px 6px; text-align: left; vertical-align: top; }
+    .tbl th { background: #f3f4f6; font-weight: 700; }
+    .muted { color: #6b7280; font-size: 10px; }
+    .center { text-align: center; }
+    .two-col { display: grid; grid-template-columns: 1.1fr .9fr; gap: 10px; }
+    .note-box { border: 1px solid #d1d5db; min-height: 92px; padding: 8px 9px; font-size: 11px; line-height: 1.45; }
+    .trace-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; }
+    .trace-box { border: 1px solid #d1d5db; min-height: 64px; padding: 8px 9px; }
+    .trace-box .line { margin-top: 14px; border-bottom: 1px solid #9ca3af; height: 18px; }
+    .doc-list { margin: 0; padding-left: 18px; font-size: 11px; line-height: 1.5; }
+    .footer-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; }
+    .sign-box { border: 1px solid #d1d5db; min-height: 92px; padding: 8px 9px; }
+    .sign-title { font-size: 10px; color: #4b5563; text-transform: uppercase; letter-spacing: .6px; }
+    .sign-line { margin-top: 28px; border-top: 1px solid #6b7280; padding-top: 6px; font-size: 10px; color: #6b7280; }
+    .page-break-avoid { break-inside: avoid; page-break-inside: avoid; }
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <div class="header page-break-avoid">
+      <div>
+        <div class="title">IS EMRI FORMU / CONTROLLED TRAVELER</div>
+        <div class="subtitle">ISO 9001 izlenebilirlik, operasyon kontrolu ve dokumante bilgi mantigina gore hazirlanmis yazdirilabilir is emri formu. Ozel savunma veya musteri isterleri varsa ek onay alanlari bu revizyon uzerinden genisletilebilir.</div>
+      </div>
+      <div class="doc-meta">
+        <table>
+          <tr><td>Form Kodu</td><td>WO-FRM-01</td></tr>
+          <tr><td>Form Revizyonu</td><td>A</td></tr>
+          <tr><td>Kopya Durumu</td><td>Kontrollu Kopya</td></tr>
+          <tr><td>Olusturma Tarihi</td><td>${escapePrintHtml(generatedAtText)}</td></tr>
+          <tr><td>Hazirlayan</td><td>${escapePrintHtml(currentUser?.fullName||currentUser?.id||"-")}</td></tr>
+          <tr><td>Sayfa</td><td>Tarayici yazdirma cikti akisi</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="section page-break-avoid">
+      <div class="section-title">Temel Is Emri Bilgileri</div>
+      <div class="section-body">
+        <div class="info-grid">${infoRowsHtml}</div>
+      </div>
+    </div>
+
+    <div class="section page-break-avoid">
+      <div class="section-title">Malzeme Izlenebilirligi ve Ozel Gerekler</div>
+      <div class="section-body">
+        <div class="trace-grid">
+          <div class="trace-box"><div class="info-label">Heat / Lot No</div><div class="line"></div></div>
+          <div class="trace-box"><div class="info-label">Malzeme Sertifika No</div><div class="line"></div></div>
+          <div class="trace-box"><div class="info-label">Tedarikci / Parti</div><div class="line"></div></div>
+          <div class="trace-box"><div class="info-label">FAI / Ilk Parca Kontrol</div><div class="line"></div></div>
+          <div class="trace-box"><div class="info-label">Ozel Proses / Isil Islem</div><div class="line"></div></div>
+          <div class="trace-box"><div class="info-label">Seri No / Izlenebilirlik Notu</div><div class="line"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Operasyon Akisi ve Imza Takibi</div>
+      <div class="section-body">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th style="width:56px">Op</th>
+              <th>Operasyon</th>
+              <th style="width:90px">Tezgah</th>
+              <th style="width:74px">Kurulum</th>
+              <th style="width:72px">Cevrim</th>
+              <th style="width:92px">Program</th>
+              <th style="width:90px">Takim</th>
+              <th style="width:58px">Plan</th>
+              <th style="width:68px">Baslangic</th>
+              <th style="width:56px">Bitis</th>
+              <th style="width:78px">Operator</th>
+              <th style="width:72px">Kalite</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${opRowsHtml}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <div class="section page-break-avoid">
+        <div class="section-title">Kalite Kontrol ve Kabul Kaydi</div>
+        <div class="section-body">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>Kontrol Noktasi</th>
+                <th style="width:88px">Metot</th>
+                <th style="width:96px">Hedef / Tolerans</th>
+                <th style="width:74px">Sonuc</th>
+                <th style="width:78px">Kontrolor</th>
+                <th style="width:68px">Tarih</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>Ilk parca onayi</td><td></td><td></td><td></td><td></td><td></td></tr>
+              <tr><td>Proses ici olcum</td><td></td><td></td><td></td><td></td><td></td></tr>
+              <tr><td>Son kontrol / final</td><td></td><td></td><td></td><td></td><td></td></tr>
+              <tr><td>Etiket / paketleme</td><td></td><td></td><td></td><td></td><td></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="section page-break-avoid">
+        <div class="section-title">Takim ve Referans Dokumanlar</div>
+        <div class="section-body">
+          <table class="tbl" style="margin-bottom:10px">
+            <thead>
+              <tr>
+                <th style="width:78px">Kod</th>
+                <th>Takim</th>
+                <th style="width:52px">Tip</th>
+                <th style="width:46px">Adet</th>
+                <th style="width:88px">Tarih</th>
+                <th style="width:70px">Kullanici</th>
+                <th>Not</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${toolRowsHtml}
+            </tbody>
+          </table>
+          ${documentHtml}
+        </div>
+      </div>
+    </div>
+
+    <div class="section page-break-avoid">
+      <div class="section-title">Ozel Talimatlar ve Notlar</div>
+      <div class="section-body">
+        <div class="note-box">${notesHtml}</div>
+      </div>
+    </div>
+
+    <div class="section page-break-avoid">
+      <div class="section-title">Onay ve Serbest Birakma</div>
+      <div class="section-body">
+        <div class="footer-grid">
+          <div class="sign-box">
+            <div class="sign-title">Uretim Hazirlama</div>
+            <div class="sign-line">Ad Soyad / Imza / Tarih</div>
+          </div>
+          <div class="sign-box">
+            <div class="sign-title">Kalite Onayi</div>
+            <div class="sign-line">Ad Soyad / Imza / Tarih</div>
+          </div>
+          <div class="sign-box">
+            <div class="sign-title">Sevk veya Sonraki Operasyon</div>
+            <div class="sign-line">Ad Soyad / Imza / Tarih</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    window.addEventListener("load", function(){
+      setTimeout(function(){
+        window.focus();
+        window.print();
+      }, 250);
+    });
+  </script>
+</body>
+</html>`;
+  }
+  function printWorkOrderForm(order){
+    if(!order){alert("Yazdirma icin is emri secin.");return;}
+    const printWindow=window.open("","_blank","width=1120,height=900");
+    if(!printWindow){alert("Yazdirma penceresi acilamadi. Tarayici acilir pencereyi engellemis olabilir.");return;}
+    printWindow.document.open();
+    printWindow.document.write(buildWorkOrderTravelerHtml(order));
+    printWindow.document.close();
+  }
   const workSplitWrapStyle={
     display:"flex",
     gap:10,
@@ -11420,7 +12155,10 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
               <div style={{fontWeight:900,fontSize:21,fontFamily:"monospace",color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{viewOrder.code||"-"}</div>
               <div style={{fontSize:15,fontWeight:700,marginTop:3,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{viewOrder.name||"-"}</div>
             </div>
-            <Badge label={getOrderStatusMeta(viewOrder.status).label} color={getOrderStatusMeta(viewOrder.status).color}/>
+            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+              <button onClick={()=>printWorkOrderForm(viewOrder)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Formu Yazdir</button>
+              <Badge label={getOrderStatusMeta(viewOrder.status).label} color={getOrderStatusMeta(viewOrder.status).color}/>
+            </div>
           </div>
           <div style={{marginTop:12,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8}}>
             <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Planlanan</div><div style={{fontSize:18,fontWeight:900,color:C.text,marginTop:4}}>{qtyTarget}</div></div>
@@ -19127,13 +19865,12 @@ function MRPRunModule({currentUser}){
 }
 
 function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests"}){
-  const normalizePurchaseView=viewId=>["requests","suppliers","quotes"].includes(String(viewId||""))?String(viewId):"requests";
+  const normalizePurchaseView=viewId=>["requests","suppliers"].includes(String(viewId||""))?String(viewId):"requests";
   const [loading,setLoading]=useState(true);
   const [suppliers,setSuppliers]=useState([]);
   const [supplierGroups,setSupplierGroups]=useState(normalizeSupplierGroups({}).list||[]);
   const [materials,setMaterials]=useState([]);
   const [requests,setRequests]=useState([]);
-  const [quotes,setQuotes]=useState([]);
   const [orders,setOrders]=useState([]);
   const [receipts,setReceipts]=useState([]);
   const [view,setView]=useState(()=>normalizePurchaseView(defaultView));
@@ -19151,12 +19888,8 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
   const [requestDateTo,setRequestDateTo]=useState("");
   const [orderDateFrom,setOrderDateFrom]=useState("");
   const [orderDateTo,setOrderDateTo]=useState("");
-  const [quoteDateFrom,setQuoteDateFrom]=useState("");
-  const [quoteDateTo,setQuoteDateTo]=useState("");
   const [supplierPerfRowsPerPage,setSupplierPerfRowsPerPage]=useState(10);
   const [supplierPerfPageIdx,setSupplierPerfPageIdx]=useState(1);
-  const [purchaseQuoteRowsPerPage,setPurchaseQuoteRowsPerPage]=useState(10);
-  const [purchaseQuotePageIdx,setPurchaseQuotePageIdx]=useState(1);
   const [purchaseRequestRowsPerPage,setPurchaseRequestRowsPerPage]=useState(10);
   const [purchaseRequestPageIdx,setPurchaseRequestPageIdx]=useState(1);
   const [purchaseOrderRowsPerPage,setPurchaseOrderRowsPerPage]=useState(10);
@@ -19168,18 +19901,17 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
   }=useViewportPanelMetrics(supplierListPanelRef,{minHeight:340,bottomGap:14,narrowWidth:1180});
 
   const load=useCallback(async()=>{
-    const [s,m,r,q,p,gr,groupDoc]=await Promise.all([
+    const [s,m,r,p,gr,groupDoc]=await Promise.all([
       window.DB.getAll("suppliers"),
       window.DB.getAll("materials"),
       window.DB.getAll("purchaseRequests"),
-      window.DB.getAll("supplierQuotes"),
       window.DB.getAll("purchaseOrders"),
       window.DB.getAll("goodsReceipts"),
       window.DB.getDoc("config","supplierGroups"),
     ]);
     const normalizedGroups=normalizeSupplierGroups(groupDoc||{}).list||[];
     setSupplierGroups(normalizedGroups);
-    setSuppliers(s); setMaterials(m); setRequests(r); setQuotes(q); setOrders(p); setReceipts(gr);
+    setSuppliers(s); setMaterials(m); setRequests(r); setOrders(p); setReceipts(gr);
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
@@ -19203,7 +19935,7 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
     }
   },[view,showSupplierModal]);
   useEffect(()=>{
-    if(view!=="quotes"&&showQuoteModal){
+    if(view!=="requests"&&showQuoteModal){
       setShowQuoteModal(false);
     }
   },[view,showQuoteModal]);
@@ -19211,8 +19943,9 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
   const reqById=Object.fromEntries(requests.map(r=>[r.id,r]));
   const supplierGroupById=Object.fromEntries((supplierGroups||[]).map(row=>[row.id,row]));
 
-  function buildDefaultQuoteForm(){
-    const firstRequest=requests.find(r=>!["received","cancelled","closed"].includes(r.status||""))||null;
+  function buildDefaultQuoteForm(requestId=""){
+    const selectedRequest=requestId?requests.find(r=>r.id===requestId)||null:null;
+    const firstRequest=selectedRequest||requests.find(r=>!["received","cancelled","closed","ordered"].includes(r.status||""))||null;
     const firstSupplier=suppliers[0]||null;
     const leadFromSupplier=Math.max(0,safeNum(firstSupplier?.leadTimeDays));
     const currencyRaw=String(firstSupplier?.currency||"TRY").toUpperCase();
@@ -19228,9 +19961,10 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
     };
   }
 
-  function openQuoteModal(){
-    setView("quotes");
-    setQuoteForm(buildDefaultQuoteForm());
+  function openQuoteModal(request=null){
+    const requestId=typeof request==="string"?request:(request?.id||"");
+    setView("requests");
+    setQuoteForm(buildDefaultQuoteForm(requestId));
     setShowQuoteModal(true);
   }
   function openSupplierModal(){
@@ -19256,13 +19990,10 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
   useEffect(()=>{
     function onTabAction(ev){
       const d=ev&&ev.detail?ev.detail:{};
-      if(d.tab!=="purchase"&&d.tab!=="purchase_requests"&&d.tab!=="purchase_suppliers"&&d.tab!=="purchase_quotes") return;
+      if(d.tab!=="purchase"&&d.tab!=="purchase_requests"&&d.tab!=="purchase_suppliers") return;
       if(d.type==="refresh"){load();return;}
       if(d.type==="new"&&d.tab==="purchase_suppliers"){
         openSupplierModal();
-      }
-      if(d.type==="new"&&d.tab==="purchase_quotes"){
-        openQuoteModal();
       }
     }
     window.addEventListener("mrp:tab-action",onTabAction);
@@ -19311,21 +20042,14 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
     const supplier=suppliers.find(s=>s.id===quoteForm.supplierId);
     if(!req||!supplier){alert("Talep veya tedarikci bulunamadi.");return;}
     const supplierGroup=resolveSupplierGroup(supplier);
-    const payload={requestId:req.id,requestCode:req.code||"",supplierId:supplier.id,supplierName:supplier.name||"",supplierGroupId:supplierGroup.id||"",supplierGroupName:supplierGroup.name||"Grupsuz",supplierGroupColor:supplierGroup.color||"#64748b",unitPrice:Math.max(0,safeNum(quoteForm.unitPrice)),leadTimeDays:Math.max(0,safeNum(quoteForm.leadTimeDays)),paymentTermDays:Math.max(0,safeNum(quoteForm.paymentTermDays??30)),currency:quoteForm.currency||supplier.currency||"TRY",total:Math.max(0,safeNum(quoteForm.unitPrice))*safeNum(req.qty),note:quoteForm.note.trim(),status:"new",updatedAt:new Date().toISOString()};
-    const id=await window.DB.addDoc("supplierQuotes",payload);
-    if(!id){alert("Teklif kaydedilemedi.");return;}
-    setQuotes(prev=>[{id,...payload},...prev]);
-    setQuoteForm(buildDefaultQuoteForm());
-    setShowQuoteModal(false);
-  }
-  async function quoteToPo(q){
-    const req=reqById[q.requestId];
-    if(!req){alert("Talep bulunamadi.");return;}
-    const payload={code:`PO-${String(Date.now()).slice(-6)}`,requestId:req.id,requestCode:req.code||"",supplierId:q.supplierId,supplierName:q.supplierName||"",supplierGroupId:q.supplierGroupId||"",supplierGroupName:q.supplierGroupName||"",supplierGroupColor:q.supplierGroupColor||"",materialId:req.materialId||"",materialCode:req.materialCode||"",materialName:req.materialName||"",qty:safeNum(req.qty),unitPrice:safeNum(q.unitPrice),currency:q.currency||"TRY",total:safeNum(req.qty)*safeNum(q.unitPrice),orderDate:todayStr(),expectedDate:addDays(todayStr(),safeNum(q.leadTimeDays)),paymentTermDays:Math.max(0,safeNum(q.paymentTermDays??30)),receivedQty:0,rejectedQty:0,status:"ordered",createdBy:currentUser.id,updatedAt:new Date().toISOString()};
+    const unitPrice=Math.max(0,safeNum(quoteForm.unitPrice));
+    const payload={code:`PO-${String(Date.now()).slice(-6)}`,requestId:req.id,requestCode:req.code||"",supplierId:supplier.id,supplierName:supplier.name||"",supplierGroupId:supplierGroup.id||"",supplierGroupName:supplierGroup.name||"Grupsuz",supplierGroupColor:supplierGroup.color||"#64748b",materialId:req.materialId||"",materialCode:req.materialCode||"",materialName:req.materialName||"",qty:safeNum(req.qty),unitPrice,currency:quoteForm.currency||supplier.currency||"TRY",total:safeNum(req.qty)*unitPrice,orderDate:todayStr(),expectedDate:addDays(todayStr(),safeNum(quoteForm.leadTimeDays)),paymentTermDays:Math.max(0,safeNum(quoteForm.paymentTermDays??30)),receivedQty:0,rejectedQty:0,status:"ordered",note:quoteForm.note.trim(),createdBy:currentUser.id,updatedAt:new Date().toISOString()};
     const id=await window.DB.addDoc("purchaseOrders",payload);
     if(!id){alert("PO olusturulamadi.");return;}
     await setRequestStatus(req,"ordered");
     setOrders(prev=>[{id,...payload},...prev]);
+    setQuoteForm(buildDefaultQuoteForm());
+    setShowQuoteModal(false);
   }
   async function receivePo(){
     const po=orders.find(o=>o.id===recvForm.poId);
@@ -19452,19 +20176,6 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
     const dateOk=inRange(dateYmd,orderDateFrom,orderDateTo);
     return textOk&&statusOk&&dateOk;
   });
-  const filteredQuotes=quotes.filter(row=>{
-    const textOk=!searchQuery||
-      String(row.requestCode||"").toLowerCase().includes(searchQuery)||
-      String(row.supplierName||"").toLowerCase().includes(searchQuery)||
-      String(row.supplierGroupName||"").toLowerCase().includes(searchQuery)||
-      String(row.currency||"").toLowerCase().includes(searchQuery)||
-      String(row.note||"").toLowerCase().includes(searchQuery);
-    const groupId=String(row.supplierGroupId||"").trim()||"ungrouped";
-    const groupOk=supplierGroupFilter==="all"||groupId===supplierGroupFilter;
-    const dateYmd=toYmd(row.updatedAt)||toYmd(row.createdAt);
-    const dateOk=inRange(dateYmd,quoteDateFrom,quoteDateTo);
-    return textOk&&groupOk&&dateOk;
-  });
   const supplierPerf=suppliers.map(s=>{
     const group=resolveSupplierGroup(s);
     const pos=orders.filter(o=>o.supplierId===s.id);
@@ -19484,13 +20195,9 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
       String(row.groupName||"").toLowerCase().includes(searchQuery);
     return groupOk&&textOk;
   });
-  const purchaseQuoteTotalPages=Math.max(1,Math.ceil(filteredQuotes.length/Math.max(1,purchaseQuoteRowsPerPage)));
   const purchaseRequestTotalPages=Math.max(1,Math.ceil(filteredRequests.length/Math.max(1,purchaseRequestRowsPerPage)));
   const purchaseOrderTotalPages=Math.max(1,Math.ceil(filteredOrders.length/Math.max(1,purchaseOrderRowsPerPage)));
   const supplierPerfTotalPages=Math.max(1,Math.ceil(filteredSupplierPerf.length/Math.max(1,supplierPerfRowsPerPage)));
-  useEffect(()=>{
-    setPurchaseQuotePageIdx(1);
-  },[search,supplierGroupFilter,quoteDateFrom,quoteDateTo,purchaseQuoteRowsPerPage]);
   useEffect(()=>{
     setPurchaseRequestPageIdx(1);
   },[search,requestStatusFilter,requestDateFrom,requestDateTo,purchaseRequestRowsPerPage]);
@@ -19501,9 +20208,6 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
     setSupplierPerfPageIdx(1);
   },[search,supplierGroupFilter,supplierPerfRowsPerPage]);
   useEffect(()=>{
-    setPurchaseQuotePageIdx(prev=>Math.max(1,Math.min(prev,purchaseQuoteTotalPages)));
-  },[purchaseQuoteTotalPages]);
-  useEffect(()=>{
     setPurchaseRequestPageIdx(prev=>Math.max(1,Math.min(prev,purchaseRequestTotalPages)));
   },[purchaseRequestTotalPages]);
   useEffect(()=>{
@@ -19512,11 +20216,9 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
   useEffect(()=>{
     setSupplierPerfPageIdx(prev=>Math.max(1,Math.min(prev,supplierPerfTotalPages)));
   },[supplierPerfTotalPages]);
-  const purchaseQuoteListStart=(purchaseQuotePageIdx-1)*Math.max(1,purchaseQuoteRowsPerPage);
   const purchaseRequestListStart=(purchaseRequestPageIdx-1)*Math.max(1,purchaseRequestRowsPerPage);
   const purchaseOrderListStart=(purchaseOrderPageIdx-1)*Math.max(1,purchaseOrderRowsPerPage);
   const supplierPerfListStart=(supplierPerfPageIdx-1)*Math.max(1,supplierPerfRowsPerPage);
-  const pagedPurchaseQuotes=filteredQuotes.slice(purchaseQuoteListStart,purchaseQuoteListStart+Math.max(1,purchaseQuoteRowsPerPage));
   const pagedPurchaseRequests=filteredRequests.slice(purchaseRequestListStart,purchaseRequestListStart+Math.max(1,purchaseRequestRowsPerPage));
   const pagedPurchaseOrders=filteredOrders.slice(purchaseOrderListStart,purchaseOrderListStart+Math.max(1,purchaseOrderRowsPerPage));
   const pagedSupplierPerf=filteredSupplierPerf
@@ -19605,14 +20307,6 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
     resetColumns:resetPurchaseRequestTableColumns,
   }=useTableColumnLayout("purchase_requests_list",PURCHASE_REQUEST_LIST_COLUMNS);
   const {
-    columns:purchaseQuoteTableColumns,
-    visibleColumns:visiblePurchaseQuoteTableColumns,
-    tableMinWidth:purchaseQuoteTableMinWidth,
-    moveColumn:movePurchaseQuoteTableColumn,
-    toggleColumn:togglePurchaseQuoteTableColumn,
-    resetColumns:resetPurchaseQuoteTableColumns,
-  }=useTableColumnLayout("purchase_quotes_list",PURCHASE_QUOTE_LIST_COLUMNS);
-  const {
     columns:purchaseOrderTableColumns,
     visibleColumns:visiblePurchaseOrderTableColumns,
     tableMinWidth:purchaseOrderTableMinWidth,
@@ -19645,39 +20339,18 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
       return <td key={col.id} style={{padding:"8px 10px"}}><Badge label={r.status||"pending"} color={["pending","approved","ordered"].includes(r.status||"")?C.warn:C.green}/></td>;
     }
     if(col.id==="actions"){
+      const canCreatePo=!["ordered","received","cancelled","closed"].includes(String(r.status||""));
       return (
         <td key={col.id} style={{padding:"8px 10px",textAlign:"right"}}>
           <div style={{display:"inline-flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
             <button onClick={()=>setRequestStatus(r,"approved")} style={{...btnSt("ghost"),padding:"6px 8px",fontSize:11}}>Onayla</button>
+            <button onClick={()=>canCreatePo&&openQuoteModal(r)} disabled={!canCreatePo} style={{...btnSt("green"),padding:"6px 8px",fontSize:11,opacity:canCreatePo?1:0.5,cursor:canCreatePo?"pointer":"not-allowed"}}>PO Olustur</button>
             <button onClick={()=>setRequestStatus(r,"cancelled")} style={{...btnSt("danger"),padding:"6px 8px",fontSize:11}}>Iptal</button>
           </div>
         </td>
       );
     }
     return null;
-  };
-  const renderPurchaseQuoteCell=(q,rowNo)=>{
-    return visiblePurchaseQuoteTableColumns.map(col=>{
-      if(col.id==="row_no"){
-        return <td key={col.id} style={{padding:"8px 10px",fontSize:11,color:C.muted2,textAlign:"center",fontWeight:700}}>{rowNo}</td>;
-      }
-      if(col.id==="request_supplier"){
-        return <td key={col.id} style={{padding:"8px 10px",color:C.text,fontWeight:700}}>{q.requestCode} · {q.supplierName} {q.supplierGroupName?`· ${q.supplierGroupName}`:""}</td>;
-      }
-      if(col.id==="unit_price"){
-        return <td key={col.id} style={{padding:"8px 10px",color:C.muted2,textAlign:"right"}}>{moneyFmt(q.unitPrice)} / {q.currency}</td>;
-      }
-      if(col.id==="total"){
-        return <td key={col.id} style={{padding:"8px 10px",color:C.text,fontWeight:700,textAlign:"right"}}>{moneyFmt(q.total)}</td>;
-      }
-      if(col.id==="lead_term"){
-        return <td key={col.id} style={{padding:"8px 10px",color:C.muted2}}>LT {q.leadTimeDays}g · Vade {Math.max(0,safeNum(q.paymentTermDays??30))}g</td>;
-      }
-      if(col.id==="actions"){
-        return <td key={col.id} style={{padding:"8px 10px",textAlign:"right"}}><button onClick={()=>quoteToPo(q)} style={{...btnSt("green"),padding:"6px 8px",fontSize:11}}>PO Olustur</button></td>;
-      }
-      return null;
-    });
   };
   const renderPurchaseOrderCell=(o,col,rowNo)=>{
     if(col.id==="row_no"){
@@ -19840,60 +20513,13 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
         </div>
       )}
 
-      {view==="quotes"&&(
-        <>
-          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
-              <TableColumnEditor
-                title="Teklif Listesi"
-                columns={purchaseQuoteTableColumns}
-                onToggle={togglePurchaseQuoteTableColumn}
-                onMove={movePurchaseQuoteTableColumn}
-                onReset={resetPurchaseQuoteTableColumns}
-              />
-              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginLeft:"auto"}}>
-                <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Teklif Listesi ({pagedPurchaseQuotes.length} / {filteredQuotes.length})</div>
-                <ListRowPager
-                  rowsPerPage={purchaseQuoteRowsPerPage}
-                  page={purchaseQuotePageIdx}
-                  pageCount={purchaseQuoteTotalPages}
-                  onRowsPerPageChange={setPurchaseQuoteRowsPerPage}
-                  onPrev={()=>setPurchaseQuotePageIdx(p=>Math.max(1,p-1))}
-                  onNext={()=>setPurchaseQuotePageIdx(p=>Math.min(purchaseQuoteTotalPages,p+1))}
-                />
-              </div>
-            </div>
-            <div style={{overflowX:"auto"}}>
-              <table style={{width:"100%",minWidth:purchaseQuoteTableMinWidth,borderCollapse:"collapse",fontSize:12}}>
-                <thead>
-                  <tr style={{background:C.surface2,color:C.muted2,textAlign:"left"}}>
-                    {visiblePurchaseQuoteTableColumns.map(col=><th key={col.id} style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`,textAlign:col.align||"left",whiteSpace:"nowrap"}}>{col.label}</th>)}
-                  </tr>
-                </thead>
-                <tbody>
-                  {pagedPurchaseQuotes.map((q,idx)=>(
-                    <tr key={q.id} style={{borderBottom:`1px solid ${C.border}`}}>
-                      {renderPurchaseQuoteCell(q,purchaseQuoteListStart+idx+1)}
-                    </tr>
-                  ))}
-                  {filteredQuotes.length===0&&(
-                    <tr>
-                      <td colSpan={Math.max(1,visiblePurchaseQuoteTableColumns.length)} style={{padding:"20px 10px",textAlign:"center",color:C.muted2}}>Teklif yok.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </>
-      )}
-      {view==="quotes"&&showQuoteModal&&(
+      {showQuoteModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.62)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:70,padding:14}} onClick={closeQuoteModal}>
           <div style={{width:"100%",maxWidth:980,maxHeight:"92vh",overflowY:"auto",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}} onClick={e=>e.stopPropagation()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
               <div>
-                <div style={{fontWeight:800,color:C.text,fontSize:16}}>Yeni Tedarikci Teklifi</div>
-                <div style={{fontSize:12,color:C.muted2}}>Talep ve tedarikci secerek teklif kaydi olusturun.</div>
+                <div style={{fontWeight:800,color:C.text,fontSize:16}}>Yeni Satin Alma Siparisi</div>
+                <div style={{fontSize:12,color:C.muted2}}>Talep uzerinden tedarikci secip dogrudan PO olusturun.</div>
               </div>
               <button onClick={closeQuoteModal} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
             </div>
@@ -19927,7 +20553,7 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
             </div>
             <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:12}}>
               <button onClick={closeQuoteModal} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Iptal</button>
-              <button onClick={saveQuote} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>Teklif Kaydet</button>
+              <button onClick={saveQuote} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>PO Kaydet</button>
             </div>
           </div>
         </div>
@@ -22528,7 +23154,6 @@ function App() {
       {id:"tools",icon:"tools",label:"Takim Yonetimi",group:"Stok ve Tedarik",enabled:canTools},
       {id:"purchase_requests",icon:"purchase",label:"Talep ve PO",group:"Stok ve Tedarik",enabled:canPurchasing},
       {id:"purchase_suppliers",icon:"customers",label:"Tedarikciler",group:"Stok ve Tedarik",enabled:canPurchasing},
-      {id:"purchase_quotes",icon:"quotes",label:"Teklifler",group:"Stok ve Tedarik",enabled:canPurchasing},
       {id:"rapor",icon:"rapor",label:"Raporlar",group:"Analiz",enabled:canReport},
       {id:"finance",icon:"cost",label:"Finans",group:"Analiz",enabled:(canSales||canPurchasing||canReport)},
       {id:"cost",icon:"cost",label:"Maliyetleme",group:"Analiz",enabled:(canOrders||canReport||canSales)},
@@ -22559,7 +23184,6 @@ function App() {
     {id:"customers",tabId:"customers",eventTab:"customers",label:"Musteri",hint:"Musteri karti"},
     {id:"assignments",tabId:"assignments",eventTab:"assignments",label:"Gorev",hint:"Calisan gorevlendirme"},
     {id:"purchase_suppliers",tabId:"purchase_suppliers",eventTab:"purchase_suppliers",label:"Tedarikci",hint:"Tedarikci karti"},
-    {id:"purchase_quotes",tabId:"purchase_quotes",eventTab:"purchase_quotes",label:"Tedarikci Teklifi",hint:"Tedarikci teklif kaydi"},
   ]),[]);
   const dashboardCreateOptions=useMemo(()=>{
     return dashboardCreateCatalog
@@ -22788,9 +23412,6 @@ function App() {
     purchase_suppliers:{
       filterKey:"purchase",
     },
-    purchase_quotes:{
-      filterKey:"purchase",
-    },
     tools:{
       filterKey:"tools",
       sortDefault:"name_asc",
@@ -23004,7 +23625,6 @@ function App() {
     if(tab==="quotes") return <SalesManagement currentUser={currentUser} machines={machines} onOpenWorkOrders={()=>setTab("orders")} defaultView="quotes" filtersVisible={salesFilterOpen} availableTabIds={tabs.map(t=>t.id)} onOpenRelatedRecord={handleCustomerRelatedOpen}/>;
     if(tab==="purchase"||tab==="purchase_requests") return <PurchasingModule currentUser={currentUser} filtersVisible={purchaseFilterOpen} defaultView="requests"/>;
     if(tab==="purchase_suppliers") return <PurchasingModule currentUser={currentUser} filtersVisible={purchaseFilterOpen} defaultView="suppliers"/>;
-    if(tab==="purchase_quotes") return <PurchasingModule currentUser={currentUser} filtersVisible={purchaseFilterOpen} defaultView="quotes"/>;
     if(tab==="downtime") return <DowntimeModule currentUser={currentUser} machines={machines} filtersVisible={downtimeFilterOpen}/>;
     if(tab==="quality") return <QualityTraceabilityModule currentUser={currentUser} machines={machines}/>;
     if(tab==="notifications") return <NotificationCenterModule currentUser={currentUser}/>;
