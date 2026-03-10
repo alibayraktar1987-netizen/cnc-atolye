@@ -11382,6 +11382,8 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
   const [materials,setMaterials]=useState([]);
   const [toolMovements,setToolMovements]=useState([]);
   const [entries,setEntries]=useState([]);
+  const [workOrderTemplate,setWorkOrderTemplate]=useState(DEFAULT_QUOTE_TEMPLATE);
+  const [workOrderBrandingLogo,setWorkOrderBrandingLogo]=useState("");
   const [loading,setLoading]=useState(true);
   const [showForm,setShowForm]=useState(false);
   const [editId,setEditId]=useState(null);
@@ -11420,14 +11422,30 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
     const next=(nums.length?Math.max(...nums):0)+1;
     return `IE-${String(next).padStart(3,"0")}`;
   },[orders]);
+  const WORK_ORDER_FORM_META={
+    code:"WO-FRM-01",
+    revision:"B",
+    owner:"Uretim Planlama",
+    standardProfile:"ISO 9001 + AQAP/AS9100 alan seti",
+  };
 
   const load=useCallback(async()=>{
-    const [o,m,c,ml,en]=await Promise.all([window.DB.getAll("orders"),window.DB.getAll("toolMovements"),window.DB.getAll("customers"),window.DB.getAll("materials"),window.DB.getAll("entries")]);
+    const [o,m,c,ml,en,templateDoc,brandingDoc]=await Promise.all([
+      window.DB.getAll("orders"),
+      window.DB.getAll("toolMovements"),
+      window.DB.getAll("customers"),
+      window.DB.getAll("materials"),
+      window.DB.getAll("entries"),
+      window.DB.getDoc("config","quoteTemplate"),
+      window.DB.getDoc("config","branding"),
+    ]);
     setOrders(o.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
     setToolMovements(m.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
     setCustomers(c.sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
     setMaterials(ml.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
     setEntries(en.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
+    setWorkOrderTemplate(normalizeQuoteTemplate(templateDoc||{}));
+    setWorkOrderBrandingLogo(typeof brandingDoc?.logo==="string"?brandingDoc.logo:"");
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
@@ -11782,6 +11800,12 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
   }
   function buildWorkOrderTravelerHtml(order){
     const snapshot=(order?.partSnapshot&&typeof order.partSnapshot==="object")?order.partSnapshot:null;
+    const template=normalizeQuoteTemplate(workOrderTemplate||{});
+    const companyName=String(template.companyName||DEFAULT_QUOTE_TEMPLATE.companyName||"Firma").trim();
+    const companyAddress=String(template.companyAddress||"").trim();
+    const companyPhone=String(template.companyPhone||"").trim();
+    const companyEmail=String(template.companyEmail||"").trim();
+    const printLogoEnabled=Boolean(workOrderBrandingLogo&&String(workOrderBrandingLogo).startsWith("data:image/"));
     const produced=productionByOrder[order.code]||{correct:0,wrong:0,total:0};
     const qtyTarget=Math.max(0,safeNum(order.qty));
     const qtyRemaining=qtyTarget>0?Math.max(0,qtyTarget-safeNum(produced.total)):0;
@@ -11794,6 +11818,9 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
     const barLengthText=formatMetricNumber(snapshot?.barLengthMm)||"-";
     const setupText=fmtSec(Math.max(0,safeNum(snapshot?.setupSec)));
     const cycleText=fmtSec(Math.max(0,safeNum(snapshot?.cycleSec)||safeNum(order.partSec)));
+    const companyContactLine=[companyPhone,companyEmail].filter(Boolean).join(" · ");
+    const companyDetailLine=[companyAddress,companyContactLine].filter(Boolean).join(" · ");
+    const standardsNote="Savunma, havacilik veya musteri kalite isterleri icin ilave onay/izlenebilirlik alanlari ayni form uzerinde genisletilebilir.";
     const docRows=[
       ["Is Emri No",order.code||"-"],
       ["Parca / Urun",order.name||"-"],
@@ -11811,6 +11838,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
       ["Tezgah",((order.machines||[]).join(", "))||"-"],
       ["Kurulum / Cevrim",`${setupText||"-"} / ${cycleText||"-"}`],
       ["Parca Olculeri",`Cap ${partDiameterText} mm · Boy ${partLengthText} mm · Cubuk ${barLengthText} mm`],
+      ["NC Program Rev",snapshot?.ncProgramVersion||"-"],
     ];
     const documents=(order.files||[]).map(file=>escapePrintHtml(file.name||"-"));
     const opRowsHtml=operations.map((op,idx)=>`
@@ -11866,13 +11894,21 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
     * { box-sizing: border-box; }
     body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #111827; background: #ffffff; }
     .sheet { width: 100%; margin: 0 auto; }
-    .header { border: 2px solid #111827; padding: 12px 14px; display: grid; grid-template-columns: 1.5fr 1fr; gap: 12px; }
+    .header { border: 2px solid #111827; padding: 12px 14px; display: grid; grid-template-columns: 104px 1.3fr 1fr; gap: 12px; align-items: stretch; }
+    .logo-box { border: 1px solid #d1d5db; display: flex; align-items: center; justify-content: center; min-height: 92px; background: #ffffff; overflow: hidden; }
+    .logo-box img { max-width: 88px; max-height: 74px; object-fit: contain; display: block; }
+    .logo-fallback { font-size: 14px; font-weight: 800; color: #111827; text-align: center; letter-spacing: .5px; }
     .title { font-size: 22px; font-weight: 800; letter-spacing: .6px; }
     .subtitle { font-size: 11px; color: #4b5563; margin-top: 4px; line-height: 1.45; }
+    .company-line { font-size: 12px; font-weight: 700; margin-top: 7px; }
+    .company-detail { font-size: 10px; color: #4b5563; margin-top: 4px; line-height: 1.45; }
     .doc-meta { border-left: 1px solid #d1d5db; padding-left: 12px; }
     .doc-meta table { width: 100%; border-collapse: collapse; font-size: 11px; }
     .doc-meta td { padding: 4px 0; vertical-align: top; }
     .doc-meta td:first-child { color: #4b5563; width: 110px; }
+    .blank { display: inline-block; min-width: 96px; border-bottom: 1px solid #6b7280; height: 14px; }
+    .standard-strip { margin-top: 10px; border: 1px solid #111827; padding: 8px 10px; font-size: 10px; display: grid; grid-template-columns: 1.1fr .9fr .9fr; gap: 8px; align-items: center; }
+    .standard-tag { display: inline-flex; align-items: center; justify-content: center; border: 1px solid #111827; padding: 3px 8px; font-weight: 700; letter-spacing: .5px; }
     .section { margin-top: 10px; border: 1px solid #111827; }
     .section-title { background: #111827; color: #ffffff; padding: 7px 10px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; }
     .section-body { padding: 10px; }
@@ -11901,20 +11937,35 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
 <body>
   <div class="sheet">
     <div class="header page-break-avoid">
+      <div class="logo-box">
+        ${printLogoEnabled
+          ? `<img src="${escapePrintHtml(workOrderBrandingLogo)}" alt="Firma Logosu" />`
+          : `<div class="logo-fallback">${escapePrintHtml(companyName)}</div>`}
+      </div>
       <div>
         <div class="title">IS EMRI FORMU / CONTROLLED TRAVELER</div>
-        <div class="subtitle">ISO 9001 izlenebilirlik, operasyon kontrolu ve dokumante bilgi mantigina gore hazirlanmis yazdirilabilir is emri formu. Ozel savunma veya musteri isterleri varsa ek onay alanlari bu revizyon uzerinden genisletilebilir.</div>
+        <div class="subtitle">Uretim izlenebilirligi, operasyon kontrolu ve dokumante bilgi gereklilikleri esas alinmistir. Bu form tek basina sertifika yerine gecmez; kurum prosedurleri ve musteri isterleri ile birlikte kullanilmalidir.</div>
+        <div class="company-line">${escapePrintHtml(companyName)}</div>
+        <div class="company-detail">${escapePrintHtml(companyDetailLine||"-")}</div>
       </div>
       <div class="doc-meta">
         <table>
-          <tr><td>Form Kodu</td><td>WO-FRM-01</td></tr>
-          <tr><td>Form Revizyonu</td><td>A</td></tr>
+          <tr><td>Form Kodu</td><td>${escapePrintHtml(WORK_ORDER_FORM_META.code)}</td></tr>
+          <tr><td>Form Revizyonu</td><td>${escapePrintHtml(WORK_ORDER_FORM_META.revision)}</td></tr>
           <tr><td>Kopya Durumu</td><td>Kontrollu Kopya</td></tr>
+          <tr><td>Dokuman Sahibi</td><td>${escapePrintHtml(WORK_ORDER_FORM_META.owner)}</td></tr>
+          <tr><td>Standart Profili</td><td>${escapePrintHtml(WORK_ORDER_FORM_META.standardProfile)}</td></tr>
           <tr><td>Olusturma Tarihi</td><td>${escapePrintHtml(generatedAtText)}</td></tr>
           <tr><td>Hazirlayan</td><td>${escapePrintHtml(currentUser?.fullName||currentUser?.id||"-")}</td></tr>
+          <tr><td>Onaylayan</td><td><span class="blank"></span></td></tr>
           <tr><td>Sayfa</td><td>Tarayici yazdirma cikti akisi</td></tr>
         </table>
       </div>
+    </div>
+    <div class="standard-strip page-break-avoid">
+      <div><strong>Dokuman Kullanimi:</strong> Is emri, proses kontrol ve kayit formu olarak kullanilir. Operasyon, kalite ve sevk asamalarinda elde tutulur.</div>
+      <div class="standard-tag">ISO 9001 ALIGNMENT</div>
+      <div class="standard-tag">AQAP / AS9100 FIELD SET</div>
     </div>
 
     <div class="section page-break-avoid">
@@ -11934,7 +11985,14 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
           <div class="trace-box"><div class="info-label">FAI / Ilk Parca Kontrol</div><div class="line"></div></div>
           <div class="trace-box"><div class="info-label">Ozel Proses / Isil Islem</div><div class="line"></div></div>
           <div class="trace-box"><div class="info-label">Seri No / Izlenebilirlik Notu</div><div class="line"></div></div>
+          <div class="trace-box"><div class="info-label">Konfigurasyon / Baseline</div><div class="line"></div></div>
+          <div class="trace-box"><div class="info-label">Sapma / Waiver No</div><div class="line"></div></div>
+          <div class="trace-box"><div class="info-label">Critical Characteristic</div><div class="line"></div></div>
+          <div class="trace-box"><div class="info-label">FOD / Temizlik Kontrolu</div><div class="line"></div></div>
+          <div class="trace-box"><div class="info-label">Ozel Ambalaj / Etiket</div><div class="line"></div></div>
+          <div class="trace-box"><div class="info-label">Musteri / Savunma Onayi</div><div class="line"></div></div>
         </div>
+        <div class="muted" style="margin-top:8px">${escapePrintHtml(standardsNote)}</div>
       </div>
     </div>
 
@@ -12034,7 +12092,19 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
             <div class="sign-line">Ad Soyad / Imza / Tarih</div>
           </div>
           <div class="sign-box">
+            <div class="sign-title">Musteri / Savunma Kalite</div>
+            <div class="sign-line">Ad Soyad / Imza / Tarih</div>
+          </div>
+          <div class="sign-box">
             <div class="sign-title">Sevk veya Sonraki Operasyon</div>
+            <div class="sign-line">Ad Soyad / Imza / Tarih</div>
+          </div>
+          <div class="sign-box">
+            <div class="sign-title">Dokuman Gozden Gecirme</div>
+            <div class="sign-line">Ad Soyad / Imza / Tarih</div>
+          </div>
+          <div class="sign-box">
+            <div class="sign-title">Uygunsuzluk / Sapma Kaydi</div>
             <div class="sign-line">Ad Soyad / Imza / Tarih</div>
           </div>
         </div>
