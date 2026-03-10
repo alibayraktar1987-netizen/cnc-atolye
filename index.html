@@ -23684,19 +23684,38 @@ function NotificationCenterModule({currentUser}){
   );
 }
 
-function CostingModule(){
+function CostingModule({filtersVisible=true}){
   const [loading,setLoading]=useState(true);
   const [parts,setParts]=useState([]);
   const [orders,setOrders]=useState([]);
   const [entries,setEntries]=useState([]);
   const [salesOrders,setSalesOrders]=useState([]);
   const [inspections,setInspections]=useState([]);
+  const [search,setSearch]=useState("");
+  const [costStatusFilter,setCostStatusFilter]=useState("all");
+  const [dateFrom,setDateFrom]=useState("");
+  const [dateTo,setDateTo]=useState("");
+  const [costRowsPerPage,setCostRowsPerPage]=useState(10);
+  const [costPageIdx,setCostPageIdx]=useState(1);
+  const costListPanelRef=useRef(null);
+  const {
+    height:costListPanelHeight,
+    isNarrow:costListPanelsStacked,
+  }=useViewportPanelMetrics(costListPanelRef,{minHeight:340,bottomGap:14,narrowWidth:1180});
   const load=useCallback(async()=>{
     const [p,o,e,s,i]=await Promise.all([window.DB.getAll("parts"),window.DB.getAll("orders"),window.DB.getAll("entries"),window.DB.getAll("salesOrders"),window.DB.getAll("qualityInspections")]);
     setParts(p); setOrders(o); setEntries(e); setSalesOrders(s); setInspections(i); setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
-  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
+  useEffect(()=>{
+    function onTabAction(ev){
+      const d=ev&&ev.detail?ev.detail:{};
+      if(d.tab!=="cost") return;
+      if(d.type==="refresh") load();
+    }
+    window.addEventListener("mrp:tab-action",onTabAction);
+    return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
+  },[load]);
   const partByNo={};
   parts.forEach(p=>{partByNo[String(p.partNo||"").toUpperCase()]=p;});
   const orderCostRows=orders.map(o=>{
@@ -23711,20 +23730,168 @@ function CostingModule(){
     const actualQty=produced||planQty;
     const actual=actualQty*(materialUnit+laborUnit+machineUnit);
     const scrap=inspections.filter(i=>i.orderId===o.id||i.orderCode===o.code).reduce((s,i)=>s+safeNum(i.scrapCost),0);
-    return {id:o.id,code:o.code||"-",partNo:o.partNo||"-",customerName:o.customerName||"-",plannedCost:planned,actualCost:actual+scrap,produced:actualQty,scrapCost:scrap};
+    return {
+      id:o.id,
+      code:o.code||"-",
+      partNo:o.partNo||"-",
+      customerName:o.customerName||"-",
+      plannedCost:planned,
+      actualCost:actual+scrap,
+      produced:actualQty,
+      scrapCost:scrap,
+      dueDate:o.dueDate||"",
+      createdAt:o.createdAt||"",
+    };
+  }).sort((a,b)=>String(b.dueDate||b.createdAt||"").localeCompare(String(a.dueDate||a.createdAt||"")));
+  const toYmd=value=>{
+    const raw=String(value||"").trim();
+    if(!raw) return "";
+    if(/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    if(/^\d{4}-\d{2}-\d{2}T/.test(raw)) return raw.slice(0,10);
+    const d=new Date(raw);
+    if(Number.isNaN(d.getTime())) return "";
+    return ymdLocal(d);
+  };
+  const inRange=(ymd,from,to)=>{
+    if(from&&(!ymd||ymd<from)) return false;
+    if(to&&(!ymd||ymd>to)) return false;
+    return true;
+  };
+  const costBucket=row=>{
+    if(safeNum(row?.produced)<=0) return "no_output";
+    if(safeNum(row?.scrapCost)>0) return "scrap";
+    if(safeNum(row?.actualCost)>safeNum(row?.plannedCost)) return "over_plan";
+    return "on_plan";
+  };
+  const resetCostFilters=()=>{
+    setSearch("");
+    setCostStatusFilter("all");
+    setDateFrom("");
+    setDateTo("");
+  };
+  const q=search.trim().toLowerCase();
+  const filteredOrderCostRows=orderCostRows.filter(row=>{
+    const textOk=!q
+      || String(row.code||"").toLowerCase().includes(q)
+      || String(row.partNo||"").toLowerCase().includes(q)
+      || String(row.customerName||"").toLowerCase().includes(q);
+    const statusOk=costStatusFilter==="all"||costBucket(row)===costStatusFilter;
+    const dateYmd=toYmd(row.dueDate)||toYmd(row.createdAt);
+    const dateOk=inRange(dateYmd,dateFrom,dateTo);
+    return textOk&&statusOk&&dateOk;
   });
+  const costStatusOptions=[
+    {id:"all",label:"Tum Is Emirleri",color:C.accent},
+    {id:"on_plan",label:"Plan Icindeki",color:C.green},
+    {id:"over_plan",label:"Plan Ustu",color:C.warn},
+    {id:"scrap",label:"Hurdali",color:C.red},
+    {id:"no_output",label:"Uretimsiz",color:C.muted2},
+  ];
+  const costStatusCounts={
+    all:orderCostRows.length,
+    on_plan:orderCostRows.filter(row=>costBucket(row)==="on_plan").length,
+    over_plan:orderCostRows.filter(row=>costBucket(row)==="over_plan").length,
+    scrap:orderCostRows.filter(row=>costBucket(row)==="scrap").length,
+    no_output:orderCostRows.filter(row=>costBucket(row)==="no_output").length,
+  };
+  const costTotalPages=Math.max(1,Math.ceil(filteredOrderCostRows.length/Math.max(1,costRowsPerPage)));
+  useEffect(()=>{
+    setCostPageIdx(1);
+  },[search,costStatusFilter,dateFrom,dateTo,costRowsPerPage]);
+  useEffect(()=>{
+    setCostPageIdx(prev=>Math.max(1,Math.min(prev,costTotalPages)));
+  },[costTotalPages]);
+  const costListStart=(costPageIdx-1)*Math.max(1,costRowsPerPage);
+  const pagedCostRows=filteredOrderCostRows.slice(costListStart,costListStart+Math.max(1,costRowsPerPage));
   const totalActual=orderCostRows.reduce((s,r)=>s+r.actualCost,0);
   const totalPlanned=orderCostRows.reduce((s,r)=>s+r.plannedCost,0);
   const totalRevenue=salesOrders.reduce((s,o)=>s+safeNum(o.totalAmount),0);
   const margin=totalRevenue-totalActual;
+  const visibleCustomerSet=new Set(filteredOrderCostRows.map(row=>row.customerName||"-"));
+  const filteredSalesRows=salesOrders.filter(row=>{
+    const textOk=!q
+      || String(row.code||"").toLowerCase().includes(q)
+      || String(row.customerName||"").toLowerCase().includes(q);
+    const dateYmd=toYmd(row.dueDate)||toYmd(row.createdAt)||toYmd(row.updatedAt);
+    const dateOk=inRange(dateYmd,dateFrom,dateTo);
+    const customerOk=visibleCustomerSet.size>0&&visibleCustomerSet.has(row.customerName||"-");
+    return textOk&&dateOk&&customerOk;
+  });
   const byCustomer={};
-  salesOrders.forEach(s=>{
+  filteredOrderCostRows.forEach(row=>{
+    const k=row.customerName||"-";
+    if(!byCustomer[k]) byCustomer[k]={customer:k,revenue:0,orders:0};
+    byCustomer[k].orders+=1;
+  });
+  filteredSalesRows.forEach(s=>{
     const k=s.customerName||"-";
     if(!byCustomer[k]) byCustomer[k]={customer:k,revenue:0,orders:0};
     byCustomer[k].revenue+=safeNum(s.totalAmount);
-    byCustomer[k].orders+=1;
   });
   const customerRows=Object.values(byCustomer).sort((a,b)=>b.revenue-a.revenue);
+  const costSplitWrapStyle={
+    display:"flex",
+    gap:10,
+    alignItems:costListPanelsStacked?"flex-start":"stretch",
+    flexWrap:"wrap",
+    ...(costListPanelsStacked
+      ? {}
+      : {
+        height:costListPanelHeight,
+        maxHeight:costListPanelHeight,
+        flex:1,
+        minHeight:0,
+        overflow:"hidden",
+      }),
+  };
+  const costFilterPanelStyle={
+    flex:"0 0 250px",
+    width:"100%",
+    maxWidth:280,
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    padding:12,
+    display:"flex",
+    flexDirection:"column",
+    gap:10,
+    ...(costListPanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+        overflowY:"auto",
+        overscrollBehavior:"contain",
+        scrollbarGutter:"stable",
+      }),
+  };
+  const costListColumnStyle={
+    flex:"1 1 760px",
+    minWidth:0,
+    display:"flex",
+    flexDirection:"column",
+    gap:8,
+    ...(costListPanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+      }),
+  };
+  const costListCardStyle={
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:14,
+    padding:14,
+    overflow:"hidden",
+    display:"flex",
+    flexDirection:"column",
+    ...(costListPanelsStacked?{}:{flex:1,minHeight:0}),
+  };
+  const costListScrollStyle=costListPanelsStacked
+    ? {overflowX:"auto"}
+    : {overflow:"auto",flex:1,minHeight:0,overscrollBehavior:"contain"};
+  if(loading) return <div style={{padding:30,color:C.muted2,textAlign:"center"}}>Yukleniyor...</div>;
   return (
     <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
@@ -23733,31 +23900,71 @@ function CostingModule(){
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Satis Geliri</div><div style={{fontSize:23,color:C.green,fontWeight:800}}>{moneyFmt(totalRevenue)}</div></div>
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Tahmini Marj</div><div style={{fontSize:23,color:margin<0?C.red:C.green,fontWeight:800}}>{moneyFmt(margin)}</div></div>
       </div>
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
-          <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Is Emri Bazli Maliyetler</div>
-          <button onClick={()=>downloadCsv(`costing-${todayStr()}.csv`,[{label:"Kod",key:"code"},{label:"Parca",key:"partNo"},{label:"Musteri",key:"customerName"},{label:"Uretim",key:"produced"},{label:"Plan",value:r=>r.plannedCost.toFixed(2)},{label:"Gercek",value:r=>r.actualCost.toFixed(2)},{label:"Hurda",value:r=>r.scrapCost.toFixed(2)}],orderCostRows)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>CSV Indir</button>
+      <div ref={costListPanelRef} style={costSplitWrapStyle}>
+        {filtersVisible&&(
+          <div style={costFilterPanelStyle}>
+            <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Maliyet</div>
+            <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Is emri, parca veya musteri ara"/>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Maliyet Durumu</div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {costStatusOptions.map(opt=>(
+                <button key={opt.id} onClick={()=>setCostStatusFilter(opt.id)} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:costStatusFilter===opt.id?opt.color:C.border,color:costStatusFilter===opt.id?opt.color:C.text}}>
+                  <span>{opt.label}</span>
+                  <span style={{fontSize:11,color:C.muted2}}>{costStatusCounts[opt.id]||0}</span>
+                </button>
+              ))}
+            </div>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Termin Araligi</div>
+            <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={dateFrom} onChange={e=>setDateFrom(e.target.value||"")}/>
+            <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={dateTo} onChange={e=>setDateTo(e.target.value||"")}/>
+            <button onClick={resetCostFilters} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
+          </div>
+        )}
+        <div style={costListColumnStyle}>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <div style={{fontSize:12,color:C.muted2}}>Gosterilen Kayit: {pagedCostRows.length} / {filteredOrderCostRows.length}</div>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginLeft:"auto"}}>
+              <ListRowPager
+                rowsPerPage={costRowsPerPage}
+                page={costPageIdx}
+                pageCount={costTotalPages}
+                onRowsPerPageChange={setCostRowsPerPage}
+                onPrev={()=>setCostPageIdx(p=>Math.max(1,p-1))}
+                onNext={()=>setCostPageIdx(p=>Math.min(costTotalPages,p+1))}
+              />
+              <button onClick={()=>downloadCsv(`costing-${todayStr()}.csv`,[{label:"Kod",key:"code"},{label:"Parca",key:"partNo"},{label:"Musteri",key:"customerName"},{label:"Uretim",key:"produced"},{label:"Plan",value:r=>r.plannedCost.toFixed(2)},{label:"Gercek",value:r=>r.actualCost.toFixed(2)},{label:"Hurda",value:r=>r.scrapCost.toFixed(2)}],filteredOrderCostRows)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>CSV Indir</button>
+            </div>
+          </div>
+          <div style={costListCardStyle}>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Is Emri Bazli Maliyetler</div>
+            <div className="mrp-scrollbar" style={costListScrollStyle}>
+              {pagedCostRows.map(r=>(
+                <div key={r.id} style={{display:"grid",gridTemplateColumns:"1.2fr 1fr .8fr .8fr .8fr .8fr",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,minWidth:760}}>
+                  <div style={{color:C.text,fontWeight:700}}>{r.code} · {r.partNo}</div>
+                  <div style={{color:C.muted2}}>{r.customerName}</div>
+                  <div style={{color:C.muted2}}>Adet {r.produced}</div>
+                  <div style={{color:C.muted2}}>Plan {moneyFmt(r.plannedCost)}</div>
+                  <div style={{color:C.text}}>Gercek {moneyFmt(r.actualCost)}</div>
+                  <div style={{color:C.red}}>Hurda {moneyFmt(r.scrapCost)}</div>
+                </div>
+              ))}
+              {filteredOrderCostRows.length===0&&(
+                <div style={{fontSize:12,color:C.muted2,textAlign:"center",padding:"24px 10px"}}>Filtreye uygun maliyet kaydi bulunamadi.</div>
+              )}
+            </div>
+          </div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Musteri Bazli Ciro</div>
+            {customerRows.map(c=>(
+              <div key={c.customer} style={{display:"grid",gridTemplateColumns:"1.5fr .8fr .8fr",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
+                <div style={{color:C.text,fontWeight:700}}>{c.customer}</div>
+                <div style={{color:C.muted2}}>Siparis {c.orders}</div>
+                <div style={{color:C.green}}>{moneyFmt(c.revenue)}</div>
+              </div>
+            ))}
+            {customerRows.length===0&&<div style={{fontSize:12,color:C.muted2,textAlign:"center",padding:"10px 4px 2px"}}>Filtreye uygun musteri ozeti yok.</div>}
+          </div>
         </div>
-        {orderCostRows.slice(0,80).map(r=>(
-          <div key={r.id} style={{display:"grid",gridTemplateColumns:"1.2fr 1fr .8fr .8fr .8fr .8fr",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
-            <div style={{color:C.text,fontWeight:700}}>{r.code} · {r.partNo}</div>
-            <div style={{color:C.muted2}}>{r.customerName}</div>
-            <div style={{color:C.muted2}}>Adet {r.produced}</div>
-            <div style={{color:C.muted2}}>Plan {moneyFmt(r.plannedCost)}</div>
-            <div style={{color:C.text}}>Gercek {moneyFmt(r.actualCost)}</div>
-            <div style={{color:C.red}}>Hurda {moneyFmt(r.scrapCost)}</div>
-          </div>
-        ))}
-      </div>
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-        <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Musteri Bazli Ciro</div>
-        {customerRows.map(c=>(
-          <div key={c.customer} style={{display:"grid",gridTemplateColumns:"1.5fr .8fr .8fr",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
-            <div style={{color:C.text,fontWeight:700}}>{c.customer}</div>
-            <div style={{color:C.muted2}}>Siparis {c.orders}</div>
-            <div style={{color:C.green}}>{moneyFmt(c.revenue)}</div>
-          </div>
-        ))}
       </div>
     </div>
   );
@@ -24744,6 +24951,7 @@ function App() {
   const [materialsFilterOpen,setMaterialsFilterOpen]=useState(true);
   const [purchaseFilterOpen,setPurchaseFilterOpen]=useState(true);
   const [partsFilterOpen,setPartsFilterOpen]=useState(true);
+  const [costFilterOpen,setCostFilterOpen]=useState(true);
   const [financeFilterOpen,setFinanceFilterOpen]=useState(true);
   const [downtimeFilterOpen,setDowntimeFilterOpen]=useState(true);
   const [topNotifCount,setTopNotifCount]=useState(0);
@@ -25234,6 +25442,9 @@ function App() {
         {id:"date_asc",label:"Teklif (Eskiden Yeniye)"},
       ],
     },
+    cost:{
+      filterKey:"cost",
+    },
     purchase:{
       filterKey:"purchase",
     },
@@ -25460,7 +25671,7 @@ function App() {
     if(tab==="quality") return <QualityTraceabilityModule currentUser={currentUser} machines={machines}/>;
     if(tab==="notifications") return <NotificationCenterModule currentUser={currentUser}/>;
     if(tab==="finance") return <FinanceModule currentUser={currentUser} filtersVisible={financeFilterOpen}/>;
-    if(tab==="cost") return <CostingModule/>;
+    if(tab==="cost") return <CostingModule filtersVisible={costFilterOpen}/>;
     if(tab==="materialquote") return <MaterialQuoteBridgeModule/>;
     if(tab==="progenergy") return <ProgramAndEnergyModule currentUser={currentUser} machines={machines}/>;
     if(tab==="toolcycle") return <ToolCycleAnalyticsModule currentUser={currentUser} machines={machines}/>;
@@ -25713,6 +25924,7 @@ function App() {
     customers:customersFilterOpen,
     materials:materialsFilterOpen,
     parts:partsFilterOpen,
+    cost:costFilterOpen,
     finance:financeFilterOpen,
     downtime:downtimeFilterOpen,
   };
@@ -25752,6 +25964,10 @@ function App() {
     }
     if(activeContentAction?.filterKey==="parts"){
       setPartsFilterOpen(v=>!v);
+      return;
+    }
+    if(activeContentAction?.filterKey==="cost"){
+      setCostFilterOpen(v=>!v);
       return;
     }
     if(activeContentAction?.filterKey==="finance"){
@@ -25865,6 +26081,7 @@ function App() {
             setCustomersFilterOpen(false);
             setMaterialsFilterOpen(false);
             setPartsFilterOpen(false);
+            setCostFilterOpen(false);
             setFinanceFilterOpen(false);
             setDowntimeFilterOpen(false);
             if(layoutMode==="desktop") setDesktopMenuCollapsed(false);
