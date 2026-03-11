@@ -915,6 +915,12 @@ const MENU_COLOR_PRESETS = [
   { id:"slate", label:"Antrasit", color:"#475569" },
 ];
 const C = { ...THEME_PRESETS.light };
+const NATIVE_ALERT = typeof window!=="undefined"&&typeof window.alert==="function"
+  ? window.alert.bind(window)
+  : (()=>{});
+const NATIVE_CONFIRM = typeof window!=="undefined"&&typeof window.confirm==="function"
+  ? window.confirm.bind(window)
+  : (()=>false);
 const CORPORATE_CHART_PALETTE = [
   "#79C9D4",
   "#57BE90",
@@ -2566,7 +2572,7 @@ function FilePreviewModal({file,onClose,padding=0,maxWidth=960,maxHeight="88vh",
               style={{display:"block",width:"100%",maxHeight:viewerHeight,height:"auto",objectFit:"contain",margin:"0 auto",borderRadius:10,border:`1px solid ${C.border}`}}
             />
           )}
-          {isPdfFile(file)&&<iframe title={file.name} src={file.data} style={{width:"100%",height:viewerHeight,border:`1px solid ${C.border}`,borderRadius:10,background:"#fff"}}/>}
+          {isPdfFile(file)&&<iframe title={file.name} src={file.data} style={{width:"100%",height:viewerHeight,border:`1px solid ${C.border}`,borderRadius:10,background:C.surface,colorScheme:C.bg==="#16181C"?"dark":"light"}}/>}
           {isStepFile(file)&&(
             <div style={{minHeight:viewerHeight}}>
               <StepFileViewer file={file}/>
@@ -3372,6 +3378,200 @@ function FactorabBrand({variant="dark",markSize=34,showTagline=false,compact=fal
     <div style={{display:"flex",alignItems:"center",gap,minWidth:0,...style}}>
       <FactorabMark size={markSize} variant={variant}/>
       <FactorabWordmark variant={variant} showTagline={showTagline} compact={compact}/>
+    </div>
+  );
+}
+
+function normalizeDialogMessage(message){
+  return String(message??"").replace(/\r\n?/g,"\n").trim();
+}
+function inferDialogPreset(kind,message){
+  const text=normalizeDialogMessage(message).toLocaleLowerCase("tr");
+  if(kind==="confirm"){
+    if(
+      text.includes("silinsin mi")||
+      text.includes("silmek istiyor musunuz")||
+      text.includes("temizlenerek silinsin mi")
+    ){
+      return {tone:"danger",title:"Silme Onayi",confirmLabel:"Sil",cancelLabel:"Vazgec"};
+    }
+    if(text.includes("olusturulsun mu")){
+      return {tone:"green",title:"Islem Onayi",confirmLabel:"Olustur",cancelLabel:"Vazgec"};
+    }
+    return {tone:"warning",title:"Onay Gerekiyor",confirmLabel:"Devam Et",cancelLabel:"Vazgec"};
+  }
+  if(
+    text.includes("kaydedildi")||
+    text.includes("eklendi")||
+    text.includes("olusturuldu")||
+    text.includes("gosterge paneline eklendi")
+  ){
+    return {tone:"green",title:"Bilgilendirme",confirmLabel:"Tamam",cancelLabel:""};
+  }
+  if(
+    text.includes("kaydedilemedi")||
+    text.includes("silinemedi")||
+    text.includes("guncellenemedi")||
+    text.includes("bulunamadi")||
+    text.includes("yetersiz")||
+    text.includes("zorunlu")||
+    text.includes("gecersiz")||
+    text.includes("hata")||
+    text.includes("iptal")||
+    text.includes("acilamadi")||
+    text.includes("engellemis olabilir")||
+    text.includes("eksik")||
+    text.includes("pasif")
+  ){
+    return {tone:"danger",title:"Uyari",confirmLabel:"Tamam",cancelLabel:""};
+  }
+  return {tone:"warning",title:"Bilgilendirme",confirmLabel:"Tamam",cancelLabel:""};
+}
+function buildDialogRequest(kind,message,options={}){
+  const preset=inferDialogPreset(kind,message);
+  return {
+    id:`dlg_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
+    kind,
+    message:normalizeDialogMessage(message),
+    tone:String(options.tone||preset.tone||"warning"),
+    title:String(options.title||preset.title||"Bilgilendirme"),
+    confirmLabel:String(options.confirmLabel||preset.confirmLabel||"Tamam"),
+    cancelLabel:String(options.cancelLabel||preset.cancelLabel||"Vazgec"),
+  };
+}
+function getDialogBridge(){
+  if(typeof window==="undefined") return null;
+  const bridge=window.__factorabDialogs;
+  if(!bridge||typeof bridge.alert!=="function"||typeof bridge.confirm!=="function") return null;
+  return bridge;
+}
+function showAppAlert(message,options={}){
+  const bridge=getDialogBridge();
+  if(bridge) return bridge.alert(message,options);
+  NATIVE_ALERT(normalizeDialogMessage(message));
+  return Promise.resolve();
+}
+async function askAppConfirm(message,options={}){
+  const bridge=getDialogBridge();
+  if(bridge) return bridge.confirm(message,options);
+  return NATIVE_CONFIRM(normalizeDialogMessage(message));
+}
+function AppDialogLayer({dialog,onResolve}){
+  if(!dialog) return null;
+  const toneMap={
+    warning:{
+      accent:C.warn,
+      soft:C.warnDim,
+      border:C.warn,
+      badge:"Onay",
+    },
+    danger:{
+      accent:C.red,
+      soft:C.redDim,
+      border:C.red,
+      badge:"Kritik",
+    },
+    green:{
+      accent:C.green,
+      soft:C.greenDim,
+      border:C.green,
+      badge:"Bilgi",
+    },
+  };
+  const tone=toneMap[dialog.tone]||toneMap.warning;
+  const confirmVariant=dialog.tone==="danger"?"danger":(dialog.tone==="green"?"green":"primary");
+  const modalWidth=dialog.kind==="confirm"?560:520;
+  return (
+    <div
+      style={{
+        position:"fixed",
+        inset:0,
+        zIndex:96,
+        background:"rgba(11,15,28,.56)",
+        backdropFilter:"blur(8px)",
+        display:"flex",
+        alignItems:"center",
+        justifyContent:"center",
+        padding:"18px 14px",
+      }}
+      onClick={()=>onResolve(dialog.kind==="alert")}
+    >
+      <div
+        onClick={e=>e.stopPropagation()}
+        style={{
+          width:"100%",
+          maxWidth:modalWidth,
+          background:C.card,
+          border:`1px solid ${C.border}`,
+          borderRadius:22,
+          overflow:"hidden",
+          boxShadow:"0 28px 90px rgba(0,0,0,.32)",
+        }}
+      >
+        <div
+          style={{
+            padding:"18px 18px 16px",
+            borderBottom:`1px solid ${C.border}`,
+            background:`linear-gradient(135deg, ${tone.soft} 0%, ${C.card} 72%)`,
+          }}
+        >
+          <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
+            <div style={{display:"flex",gap:12,alignItems:"center",minWidth:0}}>
+              <div
+                style={{
+                  width:52,
+                  height:52,
+                  borderRadius:16,
+                  background:tone.accent,
+                  display:"flex",
+                  alignItems:"center",
+                  justifyContent:"center",
+                  boxShadow:`0 14px 28px ${tone.soft}`,
+                  flex:"0 0 auto",
+                }}
+              >
+                <FactorabMark size={24} variant="filled"/>
+              </div>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:11,color:C.muted2,fontWeight:800,letterSpacing:1,textTransform:"uppercase"}}>Factorab Dialog</div>
+                <div style={{fontSize:20,fontWeight:800,color:C.text,marginTop:4,lineHeight:1.15}}>{dialog.title}</div>
+              </div>
+            </div>
+            <div
+              style={{
+                padding:"6px 10px",
+                borderRadius:999,
+                background:tone.soft,
+                color:tone.border,
+                border:`1px solid ${tone.border}`,
+                fontSize:10,
+                fontWeight:800,
+                letterSpacing:.8,
+                textTransform:"uppercase",
+                flex:"0 0 auto",
+              }}
+            >
+              {dialog.kind==="confirm"?tone.badge:"Mesaj"}
+            </div>
+          </div>
+          <FactorabBrand variant="light" markSize={24} compact showTagline style={{marginTop:14}}/>
+        </div>
+        <div style={{padding:"18px 18px 16px"}}>
+          <div style={{whiteSpace:"pre-wrap",fontSize:13,lineHeight:1.7,color:C.text}}>
+            {dialog.message||"Islem bilgisi bulunamadi."}
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",gap:8,flexWrap:"wrap",marginTop:18}}>
+            {dialog.kind==="confirm"&&(
+              <button onClick={()=>onResolve(false)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>
+                {dialog.cancelLabel||"Vazgec"}
+              </button>
+            )}
+            <button autoFocus onClick={()=>onResolve(true)} style={{...btnSt(confirmVariant),padding:"8px 14px",fontSize:12}}>
+              {dialog.confirmLabel||"Tamam"}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -4620,7 +4820,7 @@ function RoutingOperationTypeSettings({currentUser}) {
   async function removeRow(id){
     const row=rows.find(r=>r.id===id);
     if(!row) return;
-    if(!confirm(`${row.code} silinsin mi?`)) return;
+    if(!await askAppConfirm(`${row.code} silinsin mi?`)) return;
     await persist(rows.filter(r=>r.id!==id));
     if(editId===id) resetForm();
   }
@@ -6213,7 +6413,7 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES,filtersVisi
 
   async function deleteTask(task){
     if(!canAssign){alert("Bu islem icin yetkiniz yok.");return;}
-    if(!confirm(`Gorev silinsin mi? (${task.title||"-"})`)) return;
+    if(!await askAppConfirm(`Gorev silinsin mi? (${task.title||"-"})`)) return;
     const ok=await window.DB.deleteDoc("employeeTasks",task.id);
     if(!ok){alert("Gorev silinemedi.");return;}
     setTasks(prev=>prev.filter(row=>row.id!==task.id));
@@ -6816,7 +7016,7 @@ function ToolStock({currentUser,filtersVisible=true}) {
   }
 
   async function removeTool(id,name){
-    if(!confirm(`"${name}" takimini silmek istiyor musunuz?`)) return;
+    if(!await askAppConfirm(`"${name}" takimini silmek istiyor musunuz?`)) return;
     const ok=await window.DB.deleteDoc("toolStock",id);
     if(ok) setTools(t=>t.filter(x=>x.id!==id));
   }
@@ -7597,7 +7797,7 @@ function Customers({filtersVisible=true,availableTabIds=[],onOpenRelatedRecord=(
   }
 
   async function removeCustomer(c){
-    if(!confirm(`Müşteri silinsin mi? (${c.name})`)) return;
+    if(!await askAppConfirm(`Müşteri silinsin mi? (${c.name})`)) return;
     const ok=await window.DB.deleteDoc("customers",c.id);
     if(!ok){alert("Müşteri silinemedi.");return;}
     setCustomers(prev=>prev.filter(x=>x.id!==c.id));
@@ -8055,7 +8255,7 @@ function MaterialLibrary({filtersVisible=true}) {
   }
 
   async function removeMaterial(m){
-    if(!confirm(`"${m.name}" silinsin mi?`)) return;
+    if(!await askAppConfirm(`"${m.name}" silinsin mi?`)) return;
     const ok=await window.DB.deleteDoc("materials",m.id);
     if(!ok){alert("Malzeme silinemedi.");return;}
     setMaterials(prev=>prev.filter(x=>x.id!==m.id));
@@ -9206,7 +9406,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
       const createdCustomers=[];
       const customerPool=[...customers];
       if(missingCustomerNames.length>0){
-        const shouldCreate=confirm(`${missingCustomerNames.join(", ")} musterileri kayitli degil. Toplu kayit icin olusturulsun mu?`);
+        const shouldCreate=await askAppConfirm(`${missingCustomerNames.join(", ")} musterileri kayitli degil. Toplu kayit icin olusturulsun mu?`);
         if(!shouldCreate){
           setBulkPartImportError("Kayitli olmayan musteriler icin toplu kayit iptal edildi.");
           return;
@@ -10846,7 +11046,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       return;
     }
     const confirmText=shortages.map(row=>`${row.requestMaterialName}: ${row.shortageAfterRequests} cubuk`).join("\n");
-    if(!confirm(`Siparis icin satin alma talebi olusturulsun mu?\n\n${confirmText}`)) return;
+    if(!await askAppConfirm(`Siparis icin satin alma talebi olusturulsun mu?\n\n${confirmText}`)) return;
     const createdRows=[];
     let failedCount=0;
     for(let idx=0;idx<shortages.length;idx++){
@@ -11187,7 +11387,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     const warn=linkedOrder
       ? `\nBu tekliften olusan siparis var: ${linkedOrder.code||"-"} (silinmeyecek).`
       : "";
-    if(!confirm(`"${baseLabel}" silinsin mi?${warn}`)) return;
+    if(!await askAppConfirm(`"${baseLabel}" silinsin mi?${warn}`)) return;
     const ok=await window.DB.deleteDoc("salesQuotes",q.id);
     if(!ok){alert("Teklif silinemedi.");return;}
     await addAuditLog(currentUser.id,"salesQuote",q.id,"delete",q,null,{module:"sales"});
@@ -11584,7 +11784,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     const warn=linkedCount>0
       ? `\nBu siparise bagli ${linkedCount} is emri var (silinmeyecek).`
       : "";
-    if(!confirm(`"${code}" silinsin mi?${warn}`)) return;
+    if(!await askAppConfirm(`"${code}" silinsin mi?${warn}`)) return;
     const ok=await window.DB.deleteDoc("salesOrders",order.id);
     if(!ok){alert("Siparis silinemedi.");return;}
     await addAuditLog(currentUser.id,"salesOrder",order.id,"delete",order,null,{module:"sales"});
@@ -12779,7 +12979,7 @@ function SalesOrders({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders}) {
   }
 
   async function removeSalesOrder(s){
-    if(!confirm(`"${s.code||s.name||"Siparis"}" silinsin mi?`)) return;
+    if(!await askAppConfirm(`"${s.code||s.name||"Siparis"}" silinsin mi?`)) return;
     const ok=await window.DB.deleteDoc("salesOrders",s.id);
     if(!ok){alert("Siparis silinemedi.");return;}
     setSalesOrders(prev=>prev.filter(x=>x.id!==s.id));
@@ -13155,7 +13355,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
   async function removeWorkOrder(o){
     if(!o||!o.id) return;
     const code=o.code||o.name||"Is Emri";
-    if(!confirm(`"${code}" silinsin mi?`)) return;
+    if(!await askAppConfirm(`"${code}" silinsin mi?`)) return;
     const ok=await window.DB.deleteDoc("orders",o.id);
     if(!ok){alert("Is emri silinemedi.");return;}
     setOrders(prev=>prev.filter(x=>x.id!==o.id));
@@ -14449,7 +14649,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   }
 
   async function removeEntry(entry){
-    if(!confirm(`Bu girisi silmek istiyor musunuz? (${entry.jobCode})`)) return;
+    if(!await askAppConfirm(`Bu girisi silmek istiyor musunuz? (${entry.jobCode})`)) return;
     const stockDelta=getDeltaMap(entry,null);
     const stockOk=await applyToolStockDelta(stockDelta);
     if(!stockOk) return;
@@ -14554,24 +14754,29 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     setShiftModalMode("shiftEnd");
   }
 
-  function confirmShiftEndApproval(correctValue,wrongValue){
+  async function confirmShiftEndApproval(correctValue,wrongValue){
     const shiftLabel=selectedShiftMeta.label||form.shift||"-";
     const shiftTime=selectedShiftMeta.time?` (${selectedShiftMeta.time})`:"";
     const correctNum=Math.max(0,Number(correctValue)||0);
     const wrongNum=Math.max(0,Number(wrongValue)||0);
     const actionLabel=editId?"güncellemek":"kaydetmek";
-    return confirm(
+    return askAppConfirm(
       `Kayıt ${shiftLabel}${shiftTime} vardiyasına işlenecek.\n`+
       `Tarih: ${form.entryDate||todayStr()}\n`+
       `Tezgah: ${form.machine||"-"}\n`+
       `Doğru: ${correctNum} · Hatalı: ${wrongNum}\n\n`+
-      `Bu vardiya kaydını ${actionLabel} istediğinize emin misiniz?`
+      `Bu vardiya kaydını ${actionLabel} istediğinize emin misiniz?`,
+      {
+        title:"Vardiya Onayi",
+        confirmLabel:editId?"Guncelle":"Kaydet",
+        cancelLabel:"Vazgec",
+      }
     );
   }
 
   async function approveShiftEnd(){
     const correctValue=shiftModalMode==="rejectOnly"?"0":shiftDraft.correct;
-    if(shiftModalMode==="shiftEnd"&&!confirmShiftEndApproval(correctValue,shiftDraft.wrong)) return;
+    if(shiftModalMode==="shiftEnd"&&!await confirmShiftEndApproval(correctValue,shiftDraft.wrong)) return;
     const ok=await submitShiftEnd(correctValue,shiftDraft.wrong);
     if(ok){
       setShowShiftModal(false);
@@ -15359,7 +15564,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               </div>
             </div>
 
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",background:"#fff"}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",background:C.surface}}>
               <button onClick={()=>setShowOrderDataPanel(true)} style={{...actionBtnStyle,fontSize:17}}>İş Emri Dosyaları</button>
               <button onClick={openShiftEndModal} style={actionBtnStyle}>Vardiya Sonlandır</button>
               <button onClick={openRejectPartsModal} style={actionBtnStyle}>Hata Girişi</button>
@@ -15372,35 +15577,35 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   </div>
         {showOrderDataPanel&&(
           <div style={{position:"fixed",inset:0,background:"rgba(7,10,14,.62)",zIndex:58,display:"flex",alignItems:"center",justifyContent:"center",padding:18}} onClick={()=>setShowOrderDataPanel(false)}>
-            <div style={{width:"100%",maxWidth:960,maxHeight:"88vh",display:"flex",flexDirection:"column",background:"#f5f8fc",border:"1px solid #cfd8e4",borderRadius:14,overflow:"hidden",boxShadow:"0 24px 60px rgba(0,0,0,.35)"}} onClick={e=>e.stopPropagation()}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",background:"#fff",borderBottom:"1px solid #d5dde8"}}>
+            <div style={{width:"100%",maxWidth:960,maxHeight:"88vh",display:"flex",flexDirection:"column",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:"0 24px 60px rgba(0,0,0,.35)"}} onClick={e=>e.stopPropagation()}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",background:C.surface,borderBottom:`1px solid ${C.border}`}}>
                 <div style={{minWidth:0}}>
-                  <div style={{fontSize:12,color:"#7386a1",fontWeight:700,letterSpacing:.5,textTransform:"uppercase"}}>Kiosk</div>
-                  <div style={{fontSize:17,color:"#33465f",fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                  <div style={{fontSize:12,color:C.muted2,fontWeight:700,letterSpacing:.5,textTransform:"uppercase"}}>Kiosk</div>
+                  <div style={{fontSize:17,color:C.text,fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
                     İş Emri Dosyaları {form.selectedOrder?.code?`· ${form.selectedOrder.code}`:""}
                   </div>
                 </div>
-                <button onClick={()=>setShowOrderDataPanel(false)} style={{border:"1px solid #d5dde8",background:"#fff",color:"#4d5e77",width:34,height:34,borderRadius:10,fontSize:22,lineHeight:1,cursor:"pointer"}}>×</button>
+                <button onClick={()=>setShowOrderDataPanel(false)} style={{...btnSt("ghost"),width:34,height:34,borderRadius:10,fontSize:22,lineHeight:1,padding:0}}>×</button>
               </div>
               <div style={{padding:12,overflowY:"auto",display:"flex",flexDirection:"column",gap:8}}>
                 {!form.selectedOrder&&(
-                  <div style={{padding:14,border:"1px dashed #c8d2df",borderRadius:10,background:"#fff",fontSize:13,color:"#6e8098",textAlign:"center"}}>
+                  <div style={{padding:14,border:`1px dashed ${C.border}`,borderRadius:10,background:C.surface,fontSize:13,color:C.muted2,textAlign:"center"}}>
                     İş emri seçili değil.
                   </div>
                 )}
                 {form.selectedOrder&&selectedOrderFiles.length===0&&(
-                  <div style={{padding:14,border:"1px dashed #c8d2df",borderRadius:10,background:"#fff",fontSize:13,color:"#6e8098",textAlign:"center"}}>
+                  <div style={{padding:14,border:`1px dashed ${C.border}`,borderRadius:10,background:C.surface,fontSize:13,color:C.muted2,textAlign:"center"}}>
                     Seçili iş emrinde dosya yok.
                   </div>
                 )}
                 {form.selectedOrder&&selectedOrderFiles.length>0&&selectedOrderFiles.map((f,i)=>(
-                  <div key={`${f.name||"file"}_${i}`} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 10px",border:"1px solid #d5dde8",borderRadius:10,background:"#fff"}}>
+                  <div key={`${f.name||"file"}_${i}`} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 10px",border:`1px solid ${C.border}`,borderRadius:10,background:C.surface}}>
                     <div style={{fontSize:18,lineHeight:1}}>{getFileIcon(f.name)}</div>
                     <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:12,fontWeight:700,color:"#32445b",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name||"Doküman"}</div>
-                      <div style={{fontSize:11,color:"#7d8ea7"}}>{formatBytes(Number(f.size)||0)}</div>
+                      <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name||"Doküman"}</div>
+                      <div style={{fontSize:11,color:C.muted2}}>{formatBytes(Number(f.size)||0)}</div>
                     </div>
-                    <button onClick={()=>openOrderFile(f)} disabled={!getFileSource(f)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11,borderColor:"#c8d3e1",color:"#42566f",background:"#f7faff",opacity:getFileSource(f)?1:.45,cursor:getFileSource(f)?"pointer":"not-allowed"}}>
+                    <button onClick={()=>openOrderFile(f)} disabled={!getFileSource(f)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11,opacity:getFileSource(f)?1:.45,cursor:getFileSource(f)?"pointer":"not-allowed"}}>
                       {canFilePreview(f)?"Önizle":(getFileSource(f)?"İndir":"Kaynak Yok")}
                     </button>
                   </div>
@@ -16271,7 +16476,7 @@ function ProductionEntryRecordsModule({currentUser,machines=DEFAULT_MACHINES}) {
     closeEditEntry();
   }
   async function removeEntryRow(entry){
-    if(!confirm(`Bu üretim kaydını silmek istiyor musunuz? (${entry.jobCode||"-"})`)) return;
+    if(!await askAppConfirm(`Bu üretim kaydını silmek istiyor musunuz? (${entry.jobCode||"-"})`)) return;
     const ok=await window.DB.deleteDoc("entries",entry.id);
     if(!ok){
       alert("Üretim kaydı silinemedi.");
@@ -17257,7 +17462,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
   }
   async function removeCustomReport(report){
     if(!report) return;
-    if(!confirm(`"${report.name||"Rapor"}" silinsin mi?`)) return;
+    if(!await askAppConfirm(`"${report.name||"Rapor"}" silinsin mi?`)) return;
     const ok=await window.DB.deleteDoc("customReports",report.id);
     if(!ok){alert("Rapor silinemedi.");return;}
     setCustomReports(prev=>prev.filter(r=>r.id!==report.id));
@@ -19222,7 +19427,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     const seedPlan=(plan&&plan.plans&&plan.plans.length)?plan.plans[0]:plan;
     const segment=findSegmentForPlan(seedPlan)||(plan&&plan.plans&&plan.plans.length?plan:null);
     if(!segment||!segment.plans||segment.plans.length===0){alert("Silinecek plan bulunamadı.");return;}
-    if(!confirm(`Plan silinsin mi? (${segment.orderCode||"-"} / ${segment.machine||"-"} / ${segment.startDate||"-"} - ${segment.endDate||"-"})`)) return;
+    if(!await askAppConfirm(`Plan silinsin mi? (${segment.orderCode||"-"} / ${segment.machine||"-"} / ${segment.startDate||"-"} - ${segment.endDate||"-"})`)) return;
     for(const p of segment.plans){
       const ok=await window.DB.deleteDoc("plans",p.id);
       if(!ok){alert("Plan silinemedi.");await refreshPlans();return;}
@@ -20566,7 +20771,7 @@ function MachineConnectivityPrep({currentUser,machines=DEFAULT_MACHINES,onMachin
   }
 
   async function removeProfile(row){
-    if(!confirm(`"${row.machineName||row.code||"Makina"}" profili silinsin mi?`)) return;
+    if(!await askAppConfirm(`"${row.machineName||row.code||"Makina"}" profili silinsin mi?`)) return;
     const ok=await window.DB.deleteDoc("machineConnectors",row.id);
     if(!ok){alert("Makina profili silinemedi.");return;}
     setProfiles(prev=>{
@@ -24043,7 +24248,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
     const warn=linkedFai.length>0
       ? `Bu balon run ${linkedFai.length} FAI kaydina bagli. Baglantilar temizlenerek silinsin mi?`
       : `Balon run silinsin mi? (${run.fileName||"PDF"} · ${run.dimensionCount||0} olcu)`;
-    if(!confirm(warn)) return;
+    if(!await askAppConfirm(warn)) return;
     setBalloonDeleteBusyId(id);
     try{
       if(linkedFai.length>0){
@@ -25880,12 +26085,31 @@ function App() {
   const [globalSearchOpen,setGlobalSearchOpen]=useState(false);
   const [globalSearchLoading,setGlobalSearchLoading]=useState(false);
   const [globalSearchVersion,setGlobalSearchVersion]=useState(0);
+  const [systemDialogs,setSystemDialogs]=useState([]);
   const tabFromUrlAppliedRef=useRef(false);
   const machinesRef=useRef(DEFAULT_MACHINES);
   const globalSearchContainerRef=useRef(null);
   const globalSearchIndexRef=useRef([]);
   const globalSearchPromiseRef=useRef(null);
   const globalSearchLoadedAtRef=useRef(0);
+  const enqueueSystemDialog=useCallback((kind,message,options={})=>{
+    return new Promise(resolve=>{
+      const payload=buildDialogRequest(kind,message,options);
+      setSystemDialogs(prev=>[...prev,{...payload,resolve}]);
+    });
+  },[]);
+  const resolveSystemDialog=useCallback((accepted)=>{
+    setSystemDialogs(prev=>{
+      if(prev.length===0) return prev;
+      const [current,...rest]=prev;
+      try{
+        if(current.kind==="confirm") current.resolve(Boolean(accepted));
+        else current.resolve();
+      }catch{}
+      return rest;
+    });
+  },[]);
+  const activeSystemDialog=systemDialogs[0]||null;
   useEffect(()=>{machinesRef.current=machines;},[machines]);
 
   useEffect(()=>{
@@ -25957,6 +26181,22 @@ function App() {
     window.addEventListener("menu_visibility_updated",onUpdated);
     return ()=>window.removeEventListener("menu_visibility_updated",onUpdated);
   },[]);
+  useEffect(()=>{
+    if(typeof window==="undefined") return;
+    const previousAlert=window.alert;
+    const previousBridge=window.__factorabDialogs;
+    const bridge={
+      alert:(message,options={})=>enqueueSystemDialog("alert",message,options),
+      confirm:(message,options={})=>enqueueSystemDialog("confirm",message,options),
+    };
+    window.__factorabDialogs=bridge;
+    window.alert=(message)=>{ showAppAlert(message); };
+    return ()=>{
+      window.alert=previousAlert;
+      if(previousBridge) window.__factorabDialogs=previousBridge;
+      else delete window.__factorabDialogs;
+    };
+  },[enqueueSystemDialog]);
   useEffect(()=>{applyAppFavicon(logoSrc);},[logoSrc]);
   useEffect(()=>{
     if(typeof window==="undefined") return;
@@ -26501,6 +26741,22 @@ function App() {
     window.addEventListener("keydown",onKey);
     return ()=>window.removeEventListener("keydown",onKey);
   },[dashboardCreateModalOpen]);
+  useEffect(()=>{
+    if(!activeSystemDialog) return;
+    const onKey=e=>{
+      if(e.key==="Escape"){
+        e.preventDefault();
+        resolveSystemDialog(activeSystemDialog.kind==="alert");
+        return;
+      }
+      if(e.key==="Enter"){
+        e.preventDefault();
+        resolveSystemDialog(true);
+      }
+    };
+    window.addEventListener("keydown",onKey);
+    return ()=>window.removeEventListener("keydown",onKey);
+  },[activeSystemDialog,resolveSystemDialog]);
   useEffect(()=>{
     if(!currentUser) return;
     syncTabQueryParam(tab);
@@ -27144,6 +27400,7 @@ function App() {
           </div>
         </div>
       )}
+      <AppDialogLayer dialog={activeSystemDialog} onResolve={resolveSystemDialog}/>
     </div>
   );
 }
