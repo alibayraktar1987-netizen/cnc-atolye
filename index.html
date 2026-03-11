@@ -2485,8 +2485,13 @@ function isStepFile(file) {
   if(!file) return false;
   return isStepExtension(getFileExt(file.name));
 }
+function getFileSource(file){
+  if(!(file&&typeof file==="object")) return "";
+  const raw=file.data||file.url||file.href||file.src||"";
+  return typeof raw==="string"?raw.trim():"";
+}
 function canFilePreview(file) {
-  if(!(file&&file.data)) return false;
+  if(!getFileSource(file)) return false;
   return isImageFile(file) || isPdfFile(file) || isStepFile(file);
 }
 function getFileIcon(name) {
@@ -13767,8 +13772,8 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
                   <div style={{color:C.muted2,fontSize:11,marginTop:2}}>{formatBytes(f.size)}</div>
                 </div>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                  {canPreview(f)&&<button onClick={()=>setPreviewFile(f)} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11}}>Goruntule</button>}
-                  {f.data&&<a href={f.data} download={f.name} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11,textDecoration:"none"}}>Indir</a>}
+                  {canPreview(f)&&<button onClick={()=>setPreviewFile({...f,data:getFileSource(f)})} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11}}>Goruntule</button>}
+                  {getFileSource(f)&&<a href={getFileSource(f)} download={f.name} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11,textDecoration:"none"}}>Indir</a>}
                 </div>
               </div>
             ))
@@ -14002,6 +14007,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const [shiftModalMode,setShiftModalMode]=useState("shiftEnd");
   const [previewFile,setPreviewFile]=useState(null);
   const [showOrderDataPanel,setShowOrderDataPanel]=useState(false);
+  const [mobileEntrySection,setMobileEntrySection]=useState("entry");
   const [toolDraft,setToolDraft]=useState({machineToolId:"",machineToolQty:"1"});
   const [shiftDraft,setShiftDraft]=useState({correct:"",wrong:""});
   const [kioskViewport,setKioskViewport]=useState(()=>({
@@ -14460,7 +14466,9 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   }
 
   const machineToolPicked=tools.find(t=>t.id===form.machineToolId);
-  const selectedOrderFiles=Array.isArray(form.selectedOrder?.files)?form.selectedOrder.files.filter(f=>f&&f.data):[];
+  const selectedOrderFiles=Array.isArray(form.selectedOrder?.files)
+    ? form.selectedOrder.files.filter(f=>f&&(f.name||getFileSource(f)))
+    : [];
   const shiftWindowMap=useMemo(()=>{
     const map={};
     (kioskSettings.shiftWindows||[]).forEach(row=>{
@@ -14472,9 +14480,13 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     return map;
   },[kioskSettings.shiftWindows]);
   function downloadOrderFile(file){
-    if(!(file&&file.data)) return;
+    const src=getFileSource(file);
+    if(!src){
+      alert("Bu dokuman icin indirilebilir kaynak bulunamadi.");
+      return;
+    }
     const a=document.createElement("a");
-    a.href=file.data;
+    a.href=src;
     a.download=file.name||"dokuman";
     document.body.appendChild(a);
     a.click();
@@ -14482,8 +14494,15 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   }
   function openOrderFile(file){
     if(!file) return;
-    if(canFilePreview(file)) setPreviewFile(file);
-    else downloadOrderFile(file);
+    if(canFilePreview(file)){
+      setPreviewFile({...file,data:getFileSource(file)});
+      return;
+    }
+    if(getFileSource(file)){
+      downloadOrderFile(file);
+      return;
+    }
+    alert("Bu dokuman icin kaynak baglantisi bulunamadi.");
   }
   const latestTelemetryByMachine={};
   telemetryRows.forEach(r=>{
@@ -14771,6 +14790,11 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const viewportWidth=kioskViewport.w||((typeof window!=="undefined"&&window.innerWidth)?window.innerWidth:1280);
   const isPhoneEntry=!kioskMode&&viewportWidth<680;
   const isTabletEntry=!kioskMode&&viewportWidth>=680&&viewportWidth<1080;
+  useEffect(()=>{
+    if(!isPhoneEntry&&mobileEntrySection!=="entry"){
+      setMobileEntrySection("entry");
+    }
+  },[isPhoneEntry,mobileEntrySection]);
   const standardHeroStyle={
     border:`1px solid ${rgbaFromHex(C.accent,0.24)}`,
     borderRadius:16,
@@ -14788,13 +14812,30 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const standardEmptyStateStyle={padding:"14px 12px",borderRadius:10,border:`1px dashed ${C.border}`,background:C.surface2,fontSize:12,color:C.muted2,textAlign:"center"};
   const standardProgressTrackStyle={height:10,borderRadius:999,background:rgbaFromHex(C.accent,0.12),overflow:"hidden"};
   const standardProgressFillStyle={height:"100%",borderRadius:999,background:`linear-gradient(90deg, ${C.accent} 0%, ${rgbaFromHex(C.accent,0.72)} 100%)`};
-  const standardHeroInfoGridStyle={flex:isPhoneEntry?"1 1 100%":"0 1 360px",minWidth:isPhoneEntry?0:280,display:"grid",gridTemplateColumns:isPhoneEntry?"1fr":"repeat(2,minmax(0,1fr))",gap:10};
+  const standardHeroInfoGridStyle={flex:isPhoneEntry?"1 1 100%":"0 1 360px",minWidth:isPhoneEntry?0:280,display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10};
   const standardContextGridStyle={display:"grid",gridTemplateColumns:isPhoneEntry?"1fr":"repeat(auto-fit,minmax(240px,1fr))",gap:12};
   const standardQtyGridStyle={display:"grid",gridTemplateColumns:isPhoneEntry?"1fr":"repeat(auto-fit,minmax(220px,1fr))",gap:12};
   const standardProgressStatGridStyle={display:"grid",gridTemplateColumns:isPhoneEntry?"1fr 1fr":"repeat(auto-fit,minmax(120px,1fr))",gap:8};
   const standardActionGridStyle={display:"grid",gridTemplateColumns:isPhoneEntry?"1fr":"repeat(auto-fit,minmax(170px,1fr))",gap:10};
   const standardPickerHeaderGridStyle={padding:12,display:"grid",gridTemplateColumns:isPhoneEntry?"1fr":"minmax(240px,420px) 1fr",gap:10,alignItems:"center",borderBottom:`1px solid ${C.border}`,background:C.surface2};
   const standardPickerCardsGridStyle={display:"grid",gridTemplateColumns:`repeat(auto-fill,minmax(${isPhoneEntry?220:320}px,1fr))`,gap:10};
+  const mobileSectionNavCardStyle={...sectionCardStyle,padding:10,display:"flex",flexDirection:"column",gap:8};
+  const mobileSectionNavGridStyle={display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8};
+  const mobileSectionContentStyle={display:"flex",flexDirection:"column",gap:12};
+  const mobileSectionTabStyle=(active)=>({
+    ...btnSt(active?"primary":"ghost"),
+    minHeight:62,
+    padding:"10px 11px",
+    display:"flex",
+    flexDirection:"column",
+    alignItems:"flex-start",
+    justifyContent:"space-between",
+    gap:4,
+    borderRadius:12,
+    borderColor:active?rgbaFromHex(C.accent,0.28):C.border,
+    background:active?rgbaFromHex(C.accent,0.12):C.surface,
+    boxShadow:active?"0 10px 22px rgba(15,23,42,.08)":"none",
+  });
   function fmtDurationLong(totalSec){
     const sec=Math.max(0,Math.floor(safeNum(totalSec)));
     const h=Math.floor(sec/3600);
@@ -15174,7 +15215,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
 
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",background:"#fff"}}>
               <button onClick={()=>setShowOrderDataPanel(true)} style={{...actionBtnStyle,fontSize:17}}>Is Emri Dosyalari</button>
-              <button onClick={openShiftEndModal} style={actionBtnStyle}>İşi Durdur</button>
+              <button onClick={openShiftEndModal} style={actionBtnStyle}>Vardiya Sonlandır</button>
               <button onClick={openRejectPartsModal} style={actionBtnStyle}>Hata Girişi</button>
               <button onClick={openToolChangeModal} style={{...actionBtnStyle,borderRight:"none"}}>Takım Değişimi</button>
             </div>
@@ -15213,8 +15254,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                       <div style={{fontSize:12,fontWeight:700,color:"#32445b",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name||"Dokuman"}</div>
                       <div style={{fontSize:11,color:"#7d8ea7"}}>{formatBytes(Number(f.size)||0)}</div>
                     </div>
-                    <button onClick={()=>openOrderFile(f)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11,borderColor:"#c8d3e1",color:"#42566f",background:"#f7faff"}}>
-                      {canFilePreview(f)?"Viewer":"Indir"}
+                    <button onClick={()=>openOrderFile(f)} disabled={!getFileSource(f)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11,borderColor:"#c8d3e1",color:"#42566f",background:"#f7faff",opacity:getFileSource(f)?1:.45,cursor:getFileSource(f)?"pointer":"not-allowed"}}>
+                      {canFilePreview(f)?"Viewer":(getFileSource(f)?"Indir":"Kaynak Yok")}
                     </button>
                   </div>
                 ))}
@@ -15319,6 +15360,303 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     );
   }
 
+  const mobileEntryTabs=[
+    {id:"entry",label:"Kayit",hint:form.selectedOrder?.code||"Is emri sec"},
+    {id:"live",label:"Canli",hint:statusMeta.label},
+    {id:"docs",label:"Belgeler",hint:`${selectedOrderFiles.length} dosya`},
+    {id:"logs",label:"Kayitlar",hint:`${Math.min(todayEntries.length,5)} giris`},
+  ];
+  const operationContextCard=(
+    <div style={{...sectionCardStyle,padding:14,display:"flex",flexDirection:"column",gap:12}}>
+      <div>
+        <div style={standardSectionTitleStyle}>Operasyon baglami</div>
+        <div style={standardSectionHintStyle}>Tezgah, tarih, vardiya ve is emri ayni blokta tutulur. Kayit oncesi bu alanlari netlestirin.</div>
+      </div>
+      <div style={standardContextGridStyle}>
+        <div style={{...rowCardStyle,padding:"12px 13px",display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700}}>Tezgah Secimi</div>
+          {isMachineLocked?(
+            <div style={{padding:"11px 12px",borderRadius:10,border:`1px solid ${C.border}`,background:C.card,fontSize:12,color:C.muted}}>
+              Bu ekran tezgaha ozel calisiyor: <strong style={{color:C.text}}>{form.machine}</strong>
+            </div>
+          ):(
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {machines.map(m=><button key={m} onClick={()=>selectMachine(m)} style={machineChipStyle(form.machine===m)}>{m}</button>)}
+            </div>
+          )}
+        </div>
+        <div style={{...rowCardStyle,padding:"12px 13px",display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700}}>Tarih ve Vardiya</div>
+          <input type="date" max={todayStr()} value={form.entryDate} onChange={e=>fv("entryDate",e.target.value||todayStr())} style={{...inputSt,...themedInputStyle,padding:"10px 11px",fontSize:13}}/>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {shiftOptions.map(s=><button key={s.id} onClick={()=>fv("shift",s.id)} style={shiftButtonStyle(form.shift===s.id)}>{s.label}</button>)}
+          </div>
+        </div>
+        <div style={{...rowCardStyle,padding:"12px 13px",display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700}}>Is Emri Baglantisi</div>
+          {form.selectedOrder?(
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              <div style={{padding:"11px 12px",borderRadius:10,border:`1px solid ${C.border}`,background:C.card}}>
+                <div style={{fontFamily:"monospace",fontSize:14,fontWeight:800,color:C.text}}>{form.selectedOrder.code}</div>
+                <div style={{fontSize:12,color:C.muted,marginTop:3}}>{form.selectedOrder.name||"-"}</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+                  <span style={{...infoPillStyle,background:C.surface2,border:`1px solid ${C.border}`,color:C.text}}>Cevrim: {fmtSec(form.selectedOrder.partSec)}</span>
+                  {form.selectedOrder?.material&&<span style={{...infoPillStyle,background:C.surface2,border:`1px solid ${C.border}`,color:C.text}}>{form.selectedOrder.material}</span>}
+                  {form.selectedOrder?.dueDate&&<span style={{...infoPillStyle,background:C.surface2,border:`1px solid ${C.border}`,color:C.text}}>Termin: {form.selectedOrder.dueDate}</span>}
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <button onClick={()=>setShowPicker(true)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Is Emrini Degistir</button>
+                <button onClick={()=>fv("selectedOrder",null)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,borderColor:rgbaFromHex(C.red,0.24),color:C.red}}>Temizle</button>
+              </div>
+            </div>
+          ):(
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <div style={standardEmptyStateStyle}>
+                Aktif kayit icin once is emri secin. Secim ekraninda sadece uygun ve aranabilir is emirleri listelenir.
+              </div>
+              <button onClick={()=>setShowPicker(true)} style={{...btnSt("primary"),padding:"10px 12px",fontSize:12,alignSelf:"flex-start"}}>
+                {orders.length===0?"Aktif is emri yok":"Is Emri Sec"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+  const metricsPanel=(
+    <div style={standardMetricGridStyle}>
+      <div style={standardMetricCardStyle}>
+        <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Makine Durumu</div>
+        <div style={{fontSize:18,fontWeight:900,color:statusMeta.color}}>{statusMeta.label}</div>
+        <div style={{fontSize:11,color:C.muted}}>Son veri: {telemetryUpdatedLabel}</div>
+      </div>
+      <div style={standardMetricCardStyle}>
+        <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Dogru Parca</div>
+        <div style={{fontSize:22,fontWeight:900,color:C.text}}>{producedQty}</div>
+        <div style={{fontSize:11,color:C.muted}}>Bugun kaydedilen uretilen adet</div>
+      </div>
+      <div style={standardMetricCardStyle}>
+        <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Hurda</div>
+        <div style={{fontSize:22,fontWeight:900,color:C.red}}>{scrapQty}</div>
+        <div style={{fontSize:11,color:C.muted}}>Toplam hatali adet</div>
+      </div>
+      <div style={standardMetricCardStyle}>
+        <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Kalite</div>
+        <div style={{fontSize:22,fontWeight:900,color:qualityPct<90?C.warn:C.text}}>%{qualityPct}</div>
+        <div style={{fontSize:11,color:C.muted}}>Dogru / toplam uretim orani</div>
+      </div>
+      <div style={standardMetricCardStyle}>
+        <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Kalan</div>
+        <div style={{fontSize:22,fontWeight:900,color:C.text}}>{selectedOrderQty?remainingQty:"-"}</div>
+        <div style={{fontSize:11,color:C.muted}}>Siparis hedefi baz alinir</div>
+      </div>
+      <div style={standardMetricCardStyle}>
+        <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Ilerleme</div>
+        <div style={{fontSize:22,fontWeight:900,color:C.text}}>{selectedOrderQty?`%${progressPct}`:"-"}</div>
+        <div style={{fontSize:11,color:C.muted}}>Secili is emrine gore tamamlanma</div>
+      </div>
+    </div>
+  );
+  const operationEntryCard=(
+    <div style={standardPrimaryCardStyle}>
+      <div>
+        <div style={standardSectionTitleStyle}>Operasyon Kaydi</div>
+        <div style={standardSectionHintStyle}>Miktar girisi, hedef takibi ve vardiya onayi ayni kartta ilerler.</div>
+      </div>
+      {form.selectedOrder?(
+        <div style={{padding:"13px 14px",borderRadius:12,border:`1px solid ${rgbaFromHex(C.accent,0.24)}`,background:rgbaFromHex(C.accent,0.05)}}>
+          <div style={{fontFamily:"monospace",fontSize:15,fontWeight:900,color:C.text}}>{form.selectedOrder.code}</div>
+          <div style={{fontSize:13,color:C.muted,marginTop:4}}>{form.selectedOrder.name||"Is emri aciklamasi yok"}</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+            <span style={{...infoPillStyle,background:C.card,border:`1px solid ${C.border}`,color:C.text}}>Cevrim: {fmtSec(form.selectedOrder.partSec)}</span>
+            <span style={{...infoPillStyle,background:C.card,border:`1px solid ${C.border}`,color:C.text}}>Hedef: {selectedOrderQty||"-"}</span>
+            {form.selectedOrder?.dueDate&&<span style={{...infoPillStyle,background:C.card,border:`1px solid ${C.border}`,color:C.text}}>Termin: {form.selectedOrder.dueDate}</span>}
+          </div>
+        </div>
+      ):(
+        <div style={standardEmptyStateStyle}>Dogru hedef ve belge iliskisi icin once is emri secmeniz onerilir.</div>
+      )}
+      <div style={standardQtyGridStyle}>
+        <div style={{padding:"14px 14px",borderRadius:12,border:`1px solid ${rgbaFromHex(C.green,0.24)}`,background:rgbaFromHex(C.green,0.06),display:"flex",flexDirection:"column",gap:8}}>
+          <span style={{fontSize:11,fontWeight:800,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Dogru Adet</span>
+          <input style={{...inputSt,...themedInputStyle,padding:"14px 12px",fontSize:isPhoneEntry?24:28,fontWeight:900,textAlign:"center",borderColor:rgbaFromHex(C.green,0.26),background:C.card}} type="number" min="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/>
+          <div style={{fontSize:12,color:C.muted}}>Temiz uretim miktari.</div>
+        </div>
+        <div style={{padding:"14px 14px",borderRadius:12,border:`1px solid ${rgbaFromHex(C.red,0.24)}`,background:rgbaFromHex(C.red,0.06),display:"flex",flexDirection:"column",gap:8}}>
+          <span style={{fontSize:11,fontWeight:800,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Hurda Adet</span>
+          <input style={{...inputSt,...themedInputStyle,padding:"14px 12px",fontSize:isPhoneEntry?24:28,fontWeight:900,textAlign:"center",borderColor:rgbaFromHex(C.red,0.26),background:C.card}} type="number" min="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/>
+          <div style={{fontSize:12,color:C.muted}}>Hatali parca bilgisi.</div>
+        </div>
+      </div>
+      <div style={{...rowCardStyle,padding:"13px 14px",display:"flex",flexDirection:"column",gap:10}}>
+        <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+          <div>
+            <div style={{fontSize:12,fontWeight:800,color:C.text}}>Siparis ilerlemesi</div>
+            <div style={{fontSize:12,color:C.muted2,marginTop:2}}>Gunluk uretim toplami uzerinden hesaplanir.</div>
+          </div>
+          <div style={{fontSize:22,fontWeight:900,color:C.text}}>{selectedOrderQty?`%${progressPct}`:"-"}</div>
+        </div>
+        <div style={standardProgressTrackStyle}>
+          <div style={{...standardProgressFillStyle,width:`${selectedOrderQty?progressPct:0}%`}}/>
+        </div>
+        <div style={standardProgressStatGridStyle}>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Hedef</div><div style={{fontSize:16,fontWeight:800,color:C.text,marginTop:4}}>{selectedOrderQty||"-"}</div></div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Tamamlanan</div><div style={{fontSize:16,fontWeight:800,color:C.text,marginTop:4}}>{producedQty}</div></div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Kalan</div><div style={{fontSize:16,fontWeight:800,color:C.text,marginTop:4}}>{selectedOrderQty?remainingQty:"-"}</div></div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Toplam Hata</div><div style={{fontSize:16,fontWeight:800,color:C.red,marginTop:4}}>{scrapQty}</div></div>
+        </div>
+      </div>
+      <div style={standardActionGridStyle}>
+        <button onClick={openShiftEndModal} style={{...btnSt(saved?"green":"primary"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:800,borderColor:"transparent"}}>{editId?"Vardiya Sonu Guncelle":"Vardiya Sonu Onayla"}</button>
+        <button onClick={openRejectPartsModal} style={{...btnSt("ghost"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:700,borderColor:rgbaFromHex(C.red,0.2),color:C.red,background:rgbaFromHex(C.red,0.04)}}>Hata Girisi</button>
+        <button onClick={openToolChangeModal} style={{...btnSt("ghost"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:700}}>Takim Degisimi</button>
+        <button onClick={()=>setShowOrderDataPanel(true)} disabled={!form.selectedOrder} style={{...btnSt("ghost"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:700,opacity:form.selectedOrder?1:.45,cursor:form.selectedOrder?"pointer":"not-allowed"}}>Is Emri Dokumanlari</button>
+      </div>
+    </div>
+  );
+  const liveStatusCard=(
+    <div style={standardSidebarCardStyle}>
+      <div>
+        <div style={standardSectionTitleStyle}>Canli Tezgah Durumu</div>
+        <div style={standardSectionHintStyle}>Anlik telemetry ve kalite verisi ozetlenir.</div>
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+        <span style={{...infoPillStyle,display:"inline-flex",alignItems:"center",gap:6,background:rgbaFromHex(statusMeta.color,0.12),border:`1px solid ${rgbaFromHex(statusMeta.color,0.3)}`,color:statusMeta.color}}>
+          <span style={{width:10,height:10,borderRadius:"50%",background:statusMeta.color,display:"inline-block"}}/>
+          {statusMeta.label}
+        </span>
+        <span style={{fontSize:12,color:C.muted}}>Son guncelleme: {telemetryUpdatedLabel}</span>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:isPhoneEntry?"1fr 1fr":"repeat(2,minmax(0,1fr))",gap:8}}>
+        <div style={{...rowCardStyle,padding:"11px 12px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Aktif Sure</div><div style={{fontSize:18,fontWeight:900,color:C.text,marginTop:4}}>{fmtActiveShort(currentStatusElapsedSec)}</div></div>
+        <div style={{...rowCardStyle,padding:"11px 12px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Alarm</div><div style={{fontSize:18,fontWeight:900,color:activeAlarmCount>0?C.red:C.text,marginTop:4}}>{activeAlarmCount}</div></div>
+        <div style={{...rowCardStyle,padding:"11px 12px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Kullanim</div><div style={{fontSize:18,fontWeight:900,color:C.text,marginTop:4}}>%{utilizationPct}</div></div>
+        <div style={{...rowCardStyle,padding:"11px 12px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>OEE</div><div style={{fontSize:18,fontWeight:900,color:C.text,marginTop:4}}>%{oeePct}</div></div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:isPhoneEntry?"1fr":"repeat(3,minmax(0,1fr))",gap:8}}>
+        <div style={{...rowCardStyle,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Planlanan</div><div style={{fontSize:14,fontWeight:800,color:C.text,marginTop:4}}>{hasPlannedCycle?fmtSec(cycleExpectedSec):"--:--"}</div></div>
+        <div style={{...rowCardStyle,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Aktif Cevrim</div><div style={{fontSize:14,fontWeight:800,color:C.text,marginTop:4}}>{fmtSec(cycleCurrentSec)}</div></div>
+        <div style={{...rowCardStyle,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Sapma</div><div style={{fontSize:14,fontWeight:800,color:cycleDeviationExceeded?C.red:C.text,marginTop:4}}>{cycleDeviationSec>=0?"+":""}{fmtSec(cycleDeviationAbsSec)}</div></div>
+      </div>
+    </div>
+  );
+  const docsToolsCard=(
+    <div style={standardSidebarCardStyle}>
+      <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+        <div>
+          <div style={standardSectionTitleStyle}>Dokuman ve Takim</div>
+          <div style={standardSectionHintStyle}>Secili is emri belgeleri ve uygun takim ozeti.</div>
+        </div>
+        <button onClick={()=>setShowOrderDataPanel(true)} disabled={!form.selectedOrder} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:11,opacity:form.selectedOrder?1:.45,cursor:form.selectedOrder?"pointer":"not-allowed"}}>Tum Dokumanlar</button>
+      </div>
+      <div style={{...rowCardStyle,padding:"11px 12px"}}>
+        <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Secili Takim</div>
+        <div style={{fontSize:14,fontWeight:800,color:C.text,marginTop:4}}>{machineToolPicked?`${machineToolPicked.code||machineToolPicked.name} x${Math.max(1,Number(form.machineToolQty)||1)}`:"Takim secilmedi"}</div>
+      </div>
+      {docsPreview.length===0&&<div style={standardEmptyStateStyle}>{form.selectedOrder?"Secili is emrinde belge yok.":"Belge gormek icin once is emri secin."}</div>}
+      {docsPreview.length>0&&docsPreview.map((f,i)=>(
+        <div key={`${f.name||"file"}_${i}`} style={{...rowCardStyle,padding:"9px 10px",display:"flex",alignItems:isPhoneEntry?"flex-start":"center",gap:10,flexWrap:isPhoneEntry?"wrap":"nowrap"}}>
+          <div style={{fontSize:16,lineHeight:1}}>{getFileIcon(f.name)}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name||"Dokuman"}</div>
+            <div style={{fontSize:10,color:C.muted2,marginTop:2}}>{formatBytes(Number(f.size)||0)}</div>
+          </div>
+          <button onClick={()=>openOrderFile(f)} disabled={!getFileSource(f)} style={{...btnSt("ghost"),padding:"5px 9px",fontSize:11,marginLeft:isPhoneEntry?26:0,opacity:getFileSource(f)?1:.45,cursor:getFileSource(f)?"pointer":"not-allowed"}}>{canFilePreview(f)?"Onizle":(getFileSource(f)?"Indir":"Kaynak Yok")}</button>
+        </div>
+      ))}
+      {stockedToolsPreview.length===0&&<div style={standardEmptyStateStyle}>Stokta kullanilabilir takim gorunmuyor.</div>}
+      {stockedToolsPreview.length>0&&stockedToolsPreview.map(t=>{
+        const qty=safeNum(t.qty);
+        const min=Math.max(0,safeNum(t.minQty));
+        const critical=qty<=min;
+        return (
+          <div key={t.id} style={{...rowCardStyle,padding:"9px 10px",display:"grid",gridTemplateColumns:isPhoneEntry?"1fr":"1fr auto",gap:10,alignItems:"center"}}>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.code||"-"} · {t.name||"Takim"}</div>
+              <div style={{fontSize:10,color:C.muted2,marginTop:2}}>{t.location||"Lokasyon yok"}</div>
+            </div>
+            <div style={{textAlign:isPhoneEntry?"left":"right"}}>
+              <div style={{fontSize:14,fontWeight:900,color:critical?C.red:C.text}}>{qty}</div>
+              <div style={{fontSize:10,color:C.muted2}}>Min {min}</div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+  const recentMachineEntriesCard=(
+    <div style={standardSidebarCardStyle}>
+      <div>
+        <div style={standardSectionTitleStyle}>Son Makine Kayitlari</div>
+        <div style={standardSectionHintStyle}>Ayni tezgaha ait son vardiya hareketleri.</div>
+      </div>
+      {recentMachineEntries.length===0&&<div style={standardEmptyStateStyle}>Secili tezgah icin kayit bulunmuyor.</div>}
+      {recentMachineEntries.length>0&&recentMachineEntries.map(e=>{
+        const machineToolQty=Math.max(0,safeNum(e.machineToolQty??e.machineToolChange??0));
+        const isToolChange=String(e.entryType||"")==="tool_change"||(machineToolQty>0&&safeNum(e.correct)===0&&safeNum(e.wrong)===0);
+        const title=isToolChange?`${e.machineToolCode||e.machineToolName||"Takim"} degisimi`:`${e.jobCode||"-"} uretim kaydi`;
+        const detail=isToolChange?`Takim adedi: ${machineToolQty}`:`Dogru ${safeNum(e.correct)} · Hurda ${safeNum(e.wrong)}`;
+        const stampRaw=e.createdAt||`${e.date||""}T00:00:00`;
+        const stampDate=new Date(stampRaw);
+        const stampText=Number.isNaN(stampDate.getTime())?(e.date||"--"):new Intl.DateTimeFormat("tr-TR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}).format(stampDate);
+        return (
+          <div key={e.id} style={{...rowCardStyle,padding:"10px 11px",display:"flex",justifyContent:"space-between",gap:10,alignItems:isPhoneEntry?"flex-start":"center",flexDirection:isPhoneEntry?"column":"row"}}>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{title}</div>
+              <div style={{fontSize:11,color:C.muted2,marginTop:3,whiteSpace:isPhoneEntry?"normal":"nowrap",overflow:"hidden",textOverflow:"ellipsis",wordBreak:"break-word"}}>{detail}</div>
+            </div>
+            <div style={{fontSize:11,color:C.muted,textAlign:isPhoneEntry?"left":"right",whiteSpace:"nowrap",alignSelf:isPhoneEntry?"stretch":"auto"}}>
+              <div>{stampText}</div>
+              <div style={{marginTop:3}}>{shiftWindowMap[e.shift]?.label||e.shift||"-"}</div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+  const todayEntriesCard=(
+    <div style={{...sectionCardStyle,padding:12,display:"flex",flexDirection:"column",gap:8}}>
+      <div style={{fontSize:13,fontWeight:700,color:C.text}}>Secili Gun Girislerim ({Math.min(todayEntries.length,5)})</div>
+      {todayEntries.length===0&&<div style={standardEmptyStateStyle}>Secili gunde kayit bulunmuyor.</div>}
+      {todayEntries.length>0&&todayEntries.slice(0,5).map(e=>{
+        const p=calcPerf(e.correct,e.wrong,e.partSec);
+        const machineToolQty=Number(e.machineToolQty??e.machineToolChange??0);
+        return (
+          <div key={e.id} style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 12px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:isPhoneEntry?"flex-start":"center",gap:8,flexWrap:"wrap"}}>
+              <div style={{minWidth:0}}>
+                <span style={{fontWeight:700,fontSize:13,fontFamily:"monospace",color:C.text,display:"inline-block",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:isPhoneEntry?"normal":"nowrap",wordBreak:"break-word"}}>{e.jobCode}</span>
+                <span style={{fontSize:12,color:C.muted2,marginLeft:isPhoneEntry?0:6,marginTop:isPhoneEntry?3:0,display:isPhoneEntry?"block":"inline"}}>{e.jobName}</span>
+              </div>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}><Badge label={e.machine} color={C.accent}/><Badge label={shiftWindowMap[e.shift]?.label||e.shift||"-"} color={C.muted2}/></div>
+            </div>
+            <div style={{display:"flex",gap:12,marginTop:7,fontSize:13,flexWrap:"wrap"}}>
+              <span style={{color:C.green,fontWeight:600}}>Dogru: {e.correct}</span>
+              <span style={{color:C.red,fontWeight:600}}>Hatali: {e.wrong}</span>
+              {p&&<span style={{color:C.muted2}}>Maks/gun: {p.max}</span>}
+            </div>
+            {machineToolQty>0&&<div style={{display:"flex",gap:8,marginTop:7,fontSize:12,color:C.muted2,flexWrap:"wrap"}}>
+              <Badge label={"Is Emri: "+((e.machineToolCode||e.machineToolName)?`${e.machineToolCode||e.machineToolName} x${machineToolQty}`:`${machineToolQty}`)} color={C.warn}/>
+            </div>}
+            <div style={{marginTop:8,display:"flex",gap:8,flexWrap:"wrap"}}>
+              <button onClick={()=>startEdit(e)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,flex:isPhoneEntry?"1 1 140px":"0 0 auto"}}>Duzenle</button>
+              <button onClick={()=>removeEntry(e)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12,flex:isPhoneEntry?"1 1 140px":"0 0 auto"}}>Sil</button>
+            </div>
+            {p&&<PerfBar perf={p.perf} small/>}
+          </div>
+        );
+      })}
+    </div>
+  );
+  const desktopSidebarColumn=(
+    <div style={{flex:"1 1 340px",display:"flex",flexDirection:"column",gap:12,minWidth:0}}>
+      {liveStatusCard}
+      {docsToolsCard}
+      {recentMachineEntriesCard}
+    </div>
+  );
+
   return (
     <div style={entryRootStyle}>
       <div style={shellStyle}>
@@ -15374,252 +15712,41 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             </div>
           )}
 
-          <div style={{...sectionCardStyle,padding:14,display:"flex",flexDirection:"column",gap:12}}>
-            <div>
-              <div style={standardSectionTitleStyle}>Operasyon baglami</div>
-              <div style={standardSectionHintStyle}>Tezgah, tarih, vardiya ve is emri ayni blokta tutulur. Kayit oncesi bu alanlari netlestirin.</div>
-            </div>
-            <div style={standardContextGridStyle}>
-              <div style={{...rowCardStyle,padding:"12px 13px",display:"flex",flexDirection:"column",gap:10}}>
-                <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700}}>Tezgah Secimi</div>
-                {isMachineLocked?(
-                  <div style={{padding:"11px 12px",borderRadius:10,border:`1px solid ${C.border}`,background:C.card,fontSize:12,color:C.muted}}>
-                    Bu ekran tezgaha ozel calisiyor: <strong style={{color:C.text}}>{form.machine}</strong>
-                  </div>
-                ):(
-                  <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                    {machines.map(m=><button key={m} onClick={()=>selectMachine(m)} style={machineChipStyle(form.machine===m)}>{m}</button>)}
-                  </div>
-                )}
-              </div>
-              <div style={{...rowCardStyle,padding:"12px 13px",display:"flex",flexDirection:"column",gap:10}}>
-                <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700}}>Tarih ve Vardiya</div>
-                <input type="date" max={todayStr()} value={form.entryDate} onChange={e=>fv("entryDate",e.target.value||todayStr())} style={{...inputSt,...themedInputStyle,padding:"10px 11px",fontSize:13}}/>
-                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                  {shiftOptions.map(s=><button key={s.id} onClick={()=>fv("shift",s.id)} style={shiftButtonStyle(form.shift===s.id)}>{s.label}</button>)}
+          {isPhoneEntry?(
+            <>
+              <div style={mobileSectionNavCardStyle}>
+                <div style={{fontSize:12,fontWeight:800,color:C.text}}>Mobil Operasyon Akisi</div>
+                <div style={{fontSize:12,color:C.muted2}}>Telefonda her adim ayri bolumde acilir. Kayit girisi ilk sekmede tutulur.</div>
+                <div style={mobileSectionNavGridStyle}>
+                  {mobileEntryTabs.map(tab=>{
+                    const active=mobileEntrySection===tab.id;
+                    return (
+                      <button key={tab.id} onClick={()=>setMobileEntrySection(tab.id)} style={mobileSectionTabStyle(active)}>
+                        <span style={{fontSize:12,fontWeight:800,color:active?"#fff":C.text}}>{tab.label}</span>
+                        <span style={{fontSize:11,color:active?"rgba(255,255,255,.86)":C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",width:"100%",textAlign:"left"}}>{tab.hint}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-              <div style={{...rowCardStyle,padding:"12px 13px",display:"flex",flexDirection:"column",gap:10}}>
-                <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700}}>Is Emri Baglantisi</div>
-                {form.selectedOrder?(
-                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                    <div style={{padding:"11px 12px",borderRadius:10,border:`1px solid ${C.border}`,background:C.card}}>
-                      <div style={{fontFamily:"monospace",fontSize:14,fontWeight:800,color:C.text}}>{form.selectedOrder.code}</div>
-                      <div style={{fontSize:12,color:C.muted,marginTop:3}}>{form.selectedOrder.name||"-"}</div>
-                      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
-                        <span style={{...infoPillStyle,background:C.surface2,border:`1px solid ${C.border}`,color:C.text}}>Cevrim: {fmtSec(form.selectedOrder.partSec)}</span>
-                        {form.selectedOrder?.material&&<span style={{...infoPillStyle,background:C.surface2,border:`1px solid ${C.border}`,color:C.text}}>{form.selectedOrder.material}</span>}
-                        {form.selectedOrder?.dueDate&&<span style={{...infoPillStyle,background:C.surface2,border:`1px solid ${C.border}`,color:C.text}}>Termin: {form.selectedOrder.dueDate}</span>}
-                      </div>
-                    </div>
-                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                      <button onClick={()=>setShowPicker(true)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Is Emrini Degistir</button>
-                      <button onClick={()=>fv("selectedOrder",null)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,borderColor:rgbaFromHex(C.red,0.24),color:C.red}}>Temizle</button>
-                    </div>
-                  </div>
-                ):(
-                  <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                    <div style={standardEmptyStateStyle}>
-                      Aktif kayit icin once is emri secin. Secim ekraninda sadece uygun ve aranabilir is emirleri listelenir.
-                    </div>
-                    <button onClick={()=>setShowPicker(true)} style={{...btnSt("primary"),padding:"10px 12px",fontSize:12,alignSelf:"flex-start"}}>
-                      {orders.length===0?"Aktif is emri yok":"Is Emri Sec"}
-                    </button>
-                  </div>
-                )}
+              {metricsPanel}
+              <div style={mobileSectionContentStyle}>
+                {mobileEntrySection==="entry"&&<>{operationContextCard}{operationEntryCard}</>}
+                {mobileEntrySection==="live"&&liveStatusCard}
+                {mobileEntrySection==="docs"&&docsToolsCard}
+                {mobileEntrySection==="logs"&&<>{recentMachineEntriesCard}{todayEntriesCard}</>}
               </div>
-            </div>
-          </div>
-
-          <div style={standardMetricGridStyle}>
-            <div style={standardMetricCardStyle}>
-              <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Makine Durumu</div>
-              <div style={{fontSize:18,fontWeight:900,color:statusMeta.color}}>{statusMeta.label}</div>
-              <div style={{fontSize:11,color:C.muted}}>Son veri: {telemetryUpdatedLabel}</div>
-            </div>
-            <div style={standardMetricCardStyle}>
-              <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Dogru Parca</div>
-              <div style={{fontSize:22,fontWeight:900,color:C.text}}>{producedQty}</div>
-              <div style={{fontSize:11,color:C.muted}}>Bugun kaydedilen uretilen adet</div>
-            </div>
-            <div style={standardMetricCardStyle}>
-              <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Hurda</div>
-              <div style={{fontSize:22,fontWeight:900,color:C.red}}>{scrapQty}</div>
-              <div style={{fontSize:11,color:C.muted}}>Toplam hatali adet</div>
-            </div>
-            <div style={standardMetricCardStyle}>
-              <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Kalite</div>
-              <div style={{fontSize:22,fontWeight:900,color:qualityPct<90?C.warn:C.text}}>%{qualityPct}</div>
-              <div style={{fontSize:11,color:C.muted}}>Dogru / toplam uretim orani</div>
-            </div>
-            <div style={standardMetricCardStyle}>
-              <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Kalan</div>
-              <div style={{fontSize:22,fontWeight:900,color:C.text}}>{selectedOrderQty?remainingQty:"-"}</div>
-              <div style={{fontSize:11,color:C.muted}}>Siparis hedefi baz alinir</div>
-            </div>
-            <div style={standardMetricCardStyle}>
-              <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Ilerleme</div>
-              <div style={{fontSize:22,fontWeight:900,color:C.text}}>{selectedOrderQty?`%${progressPct}`:"-"}</div>
-              <div style={{fontSize:11,color:C.muted}}>Secili is emrine gore tamamlanma</div>
-            </div>
-          </div>
-
-          <div style={standardMainLayoutStyle}>
-            <div style={standardPrimaryCardStyle}>
-              <div>
-                <div style={standardSectionTitleStyle}>Operasyon Kaydi</div>
-                <div style={standardSectionHintStyle}>Miktar girisi, hedef takibi ve vardiya onayi ayni kartta ilerler.</div>
+            </>
+          ):(
+            <>
+              {operationContextCard}
+              {metricsPanel}
+              <div style={standardMainLayoutStyle}>
+                {operationEntryCard}
+                {desktopSidebarColumn}
               </div>
-              {form.selectedOrder?(
-                <div style={{padding:"13px 14px",borderRadius:12,border:`1px solid ${rgbaFromHex(C.accent,0.24)}`,background:rgbaFromHex(C.accent,0.05)}}>
-                  <div style={{fontFamily:"monospace",fontSize:15,fontWeight:900,color:C.text}}>{form.selectedOrder.code}</div>
-                  <div style={{fontSize:13,color:C.muted,marginTop:4}}>{form.selectedOrder.name||"Is emri aciklamasi yok"}</div>
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
-                    <span style={{...infoPillStyle,background:C.card,border:`1px solid ${C.border}`,color:C.text}}>Cevrim: {fmtSec(form.selectedOrder.partSec)}</span>
-                    <span style={{...infoPillStyle,background:C.card,border:`1px solid ${C.border}`,color:C.text}}>Hedef: {selectedOrderQty||"-"}</span>
-                    {form.selectedOrder?.dueDate&&<span style={{...infoPillStyle,background:C.card,border:`1px solid ${C.border}`,color:C.text}}>Termin: {form.selectedOrder.dueDate}</span>}
-                  </div>
-                </div>
-              ):(
-                <div style={standardEmptyStateStyle}>Dogru hedef ve belge iliskisi icin once is emri secmeniz onerilir.</div>
-              )}
-              <div style={standardQtyGridStyle}>
-                <div style={{padding:"14px 14px",borderRadius:12,border:`1px solid ${rgbaFromHex(C.green,0.24)}`,background:rgbaFromHex(C.green,0.06),display:"flex",flexDirection:"column",gap:8}}>
-                  <span style={{fontSize:11,fontWeight:800,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Dogru Adet</span>
-                  <input style={{...inputSt,...themedInputStyle,padding:"14px 12px",fontSize:isPhoneEntry?24:28,fontWeight:900,textAlign:"center",borderColor:rgbaFromHex(C.green,0.26),background:C.card}} type="number" min="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/>
-                  <div style={{fontSize:12,color:C.muted}}>Temiz uretim miktari.</div>
-                </div>
-                <div style={{padding:"14px 14px",borderRadius:12,border:`1px solid ${rgbaFromHex(C.red,0.24)}`,background:rgbaFromHex(C.red,0.06),display:"flex",flexDirection:"column",gap:8}}>
-                  <span style={{fontSize:11,fontWeight:800,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Hurda Adet</span>
-                  <input style={{...inputSt,...themedInputStyle,padding:"14px 12px",fontSize:isPhoneEntry?24:28,fontWeight:900,textAlign:"center",borderColor:rgbaFromHex(C.red,0.26),background:C.card}} type="number" min="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/>
-                  <div style={{fontSize:12,color:C.muted}}>Hatali parca bilgisi.</div>
-                </div>
-              </div>
-              <div style={{...rowCardStyle,padding:"13px 14px",display:"flex",flexDirection:"column",gap:10}}>
-                <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",alignItems:"center"}}>
-                  <div>
-                    <div style={{fontSize:12,fontWeight:800,color:C.text}}>Siparis ilerlemesi</div>
-                    <div style={{fontSize:12,color:C.muted2,marginTop:2}}>Gunluk uretim toplami uzerinden hesaplanir.</div>
-                  </div>
-                  <div style={{fontSize:22,fontWeight:900,color:C.text}}>{selectedOrderQty?`%${progressPct}`:"-"}</div>
-                </div>
-                <div style={standardProgressTrackStyle}>
-                  <div style={{...standardProgressFillStyle,width:`${selectedOrderQty?progressPct:0}%`}}/>
-                </div>
-                <div style={standardProgressStatGridStyle}>
-                  <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Hedef</div><div style={{fontSize:16,fontWeight:800,color:C.text,marginTop:4}}>{selectedOrderQty||"-"}</div></div>
-                  <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Tamamlanan</div><div style={{fontSize:16,fontWeight:800,color:C.text,marginTop:4}}>{producedQty}</div></div>
-                  <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Kalan</div><div style={{fontSize:16,fontWeight:800,color:C.text,marginTop:4}}>{selectedOrderQty?remainingQty:"-"}</div></div>
-                  <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Toplam Hata</div><div style={{fontSize:16,fontWeight:800,color:C.red,marginTop:4}}>{scrapQty}</div></div>
-                </div>
-              </div>
-              <div style={standardActionGridStyle}>
-                <button onClick={openShiftEndModal} style={{...btnSt(saved?"green":"primary"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:800,borderColor:"transparent"}}>{editId?"Vardiya Sonu Guncelle":"Vardiya Sonu Onayla"}</button>
-                <button onClick={openRejectPartsModal} style={{...btnSt("ghost"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:700,borderColor:rgbaFromHex(C.red,0.2),color:C.red,background:rgbaFromHex(C.red,0.04)}}>Hata Girisi</button>
-                <button onClick={openToolChangeModal} style={{...btnSt("ghost"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:700}}>Takim Degisimi</button>
-                <button onClick={()=>setShowOrderDataPanel(true)} disabled={!form.selectedOrder} style={{...btnSt("ghost"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:700,opacity:form.selectedOrder?1:.45,cursor:form.selectedOrder?"pointer":"not-allowed"}}>Is Emri Dokumanlari</button>
-              </div>
-            </div>
-
-            <div style={{flex:"1 1 340px",display:"flex",flexDirection:"column",gap:12,minWidth:0}}>
-              <div style={standardSidebarCardStyle}>
-                <div>
-                  <div style={standardSectionTitleStyle}>Canli Tezgah Durumu</div>
-                  <div style={standardSectionHintStyle}>Anlik telemetry ve kalite verisi ozetlenir.</div>
-                </div>
-                <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",alignItems:"center"}}>
-                  <span style={{...infoPillStyle,display:"inline-flex",alignItems:"center",gap:6,background:rgbaFromHex(statusMeta.color,0.12),border:`1px solid ${rgbaFromHex(statusMeta.color,0.3)}`,color:statusMeta.color}}>
-                    <span style={{width:10,height:10,borderRadius:"50%",background:statusMeta.color,display:"inline-block"}}/>
-                    {statusMeta.label}
-                  </span>
-                  <span style={{fontSize:12,color:C.muted}}>Son guncelleme: {telemetryUpdatedLabel}</span>
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:isPhoneEntry?"1fr 1fr":"repeat(2,minmax(0,1fr))",gap:8}}>
-                  <div style={{...rowCardStyle,padding:"11px 12px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Aktif Sure</div><div style={{fontSize:18,fontWeight:900,color:C.text,marginTop:4}}>{fmtActiveShort(currentStatusElapsedSec)}</div></div>
-                  <div style={{...rowCardStyle,padding:"11px 12px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Alarm</div><div style={{fontSize:18,fontWeight:900,color:activeAlarmCount>0?C.red:C.text,marginTop:4}}>{activeAlarmCount}</div></div>
-                  <div style={{...rowCardStyle,padding:"11px 12px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Kullanim</div><div style={{fontSize:18,fontWeight:900,color:C.text,marginTop:4}}>%{utilizationPct}</div></div>
-                  <div style={{...rowCardStyle,padding:"11px 12px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>OEE</div><div style={{fontSize:18,fontWeight:900,color:C.text,marginTop:4}}>%{oeePct}</div></div>
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:isPhoneEntry?"1fr":"repeat(3,minmax(0,1fr))",gap:8}}>
-                  <div style={{...rowCardStyle,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Planlanan</div><div style={{fontSize:14,fontWeight:800,color:C.text,marginTop:4}}>{hasPlannedCycle?fmtSec(cycleExpectedSec):"--:--"}</div></div>
-                  <div style={{...rowCardStyle,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Aktif Cevrim</div><div style={{fontSize:14,fontWeight:800,color:C.text,marginTop:4}}>{fmtSec(cycleCurrentSec)}</div></div>
-                  <div style={{...rowCardStyle,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Sapma</div><div style={{fontSize:14,fontWeight:800,color:cycleDeviationExceeded?C.red:C.text,marginTop:4}}>{cycleDeviationSec>=0?"+":""}{fmtSec(cycleDeviationAbsSec)}</div></div>
-                </div>
-              </div>
-
-              <div style={standardSidebarCardStyle}>
-                <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",alignItems:"center"}}>
-                  <div>
-                    <div style={standardSectionTitleStyle}>Dokuman ve Takim</div>
-                    <div style={standardSectionHintStyle}>Secili is emri belgeleri ve uygun takim ozeti.</div>
-                  </div>
-                  <button onClick={()=>setShowOrderDataPanel(true)} disabled={!form.selectedOrder} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:11,opacity:form.selectedOrder?1:.45,cursor:form.selectedOrder?"pointer":"not-allowed"}}>Tum Dokumanlar</button>
-                </div>
-                <div style={{...rowCardStyle,padding:"11px 12px"}}>
-                  <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Secili Takim</div>
-                  <div style={{fontSize:14,fontWeight:800,color:C.text,marginTop:4}}>{machineToolPicked?`${machineToolPicked.code||machineToolPicked.name} x${Math.max(1,Number(form.machineToolQty)||1)}`:"Takim secilmedi"}</div>
-                </div>
-                {docsPreview.length===0&&<div style={standardEmptyStateStyle}>{form.selectedOrder?"Secili is emrinde belge yok.":"Belge gormek icin once is emri secin."}</div>}
-              {docsPreview.length>0&&docsPreview.map((f,i)=>(
-                  <div key={`${f.name||"file"}_${i}`} style={{...rowCardStyle,padding:"9px 10px",display:"flex",alignItems:isPhoneEntry?"flex-start":"center",gap:10,flexWrap:isPhoneEntry?"wrap":"nowrap"}}>
-                    <div style={{fontSize:16,lineHeight:1}}>{getFileIcon(f.name)}</div>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name||"Dokuman"}</div>
-                      <div style={{fontSize:10,color:C.muted2,marginTop:2}}>{formatBytes(Number(f.size)||0)}</div>
-                    </div>
-                    <button onClick={()=>openOrderFile(f)} style={{...btnSt("ghost"),padding:"5px 9px",fontSize:11,marginLeft:isPhoneEntry?26:0}}>{canFilePreview(f)?"Onizle":"Indir"}</button>
-                  </div>
-                ))}
-                {stockedToolsPreview.length===0&&<div style={standardEmptyStateStyle}>Stokta kullanilabilir takim gorunmuyor.</div>}
-                {stockedToolsPreview.length>0&&stockedToolsPreview.map(t=>{
-                  const qty=safeNum(t.qty);
-                  const min=Math.max(0,safeNum(t.minQty));
-                  const critical=qty<=min;
-                  return (
-                    <div key={t.id} style={{...rowCardStyle,padding:"9px 10px",display:"grid",gridTemplateColumns:isPhoneEntry?"1fr":"1fr auto",gap:10,alignItems:"center"}}>
-                      <div style={{minWidth:0}}>
-                        <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.code||"-"} · {t.name||"Takim"}</div>
-                        <div style={{fontSize:10,color:C.muted2,marginTop:2}}>{t.location||"Lokasyon yok"}</div>
-                      </div>
-                      <div style={{textAlign:isPhoneEntry?"left":"right"}}>
-                        <div style={{fontSize:14,fontWeight:900,color:critical?C.red:C.text}}>{qty}</div>
-                        <div style={{fontSize:10,color:C.muted2}}>Min {min}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div style={standardSidebarCardStyle}>
-                <div>
-                  <div style={standardSectionTitleStyle}>Son Makine Kayitlari</div>
-                  <div style={standardSectionHintStyle}>Ayni tezgaha ait son vardiya hareketleri.</div>
-                </div>
-                {recentMachineEntries.length===0&&<div style={standardEmptyStateStyle}>Secili tezgah icin kayit bulunmuyor.</div>}
-                {recentMachineEntries.length>0&&recentMachineEntries.map(e=>{
-                  const machineToolQty=Math.max(0,safeNum(e.machineToolQty??e.machineToolChange??0));
-                  const isToolChange=String(e.entryType||"")==="tool_change"||(machineToolQty>0&&safeNum(e.correct)===0&&safeNum(e.wrong)===0);
-                  const title=isToolChange?`${e.machineToolCode||e.machineToolName||"Takim"} degisimi`:`${e.jobCode||"-"} uretim kaydi`;
-                  const detail=isToolChange?`Takim adedi: ${machineToolQty}`:`Dogru ${safeNum(e.correct)} · Hurda ${safeNum(e.wrong)}`;
-                  const stampRaw=e.createdAt||`${e.date||""}T00:00:00`;
-                  const stampDate=new Date(stampRaw);
-                  const stampText=Number.isNaN(stampDate.getTime())?(e.date||"--"):new Intl.DateTimeFormat("tr-TR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}).format(stampDate);
-                  return (
-                    <div key={e.id} style={{...rowCardStyle,padding:"10px 11px",display:"flex",justifyContent:"space-between",gap:10,alignItems:isPhoneEntry?"flex-start":"center",flexDirection:isPhoneEntry?"column":"row"}}>
-                      <div style={{minWidth:0}}>
-                        <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{title}</div>
-                        <div style={{fontSize:11,color:C.muted2,marginTop:3,whiteSpace:isPhoneEntry?"normal":"nowrap",overflow:"hidden",textOverflow:"ellipsis",wordBreak:"break-word"}}>{detail}</div>
-                      </div>
-                      <div style={{fontSize:11,color:C.muted,textAlign:isPhoneEntry?"left":"right",whiteSpace:"nowrap",alignSelf:isPhoneEntry?"stretch":"auto"}}>
-                        <div>{stampText}</div>
-                        <div style={{marginTop:3}}>{shiftWindowMap[e.shift]?.label||e.shift||"-"}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
+            </>
+          )}
         </div>
       </div>
       <div style={{fontSize:12,color:C.muted2,background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 11px"}}>
@@ -15655,8 +15782,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                     <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name||"Dokuman"}</div>
                     <div style={{fontSize:11,color:C.muted2}}>{formatBytes(Number(f.size)||0)}</div>
                   </div>
-                  <button onClick={()=>openOrderFile(f)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11,marginLeft:isPhoneEntry?28:0}}>
-                    {canFilePreview(f)?"Onizle":"Indir"}
+                  <button onClick={()=>openOrderFile(f)} disabled={!getFileSource(f)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11,marginLeft:isPhoneEntry?28:0,opacity:getFileSource(f)?1:.45,cursor:getFileSource(f)?"pointer":"not-allowed"}}>
+                    {canFilePreview(f)?"Onizle":(getFileSource(f)?"Indir":"Kaynak Yok")}
                   </button>
                 </div>
               ))}
@@ -15757,44 +15884,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
           </div>
         </div>
       )}
-      {!kioskMode&&todayEntries.length>0&&(
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
-          <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:8}}>Secili Gun Girislerim ({Math.min(todayEntries.length,5)})</div>
-          {todayEntries.slice(0,5).map(e=>{
-            const p=calcPerf(e.correct,e.wrong,e.partSec);
-            const machineToolQty=Number(e.machineToolQty??e.machineToolChange??0);
-            return (
-              <div key={e.id} style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 12px",marginBottom:8}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:isPhoneEntry?"flex-start":"center",gap:8,flexWrap:"wrap"}}>
-                  <div style={{minWidth:0}}>
-                    <span style={{fontWeight:700,fontSize:13,fontFamily:"monospace",color:C.text,display:"inline-block",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:isPhoneEntry?"normal":"nowrap",wordBreak:"break-word"}}>{e.jobCode}</span>
-                    <span style={{fontSize:12,color:C.muted2,marginLeft:isPhoneEntry?0:6,marginTop:isPhoneEntry?3:0,display:isPhoneEntry?"block":"inline"}}>{e.jobName}</span>
-                  </div>
-                  <div style={{display:"flex",gap:5,flexWrap:"wrap"}}><Badge label={e.machine} color={C.accent}/><Badge label={shiftWindowMap[e.shift]?.label||e.shift||"-"} color={C.muted2}/></div>
-                </div>
-                <div style={{display:"flex",gap:12,marginTop:7,fontSize:13,flexWrap:"wrap"}}>
-                  <span style={{color:C.green,fontWeight:600}}>Doğru: {e.correct}</span>
-                  <span style={{color:C.red,fontWeight:600}}>Hatalı: {e.wrong}</span>
-                  {p&&<span style={{color:C.muted2}}>Maks/gün: {p.max}</span>}
-                </div>
-                {machineToolQty>0&&<div style={{display:"flex",gap:8,marginTop:7,fontSize:12,color:C.muted2,flexWrap:"wrap"}}>
-                  {machineToolQty>0&&<Badge label={"İş Emri: "+((e.machineToolCode||e.machineToolName)?`${e.machineToolCode||e.machineToolName} x${machineToolQty}`:`${machineToolQty}`)} color={C.warn}/>}
-                </div>}
-                <div style={{marginTop:8,display:"flex",gap:8,flexWrap:"wrap"}}>
-                  <button onClick={()=>startEdit(e)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,flex:isPhoneEntry?"1 1 140px":"0 0 auto"}}>Düzenle</button>
-                  <button onClick={()=>removeEntry(e)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12,flex:isPhoneEntry?"1 1 140px":"0 0 auto"}}>Sil</button>
-                </div>
-                {p&&<PerfBar perf={p.perf} small/>}
-              </div>
-            );
-          })}
-        </div>
-      )}
-      {!kioskMode&&todayEntries.length===0&&(
-        <div style={{background:C.surface2,border:`1px dashed ${C.border}`,borderRadius:10,padding:"12px 14px",fontSize:12,color:C.muted2}}>
-          Secili gunde kayit bulunmuyor.
-        </div>
-      )}
+      {!isPhoneEntry&&todayEntriesCard}
     </div>
   );
 }
