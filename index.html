@@ -627,6 +627,7 @@ const ROLE_MODULE_CATALOG = [
   {id:"planning",label:"Planlama",group:"Planlama"},
   {id:"orders",label:"İş Emirleri",group:"Planlama"},
   {id:"giris",label:"Üretim Girişi",group:"Operasyon"},
+  {id:"entryrecords",label:"Üretim Kayıtları",group:"Operasyon"},
   {id:"assignments",label:"Çalışan Görevlendirme",group:"Operasyon"},
   {id:"cncmonitor",label:"CNC İzleme",group:"Operasyon"},
   {id:"downtime",label:"Duruş Yönetimi",group:"Operasyon"},
@@ -16098,6 +16099,308 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
 }
 
 // ============================================================
+//  PRODUCTION ENTRY RECORDS
+// ============================================================
+function ProductionEntryRecordsModule({currentUser,machines=DEFAULT_MACHINES}) {
+  const shiftRows=useShiftWindows();
+  const [loading,setLoading]=useState(true);
+  const [entries,setEntries]=useState([]);
+  const [orders,setOrders]=useState([]);
+  const [filters,setFilters]=useState({
+    search:"",
+    machine:"all",
+    shift:"all",
+    dateFrom:"",
+    dateTo:"",
+  });
+  const [editEntry,setEditEntry]=useState(null);
+  const [form,setForm]=useState({
+    date:todayStr(),
+    machine:machines[0]||"CNC-1",
+    shift:DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1",
+    orderRef:"",
+    correct:"0",
+    wrong:"0",
+  });
+
+  useEffect(()=>{
+    let disposed=false;
+    async function load(){
+      setLoading(true);
+      const [entryRows,orderRows]=await Promise.all([
+        window.DB.getAll("entries"),
+        window.DB.getAll("orders"),
+      ]);
+      if(disposed) return;
+      setEntries((entryRows||[]).sort((a,b)=>(String(b.createdAt||b.updatedAt||`${b.date||""}T00:00:00`)).localeCompare(String(a.createdAt||a.updatedAt||`${a.date||""}T00:00:00`))));
+      setOrders(orderRows||[]);
+      setLoading(false);
+    }
+    load();
+    return ()=>{ disposed=true; };
+  },[]);
+
+  useEffect(()=>{
+    const fallbackShift=shiftRows[0]?.id||DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1";
+    setForm(prev=>{
+      if(prev.shift&&shiftRows.some(row=>row.id===prev.shift)) return prev;
+      return {...prev,shift:fallbackShift};
+    });
+  },[shiftRows]);
+
+  const shiftMetaMap=useMemo(()=>{
+    const map={};
+    shiftRows.forEach(row=>{
+      map[row.id]={
+        label:row.label||row.id||"",
+        time:`${normalizeHm(row.start,"00:00")}-${normalizeHm(row.end,normalizeHm(row.start,"00:00"))}`,
+      };
+    });
+    return map;
+  },[shiftRows]);
+  const productionEntries=useMemo(()=>
+    entries.filter(entry=>String(entry.entryType||"production")==="production")
+  ,[entries]);
+  const machineOptions=useMemo(()=>
+    Array.from(new Set([...machines,...productionEntries.map(entry=>String(entry.machine||"").trim()).filter(Boolean)])).sort((a,b)=>a.localeCompare(b,"tr"))
+  ,[machines,productionEntries]);
+  const orderOptions=useMemo(()=>{
+    const options=(orders||[])
+      .slice()
+      .sort((a,b)=>(String(a.code||"")||"").localeCompare(String(b.code||"")||"","tr"))
+      .map(order=>({
+        value:String(order.id||order.code||""),
+        label:`${order.code||"-"} · ${order.name||order.partNo||"-"}`,
+        order,
+      }));
+    if(editEntry){
+      const matched=options.some(opt=>String(opt.order?.code||"").trim().toUpperCase()===String(editEntry.jobCode||"").trim().toUpperCase());
+      if(!matched){
+        options.unshift({
+          value:`legacy:${editEntry.id}`,
+          label:`${editEntry.jobCode||"-"} · ${editEntry.jobName||"-"}`,
+          order:null,
+        });
+      }
+    }
+    return options;
+  },[orders,editEntry]);
+  const filteredEntries=useMemo(()=>{
+    const query=String(filters.search||"").trim().toLocaleLowerCase("tr");
+    return productionEntries.filter(entry=>{
+      if(filters.machine!=="all"&&String(entry.machine||"")!==filters.machine) return false;
+      if(filters.shift!=="all"&&String(entry.shift||"")!==filters.shift) return false;
+      if(filters.dateFrom&&String(entry.date||"")<filters.dateFrom) return false;
+      if(filters.dateTo&&String(entry.date||"")>filters.dateTo) return false;
+      if(!query) return true;
+      const haystack=[
+        entry.jobCode,
+        entry.jobName,
+        entry.machine,
+        entry.operatorName,
+        entry.shiftLabel,
+        shiftMetaMap[entry.shift]?.label,
+        entry.date,
+      ].filter(Boolean).join(" ").toLocaleLowerCase("tr");
+      return haystack.includes(query);
+    });
+  },[filters,productionEntries,shiftMetaMap]);
+  const totalCorrect=filteredEntries.reduce((sum,entry)=>sum+safeNum(entry.correct),0);
+  const totalWrong=filteredEntries.reduce((sum,entry)=>sum+safeNum(entry.wrong),0);
+  const operatorCount=new Set(filteredEntries.map(entry=>String(entry.operatorId||entry.operatorName||"").trim()).filter(Boolean)).size;
+
+  function formatStamp(entry){
+    const raw=entry?.createdAt||entry?.updatedAt||`${entry?.date||""}T00:00:00`;
+    const parsed=new Date(raw);
+    if(Number.isNaN(parsed.getTime())) return entry?.date||"-";
+    return new Intl.DateTimeFormat("tr-TR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}).format(parsed);
+  }
+  function openEditEntry(entry){
+    const matchedOrder=(orders||[]).find(order=>String(order.code||"").trim().toUpperCase()===String(entry.jobCode||"").trim().toUpperCase());
+    setEditEntry(entry);
+    setForm({
+      date:entry.date||todayStr(),
+      machine:entry.machine||machines[0]||"CNC-1",
+      shift:entry.shift||shiftRows[0]?.id||DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1",
+      orderRef:matchedOrder?String(matchedOrder.id||matchedOrder.code||""):`legacy:${entry.id}`,
+      correct:String(entry.correct??0),
+      wrong:String(entry.wrong??0),
+    });
+  }
+  function closeEditEntry(){
+    setEditEntry(null);
+    setForm({
+      date:todayStr(),
+      machine:machines[0]||"CNC-1",
+      shift:shiftRows[0]?.id||DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1",
+      orderRef:"",
+      correct:"0",
+      wrong:"0",
+    });
+  }
+  async function saveEditEntry(){
+    if(!editEntry) return;
+    if(!form.date){ alert("Tarih seçin."); return; }
+    if(!form.machine){ alert("Tezgah seçin."); return; }
+    const correctNum=Math.max(0,Number(form.correct)||0);
+    const wrongNum=Math.max(0,Number(form.wrong)||0);
+    const selectedOrderOption=orderOptions.find(opt=>opt.value===form.orderRef)||null;
+    const selectedOrder=selectedOrderOption?.order||null;
+    const d=parseYmdLocal(form.date||todayStr());
+    const updated={
+      ...editEntry,
+      date:ymdLocal(d),
+      week:weekStart(d),
+      month:monthStr(d),
+      machine:form.machine,
+      shift:form.shift,
+      shiftLabel:shiftMetaMap[form.shift]?.label||editEntry.shiftLabel||form.shift||"",
+      jobCode:selectedOrder?.code||editEntry.jobCode||"",
+      jobName:selectedOrder?.name||selectedOrder?.partNo||editEntry.jobName||"",
+      partSec:selectedOrder?Math.max(0,Number(selectedOrder.partSec)||Number(editEntry.partSec)||0):Math.max(0,Number(editEntry.partSec)||0),
+      correct:correctNum,
+      wrong:wrongNum,
+      updatedAt:new Date().toISOString(),
+    };
+    const ok=await window.DB.updateDoc("entries",editEntry.id,updated);
+    if(!ok){
+      alert("Üretim kaydı güncellenemedi.");
+      return;
+    }
+    setEntries(rows=>rows.map(row=>row.id===editEntry.id?updated:row).sort((a,b)=>(String(b.createdAt||b.updatedAt||`${b.date||""}T00:00:00`)).localeCompare(String(a.createdAt||a.updatedAt||`${a.date||""}T00:00:00`))));
+    closeEditEntry();
+  }
+  async function removeEntryRow(entry){
+    if(!confirm(`Bu üretim kaydını silmek istiyor musunuz? (${entry.jobCode||"-"})`)) return;
+    const ok=await window.DB.deleteDoc("entries",entry.id);
+    if(!ok){
+      alert("Üretim kaydı silinemedi.");
+      return;
+    }
+    setEntries(rows=>rows.filter(row=>row.id!==entry.id));
+    if(editEntry?.id===entry.id) closeEditEntry();
+  }
+
+  return (
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+          <div>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Operasyon</div>
+            <div style={{fontSize:20,fontWeight:800,color:C.text,marginTop:3}}>Üretim Kayıtları</div>
+            <div style={{fontSize:12,color:C.muted2,marginTop:4}}>Operatörlerin vardiya sonu üretim girişlerini ana ekrandan filtreleyip düzenleyebilirsiniz.</div>
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <Badge label={`${filteredEntries.length} Kayıt`} color={filteredEntries.length>0?C.accent:C.muted2}/>
+            <Badge label={`${operatorCount} Operatör`} color={operatorCount>0?C.green:C.muted2}/>
+          </div>
+        </div>
+        <div style={{marginTop:12,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8}}>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Filtreli Kayıt</div><div style={{fontSize:22,fontWeight:900,color:C.text,marginTop:4}}>{filteredEntries.length}</div></div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Toplam Doğru</div><div style={{fontSize:22,fontWeight:900,color:C.green,marginTop:4}}>{totalCorrect}</div></div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Toplam Hatalı</div><div style={{fontSize:22,fontWeight:900,color:C.red,marginTop:4}}>{totalWrong}</div></div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Tezgah Sayısı</div><div style={{fontSize:22,fontWeight:900,color:C.text,marginTop:4}}>{new Set(filteredEntries.map(entry=>entry.machine).filter(Boolean)).size}</div></div>
+        </div>
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10}}>
+          <input style={inputSt} placeholder="İş emri, parça, tezgah, operatör ara..." value={filters.search} onChange={e=>setFilters(prev=>({...prev,search:e.target.value}))}/>
+          <select style={inputSt} value={filters.machine} onChange={e=>setFilters(prev=>({...prev,machine:e.target.value}))}>
+            <option value="all">Tüm Tezgahlar</option>
+            {machineOptions.map(machine=><option key={machine} value={machine}>{machine}</option>)}
+          </select>
+          <select style={inputSt} value={filters.shift} onChange={e=>setFilters(prev=>({...prev,shift:e.target.value}))}>
+            <option value="all">Tüm Vardiyalar</option>
+            {shiftRows.map(shift=><option key={shift.id} value={shift.id}>{shift.label}</option>)}
+          </select>
+          <input style={inputSt} type="date" value={filters.dateFrom} onChange={e=>setFilters(prev=>({...prev,dateFrom:e.target.value||""}))}/>
+          <input style={inputSt} type="date" value={filters.dateTo} onChange={e=>setFilters(prev=>({...prev,dateTo:e.target.value||""}))}/>
+        </div>
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden"}}>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",minWidth:1020,borderCollapse:"collapse",fontSize:12}}>
+            <thead>
+              <tr style={{background:C.surface,color:C.muted2,textAlign:"left"}}>
+                <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Tarih</th>
+                <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Kayıt Zamanı</th>
+                <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Tezgah</th>
+                <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Vardiya</th>
+                <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>İş Emri</th>
+                <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:"right"}}>Doğru</th>
+                <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:"right"}}>Hatalı</th>
+                <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Operatör</th>
+                <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:"right"}}>İşlem</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading&&(
+                <tr><td colSpan={9} style={{padding:"24px 12px",textAlign:"center",color:C.muted2}}>Kayıtlar yükleniyor...</td></tr>
+              )}
+              {!loading&&filteredEntries.map(entry=>(
+                <tr key={entry.id} style={{borderBottom:`1px solid ${C.border}`}}>
+                  <td style={{padding:"10px 12px",color:C.text}}>{entry.date||"-"}</td>
+                  <td style={{padding:"10px 12px",color:C.muted2}}>{formatStamp(entry)}</td>
+                  <td style={{padding:"10px 12px",color:C.text}}>{entry.machine||"-"}</td>
+                  <td style={{padding:"10px 12px",color:C.text}}>{shiftMetaMap[entry.shift]?.label||entry.shiftLabel||entry.shift||"-"}</td>
+                  <td style={{padding:"10px 12px"}}>
+                    <div style={{fontFamily:"monospace",fontWeight:800,color:C.text}}>{entry.jobCode||"-"}</div>
+                    <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{entry.jobName||"-"}</div>
+                  </td>
+                  <td style={{padding:"10px 12px",textAlign:"right",color:C.green,fontWeight:700}}>{safeNum(entry.correct)}</td>
+                  <td style={{padding:"10px 12px",textAlign:"right",color:C.red,fontWeight:700}}>{safeNum(entry.wrong)}</td>
+                  <td style={{padding:"10px 12px",color:C.text}}>{entry.operatorName||entry.operatorId||"-"}</td>
+                  <td style={{padding:"10px 12px",textAlign:"right"}}>
+                    <div style={{display:"inline-flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                      <button onClick={()=>openEditEntry(entry)} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11}}>Düzenle</button>
+                      <button onClick={()=>removeEntryRow(entry)} style={{...btnSt("danger"),padding:"6px 9px",fontSize:11}}>Sil</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {!loading&&filteredEntries.length===0&&(
+                <tr><td colSpan={9} style={{padding:"24px 12px",textAlign:"center",color:C.muted2}}>Filtreye uygun üretim kaydı bulunamadı.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {editEntry&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(8,12,18,.68)",zIndex:58,display:"flex",alignItems:"center",justifyContent:"center",padding:14}} onClick={closeEditEntry}>
+          <div style={{width:"100%",maxWidth:760,background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:16}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}>
+              <div>
+                <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase"}}>Üretim Kayıtları</div>
+                <div style={{fontSize:18,fontWeight:800,color:C.text,marginTop:3}}>Kayıt Düzenle</div>
+              </div>
+              <button onClick={closeEditEntry} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:10}}>
+              <div><span style={labelSt}>Tarih</span><input style={inputSt} type="date" value={form.date} onChange={e=>setForm(prev=>({...prev,date:e.target.value||todayStr()}))}/></div>
+              <div><span style={labelSt}>Tezgah</span><SearchableSelect value={form.machine} onChange={v=>setForm(prev=>({...prev,machine:v}))} options={machineOptions.map(machine=>({value:machine,label:machine}))}/></div>
+              <div><span style={labelSt}>Vardiya</span><select style={inputSt} value={form.shift} onChange={e=>setForm(prev=>({...prev,shift:e.target.value}))}>{shiftRows.map(shift=><option key={shift.id} value={shift.id}>{shift.label}</option>)}</select></div>
+              <div><span style={labelSt}>İş Emri</span><SearchableSelect value={form.orderRef} onChange={v=>setForm(prev=>({...prev,orderRef:v}))} placeholder="İş emri seçin" options={orderOptions.map(opt=>({value:opt.value,label:opt.label}))}/></div>
+              <div><span style={labelSt}>Doğru Adet</span><input style={inputSt} type="number" min="0" value={form.correct} onChange={e=>setForm(prev=>({...prev,correct:e.target.value}))}/></div>
+              <div><span style={labelSt}>Hatalı Adet</span><input style={inputSt} type="number" min="0" value={form.wrong} onChange={e=>setForm(prev=>({...prev,wrong:e.target.value}))}/></div>
+            </div>
+            <div style={{marginTop:12,padding:"10px 12px",borderRadius:10,border:`1px solid ${C.border}`,background:C.surface,fontSize:12,color:C.muted2}}>
+              Operatör: <strong style={{color:C.text}}>{editEntry.operatorName||editEntry.operatorId||currentUser.fullName||currentUser.id}</strong> · Kayıt zamanı: <strong style={{color:C.text}}>{formatStamp(editEntry)}</strong>
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:14,flexWrap:"wrap"}}>
+              <button onClick={closeEditEntry} style={{...btnSt("ghost"),padding:"9px 12px",fontSize:12}}>İptal</button>
+              <button onClick={saveEditEntry} style={{...btnSt("primary"),padding:"9px 12px",fontSize:12}}>Kaydı Güncelle</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
 //  OPERATOR WORKSPACE (TABLET-FIRST SINGLE PAGE)
 // ============================================================
 function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule}) {
@@ -25796,6 +26099,7 @@ function App() {
       {id:"parts",icon:"parts",label:"Ürün/Parça Merkezi",group:"Planlama",enabled:canPlanning},
       {id:"planning",icon:"planning",label:"Planlama",group:"Planlama",enabled:canPlanning},
       {id:"orders",icon:"orders",label:"İş Emirleri",group:"Planlama",enabled:canOrders},
+      {id:"entryrecords",icon:"giris",label:"Üretim Kayıtları",group:"Operasyon",enabled:(canEntry||canOrders||canReport)},
       {id:"assignments",icon:"tasks",label:"Çalışan Görevlendirme",group:"Operasyon",enabled:true},
       {id:"cncmonitor",icon:"monitor",label:"CNC İzleme",group:"Operasyon",enabled:canMonitor},
       {id:"downtime",icon:"downtime",label:"Duruş Yönetimi",group:"Operasyon",enabled:canDowntime},
@@ -26259,6 +26563,7 @@ function App() {
     if(tab==="rapor") return <Report currentUser={currentUser} machines={machines}/>;
     if(tab==="tools") return <ToolStock currentUser={currentUser} machines={machines} filtersVisible={toolsFilterOpen}/>;
     if(tab==="orders") return <WorkOrders currentUser={currentUser} machines={machines} filtersVisible={ordersFilterOpen}/>;
+    if(tab==="entryrecords") return <ProductionEntryRecordsModule currentUser={currentUser} machines={machines}/>;
     if(tab==="users") return <AdminUsers currentUser={currentUser} machines={machines} currentLogo={logoSrc} onLogoUpdate={updateLogo} themeMode={themeMode} onThemeModeChange={updateTheme} menuAccentColor={menuAccentColor} onMenuAccentColorChange={updateMenuAccentColor} menuCatalog={allTabs} menuVisibility={menuVisibility} onMenuVisibilityChange={setMenuVisibility}/>;
     if(tab==="dashboard") return <MRPDashboard currentUser={currentUser} machines={machines} logoSrc={logoSrc} themeMode={themeMode} menuAccentColor={menuAccentColor} onLogout={logout} onQuickAction={handleTopQuickAction} onCreateNewRecord={handleDashboardCreateRecord} roleLabel={currentRoleLabel} layoutMode={layoutMode} globalSearch={{
       query:globalSearchQuery,
