@@ -612,6 +612,266 @@ const ROLE_PERMISSION_DEFAULTS = {
   quality:["manage_quality","view_reports"],
   viewer:["view_reports"],
 };
+const ROLE_MODULE_CATALOG = [
+  {id:"dashboard",label:"Gosterge Paneli",group:"Genel"},
+  {id:"customers",label:"Musteriler",group:"Ticari"},
+  {id:"quotes",label:"Teklif Yonetimi",group:"Ticari"},
+  {id:"sales",label:"Satis Siparisleri",group:"Ticari"},
+  {id:"parts",label:"Urun / Parca Merkezi",group:"Planlama"},
+  {id:"planning",label:"Planlama",group:"Planlama"},
+  {id:"orders",label:"Is Emirleri",group:"Planlama"},
+  {id:"giris",label:"Uretim Girisi",group:"Operasyon"},
+  {id:"assignments",label:"Calisan Gorevlendirme",group:"Operasyon"},
+  {id:"cncmonitor",label:"CNC Izleme",group:"Operasyon"},
+  {id:"downtime",label:"Durus Yonetimi",group:"Operasyon"},
+  {id:"quality",label:"Kalite ve Izlenebilirlik",group:"Kalite"},
+  {id:"materials",label:"Malzeme Kutuphanesi",group:"Stok ve Tedarik"},
+  {id:"tools",label:"Takim Yonetimi",group:"Stok ve Tedarik"},
+  {id:"purchase_requests",label:"Talep ve PO",group:"Stok ve Tedarik"},
+  {id:"purchase_suppliers",label:"Tedarikciler",group:"Stok ve Tedarik"},
+  {id:"rapor",label:"Raporlar",group:"Analiz"},
+  {id:"finance",label:"Finans",group:"Analiz"},
+  {id:"cost",label:"Maliyetleme",group:"Analiz"},
+  {id:"materialquote",label:"Malzeme Teklif",group:"Analiz"},
+  {id:"progenergy",label:"Program ve Enerji",group:"Analiz"},
+  {id:"toolcycle",label:"Takim ve Cevrim",group:"Analiz"},
+  {id:"closedloop",label:"Olcum ve Depo",group:"Analiz"},
+  {id:"machineprep",label:"Makina Hazirlik",group:"Sistem"},
+  {id:"integrations",label:"Entegrasyonlar",group:"Sistem"},
+  {id:"users",label:"Ayarlar ve Guvenlik",group:"Sistem"},
+];
+const ALL_MODULE_IDS = ROLE_MODULE_CATALOG.map(row=>row.id);
+const DEFAULT_ROLE_PROFILES = [
+  {
+    id:"profile_admin",
+    name:"Yonetici",
+    systemRole:"admin",
+    parentId:"",
+    description:"Tum modullere ve ayarlara tam erisim.",
+    permissions:PERMISSIONS.map(p=>p.id),
+    moduleAccess:[...ALL_MODULE_IDS],
+    locked:true,
+    order:0,
+  },
+  {
+    id:"profile_supervisor",
+    name:"Usta Basi",
+    systemRole:"supervisor",
+    parentId:"profile_admin",
+    description:"Vardiya, plan ve saha operasyonu yonetimi.",
+    permissions:[...ROLE_PERMISSION_DEFAULTS.supervisor],
+    moduleAccess:["dashboard","planning","orders","assignments","cncmonitor","downtime","quality","rapor"],
+    locked:true,
+    order:1,
+  },
+  {
+    id:"profile_operator",
+    name:"Operator",
+    systemRole:"operator",
+    parentId:"profile_supervisor",
+    description:"Makina basi operator ekrani ve gorev takibi.",
+    permissions:[...ROLE_PERMISSION_DEFAULTS.operator],
+    moduleAccess:["giris","assignments"],
+    locked:true,
+    order:2,
+  },
+  {
+    id:"profile_finance",
+    name:"Muhasebe",
+    systemRole:"viewer",
+    parentId:"profile_admin",
+    description:"Finans ve rapor ekranlari icin ornek profil.",
+    permissions:["view_reports"],
+    moduleAccess:["dashboard","finance","rapor"],
+    locked:true,
+    order:3,
+  },
+  {
+    id:"profile_sales",
+    name:"Satis",
+    systemRole:"sales",
+    parentId:"profile_admin",
+    description:"Teklif ve satis siparisi sureci.",
+    permissions:[...ROLE_PERMISSION_DEFAULTS.sales],
+    moduleAccess:["dashboard","customers","quotes","sales","rapor","finance"],
+    locked:true,
+    order:4,
+  },
+  {
+    id:"profile_planner",
+    name:"Planlama",
+    systemRole:"planner",
+    parentId:"profile_admin",
+    description:"Planlama, parca ve is emri yonetimi.",
+    permissions:[...ROLE_PERMISSION_DEFAULTS.planner],
+    moduleAccess:["dashboard","parts","planning","orders","assignments","rapor","cost"],
+    locked:true,
+    order:5,
+  },
+  {
+    id:"profile_purchasing",
+    name:"Satin Alma",
+    systemRole:"purchasing",
+    parentId:"profile_admin",
+    description:"Talep, PO ve tedarik surecleri.",
+    permissions:[...ROLE_PERMISSION_DEFAULTS.purchasing],
+    moduleAccess:["dashboard","materials","purchase_requests","purchase_suppliers","tools","rapor","finance"],
+    locked:true,
+    order:6,
+  },
+  {
+    id:"profile_quality",
+    name:"Kalite",
+    systemRole:"quality",
+    parentId:"profile_admin",
+    description:"Kalite kayitlari ve izlenebilirlik.",
+    permissions:[...ROLE_PERMISSION_DEFAULTS.quality],
+    moduleAccess:["dashboard","quality","rapor"],
+    locked:true,
+    order:7,
+  },
+  {
+    id:"profile_viewer",
+    name:"Izleyici",
+    systemRole:"viewer",
+    parentId:"profile_admin",
+    description:"Sadece izleme ve rapor erisimi.",
+    permissions:[...ROLE_PERMISSION_DEFAULTS.viewer],
+    moduleAccess:["dashboard","rapor"],
+    locked:true,
+    order:8,
+  },
+];
+function normalizePermissionIds(list){
+  const validSet=new Set(PERMISSIONS.map(p=>p.id));
+  const rows=Array.isArray(list)?list:[];
+  const seen=new Set();
+  return rows
+    .map(id=>String(id||"").trim())
+    .filter(id=>id&&validSet.has(id)&&!seen.has(id)&&(seen.add(id),true));
+}
+function normalizeModuleAccessIds(list){
+  const validSet=new Set(ALL_MODULE_IDS);
+  const rows=Array.isArray(list)?list:[];
+  const seen=new Set();
+  return rows
+    .map(id=>String(id||"").trim())
+    .filter(id=>id&&validSet.has(id)&&!seen.has(id)&&(seen.add(id),true));
+}
+function normalizeRoleProfileRow(raw={},fallbackOrder=0){
+  const profileId=String(raw.id||"").trim()||`profile_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+  const systemRole=isKnownUserRole(raw.systemRole)?String(raw.systemRole).trim():"viewer";
+  return {
+    id:profileId,
+    name:String(raw.name||"").trim()||profileId,
+    systemRole,
+    parentId:String(raw.parentId||"").trim(),
+    description:String(raw.description||"").trim(),
+    permissions:normalizePermissionIds(raw.permissions||[]),
+    moduleAccess:normalizeModuleAccessIds(raw.moduleAccess||[]),
+    locked:Boolean(raw.locked),
+    order:Number.isFinite(Number(raw.order))?Number(raw.order):fallbackOrder,
+  };
+}
+function normalizeRoleProfilesConfig(src){
+  const input=Array.isArray(src?.rows)?src.rows:(Array.isArray(src)?src:[]);
+  const baseMap=new Map(DEFAULT_ROLE_PROFILES.map((row,idx)=>[row.id,normalizeRoleProfileRow(row,idx)]));
+  const extraRows=[];
+  input.forEach((row,idx)=>{
+    const rawId=String(row?.id||"").trim();
+    if(rawId&&baseMap.has(rawId)){
+      const merged=normalizeRoleProfileRow({...baseMap.get(rawId),...row,locked:true},idx);
+      baseMap.set(rawId,merged);
+      return;
+    }
+    extraRows.push(normalizeRoleProfileRow(row,DEFAULT_ROLE_PROFILES.length+idx));
+  });
+  const rows=[...Array.from(baseMap.values()),...extraRows];
+  rows.sort((a,b)=>{
+    const orderDiff=safeNum(a.order)-safeNum(b.order);
+    if(orderDiff!==0) return orderDiff;
+    return String(a.name||"").localeCompare(String(b.name||""),"tr");
+  });
+  return rows.map((row,idx)=>({...row,order:idx}));
+}
+function createRoleProfileFormState(profile){
+  const row=normalizeRoleProfileRow(profile||{},safeNum(profile?.order));
+  return {
+    id:String(row.id||"").trim(),
+    name:String(row.name||"").trim(),
+    systemRole:isKnownUserRole(row.systemRole)?row.systemRole:"viewer",
+    parentId:String(row.parentId||"").trim(),
+    description:String(row.description||"").trim(),
+    permissions:normalizePermissionIds(row.permissions||[]),
+    moduleAccess:normalizeModuleAccessIds(row.moduleAccess||[]),
+    locked:Boolean(row.locked),
+  };
+}
+function getDefaultRoleProfileIdForSystemRole(roleId){
+  const key=String(roleId||"").trim();
+  const row=DEFAULT_ROLE_PROFILES.find(item=>item.systemRole===key);
+  return row?.id||"";
+}
+let ROLE_PROFILE_CACHE=normalizeRoleProfilesConfig([]);
+function getRoleProfileCache(){
+  return ROLE_PROFILE_CACHE;
+}
+function setRoleProfileCache(rows){
+  ROLE_PROFILE_CACHE=normalizeRoleProfilesConfig(rows);
+}
+function findRoleProfileById(profileId,profiles=getRoleProfileCache()){
+  const key=String(profileId||"").trim();
+  if(!key) return null;
+  return (Array.isArray(profiles)?profiles:[]).find(row=>row.id===key)||null;
+}
+function getAssignedRoleProfileId(user,profiles=getRoleProfileCache()){
+  const explicit=String(user?.roleProfileId||"").trim();
+  if(explicit&&findRoleProfileById(explicit,profiles)) return explicit;
+  const fallback=getDefaultRoleProfileIdForSystemRole(user?.role);
+  return fallback&&findRoleProfileById(fallback,profiles)?fallback:"";
+}
+function resolveUserSystemRole(user,profiles=getRoleProfileCache()){
+  const profile=findRoleProfileById(getAssignedRoleProfileId(user,profiles),profiles);
+  if(profile&&isKnownUserRole(profile.systemRole)) return profile.systemRole;
+  const raw=String(user?.role||"").trim();
+  return isKnownUserRole(raw)?raw:"";
+}
+function resolveUserRoleLabel(user,profiles=getRoleProfileCache()){
+  const profile=findRoleProfileById(getAssignedRoleProfileId(user,profiles),profiles);
+  if(profile?.name) return profile.name;
+  const roleId=resolveUserSystemRole(user,profiles);
+  if(!roleId) return "Yetki Atanacak";
+  return (USER_ROLES.find(r=>r.id===roleId)||{label:roleId}).label;
+}
+function resolveUserPermissions(user,profiles=getRoleProfileCache()){
+  const systemRole=resolveUserSystemRole(user,profiles);
+  if(systemRole==="admin") return PERMISSIONS.map(p=>p.id);
+  const direct=normalizePermissionIds(user?.permissions||[]);
+  const profile=findRoleProfileById(getAssignedRoleProfileId(user,profiles),profiles);
+  const base=profile
+    ? normalizePermissionIds(profile.permissions||[])
+    : normalizePermissionIds(ROLE_PERMISSION_DEFAULTS[systemRole]||[]);
+  return Array.from(new Set([...base,...direct]));
+}
+function resolveUserModuleAccess(user,profiles=getRoleProfileCache()){
+  const systemRole=resolveUserSystemRole(user,profiles);
+  if(systemRole==="admin") return [...ALL_MODULE_IDS];
+  const own=normalizeModuleAccessIds(user?.moduleAccess||[]);
+  if(own.length>0) return own;
+  const profile=findRoleProfileById(getAssignedRoleProfileId(user,profiles),profiles);
+  if(profile) return normalizeModuleAccessIds(profile.moduleAccess||[]);
+  return [];
+}
+function hasModuleAccess(user,tabId,profiles=getRoleProfileCache()){
+  const systemRole=resolveUserSystemRole(user,profiles);
+  if(systemRole==="admin") return true;
+  const own=normalizeModuleAccessIds(user?.moduleAccess||[]);
+  const key=String(tabId||"").trim();
+  if(own.length>0) return own.includes(key);
+  const profile=findRoleProfileById(getAssignedRoleProfileId(user,profiles),profiles);
+  if(profile) return normalizeModuleAccessIds(profile.moduleAccess||[]).includes(key);
+  return true;
+}
 
 const THEME_PRESETS = {
   light:{
@@ -2111,9 +2371,9 @@ function fmtSec(s) {
 }
 const moneyFmt = n => `${safeNum(n).toFixed(2)} TRY`;
 function hasPermission(user,perm) {
-  if(user.role==="admin") return true;
-  const rolePerms=ROLE_PERMISSION_DEFAULTS[user.role]||[];
-  return (user.permissions||[]).includes(perm)||rolePerms.includes(perm);
+  const systemRole=resolveUserSystemRole(user);
+  if(systemRole==="admin") return true;
+  return resolveUserPermissions(user).includes(perm);
 }
 function isOpenOrderStatus(status) {
   return !["completed","cancelled","passive","liquidation","shipped"].includes(status||"");
@@ -3386,9 +3646,10 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
     if(u.password!==hashPass(form.password)){setErr("Şifre hatalı.");setLoading(false);return;}
     if(u.status==="pending"){setErr("Hesabınız onay bekliyor.");setLoading(false);return;}
     if(u.status==="rejected"){setErr("Hesabınız reddedildi.");setLoading(false);return;}
-    if(!isKnownUserRole(u.role)){setErr("Hesabiniz icin henuz yetki tipi atanamamis.");setLoading(false);return;}
+    const systemRole=resolveUserSystemRole(u);
+    if(!isKnownUserRole(systemRole)){setErr("Hesabiniz icin henuz yetki tipi atanamamis.");setLoading(false);return;}
     window.Session.set({username:u.id},{remember:rememberMe});
-    onLogin(u);
+    onLogin({...u,role:systemRole||u.role});
     setLoading(false);
   }
 
@@ -3406,9 +3667,11 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
     const allUsers=await window.DB.getAll("users");
     const isFirst=allUsers.length===0;
     const role=isFirst?"admin":"";
+    const roleProfileId=isFirst?getDefaultRoleProfileIdForSystemRole(role):"";
     const saved=await window.DB.setDoc("users",key,{
       username:key, fullName:form.fullName, password:hashPass(form.password),
       role, status:isFirst?"active":"pending",
+      roleProfileId,
       permissions:isFirst?[...(ROLE_PERMISSION_DEFAULTS[role]||[])]:[],
       createdAt:new Date().toISOString(),
       updatedAt:new Date().toISOString(),
