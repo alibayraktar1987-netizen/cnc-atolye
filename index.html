@@ -16683,6 +16683,11 @@ function ProductionEntryRecordsModule({currentUser,machines=DEFAULT_MACHINES}) {
     correct:"0",
     wrong:"0",
   });
+  const recordsPanelRef=useRef(null);
+  const {
+    height:productionListPanelHeight,
+    isNarrow:productionListPanelsStacked,
+  }=useViewportPanelMetrics(recordsPanelRef,{minHeight:340,bottomGap:14,narrowWidth:1180});
 
   useEffect(()=>{
     let disposed=false;
@@ -16769,6 +16774,105 @@ function ProductionEntryRecordsModule({currentUser,machines=DEFAULT_MACHINES}) {
   const totalCorrect=filteredEntries.reduce((sum,entry)=>sum+safeNum(entry.correct),0);
   const totalWrong=filteredEntries.reduce((sum,entry)=>sum+safeNum(entry.wrong),0);
   const operatorCount=new Set(filteredEntries.map(entry=>String(entry.operatorId||entry.operatorName||"").trim()).filter(Boolean)).size;
+  const {machineFilterOptions,shiftFilterOptions}=useMemo(()=>{
+    const machineCounts={all:productionEntries.length};
+    const shiftCounts={all:productionEntries.length};
+    productionEntries.forEach(entry=>{
+      const machineKey=String(entry.machine||"").trim();
+      const shiftKey=String(entry.shift||"").trim();
+      if(machineKey) machineCounts[machineKey]=(machineCounts[machineKey]||0)+1;
+      if(shiftKey) shiftCounts[shiftKey]=(shiftCounts[shiftKey]||0)+1;
+    });
+    return {
+      machineFilterOptions:[
+        {id:"all",label:"Tüm Tezgahlar",count:machineCounts.all||0},
+        ...machineOptions.map(machine=>({
+          id:machine,
+          label:machine,
+          count:machineCounts[machine]||0,
+        })),
+      ],
+      shiftFilterOptions:[
+        {id:"all",label:"Tüm Vardiyalar",count:shiftCounts.all||0},
+        ...shiftRows.map(shift=>({
+          id:shift.id,
+          label:shift.label||shift.id,
+          count:shiftCounts[shift.id]||0,
+        })),
+      ],
+    };
+  },[machineOptions,productionEntries,shiftRows]);
+  const productionSplitWrapStyle={
+    display:"flex",
+    gap:10,
+    alignItems:productionListPanelsStacked?"flex-start":"stretch",
+    flexWrap:"wrap",
+    ...(productionListPanelsStacked
+      ? {}
+      : {
+        height:productionListPanelHeight,
+        maxHeight:productionListPanelHeight,
+        flex:1,
+        minHeight:0,
+        overflow:"hidden",
+      }),
+  };
+  const productionFilterPanelStyle={
+    flex:"0 0 250px",
+    width:"100%",
+    maxWidth:280,
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    padding:12,
+    display:"flex",
+    flexDirection:"column",
+    gap:10,
+    ...(productionListPanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+        overflowY:"auto",
+        overscrollBehavior:"contain",
+        scrollbarGutter:"stable",
+      }),
+  };
+  const productionListColumnStyle={
+    flex:"1 1 760px",
+    minWidth:0,
+    display:"flex",
+    flexDirection:"column",
+    gap:8,
+    ...(productionListPanelsStacked
+      ? {}
+      : {
+        minHeight:0,
+        height:"100%",
+      }),
+  };
+  const productionTableCardStyle={
+    background:C.card,
+    border:`1px solid ${C.border}`,
+    borderRadius:12,
+    overflow:"hidden",
+    display:"flex",
+    flexDirection:"column",
+    ...(productionListPanelsStacked?{}:{flex:1,minHeight:0}),
+  };
+  const productionTableScrollStyle=productionListPanelsStacked
+    ? {overflow:"auto",maxHeight:Math.max(320,productionListPanelHeight)}
+    : {overflow:"auto",flex:1,minHeight:0,overscrollBehavior:"contain"};
+
+  function clearProductionFilters(){
+    setFilters({
+      search:"",
+      machine:"all",
+      shift:"all",
+      dateFrom:"",
+      dateTo:"",
+    });
+  }
 
   function formatStamp(entry){
     const raw=entry?.createdAt||entry?.updatedAt||`${entry?.date||""}T00:00:00`;
@@ -16843,7 +16947,7 @@ function ProductionEntryRecordsModule({currentUser,machines=DEFAULT_MACHINES}) {
   }
 
   return (
-    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
           <div>
@@ -16864,68 +16968,89 @@ function ProductionEntryRecordsModule({currentUser,machines=DEFAULT_MACHINES}) {
         </div>
       </div>
 
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10}}>
-          <input style={inputSt} placeholder="İş emri, parça, tezgah, operatör ara..." value={filters.search} onChange={e=>setFilters(prev=>({...prev,search:e.target.value}))}/>
-          <select style={inputSt} value={filters.machine} onChange={e=>setFilters(prev=>({...prev,machine:e.target.value}))}>
-            <option value="all">Tüm Tezgahlar</option>
-            {machineOptions.map(machine=><option key={machine} value={machine}>{machine}</option>)}
-          </select>
-          <select style={inputSt} value={filters.shift} onChange={e=>setFilters(prev=>({...prev,shift:e.target.value}))}>
-            <option value="all">Tüm Vardiyalar</option>
-            {shiftRows.map(shift=><option key={shift.id} value={shift.id}>{shift.label}</option>)}
-          </select>
-          <input style={inputSt} type="date" value={filters.dateFrom} onChange={e=>setFilters(prev=>({...prev,dateFrom:e.target.value||""}))}/>
-          <input style={inputSt} type="date" value={filters.dateTo} onChange={e=>setFilters(prev=>({...prev,dateTo:e.target.value||""}))}/>
+      <div ref={recordsPanelRef} style={productionSplitWrapStyle}>
+        <div style={productionFilterPanelStyle}>
+          <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Üretim Kayıtları</div>
+          <input style={{...inputSt,padding:"8px 10px",fontSize:12}} placeholder="İş emri, parça, tezgah, operatör ara..." value={filters.search} onChange={e=>setFilters(prev=>({...prev,search:e.target.value}))}/>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Tezgah</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {machineFilterOptions.map(opt=>(
+              <button key={opt.id} onClick={()=>setFilters(prev=>({...prev,machine:opt.id}))} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:filters.machine===opt.id?C.accent:C.border,color:filters.machine===opt.id?C.accent:C.text}}>
+                <span>{opt.label}</span>
+                <span style={{fontSize:11,color:C.muted2}}>{opt.count}</span>
+              </button>
+            ))}
+          </div>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Vardiya</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {shiftFilterOptions.map(opt=>(
+              <button key={opt.id} onClick={()=>setFilters(prev=>({...prev,shift:opt.id}))} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:12,justifyContent:"space-between",display:"flex",alignItems:"center",borderColor:filters.shift===opt.id?C.accent:C.border,color:filters.shift===opt.id?C.accent:C.text}}>
+                <span>{opt.label}</span>
+                <span style={{fontSize:11,color:C.muted2}}>{opt.count}</span>
+              </button>
+            ))}
+          </div>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Tarih Aralığı</div>
+          <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={filters.dateFrom} onChange={e=>setFilters(prev=>({...prev,dateFrom:e.target.value||""}))}/>
+          <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={filters.dateTo} onChange={e=>setFilters(prev=>({...prev,dateTo:e.target.value||""}))}/>
+          <button onClick={clearProductionFilters} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
         </div>
-      </div>
 
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden"}}>
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",minWidth:1020,borderCollapse:"collapse",fontSize:12}}>
-            <thead>
-              <tr style={{background:C.surface,color:C.muted2,textAlign:"left"}}>
-                <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Tarih</th>
-                <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Kayıt Zamanı</th>
-                <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Tezgah</th>
-                <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Vardiya</th>
-                <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>İş Emri</th>
-                <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:"right"}}>Doğru</th>
-                <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:"right"}}>Hatalı</th>
-                <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>Operatör</th>
-                <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:"right"}}>İşlem</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading&&(
-                <tr><td colSpan={9} style={{padding:"24px 12px",textAlign:"center",color:C.muted2}}>Kayıtlar yükleniyor...</td></tr>
-              )}
-              {!loading&&filteredEntries.map(entry=>(
-                <tr key={entry.id} style={{borderBottom:`1px solid ${C.border}`}}>
-                  <td style={{padding:"10px 12px",color:C.text}}>{entry.date||"-"}</td>
-                  <td style={{padding:"10px 12px",color:C.muted2}}>{formatStamp(entry)}</td>
-                  <td style={{padding:"10px 12px",color:C.text}}>{entry.machine||"-"}</td>
-                  <td style={{padding:"10px 12px",color:C.text}}>{shiftMetaMap[entry.shift]?.label||entry.shiftLabel||entry.shift||"-"}</td>
-                  <td style={{padding:"10px 12px"}}>
-                    <div style={{fontFamily:"monospace",fontWeight:800,color:C.text}}>{entry.jobCode||"-"}</div>
-                    <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{entry.jobName||"-"}</div>
-                  </td>
-                  <td style={{padding:"10px 12px",textAlign:"right",color:C.green,fontWeight:700}}>{safeNum(entry.correct)}</td>
-                  <td style={{padding:"10px 12px",textAlign:"right",color:C.red,fontWeight:700}}>{safeNum(entry.wrong)}</td>
-                  <td style={{padding:"10px 12px",color:C.text}}>{entry.operatorName||entry.operatorId||"-"}</td>
-                  <td style={{padding:"10px 12px",textAlign:"right"}}>
-                    <div style={{display:"inline-flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                      <button onClick={()=>openEditEntry(entry)} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11}}>Düzenle</button>
-                      <button onClick={()=>removeEntryRow(entry)} style={{...btnSt("danger"),padding:"6px 9px",fontSize:11}}>Sil</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {!loading&&filteredEntries.length===0&&(
-                <tr><td colSpan={9} style={{padding:"24px 12px",textAlign:"center",color:C.muted2}}>Filtreye uygun üretim kaydı bulunamadı.</td></tr>
-              )}
-            </tbody>
-          </table>
+        <div style={productionListColumnStyle}>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <div style={{fontSize:12,color:C.muted2}}>Gösterilen Kayıt: {filteredEntries.length} / {productionEntries.length}</div>
+            <div style={{fontSize:12,color:C.muted2}}>
+              Aktif Filtreler: {[filters.search&&"Arama",filters.machine!=="all"&&"Tezgah",filters.shift!=="all"&&"Vardiya",(filters.dateFrom||filters.dateTo)&&"Tarih"].filter(Boolean).join(" · ")||"Yok"}
+            </div>
+          </div>
+          <div style={productionTableCardStyle}>
+            <div style={productionTableScrollStyle}>
+              <table style={{width:"100%",minWidth:1020,borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{background:C.surface,color:C.muted2,textAlign:"left"}}>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,position:"sticky",top:0,zIndex:2,background:C.surface}}>Tarih</th>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,position:"sticky",top:0,zIndex:2,background:C.surface}}>Kayıt Zamanı</th>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,position:"sticky",top:0,zIndex:2,background:C.surface}}>Tezgah</th>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,position:"sticky",top:0,zIndex:2,background:C.surface}}>Vardiya</th>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,position:"sticky",top:0,zIndex:2,background:C.surface}}>İş Emri</th>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:"right",position:"sticky",top:0,zIndex:2,background:C.surface}}>Doğru</th>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:"right",position:"sticky",top:0,zIndex:2,background:C.surface}}>Hatalı</th>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,position:"sticky",top:0,zIndex:2,background:C.surface}}>Operatör</th>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,textAlign:"right",position:"sticky",top:0,zIndex:2,background:C.surface}}>İşlem</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading&&(
+                    <tr><td colSpan={9} style={{padding:"24px 12px",textAlign:"center",color:C.muted2}}>Kayıtlar yükleniyor...</td></tr>
+                  )}
+                  {!loading&&filteredEntries.map(entry=>(
+                    <tr key={entry.id} style={{borderBottom:`1px solid ${C.border}`}}>
+                      <td style={{padding:"10px 12px",color:C.text}}>{entry.date||"-"}</td>
+                      <td style={{padding:"10px 12px",color:C.muted2}}>{formatStamp(entry)}</td>
+                      <td style={{padding:"10px 12px",color:C.text}}>{entry.machine||"-"}</td>
+                      <td style={{padding:"10px 12px",color:C.text}}>{shiftMetaMap[entry.shift]?.label||entry.shiftLabel||entry.shift||"-"}</td>
+                      <td style={{padding:"10px 12px"}}>
+                        <div style={{fontFamily:"monospace",fontWeight:800,color:C.text}}>{entry.jobCode||"-"}</div>
+                        <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{entry.jobName||"-"}</div>
+                      </td>
+                      <td style={{padding:"10px 12px",textAlign:"right",color:C.green,fontWeight:700}}>{safeNum(entry.correct)}</td>
+                      <td style={{padding:"10px 12px",textAlign:"right",color:C.red,fontWeight:700}}>{safeNum(entry.wrong)}</td>
+                      <td style={{padding:"10px 12px",color:C.text}}>{entry.operatorName||entry.operatorId||"-"}</td>
+                      <td style={{padding:"10px 12px",textAlign:"right"}}>
+                        <div style={{display:"inline-flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                          <button onClick={()=>openEditEntry(entry)} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11}}>Düzenle</button>
+                          <button onClick={()=>removeEntryRow(entry)} style={{...btnSt("danger"),padding:"6px 9px",fontSize:11}}>Sil</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {!loading&&filteredEntries.length===0&&(
+                    <tr><td colSpan={9} style={{padding:"24px 12px",textAlign:"center",color:C.muted2}}>Filtreye uygun üretim kaydı bulunamadı.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
 
