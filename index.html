@@ -605,7 +605,7 @@ const PERMISSIONS = [
   { id:"manage_sales", label:"Satis ve Teklif", icon:"ST", desc:"Teklif ve siparis yonetebilir" },
   { id:"manage_purchasing", label:"Satin Alma", icon:"SA", desc:"Talep ve PO yonetebilir" },
   { id:"manage_quality", label:"Kalite", icon:"KL", desc:"Muayene ve FAI kayitlari girebilir" },
-  { id:"manage_downtime", label:"Durus Yonetimi", icon:"DR", desc:"Durus nedeni ve kaydi girebilir" },
+  { id:"manage_downtime", label:"Duruş Yönetimi", icon:"DR", desc:"Duruş nedeni ve kaydı girebilir" },
   { id:"manage_notifications", label:"Bildirim Kurallari", icon:"BD", desc:"Uyari kurallari duzenleyebilir" },
 ];
 const ROLE_PERMISSION_DEFAULTS = {
@@ -619,32 +619,32 @@ const ROLE_PERMISSION_DEFAULTS = {
   viewer:["view_reports"],
 };
 const ROLE_MODULE_CATALOG = [
-  {id:"dashboard",label:"Gosterge Paneli",group:"Genel"},
-  {id:"customers",label:"Musteriler",group:"Ticari"},
-  {id:"quotes",label:"Teklif Yonetimi",group:"Ticari"},
-  {id:"sales",label:"Satis Siparisleri",group:"Ticari"},
-  {id:"parts",label:"Urun / Parca Merkezi",group:"Planlama"},
+  {id:"dashboard",label:"Gösterge Paneli",group:"Genel"},
+  {id:"customers",label:"Müşteriler",group:"Ticari"},
+  {id:"quotes",label:"Teklif Yönetimi",group:"Ticari"},
+  {id:"sales",label:"Satış Siparişleri",group:"Ticari"},
+  {id:"parts",label:"Ürün / Parça Merkezi",group:"Planlama"},
   {id:"planning",label:"Planlama",group:"Planlama"},
-  {id:"orders",label:"Is Emirleri",group:"Planlama"},
-  {id:"giris",label:"Uretim Girisi",group:"Operasyon"},
-  {id:"assignments",label:"Calisan Gorevlendirme",group:"Operasyon"},
-  {id:"cncmonitor",label:"CNC Izleme",group:"Operasyon"},
-  {id:"downtime",label:"Durus Yonetimi",group:"Operasyon"},
-  {id:"quality",label:"Kalite ve Izlenebilirlik",group:"Kalite"},
-  {id:"materials",label:"Malzeme Kutuphanesi",group:"Stok ve Tedarik"},
-  {id:"tools",label:"Takim Yonetimi",group:"Stok ve Tedarik"},
+  {id:"orders",label:"İş Emirleri",group:"Planlama"},
+  {id:"giris",label:"Üretim Girişi",group:"Operasyon"},
+  {id:"assignments",label:"Çalışan Görevlendirme",group:"Operasyon"},
+  {id:"cncmonitor",label:"CNC İzleme",group:"Operasyon"},
+  {id:"downtime",label:"Duruş Yönetimi",group:"Operasyon"},
+  {id:"quality",label:"Kalite ve İzlenebilirlik",group:"Kalite"},
+  {id:"materials",label:"Malzeme Kütüphanesi",group:"Stok ve Tedarik"},
+  {id:"tools",label:"Takım Yönetimi",group:"Stok ve Tedarik"},
   {id:"purchase_requests",label:"Talep ve PO",group:"Stok ve Tedarik"},
-  {id:"purchase_suppliers",label:"Tedarikciler",group:"Stok ve Tedarik"},
+  {id:"purchase_suppliers",label:"Tedarikçiler",group:"Stok ve Tedarik"},
   {id:"rapor",label:"Raporlar",group:"Analiz"},
   {id:"finance",label:"Finans",group:"Analiz"},
   {id:"cost",label:"Maliyetleme",group:"Analiz"},
   {id:"materialquote",label:"Malzeme Teklif",group:"Analiz"},
   {id:"progenergy",label:"Program ve Enerji",group:"Analiz"},
-  {id:"toolcycle",label:"Takim ve Cevrim",group:"Analiz"},
-  {id:"closedloop",label:"Olcum ve Depo",group:"Analiz"},
-  {id:"machineprep",label:"Makina Hazirlik",group:"Sistem"},
+  {id:"toolcycle",label:"Takım ve Çevrim",group:"Analiz"},
+  {id:"closedloop",label:"Ölçüm ve Depo",group:"Analiz"},
+  {id:"machineprep",label:"Makine Hazırlık",group:"Sistem"},
   {id:"integrations",label:"Entegrasyonlar",group:"Sistem"},
-  {id:"users",label:"Ayarlar ve Guvenlik",group:"Sistem"},
+  {id:"users",label:"Ayarlar ve Güvenlik",group:"Sistem"},
 ];
 const ALL_MODULE_IDS = ROLE_MODULE_CATALOG.map(row=>row.id);
 const DEFAULT_ROLE_PROFILES = [
@@ -970,23 +970,23 @@ function applyThemeMode(mode,baseColor=DEFAULT_BRANDING_SETTINGS.menuAccentColor
 const GLOBAL_TOP_SEARCH_SOURCES = [
   {collection:"orders",tabId:"orders",moduleLabel:"Is Emirleri",primary:["code","orderNo","name"],secondary:["customerName","status","dueDate","priority","machines"],search:["code","orderNo","name","customerName","status","priority","note","machines","id"]},
   {collection:"salesQuotes",tabId:"quotes",moduleLabel:"Teklif Yonetimi",primary:["quoteNo","code","name"],secondary:["customerName","status","validUntil","dueDate"],search:["quoteNo","code","name","customerName","status","note","partName","id"]},
-  {collection:"salesOrders",tabId:"sales",moduleLabel:"Satis Siparisleri",primary:["orderNo","code","name"],secondary:["customerName","status","dueDate"],search:["orderNo","code","name","customerName","status","note","id"]},
+  {collection:"salesOrders",tabId:"sales",moduleLabel:"Satış Siparişleri",primary:["orderNo","code","name"],secondary:["customerName","status","dueDate"],search:["orderNo","code","name","customerName","status","note","id"]},
   {collection:"parts",tabId:"parts",moduleLabel:"Ürün/Parça Merkezi",primary:["partNo","code","name"],secondary:["customerName","revision","materialName"],search:["partNo","code","name","customerName","revision","materialName","description","id"]},
   {collection:"materials",tabId:"materials",moduleLabel:"Malzeme Kutuphanesi",primary:["code","name","materialCode"],secondary:["category","grade","supplierName"],search:["code","name","materialCode","category","grade","supplierName","note","id"]},
-  {collection:"customers",tabId:"customers",moduleLabel:"Musteriler",primary:["name","code","customerCode"],secondary:["city","contactName","phone"],search:["name","code","customerCode","contactName","email","phone","city","country","id"]},
-  {collection:"toolStock",tabId:"tools",moduleLabel:"Takim Yonetimi",primary:["code","toolCode","name"],secondary:["type","brand","supplierCode","supplierName"],search:["code","toolCode","name","type","brand","supplierCode","supplierName","coating","id"]},
+  {collection:"customers",tabId:"customers",moduleLabel:"Müşteriler",primary:["name","code","customerCode"],secondary:["city","contactName","phone"],search:["name","code","customerCode","contactName","email","phone","city","country","id"]},
+  {collection:"toolStock",tabId:"tools",moduleLabel:"Takım Yönetimi",primary:["code","toolCode","name"],secondary:["type","brand","supplierCode","supplierName"],search:["code","toolCode","name","type","brand","supplierCode","supplierName","coating","id"]},
   {collection:"purchaseRequests",tabId:"purchase_requests",moduleLabel:"Talep ve PO",primary:["requestNo","code","materialName"],secondary:["status","supplierName","needDate"],search:["requestNo","code","materialName","status","supplierName","needDate","note","id"]},
   {collection:"suppliers",tabId:"purchase_suppliers",moduleLabel:"Tedarikciler",primary:["name","code","supplierCode"],secondary:["group","contactName","city"],search:["name","code","supplierCode","contactName","email","phone","city","country","id"]},
   {collection:"employeeTasks",tabId:"assignments",moduleLabel:"Calisan Gorevlendirme",primary:["title","taskNo","code"],secondary:["assigneeName","status","dueDate"],search:["title","taskNo","code","assigneeName","status","dueDate","machine","note","id"]},
-  {collection:"downtimeEvents",tabId:"downtime",moduleLabel:"Durus Yonetimi",primary:["machine","reason","code"],secondary:["category","status","date"],search:["machine","reason","code","category","status","operatorName","date","id"]},
+  {collection:"downtimeEvents",tabId:"downtime",moduleLabel:"Duruş Yönetimi",primary:["machine","reason","code"],secondary:["category","status","date"],search:["machine","reason","code","category","status","operatorName","date","id"]},
   {collection:"qualityInspections",tabId:"quality",moduleLabel:"Kalite ve Izlenebilirlik",primary:["inspectionNo","orderCode","partNo"],secondary:["status","machine","date"],search:["inspectionNo","orderCode","partNo","status","machine","inspectorName","date","id"]},
-  {collection:"entries",tabId:"giris",moduleLabel:"Uretim Girisi",primary:["orderCode","machine","operatorName"],secondary:["date","shift","status"],search:["orderCode","machine","operatorName","date","shift","status","note","id"]},
+  {collection:"entries",tabId:"giris",moduleLabel:"Üretim Girişi",primary:["orderCode","machine","operatorName"],secondary:["date","shift","status"],search:["orderCode","machine","operatorName","date","shift","status","note","id"]},
   {collection:"plans",tabId:"planning",moduleLabel:"Planlama",primary:["orderCode","machine","startDate"],secondary:["endDate","orderName","orderCustomerName"],search:["orderCode","machine","startDate","endDate","orderName","orderCustomerName","note","id"]},
   {collection:"mpsPlans",tabId:"planning",moduleLabel:"Planlama",primary:["planNo","code","name"],secondary:["status","dueDate","machine"],search:["planNo","code","name","status","dueDate","machine","id"]},
   {collection:"purchaseOrders",tabId:"purchase_requests",moduleLabel:"Talep ve PO",primary:["poNo","code","supplierName"],secondary:["status","orderDate","dueDate"],search:["poNo","code","supplierName","status","orderDate","dueDate","materialName","id"]},
   {collection:"goodsReceipts",tabId:"purchase_requests",moduleLabel:"Talep ve PO",primary:["receiptNo","code","supplierName"],secondary:["date","status","materialName"],search:["receiptNo","code","supplierName","date","status","materialName","id"]},
   {collection:"customerPrices",tabId:"quotes",moduleLabel:"Teklif Yonetimi",primary:["partNo","partName","customerName"],secondary:["currency","unitPrice","updatedAt"],search:["partNo","partName","customerName","currency","unitPrice","id"]},
-  {collection:"toolMovements",tabId:"tools",moduleLabel:"Takim Yonetimi",primary:["toolCode","code","moveType"],secondary:["qty","date","location"],search:["toolCode","code","moveType","qty","date","location","id"]},
+  {collection:"toolMovements",tabId:"tools",moduleLabel:"Takım Yönetimi",primary:["toolCode","code","moveType"],secondary:["qty","date","location"],search:["toolCode","code","moveType","qty","date","location","id"]},
   {collection:"partTraceability",tabId:"quality",moduleLabel:"Kalite ve Izlenebilirlik",primary:["traceNo","orderCode","partNo"],secondary:["status","date","machine"],search:["traceNo","orderCode","partNo","status","date","machine","id"]},
   {collection:"faiRecords",tabId:"quality",moduleLabel:"Kalite ve Izlenebilirlik",primary:["recordNo","orderCode","partNo"],secondary:["status","createdAt","customerName"],search:["recordNo","orderCode","partNo","status","createdAt","customerName","id"]},
   {collection:"faiBalloonRuns",tabId:"quality",moduleLabel:"Kalite ve Izlenebilirlik",primary:["runNo","orderCode","partNo"],secondary:["status","createdAt"],search:["runNo","orderCode","partNo","status","createdAt","id"]},
@@ -1180,7 +1180,7 @@ const TASK_ASSIGNMENT_LIST_COLUMNS = [
   {id:"status",label:"Durum",width:140},
   {id:"priority",label:"Oncelik",width:120},
   {id:"recurrence",label:"Tekrar",width:136},
-  {id:"updated",label:"Guncelleme",width:138},
+  {id:"updated",label:"Güncelleme",width:138},
   {id:"actions",label:"Islem",width:340,align:"right",required:true},
 ];
 const PURCHASE_REQUEST_LIST_COLUMNS = [
@@ -3740,9 +3740,9 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
 
             <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8}}>
               {[
-                ["Aktif Kullanici",overviewStats.activeUsers,C.accent],
-                ["Aktif Is Emri",overviewStats.activeOrders,C.green],
-                ["Bugun Giris",overviewStats.todayEntries,C.warn],
+                ["Aktif Kullanıcı",overviewStats.activeUsers,C.accent],
+                ["Aktif İş Emri",overviewStats.activeOrders,C.green],
+                ["Bugün Giriş",overviewStats.todayEntries,C.warn],
                 ["Onay Bekleyen",overviewStats.pendingUsers,C.muted2],
               ].map(([title,value,color])=>(
                 <div key={title} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:11,padding:"10px 11px"}}>
@@ -3754,17 +3754,17 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
 
             <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:11,padding:"10px 11px"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-                <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Gunluk Kalite Ozeti</div>
+                <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Günlük Kalite Özeti</div>
                 <button onClick={loadOverviewStats} disabled={overviewStats.loading} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11,opacity:overviewStats.loading?0.7:1}}>
                   {overviewStats.loading?"Yenileniyor...":"Yenile"}
                 </button>
               </div>
               <div style={{fontSize:14,color:C.text,fontWeight:700,marginTop:4}}>
-                <span style={{color:C.green}}>{overviewStats.todayCorrect}</span> dogru / <span style={{color:C.red}}>{overviewStats.todayWrong}</span> hatali
+                <span style={{color:C.green}}>{overviewStats.todayCorrect}</span> doğru / <span style={{color:C.red}}>{overviewStats.todayWrong}</span> hatalı
               </div>
               <PerfBar perf={qualityPct}/>
               <div style={{fontSize:11,color:C.muted2,marginTop:3}}>
-                {overviewStats.lastUpdated?`Son guncelleme: ${overviewStats.lastUpdated}`:""}
+                {overviewStats.lastUpdated?`Son güncelleme: ${overviewStats.lastUpdated}`:""}
               </div>
             </div>
           </div>
@@ -5093,7 +5093,7 @@ function DocumentTemplateSettings({currentUser,currentLogo="",companyProfile={}}
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12,minHeight:760}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
             <div>
-              <div style={{fontWeight:700,color:C.text}}>A4 Onizleme</div>
+              <div style={{fontWeight:700,color:C.text}}>A4 Önizleme</div>
               <div style={{fontSize:12,color:C.muted2,marginTop:2}}>Sayfa basligi: {activeTemplate.pageTitle||"-"}</div>
             </div>
             <input style={{...inputSt,width:220}} value={activeTemplate.pageTitle||""} onChange={e=>updateActiveTemplate(current=>({...current,pageTitle:e.target.value}))} placeholder="Sayfa basligi"/>
@@ -5465,7 +5465,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
                   </div>
                 </div>
                 <div style={{background:appPreviewTone.card,border:`1px solid ${appPreviewTone.border}`,borderRadius:12,padding:12,color:appPreviewTone.text,boxShadow:themeMode==="dark"?"0 18px 36px rgba(0,0,0,.26)":"0 16px 30px rgba(15,23,42,.08)"}}>
-                  <div style={{fontSize:11,color:appPreviewTone.muted,letterSpacing:.7,textTransform:"uppercase",fontWeight:700,marginBottom:8}}>Tema Onizleme</div>
+                  <div style={{fontSize:11,color:appPreviewTone.muted,letterSpacing:.7,textTransform:"uppercase",fontWeight:700,marginBottom:8}}>Tema Önizleme</div>
                   <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:10}}>
                     <button style={{border:`1px solid ${appPreviewTone.accent}`,background:appPreviewTone.accent,color:readableTextFor(appPreviewTone.accent),borderRadius:8,padding:"8px 12px",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>Yeni Kayit</button>
                     <button style={{border:`1px solid ${appPreviewTone.border}`,background:appPreviewTone.surface,color:appPreviewTone.text,borderRadius:8,padding:"8px 12px",fontSize:12,fontWeight:600,fontFamily:"inherit"}}>Iptal</button>
@@ -7390,7 +7390,7 @@ function Customers({filtersVisible=true,availableTabIds=[],onOpenRelatedRecord=(
     missing_contact:customers.filter(row=>!hasContactInfo(row)).length,
   };
   const contactFilterOptions=[
-    {id:"all",label:"Tum Musteriler"},
+    {id:"all",label:"Tüm Müşteriler"},
     {id:"with_contact",label:"Iletisimi Olan"},
     {id:"missing_contact",label:"Iletisimi Eksik"},
   ];
@@ -7753,7 +7753,7 @@ function Customers({filtersVisible=true,availableTabIds=[],onOpenRelatedRecord=(
       <div ref={customerListPanelRef} style={customerSplitWrapStyle}>
         {filtersVisible&&(
           <div style={filterPanelStyle}>
-            <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Musteriler</div>
+            <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Müşteriler</div>
             <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Firma, kod, iletisim ara"/>
             <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Iletisim Durumu</div>
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
@@ -7768,7 +7768,7 @@ function Customers({filtersVisible=true,availableTabIds=[],onOpenRelatedRecord=(
                 </button>
               ))}
             </div>
-            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Guncelleme Tarihi</div>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Güncelleme Tarihi</div>
             <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={updatedDateFrom} onChange={e=>setUpdatedDateFrom(e.target.value||"")}/>
             <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={updatedDateTo} onChange={e=>setUpdatedDateTo(e.target.value||"")}/>
             <button onClick={()=>{setSearch("");setContactFilter("all");setUpdatedDateFrom("");setUpdatedDateTo("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
@@ -8601,7 +8601,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     {id:"all",label:"Tum Parcalar"},
     {id:"bom",label:"BOM Olan"},
     {id:"routing",label:"Rota Olan"},
-    {id:"docs",label:"Dokuman Olan"},
+    {id:"docs",label:"Doküman Olan"},
   ];
   const partStatusCounts={
     all:parts.length,
@@ -13441,7 +13441,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
           <tr><td>Form Kodu</td><td>${escapePrintHtml(WORK_ORDER_FORM_META.code)}</td></tr>
           <tr><td>Form Revizyonu</td><td>${escapePrintHtml(WORK_ORDER_FORM_META.revision)}</td></tr>
           <tr><td>Kopya Durumu</td><td>Kontrollu Kopya</td></tr>
-          <tr><td>Dokuman Sahibi</td><td>${escapePrintHtml(WORK_ORDER_FORM_META.owner)}</td></tr>
+          <tr><td>Doküman Sahibi</td><td>${escapePrintHtml(WORK_ORDER_FORM_META.owner)}</td></tr>
           <tr><td>Standart Profili</td><td>${escapePrintHtml(WORK_ORDER_FORM_META.standardProfile)}</td></tr>
           <tr><td>Olusturma Tarihi</td><td>${escapePrintHtml(generatedAtText)}</td></tr>
           <tr><td>Hazirlayan</td><td>${escapePrintHtml(currentUser?.fullName||currentUser?.id||"-")}</td></tr>
@@ -13451,7 +13451,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
       </div>
     </div>
     <div class="standard-strip page-break-avoid">
-      <div><strong>Dokuman Kullanimi:</strong> Is emri, proses kontrol ve kayit formu olarak kullanilir. Operasyon, kalite ve sevk asamalarinda elde tutulur.</div>
+      <div><strong>Doküman Kullanımı:</strong> İş emri, proses kontrol ve kayıt formu olarak kullanılır. Operasyon, kalite ve sevk aşamalarında elde tutulur.</div>
       <div class="standard-tag">ISO 9001 ALIGNMENT</div>
       <div class="standard-tag">AQAP / AS9100 FIELD SET</div>
     </div>
@@ -13537,7 +13537,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
       </div>
 
       <div class="section page-break-avoid">
-        <div class="section-title">Takim ve Referans Dokumanlar</div>
+        <div class="section-title">Takım ve Referans Dokümanlar</div>
         <div class="section-body">
           <table class="tbl" style="margin-bottom:10px">
             <thead>
@@ -13588,7 +13588,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
             <div class="sign-line">Ad Soyad / Imza / Tarih</div>
           </div>
           <div class="sign-box">
-            <div class="sign-title">Dokuman Gozden Gecirme</div>
+            <div class="sign-title">Doküman Gözden Geçirme</div>
             <div class="sign-line">Ad Soyad / Imza / Tarih</div>
           </div>
           <div class="sign-box">
@@ -13773,7 +13773,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
                 </div>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
                   {canPreview(f)&&<button onClick={()=>setPreviewFile({...f,data:getFileSource(f)})} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11}}>Goruntule</button>}
-                  {getFileSource(f)&&<a href={getFileSource(f)} download={f.name} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11,textDecoration:"none"}}>Indir</a>}
+                  {getFileSource(f)&&<a href={getFileSource(f)} download={f.name} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11,textDecoration:"none"}}>İndir</a>}
                 </div>
               </div>
             ))
@@ -14960,17 +14960,17 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   ];
   const cycleMax=Math.max(1,...cycleRows.map(r=>Math.max(1,safeNum(r.value))));
   const kioskSummaryStats=[
-    {label:"Parca Sayisi",value:`${producedQty} Adet`},
-    {label:"Toplam Durus",value:fmtDurationLong(downtimeDisplaySec)},
+    {label:"Parça Sayısı",value:`${producedQty} Adet`},
+    {label:"Toplam Duruş",value:fmtDurationLong(downtimeDisplaySec)},
     {label:"Aktif Alarm",value:String(activeAlarmCount)},
-    {label:"Gunluk Calisma",value:fmtActiveShort(runningTodaySec)},
-    {label:"Gunluk Bekleme",value:fmtActiveShort(waitingTodaySec)},
-    {label:"Gunluk Uyari",value:fmtActiveShort(alarmTodaySec)},
-    {label:"Planlanan Cevrim",value:`${Math.round(cycleExpectedSec)}s`},
-    {label:"Anlik Cevrim",value:`${Math.round(cycleCurrentSec)}s`},
+    {label:"Günlük Çalışma",value:fmtActiveShort(runningTodaySec)},
+    {label:"Günlük Bekleme",value:fmtActiveShort(waitingTodaySec)},
+    {label:"Günlük Uyarı",value:fmtActiveShort(alarmTodaySec)},
+    {label:"Planlanan Çevrim",value:`${Math.round(cycleExpectedSec)}s`},
+    {label:"Anlık Çevrim",value:`${Math.round(cycleCurrentSec)}s`},
     {label:"Sapma",value:`${cycleDeviationSec>=0?"+":""}${Math.round(cycleDeviationSec)}s`,tone:cycleDeviationExceeded?"#c95757":"#49566e"},
-    {label:"Hedef Orani",value:selectedOrderQty>0?`%${goalPct}`:"-"},
-    {label:"Kullanim",value:`%${utilizationPct}`},
+    {label:"Hedef Oranı",value:selectedOrderQty>0?`%${goalPct}`:"-"},
+    {label:"Kullanım",value:`%${utilizationPct}`},
     {label:"OEE",value:`%${oeePct}`},
   ];
   useEffect(()=>{
@@ -14994,8 +14994,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     window.DB.addDoc("notifications",{
       type:"cycle_deviation",
       severity:"medium",
-      title:"Kiosk Cevrim Sapmasi",
-      message:`${machineKey} ${orderKey} plan ${planSec}s / anlik ${actualSec}s (${diffLabel}s)`,
+      title:"Kiosk Çevrim Sapması",
+      message:`${machineKey} ${orderKey} plan ${planSec}s / anlık ${actualSec}s (${diffLabel}s)`,
       sourceKey:`kiosk_cycle:${machineKey}:${orderKey}:${todayStr()}`,
       channels:["inapp"],
       status:"new",
@@ -15082,15 +15082,15 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                 <div style={{background:"#fff",border:"1px solid #d8dfe9",borderRadius:12,padding:"12px 14px"}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8}}>
                     <div style={{fontSize:24,fontWeight:800,color:"#4b5b73"}}>Bekleme / Kurulum Takibi</div>
-                    <div style={{fontSize:16,fontWeight:700,color:"#7d8ca3"}}>Beklenen Sure: {fmtDurationLong(waitingExpectedSec)}</div>
+                    <div style={{fontSize:16,fontWeight:700,color:"#7d8ca3"}}>Beklenen Süre: {fmtDurationLong(waitingExpectedSec)}</div>
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
                     <div style={{background:"#f7f9fd",border:"1px solid #dce3ed",borderRadius:10,padding:"10px 12px"}}>
-                      <div style={{fontSize:14,color:"#8393a9",fontWeight:700}}>Gecen Sure</div>
+                      <div style={{fontSize:14,color:"#8393a9",fontWeight:700}}>Geçen Süre</div>
                       <div style={{fontSize:52,color:"#4a5a72",fontWeight:800,lineHeight:1.05,marginTop:6}}>{fmtDurationLong(waitingElapsedSec)}</div>
                     </div>
                     <div style={{background:"#f7f9fd",border:"1px solid #dce3ed",borderRadius:10,padding:"10px 12px",textAlign:"right"}}>
-                      <div style={{fontSize:14,color:"#8393a9",fontWeight:700}}>Kalan Sure</div>
+                      <div style={{fontSize:14,color:"#8393a9",fontWeight:700}}>Kalan Süre</div>
                       <div style={{fontSize:52,color:waitingOverrunSec>0?"#c95757":"#4a5a72",fontWeight:800,lineHeight:1.05,marginTop:6}}>
                         {waitingOverrunSec>0?`+${fmtDurationLong(waitingOverrunSec)}`:fmtDurationLong(waitingRemainingSec)}
                       </div>
@@ -15101,7 +15101,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                   </div>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:7,fontSize:13,color:"#74849a",fontWeight:700}}>
                     <span>Kurulum hedefi: {fmtDurationLong(waitingExpectedSec)}</span>
-                    <span>Durum: {waitingOverrunSec>0?"Hedef asildi":"Hedef dahilinde"} ({waitingProgressPct}%)</span>
+                    <span>Durum: {waitingOverrunSec>0?"Hedef aşıldı":"Hedef dahilinde"} ({waitingProgressPct}%)</span>
                   </div>
                 </div>
               </div>
@@ -15169,24 +15169,24 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                 </div>
                 {kioskSettings.cycleDeviationNotificationEnabled&&(
                   <div style={{marginTop:6,fontSize:11,color:"#8090a6"}}>
-                    Sapma bildirimi acik · Esik: {Math.round(cycleDeviationThresholdSec)}s {cycleDeviationExceeded?"(esik asildi)":"(normal)"}
+                    Sapma bildirimi açık · Eşik: {Math.round(cycleDeviationThresholdSec)}s {cycleDeviationExceeded?"(eşik aşıldı)":"(normal)"}
                   </div>
                 )}
               </div>
               <div style={{background:"#fff",border:"1px solid #d8dfe9",borderRadius:10,padding:"10px 12px"}}>
-                <div style={{fontSize:17,fontWeight:800,color:"#4b5a72",marginBottom:8}}>Gunluk Durum Grafigi</div>
+                <div style={{fontSize:17,fontWeight:800,color:"#4b5a72",marginBottom:8}}>Günlük Durum Grafiği</div>
                 <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
                   <div style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 8px",borderRadius:999,background:"#e9f8ef",fontSize:11,color:"#2b9f58",fontWeight:700}}>
-                    <span style={{width:8,height:8,borderRadius:"50%",background:"#22a958",display:"inline-block"}}/>Calisma {fmtActiveShort(runningTodaySec)}
+                    <span style={{width:8,height:8,borderRadius:"50%",background:"#22a958",display:"inline-block"}}/>Çalışma {fmtActiveShort(runningTodaySec)}
                   </div>
                   <div style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 8px",borderRadius:999,background:"#fff1df",fontSize:11,color:"#b17020",fontWeight:700}}>
                     <span style={{width:8,height:8,borderRadius:"50%",background:"#e29a3d",display:"inline-block"}}/>Bekleme {fmtActiveShort(waitingTodaySec)}
                   </div>
                   <div style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 8px",borderRadius:999,background:"#eef2f8",fontSize:11,color:"#69778e",fontWeight:700}}>
-                    <span style={{width:8,height:8,borderRadius:"50%",background:"#8d98aa",display:"inline-block"}}/>Durus {fmtActiveShort(stoppedTodaySec)}
+                    <span style={{width:8,height:8,borderRadius:"50%",background:"#8d98aa",display:"inline-block"}}/>Duruş {fmtActiveShort(stoppedTodaySec)}
                   </div>
                   <div style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 8px",borderRadius:999,background:"#ffe9ea",fontSize:11,color:"#be4b57",fontWeight:700}}>
-                    <span style={{width:8,height:8,borderRadius:"50%",background:"#d45858",display:"inline-block"}}/>Uyari {fmtActiveShort(alarmTodaySec)}
+                    <span style={{width:8,height:8,borderRadius:"50%",background:"#d45858",display:"inline-block"}}/>Uyarı {fmtActiveShort(alarmTodaySec)}
                   </div>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(24,minmax(0,1fr))",gap:4,alignItems:"end",height:108}}>
@@ -15204,17 +15204,17 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                 </div>
                 <div style={{marginTop:3,display:"flex",justifyContent:"space-between",fontSize:10,color:"#8a99ad",fontWeight:700}}>
                   <span>00</span>
-                  <span>Saatlik Dagilim</span>
+                  <span>Saatlik Dağılım</span>
                   <span>23</span>
                 </div>
                 {!statusChartHasData&&(
-                  <div style={{marginTop:6,fontSize:11,color:"#8a99ad",fontWeight:700}}>Secili gun icin telemetry kaydi yok.</div>
+                  <div style={{marginTop:6,fontSize:11,color:"#8a99ad",fontWeight:700}}>Seçili gün için telemetri kaydı yok.</div>
                 )}
               </div>
             </div>
 
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",background:"#fff"}}>
-              <button onClick={()=>setShowOrderDataPanel(true)} style={{...actionBtnStyle,fontSize:17}}>Is Emri Dosyalari</button>
+              <button onClick={()=>setShowOrderDataPanel(true)} style={{...actionBtnStyle,fontSize:17}}>İş Emri Dosyaları</button>
               <button onClick={openShiftEndModal} style={actionBtnStyle}>Vardiya Sonlandır</button>
               <button onClick={openRejectPartsModal} style={actionBtnStyle}>Hata Girişi</button>
               <button onClick={openToolChangeModal} style={{...actionBtnStyle,borderRight:"none"}}>Takım Değişimi</button>
@@ -15231,7 +15231,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                 <div style={{minWidth:0}}>
                   <div style={{fontSize:12,color:"#7386a1",fontWeight:700,letterSpacing:.5,textTransform:"uppercase"}}>Kiosk</div>
                   <div style={{fontSize:17,color:"#33465f",fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                    Is Emri Dosyalari {form.selectedOrder?.code?`· ${form.selectedOrder.code}`:""}
+                    İş Emri Dosyaları {form.selectedOrder?.code?`· ${form.selectedOrder.code}`:""}
                   </div>
                 </div>
                 <button onClick={()=>setShowOrderDataPanel(false)} style={{border:"1px solid #d5dde8",background:"#fff",color:"#4d5e77",width:34,height:34,borderRadius:10,fontSize:22,lineHeight:1,cursor:"pointer"}}>×</button>
@@ -15239,23 +15239,23 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               <div style={{padding:12,overflowY:"auto",display:"flex",flexDirection:"column",gap:8}}>
                 {!form.selectedOrder&&(
                   <div style={{padding:14,border:"1px dashed #c8d2df",borderRadius:10,background:"#fff",fontSize:13,color:"#6e8098",textAlign:"center"}}>
-                    Is emri secili degil.
+                    İş emri seçili değil.
                   </div>
                 )}
                 {form.selectedOrder&&selectedOrderFiles.length===0&&(
                   <div style={{padding:14,border:"1px dashed #c8d2df",borderRadius:10,background:"#fff",fontSize:13,color:"#6e8098",textAlign:"center"}}>
-                    Secili is emrinde dosya yok.
+                    Seçili iş emrinde dosya yok.
                   </div>
                 )}
                 {form.selectedOrder&&selectedOrderFiles.length>0&&selectedOrderFiles.map((f,i)=>(
                   <div key={`${f.name||"file"}_${i}`} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 10px",border:"1px solid #d5dde8",borderRadius:10,background:"#fff"}}>
                     <div style={{fontSize:18,lineHeight:1}}>{getFileIcon(f.name)}</div>
                     <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:12,fontWeight:700,color:"#32445b",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name||"Dokuman"}</div>
+                      <div style={{fontSize:12,fontWeight:700,color:"#32445b",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name||"Doküman"}</div>
                       <div style={{fontSize:11,color:"#7d8ea7"}}>{formatBytes(Number(f.size)||0)}</div>
                     </div>
                     <button onClick={()=>openOrderFile(f)} disabled={!getFileSource(f)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11,borderColor:"#c8d3e1",color:"#42566f",background:"#f7faff",opacity:getFileSource(f)?1:.45,cursor:getFileSource(f)?"pointer":"not-allowed"}}>
-                      {canFilePreview(f)?"Viewer":(getFileSource(f)?"Indir":"Kaynak Yok")}
+                      {canFilePreview(f)?"Önizle":(getFileSource(f)?"İndir":"Kaynak Yok")}
                     </button>
                   </div>
                 ))}
@@ -15307,8 +15307,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                     <SearchableSelect
                       value={toolDraft.machineToolId}
                       onChange={v=>setToolDraft(p=>({...p,machineToolId:v}))}
-                      placeholder="Takim sec (opsiyonel)"
-                      options={[{value:"",label:"Takim sec (opsiyonel)"},...toolOptions.map(t=>({value:t.id,label:`${t.code} - ${t.name} (Stok: ${Number(t.qty)||0})`}))]}
+                      placeholder="Takım seç (opsiyonel)"
+                      options={[{value:"",label:"Takım seç (opsiyonel)"},...toolOptions.map(t=>({value:t.id,label:`${t.code} - ${t.name} (Stok: ${Number(t.qty)||0})`}))]}
                     />
                     <input style={inputSt} type="number" min="1" placeholder="Adet" disabled={!toolDraft.machineToolId} value={toolDraft.machineToolQty} onChange={e=>setToolDraft(p=>({...p,machineToolQty:e.target.value}))}/>
                   </div>
@@ -15361,23 +15361,23 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   }
 
   const mobileEntryTabs=[
-    {id:"entry",label:"Kayit",hint:form.selectedOrder?.code||"Is emri sec"},
-    {id:"live",label:"Canli",hint:statusMeta.label},
+    {id:"entry",label:"Kayıt",hint:form.selectedOrder?.code||"İş emri seç"},
+    {id:"live",label:"Canlı",hint:statusMeta.label},
     {id:"docs",label:"Belgeler",hint:`${selectedOrderFiles.length} dosya`},
-    {id:"logs",label:"Kayitlar",hint:`${Math.min(todayEntries.length,5)} giris`},
+    {id:"logs",label:"Kayıtlar",hint:`${Math.min(todayEntries.length,5)} giriş`},
   ];
   const operationContextCard=(
     <div style={{...sectionCardStyle,padding:14,display:"flex",flexDirection:"column",gap:12}}>
       <div>
-        <div style={standardSectionTitleStyle}>Operasyon baglami</div>
-        <div style={standardSectionHintStyle}>Tezgah, tarih, vardiya ve is emri ayni blokta tutulur. Kayit oncesi bu alanlari netlestirin.</div>
+        <div style={standardSectionTitleStyle}>Operasyon bağlamı</div>
+        <div style={standardSectionHintStyle}>Tezgah, tarih, vardiya ve iş emri aynı blokta tutulur. Kayıt öncesi bu alanları netleştirin.</div>
       </div>
       <div style={standardContextGridStyle}>
         <div style={{...rowCardStyle,padding:"12px 13px",display:"flex",flexDirection:"column",gap:10}}>
-          <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700}}>Tezgah Secimi</div>
+          <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700}}>Tezgah Seçimi</div>
           {isMachineLocked?(
             <div style={{padding:"11px 12px",borderRadius:10,border:`1px solid ${C.border}`,background:C.card,fontSize:12,color:C.muted}}>
-              Bu ekran tezgaha ozel calisiyor: <strong style={{color:C.text}}>{form.machine}</strong>
+              Bu ekran tezgaha özel çalışıyor: <strong style={{color:C.text}}>{form.machine}</strong>
             </div>
           ):(
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -15393,30 +15393,30 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
           </div>
         </div>
         <div style={{...rowCardStyle,padding:"12px 13px",display:"flex",flexDirection:"column",gap:10}}>
-          <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700}}>Is Emri Baglantisi</div>
+          <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700}}>İş Emri Bağlantısı</div>
           {form.selectedOrder?(
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               <div style={{padding:"11px 12px",borderRadius:10,border:`1px solid ${C.border}`,background:C.card}}>
                 <div style={{fontFamily:"monospace",fontSize:14,fontWeight:800,color:C.text}}>{form.selectedOrder.code}</div>
                 <div style={{fontSize:12,color:C.muted,marginTop:3}}>{form.selectedOrder.name||"-"}</div>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
-                  <span style={{...infoPillStyle,background:C.surface2,border:`1px solid ${C.border}`,color:C.text}}>Cevrim: {fmtSec(form.selectedOrder.partSec)}</span>
+                  <span style={{...infoPillStyle,background:C.surface2,border:`1px solid ${C.border}`,color:C.text}}>Çevrim: {fmtSec(form.selectedOrder.partSec)}</span>
                   {form.selectedOrder?.material&&<span style={{...infoPillStyle,background:C.surface2,border:`1px solid ${C.border}`,color:C.text}}>{form.selectedOrder.material}</span>}
                   {form.selectedOrder?.dueDate&&<span style={{...infoPillStyle,background:C.surface2,border:`1px solid ${C.border}`,color:C.text}}>Termin: {form.selectedOrder.dueDate}</span>}
                 </div>
               </div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                <button onClick={()=>setShowPicker(true)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Is Emrini Degistir</button>
+                <button onClick={()=>setShowPicker(true)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>İş Emrini Değiştir</button>
                 <button onClick={()=>fv("selectedOrder",null)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,borderColor:rgbaFromHex(C.red,0.24),color:C.red}}>Temizle</button>
               </div>
             </div>
           ):(
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
               <div style={standardEmptyStateStyle}>
-                Aktif kayit icin once is emri secin. Secim ekraninda sadece uygun ve aranabilir is emirleri listelenir.
+                Aktif kayıt için önce iş emri seçin. Seçim ekranında sadece uygun ve aranabilir iş emirleri listelenir.
               </div>
               <button onClick={()=>setShowPicker(true)} style={{...btnSt("primary"),padding:"10px 12px",fontSize:12,alignSelf:"flex-start"}}>
-                {orders.length===0?"Aktif is emri yok":"Is Emri Sec"}
+                {orders.length===0?"Aktif iş emri yok":"İş Emri Seç"}
               </button>
             </div>
           )}
@@ -15432,68 +15432,68 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
         <div style={{fontSize:11,color:C.muted}}>Son veri: {telemetryUpdatedLabel}</div>
       </div>
       <div style={standardMetricCardStyle}>
-        <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Dogru Parca</div>
+        <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Doğru Parça</div>
         <div style={{fontSize:22,fontWeight:900,color:C.text}}>{producedQty}</div>
-        <div style={{fontSize:11,color:C.muted}}>Bugun kaydedilen uretilen adet</div>
+        <div style={{fontSize:11,color:C.muted}}>Bugün kaydedilen üretim adedi</div>
       </div>
       <div style={standardMetricCardStyle}>
         <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Hurda</div>
         <div style={{fontSize:22,fontWeight:900,color:C.red}}>{scrapQty}</div>
-        <div style={{fontSize:11,color:C.muted}}>Toplam hatali adet</div>
+        <div style={{fontSize:11,color:C.muted}}>Toplam hatalı adet</div>
       </div>
       <div style={standardMetricCardStyle}>
         <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Kalite</div>
         <div style={{fontSize:22,fontWeight:900,color:qualityPct<90?C.warn:C.text}}>%{qualityPct}</div>
-        <div style={{fontSize:11,color:C.muted}}>Dogru / toplam uretim orani</div>
+        <div style={{fontSize:11,color:C.muted}}>Doğru / toplam üretim oranı</div>
       </div>
       <div style={standardMetricCardStyle}>
         <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Kalan</div>
         <div style={{fontSize:22,fontWeight:900,color:C.text}}>{selectedOrderQty?remainingQty:"-"}</div>
-        <div style={{fontSize:11,color:C.muted}}>Siparis hedefi baz alinir</div>
+        <div style={{fontSize:11,color:C.muted}}>Sipariş hedefi baz alınır</div>
       </div>
       <div style={standardMetricCardStyle}>
-        <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Ilerleme</div>
+        <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>İlerleme</div>
         <div style={{fontSize:22,fontWeight:900,color:C.text}}>{selectedOrderQty?`%${progressPct}`:"-"}</div>
-        <div style={{fontSize:11,color:C.muted}}>Secili is emrine gore tamamlanma</div>
+        <div style={{fontSize:11,color:C.muted}}>Seçili iş emrine göre tamamlanma</div>
       </div>
     </div>
   );
   const operationEntryCard=(
     <div style={standardPrimaryCardStyle}>
       <div>
-        <div style={standardSectionTitleStyle}>Operasyon Kaydi</div>
-        <div style={standardSectionHintStyle}>Miktar girisi, hedef takibi ve vardiya onayi ayni kartta ilerler.</div>
+        <div style={standardSectionTitleStyle}>Operasyon Kaydı</div>
+        <div style={standardSectionHintStyle}>Miktar girişi, hedef takibi ve vardiya onayı aynı kartta ilerler.</div>
       </div>
       {form.selectedOrder?(
         <div style={{padding:"13px 14px",borderRadius:12,border:`1px solid ${rgbaFromHex(C.accent,0.24)}`,background:rgbaFromHex(C.accent,0.05)}}>
           <div style={{fontFamily:"monospace",fontSize:15,fontWeight:900,color:C.text}}>{form.selectedOrder.code}</div>
-          <div style={{fontSize:13,color:C.muted,marginTop:4}}>{form.selectedOrder.name||"Is emri aciklamasi yok"}</div>
+          <div style={{fontSize:13,color:C.muted,marginTop:4}}>{form.selectedOrder.name||"İş emri açıklaması yok"}</div>
           <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
-            <span style={{...infoPillStyle,background:C.card,border:`1px solid ${C.border}`,color:C.text}}>Cevrim: {fmtSec(form.selectedOrder.partSec)}</span>
+            <span style={{...infoPillStyle,background:C.card,border:`1px solid ${C.border}`,color:C.text}}>Çevrim: {fmtSec(form.selectedOrder.partSec)}</span>
             <span style={{...infoPillStyle,background:C.card,border:`1px solid ${C.border}`,color:C.text}}>Hedef: {selectedOrderQty||"-"}</span>
             {form.selectedOrder?.dueDate&&<span style={{...infoPillStyle,background:C.card,border:`1px solid ${C.border}`,color:C.text}}>Termin: {form.selectedOrder.dueDate}</span>}
           </div>
         </div>
       ):(
-        <div style={standardEmptyStateStyle}>Dogru hedef ve belge iliskisi icin once is emri secmeniz onerilir.</div>
+        <div style={standardEmptyStateStyle}>Doğru hedef ve belge ilişkisi için önce iş emri seçmeniz önerilir.</div>
       )}
       <div style={standardQtyGridStyle}>
         <div style={{padding:"14px 14px",borderRadius:12,border:`1px solid ${rgbaFromHex(C.green,0.24)}`,background:rgbaFromHex(C.green,0.06),display:"flex",flexDirection:"column",gap:8}}>
-          <span style={{fontSize:11,fontWeight:800,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Dogru Adet</span>
+          <span style={{fontSize:11,fontWeight:800,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Doğru Adet</span>
           <input style={{...inputSt,...themedInputStyle,padding:"14px 12px",fontSize:isPhoneEntry?24:28,fontWeight:900,textAlign:"center",borderColor:rgbaFromHex(C.green,0.26),background:C.card}} type="number" min="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/>
-          <div style={{fontSize:12,color:C.muted}}>Temiz uretim miktari.</div>
+          <div style={{fontSize:12,color:C.muted}}>Temiz üretim miktarı.</div>
         </div>
         <div style={{padding:"14px 14px",borderRadius:12,border:`1px solid ${rgbaFromHex(C.red,0.24)}`,background:rgbaFromHex(C.red,0.06),display:"flex",flexDirection:"column",gap:8}}>
           <span style={{fontSize:11,fontWeight:800,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Hurda Adet</span>
           <input style={{...inputSt,...themedInputStyle,padding:"14px 12px",fontSize:isPhoneEntry?24:28,fontWeight:900,textAlign:"center",borderColor:rgbaFromHex(C.red,0.26),background:C.card}} type="number" min="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/>
-          <div style={{fontSize:12,color:C.muted}}>Hatali parca bilgisi.</div>
+          <div style={{fontSize:12,color:C.muted}}>Hatalı parça bilgisi.</div>
         </div>
       </div>
       <div style={{...rowCardStyle,padding:"13px 14px",display:"flex",flexDirection:"column",gap:10}}>
         <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",alignItems:"center"}}>
           <div>
-            <div style={{fontSize:12,fontWeight:800,color:C.text}}>Siparis ilerlemesi</div>
-            <div style={{fontSize:12,color:C.muted2,marginTop:2}}>Gunluk uretim toplami uzerinden hesaplanir.</div>
+            <div style={{fontSize:12,fontWeight:800,color:C.text}}>Sipariş ilerlemesi</div>
+            <div style={{fontSize:12,color:C.muted2,marginTop:2}}>Günlük üretim toplamı üzerinden hesaplanır.</div>
           </div>
           <div style={{fontSize:22,fontWeight:900,color:C.text}}>{selectedOrderQty?`%${progressPct}`:"-"}</div>
         </div>
@@ -15508,35 +15508,35 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
         </div>
       </div>
       <div style={standardActionGridStyle}>
-        <button onClick={openShiftEndModal} style={{...btnSt(saved?"green":"primary"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:800,borderColor:"transparent"}}>{editId?"Vardiya Sonu Guncelle":"Vardiya Sonu Onayla"}</button>
-        <button onClick={openRejectPartsModal} style={{...btnSt("ghost"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:700,borderColor:rgbaFromHex(C.red,0.2),color:C.red,background:rgbaFromHex(C.red,0.04)}}>Hata Girisi</button>
-        <button onClick={openToolChangeModal} style={{...btnSt("ghost"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:700}}>Takim Degisimi</button>
-        <button onClick={()=>setShowOrderDataPanel(true)} disabled={!form.selectedOrder} style={{...btnSt("ghost"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:700,opacity:form.selectedOrder?1:.45,cursor:form.selectedOrder?"pointer":"not-allowed"}}>Is Emri Dokumanlari</button>
+        <button onClick={openShiftEndModal} style={{...btnSt(saved?"green":"primary"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:800,borderColor:"transparent"}}>{editId?"Vardiya Sonu Güncelle":"Vardiya Sonu Onayla"}</button>
+        <button onClick={openRejectPartsModal} style={{...btnSt("ghost"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:700,borderColor:rgbaFromHex(C.red,0.2),color:C.red,background:rgbaFromHex(C.red,0.04)}}>Hata Girişi</button>
+        <button onClick={openToolChangeModal} style={{...btnSt("ghost"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:700}}>Takım Değişimi</button>
+        <button onClick={()=>setShowOrderDataPanel(true)} disabled={!form.selectedOrder} style={{...btnSt("ghost"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:700,opacity:form.selectedOrder?1:.45,cursor:form.selectedOrder?"pointer":"not-allowed"}}>İş Emri Dokümanları</button>
       </div>
     </div>
   );
   const liveStatusCard=(
     <div style={standardSidebarCardStyle}>
       <div>
-        <div style={standardSectionTitleStyle}>Canli Tezgah Durumu</div>
-        <div style={standardSectionHintStyle}>Anlik telemetry ve kalite verisi ozetlenir.</div>
+        <div style={standardSectionTitleStyle}>Canlı Tezgah Durumu</div>
+        <div style={standardSectionHintStyle}>Anlık telemetri ve kalite verisi özetlenir.</div>
       </div>
       <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         <span style={{...infoPillStyle,display:"inline-flex",alignItems:"center",gap:6,background:rgbaFromHex(statusMeta.color,0.12),border:`1px solid ${rgbaFromHex(statusMeta.color,0.3)}`,color:statusMeta.color}}>
           <span style={{width:10,height:10,borderRadius:"50%",background:statusMeta.color,display:"inline-block"}}/>
           {statusMeta.label}
         </span>
-        <span style={{fontSize:12,color:C.muted}}>Son guncelleme: {telemetryUpdatedLabel}</span>
+        <span style={{fontSize:12,color:C.muted}}>Son güncelleme: {telemetryUpdatedLabel}</span>
       </div>
       <div style={{display:"grid",gridTemplateColumns:isPhoneEntry?"1fr 1fr":"repeat(2,minmax(0,1fr))",gap:8}}>
-        <div style={{...rowCardStyle,padding:"11px 12px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Aktif Sure</div><div style={{fontSize:18,fontWeight:900,color:C.text,marginTop:4}}>{fmtActiveShort(currentStatusElapsedSec)}</div></div>
+        <div style={{...rowCardStyle,padding:"11px 12px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Aktif Süre</div><div style={{fontSize:18,fontWeight:900,color:C.text,marginTop:4}}>{fmtActiveShort(currentStatusElapsedSec)}</div></div>
         <div style={{...rowCardStyle,padding:"11px 12px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Alarm</div><div style={{fontSize:18,fontWeight:900,color:activeAlarmCount>0?C.red:C.text,marginTop:4}}>{activeAlarmCount}</div></div>
-        <div style={{...rowCardStyle,padding:"11px 12px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Kullanim</div><div style={{fontSize:18,fontWeight:900,color:C.text,marginTop:4}}>%{utilizationPct}</div></div>
+        <div style={{...rowCardStyle,padding:"11px 12px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Kullanım</div><div style={{fontSize:18,fontWeight:900,color:C.text,marginTop:4}}>%{utilizationPct}</div></div>
         <div style={{...rowCardStyle,padding:"11px 12px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>OEE</div><div style={{fontSize:18,fontWeight:900,color:C.text,marginTop:4}}>%{oeePct}</div></div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:isPhoneEntry?"1fr":"repeat(3,minmax(0,1fr))",gap:8}}>
         <div style={{...rowCardStyle,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Planlanan</div><div style={{fontSize:14,fontWeight:800,color:C.text,marginTop:4}}>{hasPlannedCycle?fmtSec(cycleExpectedSec):"--:--"}</div></div>
-        <div style={{...rowCardStyle,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Aktif Cevrim</div><div style={{fontSize:14,fontWeight:800,color:C.text,marginTop:4}}>{fmtSec(cycleCurrentSec)}</div></div>
+        <div style={{...rowCardStyle,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Aktif Çevrim</div><div style={{fontSize:14,fontWeight:800,color:C.text,marginTop:4}}>{fmtSec(cycleCurrentSec)}</div></div>
         <div style={{...rowCardStyle,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Sapma</div><div style={{fontSize:14,fontWeight:800,color:cycleDeviationExceeded?C.red:C.text,marginTop:4}}>{cycleDeviationSec>=0?"+":""}{fmtSec(cycleDeviationAbsSec)}</div></div>
       </div>
     </div>
@@ -15545,27 +15545,27 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     <div style={standardSidebarCardStyle}>
       <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         <div>
-          <div style={standardSectionTitleStyle}>Dokuman ve Takim</div>
-          <div style={standardSectionHintStyle}>Secili is emri belgeleri ve uygun takim ozeti.</div>
+          <div style={standardSectionTitleStyle}>Doküman ve Takım</div>
+          <div style={standardSectionHintStyle}>Seçili iş emri belgeleri ve uygun takım özeti.</div>
         </div>
-        <button onClick={()=>setShowOrderDataPanel(true)} disabled={!form.selectedOrder} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:11,opacity:form.selectedOrder?1:.45,cursor:form.selectedOrder?"pointer":"not-allowed"}}>Tum Dokumanlar</button>
+        <button onClick={()=>setShowOrderDataPanel(true)} disabled={!form.selectedOrder} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:11,opacity:form.selectedOrder?1:.45,cursor:form.selectedOrder?"pointer":"not-allowed"}}>Tüm Dokümanlar</button>
       </div>
       <div style={{...rowCardStyle,padding:"11px 12px"}}>
-        <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Secili Takim</div>
-        <div style={{fontSize:14,fontWeight:800,color:C.text,marginTop:4}}>{machineToolPicked?`${machineToolPicked.code||machineToolPicked.name} x${Math.max(1,Number(form.machineToolQty)||1)}`:"Takim secilmedi"}</div>
+        <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Seçili Takım</div>
+        <div style={{fontSize:14,fontWeight:800,color:C.text,marginTop:4}}>{machineToolPicked?`${machineToolPicked.code||machineToolPicked.name} x${Math.max(1,Number(form.machineToolQty)||1)}`:"Takım seçilmedi"}</div>
       </div>
-      {docsPreview.length===0&&<div style={standardEmptyStateStyle}>{form.selectedOrder?"Secili is emrinde belge yok.":"Belge gormek icin once is emri secin."}</div>}
+      {docsPreview.length===0&&<div style={standardEmptyStateStyle}>{form.selectedOrder?"Seçili iş emrinde belge yok.":"Belge görmek için önce iş emri seçin."}</div>}
       {docsPreview.length>0&&docsPreview.map((f,i)=>(
         <div key={`${f.name||"file"}_${i}`} style={{...rowCardStyle,padding:"9px 10px",display:"flex",alignItems:isPhoneEntry?"flex-start":"center",gap:10,flexWrap:isPhoneEntry?"wrap":"nowrap"}}>
           <div style={{fontSize:16,lineHeight:1}}>{getFileIcon(f.name)}</div>
           <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name||"Dokuman"}</div>
+            <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name||"Doküman"}</div>
             <div style={{fontSize:10,color:C.muted2,marginTop:2}}>{formatBytes(Number(f.size)||0)}</div>
           </div>
-          <button onClick={()=>openOrderFile(f)} disabled={!getFileSource(f)} style={{...btnSt("ghost"),padding:"5px 9px",fontSize:11,marginLeft:isPhoneEntry?26:0,opacity:getFileSource(f)?1:.45,cursor:getFileSource(f)?"pointer":"not-allowed"}}>{canFilePreview(f)?"Onizle":(getFileSource(f)?"Indir":"Kaynak Yok")}</button>
+          <button onClick={()=>openOrderFile(f)} disabled={!getFileSource(f)} style={{...btnSt("ghost"),padding:"5px 9px",fontSize:11,marginLeft:isPhoneEntry?26:0,opacity:getFileSource(f)?1:.45,cursor:getFileSource(f)?"pointer":"not-allowed"}}>{canFilePreview(f)?"Önizle":(getFileSource(f)?"İndir":"Kaynak Yok")}</button>
         </div>
       ))}
-      {stockedToolsPreview.length===0&&<div style={standardEmptyStateStyle}>Stokta kullanilabilir takim gorunmuyor.</div>}
+      {stockedToolsPreview.length===0&&<div style={standardEmptyStateStyle}>Stokta kullanılabilir takım görünmüyor.</div>}
       {stockedToolsPreview.length>0&&stockedToolsPreview.map(t=>{
         const qty=safeNum(t.qty);
         const min=Math.max(0,safeNum(t.minQty));
@@ -15573,7 +15573,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
         return (
           <div key={t.id} style={{...rowCardStyle,padding:"9px 10px",display:"grid",gridTemplateColumns:isPhoneEntry?"1fr":"1fr auto",gap:10,alignItems:"center"}}>
             <div style={{minWidth:0}}>
-              <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.code||"-"} · {t.name||"Takim"}</div>
+              <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.code||"-"} · {t.name||"Takım"}</div>
               <div style={{fontSize:10,color:C.muted2,marginTop:2}}>{t.location||"Lokasyon yok"}</div>
             </div>
             <div style={{textAlign:isPhoneEntry?"left":"right"}}>
@@ -15588,15 +15588,15 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const recentMachineEntriesCard=(
     <div style={standardSidebarCardStyle}>
       <div>
-        <div style={standardSectionTitleStyle}>Son Makine Kayitlari</div>
-        <div style={standardSectionHintStyle}>Ayni tezgaha ait son vardiya hareketleri.</div>
+        <div style={standardSectionTitleStyle}>Son Makine Kayıtları</div>
+        <div style={standardSectionHintStyle}>Aynı tezgaha ait son vardiya hareketleri.</div>
       </div>
-      {recentMachineEntries.length===0&&<div style={standardEmptyStateStyle}>Secili tezgah icin kayit bulunmuyor.</div>}
+      {recentMachineEntries.length===0&&<div style={standardEmptyStateStyle}>Seçili tezgah için kayıt bulunmuyor.</div>}
       {recentMachineEntries.length>0&&recentMachineEntries.map(e=>{
         const machineToolQty=Math.max(0,safeNum(e.machineToolQty??e.machineToolChange??0));
         const isToolChange=String(e.entryType||"")==="tool_change"||(machineToolQty>0&&safeNum(e.correct)===0&&safeNum(e.wrong)===0);
-        const title=isToolChange?`${e.machineToolCode||e.machineToolName||"Takim"} degisimi`:`${e.jobCode||"-"} uretim kaydi`;
-        const detail=isToolChange?`Takim adedi: ${machineToolQty}`:`Dogru ${safeNum(e.correct)} · Hurda ${safeNum(e.wrong)}`;
+        const title=isToolChange?`${e.machineToolCode||e.machineToolName||"Takım"} değişimi`:`${e.jobCode||"-"} üretim kaydı`;
+        const detail=isToolChange?`Takım adedi: ${machineToolQty}`:`Doğru ${safeNum(e.correct)} · Hurda ${safeNum(e.wrong)}`;
         const stampRaw=e.createdAt||`${e.date||""}T00:00:00`;
         const stampDate=new Date(stampRaw);
         const stampText=Number.isNaN(stampDate.getTime())?(e.date||"--"):new Intl.DateTimeFormat("tr-TR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}).format(stampDate);
@@ -15617,8 +15617,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   );
   const todayEntriesCard=(
     <div style={{...sectionCardStyle,padding:12,display:"flex",flexDirection:"column",gap:8}}>
-      <div style={{fontSize:13,fontWeight:700,color:C.text}}>Secili Gun Girislerim ({Math.min(todayEntries.length,5)})</div>
-      {todayEntries.length===0&&<div style={standardEmptyStateStyle}>Secili gunde kayit bulunmuyor.</div>}
+      <div style={{fontSize:13,fontWeight:700,color:C.text}}>Seçili Gün Girişlerim ({Math.min(todayEntries.length,5)})</div>
+      {todayEntries.length===0&&<div style={standardEmptyStateStyle}>Seçili günde kayıt bulunmuyor.</div>}
       {todayEntries.length>0&&todayEntries.slice(0,5).map(e=>{
         const p=calcPerf(e.correct,e.wrong,e.partSec);
         const machineToolQty=Number(e.machineToolQty??e.machineToolChange??0);
@@ -15632,15 +15632,15 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               <div style={{display:"flex",gap:5,flexWrap:"wrap"}}><Badge label={e.machine} color={C.accent}/><Badge label={shiftWindowMap[e.shift]?.label||e.shift||"-"} color={C.muted2}/></div>
             </div>
             <div style={{display:"flex",gap:12,marginTop:7,fontSize:13,flexWrap:"wrap"}}>
-              <span style={{color:C.green,fontWeight:600}}>Dogru: {e.correct}</span>
-              <span style={{color:C.red,fontWeight:600}}>Hatali: {e.wrong}</span>
-              {p&&<span style={{color:C.muted2}}>Maks/gun: {p.max}</span>}
+              <span style={{color:C.green,fontWeight:600}}>Doğru: {e.correct}</span>
+              <span style={{color:C.red,fontWeight:600}}>Hatalı: {e.wrong}</span>
+              {p&&<span style={{color:C.muted2}}>Maks/gün: {p.max}</span>}
             </div>
             {machineToolQty>0&&<div style={{display:"flex",gap:8,marginTop:7,fontSize:12,color:C.muted2,flexWrap:"wrap"}}>
-              <Badge label={"Is Emri: "+((e.machineToolCode||e.machineToolName)?`${e.machineToolCode||e.machineToolName} x${machineToolQty}`:`${machineToolQty}`)} color={C.warn}/>
+              <Badge label={"İş Emri: "+((e.machineToolCode||e.machineToolName)?`${e.machineToolCode||e.machineToolName} x${machineToolQty}`:`${machineToolQty}`)} color={C.warn}/>
             </div>}
             <div style={{marginTop:8,display:"flex",gap:8,flexWrap:"wrap"}}>
-              <button onClick={()=>startEdit(e)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,flex:isPhoneEntry?"1 1 140px":"0 0 auto"}}>Duzenle</button>
+              <button onClick={()=>startEdit(e)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,flex:isPhoneEntry?"1 1 140px":"0 0 auto"}}>Düzenle</button>
               <button onClick={()=>removeEntry(e)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12,flex:isPhoneEntry?"1 1 140px":"0 0 auto"}}>Sil</button>
             </div>
             {p&&<PerfBar perf={p.perf} small/>}
@@ -15665,9 +15665,9 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             <div style={{display:"flex",justifyContent:"space-between",gap:16,flexWrap:"wrap",alignItems:"stretch"}}>
               <div style={{flex:"1 1 420px",minWidth:0,display:"flex",flexDirection:"column",gap:10}}>
                 <div style={{fontSize:11,fontWeight:800,letterSpacing:.8,textTransform:"uppercase",color:C.accent}}>Operasyon Merkezi</div>
-                <div style={{fontSize:isPhoneEntry?22:(isTabletEntry?24:28),fontWeight:900,color:C.text,lineHeight:1.08}}>Uretim Girisi</div>
+                <div style={{fontSize:isPhoneEntry?22:(isTabletEntry?24:28),fontWeight:900,color:C.text,lineHeight:1.08}}>Üretim Girişi</div>
                 <div style={{fontSize:13,color:C.muted,maxWidth:700}}>
-                  Tezgah secimi, is emri ve vardiya girisi ayni akista toplanir. Once operasyon baglamini belirleyin, sonra dogru ve hurda miktarini girip vardiya kaydini onaylayin.
+                  Tezgah seçimi, iş emri ve vardiya girişi aynı akışta toplanır. Önce operasyon bağlamını belirleyin, sonra doğru ve hurda miktarını girip vardiya kaydını onaylayın.
                 </div>
                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                   <span style={{...infoPillStyle,display:"inline-flex",alignItems:"center",gap:6,background:rgbaFromHex(statusMeta.color,0.12),border:`1px solid ${rgbaFromHex(statusMeta.color,0.3)}`,color:statusMeta.color}}>
@@ -15675,7 +15675,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                     {statusMeta.label}
                   </span>
                   <span style={{...infoPillStyle,background:C.surface2,color:C.text,border:`1px solid ${C.border}`}}>{selectedDateLabel}</span>
-                  <span style={{...infoPillStyle,background:C.surface2,color:C.text,border:`1px solid ${C.border}`}}>Istasyon: {machineDisplayName}</span>
+                  <span style={{...infoPillStyle,background:C.surface2,color:C.text,border:`1px solid ${C.border}`}}>İstasyon: {machineDisplayName}</span>
                 </div>
               </div>
               <div style={standardHeroInfoGridStyle}>
@@ -15689,9 +15689,9 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                   <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{selectedShiftMeta.time}</div>
                 </div>
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 13px"}}>
-                  <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Is Emri</div>
-                  <div style={{fontSize:14,fontWeight:800,color:C.text,marginTop:4,whiteSpace:isPhoneEntry?"normal":"nowrap",overflow:"hidden",textOverflow:"ellipsis",wordBreak:"break-word"}}>{form.selectedOrder?.code||"Secilmedi"}</div>
-                  <div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:isPhoneEntry?"normal":"nowrap",overflow:"hidden",textOverflow:"ellipsis",wordBreak:"break-word"}}>{form.selectedOrder?.name||"Operasyona is emri baglayin"}</div>
+                  <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>İş Emri</div>
+                  <div style={{fontSize:14,fontWeight:800,color:C.text,marginTop:4,whiteSpace:isPhoneEntry?"normal":"nowrap",overflow:"hidden",textOverflow:"ellipsis",wordBreak:"break-word"}}>{form.selectedOrder?.code||"Seçilmedi"}</div>
+                  <div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:isPhoneEntry?"normal":"nowrap",overflow:"hidden",textOverflow:"ellipsis",wordBreak:"break-word"}}>{form.selectedOrder?.name||"Operasyona iş emri bağlayın"}</div>
                 </div>
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 13px"}}>
                   <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Hedef</div>
@@ -15705,18 +15705,18 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
           {editId&&(
             <div style={{background:rgbaFromHex(C.warn,0.14),border:`1px solid ${rgbaFromHex(C.warn,0.34)}`,borderRadius:12,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
               <div>
-                <div style={{fontSize:12,fontWeight:800,color:C.text}}>Duzenleme modu acik</div>
-                <div style={{fontSize:12,color:C.muted2,marginTop:2}}>Kayit onayi verirseniz secili vardiya kaydi guncellenir.</div>
+                <div style={{fontSize:12,fontWeight:800,color:C.text}}>Düzenleme modu açık</div>
+                <div style={{fontSize:12,color:C.muted2,marginTop:2}}>Kayıt onayı verirseniz seçili vardiya kaydı güncellenir.</div>
               </div>
-              <button onClick={()=>{setEditId(null);resetEntryForm();}} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Iptal</button>
+              <button onClick={()=>{setEditId(null);resetEntryForm();}} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>İptal</button>
             </div>
           )}
 
           {isPhoneEntry?(
             <>
               <div style={mobileSectionNavCardStyle}>
-                <div style={{fontSize:12,fontWeight:800,color:C.text}}>Mobil Operasyon Akisi</div>
-                <div style={{fontSize:12,color:C.muted2}}>Telefonda her adim ayri bolumde acilir. Kayit girisi ilk sekmede tutulur.</div>
+                <div style={{fontSize:12,fontWeight:800,color:C.text}}>Mobil Operasyon Akışı</div>
+                <div style={{fontSize:12,color:C.muted2}}>Telefonda her adım ayrı bölümde açılır. Kayıt girişi ilk sekmede tutulur.</div>
                 <div style={mobileSectionNavGridStyle}>
                   {mobileEntryTabs.map(tab=>{
                     const active=mobileEntrySection===tab.id;
@@ -15750,16 +15750,16 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
         </div>
       </div>
       <div style={{fontSize:12,color:C.muted2,background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 11px"}}>
-        Bu ekran daha net bir is akisi icin yeniden duzenlendi. Uretim kaydi <strong>Vardiya Sonu</strong> onayinda tamamlanir.
+        Bu ekran daha net bir iş akışı için yeniden düzenlendi. Üretim kaydı <strong>Vardiya Sonu</strong> onayında tamamlanır.
       </div>
       {showOrderDataPanel&&(
         <div style={{position:"fixed",inset:0,background:"rgba(8,12,18,.56)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",zIndex:58,display:"flex",alignItems:"center",justifyContent:"center",padding:isPhoneEntry?10:18}} onClick={()=>setShowOrderDataPanel(false)}>
           <div style={{width:"100%",maxWidth:960,maxHeight:isPhoneEntry?"92vh":"88vh",display:"flex",flexDirection:"column",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:"0 24px 56px rgba(0,0,0,.34)"}} onClick={e=>e.stopPropagation()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:isPhoneEntry?"flex-start":"center",padding:"12px 14px",background:C.surface,borderBottom:`1px solid ${C.border}`,gap:10,flexWrap:"wrap"}}>
               <div style={{minWidth:0}}>
-                <div style={{fontSize:12,color:C.muted2,fontWeight:700,letterSpacing:.5,textTransform:"uppercase"}}>Uretim Girisi</div>
+                <div style={{fontSize:12,color:C.muted2,fontWeight:700,letterSpacing:.5,textTransform:"uppercase"}}>Üretim Girişi</div>
                 <div style={{fontSize:17,color:C.text,fontWeight:800,whiteSpace:isPhoneEntry?"normal":"nowrap",overflow:"hidden",textOverflow:"ellipsis",wordBreak:"break-word"}}>
-                  Is Emri Dokumanlari {form.selectedOrder?.code?`· ${form.selectedOrder.code}`:""}
+                  İş Emri Dokümanları {form.selectedOrder?.code?`· ${form.selectedOrder.code}`:""}
                 </div>
               </div>
               <button onClick={()=>setShowOrderDataPanel(false)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
@@ -15767,23 +15767,23 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             <div style={{padding:12,overflowY:"auto",display:"flex",flexDirection:"column",gap:8}}>
               {!form.selectedOrder&&(
                 <div style={{padding:14,border:`1px dashed ${C.border}`,borderRadius:10,background:C.surface,fontSize:13,color:C.muted2,textAlign:"center"}}>
-                  Is emri secili degil.
+                  İş emri seçili değil.
                 </div>
               )}
               {form.selectedOrder&&selectedOrderFiles.length===0&&(
                 <div style={{padding:14,border:`1px dashed ${C.border}`,borderRadius:10,background:C.surface,fontSize:13,color:C.muted2,textAlign:"center"}}>
-                  Secili is emrinde dosya yok.
+                  Seçili iş emrinde dosya yok.
                 </div>
               )}
               {form.selectedOrder&&selectedOrderFiles.length>0&&selectedOrderFiles.map((f,i)=>(
                 <div key={`${f.name||"file"}_${i}`} style={{display:"flex",alignItems:isPhoneEntry?"flex-start":"center",gap:10,padding:"9px 10px",border:`1px solid ${C.border}`,borderRadius:10,background:C.surface,flexWrap:isPhoneEntry?"wrap":"nowrap"}}>
                   <div style={{fontSize:18,lineHeight:1}}>{getFileIcon(f.name)}</div>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name||"Dokuman"}</div>
+                    <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name||"Doküman"}</div>
                     <div style={{fontSize:11,color:C.muted2}}>{formatBytes(Number(f.size)||0)}</div>
                   </div>
                   <button onClick={()=>openOrderFile(f)} disabled={!getFileSource(f)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11,marginLeft:isPhoneEntry?28:0,opacity:getFileSource(f)?1:.45,cursor:getFileSource(f)?"pointer":"not-allowed"}}>
-                    {canFilePreview(f)?"Onizle":(getFileSource(f)?"Indir":"Kaynak Yok")}
+                    {canFilePreview(f)?"Önizle":(getFileSource(f)?"İndir":"Kaynak Yok")}
                   </button>
                 </div>
               ))}
@@ -15796,17 +15796,17 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
           <div style={{width:"100%",maxWidth:1120,height:isPhoneEntry?"92vh":"min(88vh,860px)",background:C.card,border:`1px solid ${C.border}`,borderRadius:16,overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 24px 60px rgba(0,0,0,.35)"}} onClick={e=>e.stopPropagation()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"12px 14px",borderBottom:`1px solid ${C.border}`,background:C.surface}}>
               <div>
-                <div style={{fontSize:12,color:C.muted2,letterSpacing:.5,textTransform:"uppercase",fontWeight:700}}>Uretim Girisi</div>
-                <div style={{fontSize:18,color:C.text,fontWeight:800}}>Is Emri Secimi</div>
+                <div style={{fontSize:12,color:C.muted2,letterSpacing:.5,textTransform:"uppercase",fontWeight:700}}>Üretim Girişi</div>
+                <div style={{fontSize:18,color:C.text,fontWeight:800}}>İş Emri Seçimi</div>
               </div>
               <button onClick={()=>{setShowPicker(false);setSearch("");}} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
             </div>
             <div style={standardPickerHeaderGridStyle}>
-              <input style={{...inputSt,padding:"11px 12px",fontSize:14,background:C.card}} placeholder="Is emri ara..." value={search} onChange={e=>setSearch(e.target.value)} autoFocus/>
-              <div style={{fontSize:13,color:C.muted,fontWeight:700}}>{filtered.length} is emri bulundu</div>
+              <input style={{...inputSt,padding:"11px 12px",fontSize:14,background:C.card}} placeholder="İş emri ara..." value={search} onChange={e=>setSearch(e.target.value)} autoFocus/>
+              <div style={{fontSize:13,color:C.muted,fontWeight:700}}>{filtered.length} iş emri bulundu</div>
             </div>
             <div style={{flex:1,minHeight:0,overflowY:"auto",padding:12}}>
-              {filtered.length===0&&<div style={{height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:C.muted2,fontWeight:700}}>Sonuc bulunamadi.</div>}
+              {filtered.length===0&&<div style={{height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:C.muted2,fontWeight:700}}>Sonuç bulunamadı.</div>}
               <div style={standardPickerCardsGridStyle}>
                 {filtered.map(o=>(
                   <button
@@ -15816,7 +15816,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                   >
                     <div style={{fontSize:13,fontFamily:"monospace",fontWeight:800,color:C.text}}>{o.code}</div>
                     <div style={{fontSize:12,color:C.muted,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.name||"-"}</div>
-                    <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{(o.machines||[]).join(", ")||"Tezgah tanimsiz"}</div>
+                    <div style={{fontSize:11,color:C.muted2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{(o.machines||[]).join(", ")||"Tezgah tanımsız"}</div>
                   </button>
                 ))}
               </div>
@@ -15835,8 +15835,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                   <SearchableSelect
                     value={toolDraft.machineToolId}
                     onChange={v=>setToolDraft(p=>({...p,machineToolId:v}))}
-                    placeholder="Takim sec (opsiyonel)"
-                    options={[{value:"",label:"Takim sec (opsiyonel)"},...toolOptions.map(t=>({value:t.id,label:`${t.code} - ${t.name} (Stok: ${Number(t.qty)||0})`}))]}
+                    placeholder="Takım seç (opsiyonel)"
+                    options={[{value:"",label:"Takım seç (opsiyonel)"},...toolOptions.map(t=>({value:t.id,label:`${t.code} - ${t.name} (Stok: ${Number(t.qty)||0})`}))]}
                   />
                   <input style={inputSt} type="number" min="1" placeholder="Adet" disabled={!toolDraft.machineToolId} value={toolDraft.machineToolQty} onChange={e=>setToolDraft(p=>({...p,machineToolQty:e.target.value}))}/>
                 </div>
@@ -15877,7 +15877,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               {isStepFile(previewFile)&&<StepFileViewer file={previewFile}/>}
               {!canFilePreview(previewFile)&&(
                 <div style={{padding:22,textAlign:"center",color:C.muted2,fontSize:13,border:`1px dashed ${C.border}`,borderRadius:10,background:C.card}}>
-                  Bu dosya turu icin onizleme yok. Dosyayi indirip harici uygulamada acabilirsiniz.
+                  Bu dosya türü için önizleme yok. Dosyayı indirip harici uygulamada açabilirsiniz.
                 </div>
               )}
             </div>
@@ -16038,9 +16038,9 @@ function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule})
 
   async function saveDowntimeQuick(){
     const type=downtimeTypes.find(t=>t.id===downtimeForm.typeId);
-    if(!type){showFlash("err","Durus tipi secin.");return;}
+    if(!type){showFlash("err","Duruş tipi seçin.");return;}
     const minutes=Math.max(1,safeNum(downtimeForm.minutes));
-    if(type.requireReason&&!downtimeForm.reason.trim()){showFlash("err","Durus nedeni zorunlu.");return;}
+    if(type.requireReason&&!downtimeForm.reason.trim()){showFlash("err","Duruş nedeni zorunlu.");return;}
     setBusy(b=>({...b,downtime:true}));
     const endDate=new Date();
     const startDate=new Date(endDate.getTime()-(minutes*60000));
@@ -16066,10 +16066,10 @@ function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule})
       await window.DB.addDoc("notifications",{type:"maintenance",title:"Bakim Bildirimi",message:`${selectedMachine} icin ${type.name} durusu girildi.`,severity:"high",status:"new",sourceKey:id,createdAt:new Date().toISOString()});
     }
     setBusy(b=>({...b,downtime:false}));
-    if(!id){showFlash("err","Durus kaydi olusturulamadi.");return;}
+    if(!id){showFlash("err","Duruş kaydı oluşturulamadı.");return;}
     setDowntimeEvents(prev=>[{id,...payload,createdAt:new Date().toISOString()},...prev]);
     setDowntimeForm(f=>({...f,reason:""}));
-    showFlash("ok","Durus kaydi alindi.");
+    showFlash("ok","Duruş kaydı alındı.");
   }
 
   async function saveQualityQuick(){
@@ -16155,32 +16155,32 @@ function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule})
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8}}>
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Bugun Dogru</div><div style={{fontSize:24,fontWeight:800,color:C.green}}>{todayGood}</div></div>
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Bugun Hurda</div><div style={{fontSize:24,fontWeight:800,color:C.red}}>{todayScrap}</div></div>
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Durus (dk)</div><div style={{fontSize:24,fontWeight:800,color:C.warn}}>{todayDowntimeMin}</div></div>
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Kalite Orani</div><div style={{fontSize:24,fontWeight:800,color:qualityPct<90?C.warn:C.green}}>%{qualityPct}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Bugün Doğru</div><div style={{fontSize:24,fontWeight:800,color:C.green}}>{todayGood}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Bugün Hurda</div><div style={{fontSize:24,fontWeight:800,color:C.red}}>{todayScrap}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Duruş (dk)</div><div style={{fontSize:24,fontWeight:800,color:C.warn}}>{todayDowntimeMin}</div></div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Kalite Oranı</div><div style={{fontSize:24,fontWeight:800,color:qualityPct<90?C.warn:C.green}}>%{qualityPct}</div></div>
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:isWide?"1.1fr .9fr":"1fr",gap:12}}>
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
-          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Uretim Girisi</div>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Üretim Girişi</div>
           <div>
-            <span style={labelSt}>Is Emri</span>
+            <span style={labelSt}>İş Emri</span>
             <SearchableSelect
               value={selectedOrderId}
               onChange={v=>setSelectedOrderId(v)}
-              placeholder={machineOrders.length===0?"Uygun is emri yok":"Is emri secin"}
+              placeholder={machineOrders.length===0?"Uygun iş emri yok":"İş emri seçin"}
               options={machineOrders.map(o=>({value:o.id,label:`${o.code} · ${o.name||o.partNo||"-"}`}))}
             />
           </div>
-          {selectedOrder&&<div style={{fontSize:12,color:C.muted2,marginTop:6}}>Parca sure: {fmtSec(selectedOrder.partSec)} · Termin: {selectedOrder.dueDate||"-"} · Oncelik: {selectedOrder.priority||"normal"}</div>}
+          {selectedOrder&&<div style={{fontSize:12,color:C.muted2,marginTop:6}}>Parça süre: {fmtSec(selectedOrder.partSec)} · Termin: {selectedOrder.dueDate||"-"} · Öncelik: {selectedOrder.priority||"normal"}</div>}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
-            <div><span style={labelSt}>Dogru Adet</span><input style={{...inputSt,padding:"13px 12px",fontSize:18,fontWeight:700,textAlign:"center"}} type="number" min="0" value={entryForm.correct} onChange={e=>setEntryForm(f=>({...f,correct:e.target.value}))}/></div>
+            <div><span style={labelSt}>Doğru Adet</span><input style={{...inputSt,padding:"13px 12px",fontSize:18,fontWeight:700,textAlign:"center"}} type="number" min="0" value={entryForm.correct} onChange={e=>setEntryForm(f=>({...f,correct:e.target.value}))}/></div>
             <div><span style={labelSt}>Hurda Adet</span><input style={{...inputSt,padding:"13px 12px",fontSize:18,fontWeight:700,textAlign:"center"}} type="number" min="0" value={entryForm.wrong} onChange={e=>setEntryForm(f=>({...f,wrong:e.target.value}))}/></div>
           </div>
-          <button onClick={saveEntryQuick} disabled={busy.entry} style={{...btnSt("primary"),width:"100%",padding:"13px 12px",marginTop:12,fontSize:15,opacity:busy.entry?0.7:1}}>{busy.entry?"Kaydediliyor...":"Uretim Kaydet"}</button>
+          <button onClick={saveEntryQuick} disabled={busy.entry} style={{...btnSt("primary"),width:"100%",padding:"13px 12px",marginTop:12,fontSize:15,opacity:busy.entry?0.7:1}}>{busy.entry?"Kaydediliyor...":"Üretim Kaydet"}</button>
           <div style={{marginTop:10,fontSize:12,color:C.muted2}}>
-            Son kayitlar: {todayEntries.slice(0,3).map(e=>`${e.jobCode} (${safeNum(e.correct)}/${safeNum(e.wrong)})`).join(" · ")||"-"}
+            Son kayıtlar: {todayEntries.slice(0,3).map(e=>`${e.jobCode} (${safeNum(e.correct)}/${safeNum(e.wrong)})`).join(" · ")||"-"}
           </div>
         </div>
 
@@ -16201,10 +16201,10 @@ function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule})
 
       <div style={{display:"grid",gridTemplateColumns:isWide?"1fr 1fr":"1fr",gap:12}}>
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
-          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Durus Girisi</div>
+          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Duruş Girişi</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 110px",gap:8}}>
             <div>
-              <span style={labelSt}>Durus Tipi</span>
+              <span style={labelSt}>Duruş Tipi</span>
               <SearchableSelect
                 value={downtimeForm.typeId}
                 onChange={v=>setDowntimeForm(f=>({...f,typeId:v}))}
@@ -16215,7 +16215,7 @@ function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule})
             <div><span style={labelSt}>Dakika</span><input style={inputSt} type="number" min="1" value={downtimeForm.minutes} onChange={e=>setDowntimeForm(f=>({...f,minutes:e.target.value}))}/></div>
           </div>
           <div style={{marginTop:8}}><span style={labelSt}>Neden</span><input style={inputSt} value={downtimeForm.reason} onChange={e=>setDowntimeForm(f=>({...f,reason:e.target.value}))} placeholder="Malzeme yok / ariza detayi vb."/></div>
-          <button onClick={saveDowntimeQuick} disabled={busy.downtime} style={{...btnSt("danger"),width:"100%",padding:"12px 12px",marginTop:10,fontSize:14,opacity:busy.downtime?0.7:1}}>{busy.downtime?"Kaydediliyor...":"Durus Kaydet"}</button>
+          <button onClick={saveDowntimeQuick} disabled={busy.downtime} style={{...btnSt("danger"),width:"100%",padding:"12px 12px",marginTop:10,fontSize:14,opacity:busy.downtime?0.7:1}}>{busy.downtime?"Kaydediliyor...":"Duruş Kaydet"}</button>
           <div style={{marginTop:8,fontSize:12,color:C.muted2}}>
             Son duruslar: {todayDowntimeRows.slice(0,3).map(r=>`${r.typeName} (${safeNum(r.durationMin)}dk)`).join(" · ")||"-"}
           </div>
@@ -16231,7 +16231,7 @@ function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule})
             <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Olcum</span><input style={inputSt} value={qualityForm.measurements} onChange={e=>setQualityForm(f=>({...f,measurements:e.target.value}))} placeholder="Opsiyonel olcum degeri"/></div>
           </div>
           <button onClick={saveQualityQuick} disabled={busy.quality} style={{...btnSt("green"),width:"100%",padding:"12px 12px",marginTop:10,fontSize:14,opacity:busy.quality?0.7:1}}>{busy.quality?"Kaydediliyor...":"Kalite Kaydet"}</button>
-          <div style={{marginTop:8,fontSize:12,color:C.muted2}}>Bugun pass/fail: <span style={{color:C.green,fontWeight:700}}>{todayQualityPass}</span> / <span style={{color:C.red,fontWeight:700}}>{todayQualityFail}</span></div>
+          <div style={{marginTop:8,fontSize:12,color:C.muted2}}>Bugün pass/fail: <span style={{color:C.green,fontWeight:700}}>{todayQualityPass}</span> / <span style={{color:C.red,fontWeight:700}}>{todayQualityFail}</span></div>
         </div>
       </div>
 
@@ -16239,7 +16239,7 @@ function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule})
         <div style={{fontSize:12,color:C.muted2}}>Detayli ekranlara gecis</div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           <button onClick={()=>onOpenModule&&onOpenModule("giris")} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Uretim Detay</button>
-          <button onClick={()=>onOpenModule&&onOpenModule("downtime")} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Durus Detay</button>
+          <button onClick={()=>onOpenModule&&onOpenModule("downtime")} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Duruş Detay</button>
           <button onClick={()=>onOpenModule&&onOpenModule("quality")} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Kalite Detay</button>
         </div>
       </div>
@@ -16289,7 +16289,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
       ],
     },
     salesOrders:{
-      label:"Satis Siparisleri",
+      label:"Satış Siparişleri",
       dateField:"recordDate",
       dimensions:[
         {id:"__all",label:"Toplam"},
@@ -16323,18 +16323,18 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
       ],
     },
     downtime:{
-      label:"Durus Kayitlari",
+      label:"Duruş Kayıtları",
       dateField:"date",
       dimensions:[
         {id:"__all",label:"Toplam"},
         {id:"machine",label:"Tezgah"},
-        {id:"typeName",label:"Durus Nedeni"},
+        {id:"typeName",label:"Duruş Nedeni"},
         {id:"category",label:"Kategori"},
         {id:"shift",label:"Vardiya"},
       ],
       metrics:[
-        {id:"__count",label:"Durus Adedi",aggs:["sum"]},
-        {id:"durationMin",label:"Durus Dakikasi",aggs:["sum","avg","max","min"]},
+        {id:"__count",label:"Duruş Adedi",aggs:["sum"]},
+        {id:"durationMin",label:"Duruş Dakikası",aggs:["sum","avg","max","min"]},
       ],
     },
     quality:{
@@ -17451,7 +17451,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
               <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10}}>
                 <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"center",marginBottom:9,flexWrap:"wrap"}}>
                   <div>
-                    <div style={{fontWeight:700,color:C.text,fontSize:14}}>{reportForm.name||"Yeni Rapor Onizleme"}</div>
+                    <div style={{fontWeight:700,color:C.text,fontSize:14}}>{reportForm.name||"Yeni Rapor Önizleme"}</div>
                     <div style={{fontSize:11,color:C.muted2,marginTop:1}}>
                       {previewCustomReport.src.label} · {previewCustomReport.dimensionLabel} / {previewCustomReport.metricLabel} · {previewCustomReport.cfg.aggregation.toUpperCase()}
                     </div>
@@ -17482,7 +17482,7 @@ function Report({currentUser,machines=DEFAULT_MACHINES}) {
                   </div>
                   <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
                     <Badge label={CHART_TYPE_LABELS[previewCustomReport.cfg.chartType]||previewCustomReport.cfg.chartType} color={C.accent}/>
-                    <button onClick={()=>addReportToDashboard(selectedCustomReport)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:11}}>Gosterge Paneline Ekle</button>
+                    <button onClick={()=>addReportToDashboard(selectedCustomReport)} style={{...btnSt("primary"),padding:"6px 10px",fontSize:11}}>Gösterge Paneline Ekle</button>
                   </div>
                 </div>
                 {renderCustomReportView(previewCustomReport)}
@@ -19302,7 +19302,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const summaryCards=[
     {label:"Aktif",value:String(activeCount),sub:"Degisim Yok"},
     {label:"Planli",value:String(scheduledCount),sub:"Degisim Yok"},
-    {label:"Bugun Terminli",value:String(dueTodayCount),sub:"Degisim Yok"},
+    {label:"Bugün Terminli",value:String(dueTodayCount),sub:"Degisim Yok"},
     {label:"Geciken",value:String(overdueCount),sub:"Degisim Yok",tone:overdueCount>0?C.accent:C.text},
     {label:"Geride",value:String(behindCount),sub:"Degisim Yok",tone:behindCount>0?C.warn:C.text},
     {label:"Zamaninda",value:`%${onTimePct}`,sub:"Izleniyor"},
@@ -19708,7 +19708,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                           disabled={isPlanned}
                           style={{...btnSt("ghost"),padding:"3px 7px",fontSize:11,opacity:isPlanned?0.5:1,cursor:isPlanned?"not-allowed":"pointer"}}
                         >
-                          Bugun
+                          Bugün
                         </button>
                         <button
                           onClick={()=>openWeekPlanModalForOrder(order)}
@@ -20270,7 +20270,7 @@ function MachineConnectivityPrep({currentUser,machines=DEFAULT_MACHINES,onMachin
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
           <div style={{fontWeight:700,color:C.text}}>Makina Baglanti Hazirligi (Baglanti Yok Modu)</div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            <button onClick={downloadMachineConnectionPdf} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Baglanti Dokumani PDF</button>
+            <button onClick={downloadMachineConnectionPdf} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Bağlantı Dokümanı PDF</button>
             <button onClick={startCreate} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>+ Makina Profili</button>
           </div>
         </div>
@@ -20852,9 +20852,9 @@ function MRPDashboard({
   const dashboardReportSourceMeta=useMemo(()=>({
     entries:{label:"Uretim Kayitlari"},
     orders:{label:"Is Emirleri"},
-    salesOrders:{label:"Satis Siparisleri"},
+    salesOrders:{label:"Satış Siparişleri"},
     materials:{label:"Malzeme Kartlari"},
-    downtime:{label:"Durus Kayitlari"},
+    downtime:{label:"Duruş Kayıtları"},
     quality:{label:"Kalite Muayeneleri"},
   }),[]);
   const load=useCallback(async()=>{
@@ -22896,7 +22896,7 @@ function DowntimeModule({currentUser,machines=DEFAULT_MACHINES,filtersVisible=tr
   async function saveEvent(){
     const type=types.find(t=>t.id===eventForm.typeId);
     const selectedShiftRow=shiftRows.find(row=>row.id===eventForm.shift)||shiftRows[0]||DEFAULT_SHIFT_WINDOWS[0];
-    if(!type){alert("Durus tipi secin.");return;}
+    if(!type){alert("Duruş tipi seçin.");return;}
     if(type.requireReason&&!eventForm.reason.trim()){alert("Bu durus tipi icin neden girisi zorunlu.");return;}
     const startMs=Date.parse(eventForm.startAt);
     const endMs=Date.parse(eventForm.endAt);
@@ -25576,36 +25576,36 @@ function App() {
   const allTabs=useMemo(()=>{
     if(isOperatorRole){
       return [
-        {id:"giris",icon:"giris",label:"Uretim Girisi",group:"Operasyon",enabled:canEntry},
+        {id:"giris",icon:"giris",label:"Üretim Girişi",group:"Operasyon",enabled:canEntry},
         {id:"assignments",icon:"tasks",label:"Gorevlerim",group:"Operasyon",enabled:true},
       ];
     }
     return [
       {id:"dashboard",icon:"dashboard",label:"Gösterge Paneli",group:"Genel",enabled:(canEntry||canOrders||canReport||canSales||canPurchasing)},
-      {id:"customers",icon:"customers",label:"Musteriler",group:"Ticari",enabled:(canCustomers||canSales)},
-      {id:"quotes",icon:"quotes",label:"Teklif Yonetimi",group:"Ticari",enabled:canSales},
-      {id:"sales",icon:"sales",label:"Satis Siparisleri",group:"Ticari",enabled:canSales},
+      {id:"customers",icon:"customers",label:"Müşteriler",group:"Ticari",enabled:(canCustomers||canSales)},
+      {id:"quotes",icon:"quotes",label:"Teklif Yönetimi",group:"Ticari",enabled:canSales},
+      {id:"sales",icon:"sales",label:"Satış Siparişleri",group:"Ticari",enabled:canSales},
       {id:"parts",icon:"parts",label:"Ürün/Parça Merkezi",group:"Planlama",enabled:canPlanning},
       {id:"planning",icon:"planning",label:"Planlama",group:"Planlama",enabled:canPlanning},
-      {id:"orders",icon:"orders",label:"Is Emirleri",group:"Planlama",enabled:canOrders},
-      {id:"assignments",icon:"tasks",label:"Calisan Gorevlendirme",group:"Operasyon",enabled:true},
-      {id:"cncmonitor",icon:"monitor",label:"CNC Izleme",group:"Operasyon",enabled:canMonitor},
-      {id:"downtime",icon:"downtime",label:"Durus Yonetimi",group:"Operasyon",enabled:canDowntime},
-      {id:"quality",icon:"quality",label:"Kalite ve Izlenebilirlik",group:"Kalite",enabled:canQuality},
-      {id:"materials",icon:"materials",label:"Malzeme Kutuphanesi",group:"Stok ve Tedarik",enabled:(canOrders||canPurchasing)},
-      {id:"tools",icon:"tools",label:"Takim Yonetimi",group:"Stok ve Tedarik",enabled:canTools},
+      {id:"orders",icon:"orders",label:"İş Emirleri",group:"Planlama",enabled:canOrders},
+      {id:"assignments",icon:"tasks",label:"Çalışan Görevlendirme",group:"Operasyon",enabled:true},
+      {id:"cncmonitor",icon:"monitor",label:"CNC İzleme",group:"Operasyon",enabled:canMonitor},
+      {id:"downtime",icon:"downtime",label:"Duruş Yönetimi",group:"Operasyon",enabled:canDowntime},
+      {id:"quality",icon:"quality",label:"Kalite ve İzlenebilirlik",group:"Kalite",enabled:canQuality},
+      {id:"materials",icon:"materials",label:"Malzeme Kütüphanesi",group:"Stok ve Tedarik",enabled:(canOrders||canPurchasing)},
+      {id:"tools",icon:"tools",label:"Takım Yönetimi",group:"Stok ve Tedarik",enabled:canTools},
       {id:"purchase_requests",icon:"purchase",label:"Talep ve PO",group:"Stok ve Tedarik",enabled:canPurchasing},
-      {id:"purchase_suppliers",icon:"customers",label:"Tedarikciler",group:"Stok ve Tedarik",enabled:canPurchasing},
+      {id:"purchase_suppliers",icon:"customers",label:"Tedarikçiler",group:"Stok ve Tedarik",enabled:canPurchasing},
       {id:"rapor",icon:"rapor",label:"Raporlar",group:"Analiz",enabled:canReport},
       {id:"finance",icon:"cost",label:"Finans",group:"Analiz",enabled:(canSales||canPurchasing||canReport)},
       {id:"cost",icon:"cost",label:"Maliyetleme",group:"Analiz",enabled:(canOrders||canReport||canSales)},
       {id:"materialquote",icon:"cost",label:"Malzeme Teklif",group:"Analiz",enabled:(canOrders||canSales||canPurchasing||canReport)},
       {id:"progenergy",icon:"integration",label:"Program ve Enerji",group:"Analiz",enabled:canSmartFactory},
-      {id:"toolcycle",icon:"tools",label:"Takim ve Cevrim",group:"Analiz",enabled:canSmartFactory},
-      {id:"closedloop",icon:"quality",label:"Olcum ve Depo",group:"Analiz",enabled:canSmartFactory},
-      {id:"machineprep",icon:"machines",label:"Makina Hazirlik",group:"Sistem",enabled:canMachinePrep},
+      {id:"toolcycle",icon:"tools",label:"Takım ve Çevrim",group:"Analiz",enabled:canSmartFactory},
+      {id:"closedloop",icon:"quality",label:"Ölçüm ve Depo",group:"Analiz",enabled:canSmartFactory},
+      {id:"machineprep",icon:"machines",label:"Makine Hazırlık",group:"Sistem",enabled:canMachinePrep},
       {id:"integrations",icon:"integration",label:"Entegrasyonlar",group:"Sistem",enabled:(canUsers||isAdmin)},
-      {id:"users",icon:"users",label:"Ayarlar ve Guvenlik",group:"Sistem",enabled:canUsers},
+      {id:"users",icon:"users",label:"Ayarlar ve Güvenlik",group:"Sistem",enabled:canUsers},
     ];
   },[canEntry,canOrders,canSales,canPurchasing,canQuality,canDowntime,canReport,canPlanning,canTools,canCustomers,canMachinePrep,canUsers,isAdmin,canSmartFactory,isOperatorRole,canMonitor]);
   const hiddenTabs=menuVisibility?.hiddenTabs||[];
@@ -25616,16 +25616,16 @@ function App() {
   },[allTabs,hiddenTabs]);
   const tabs=enabledTabs;
   const dashboardCreateCatalog=useMemo(()=>([
-    {id:"orders",tabId:"orders",eventTab:"orders",label:"Is Emri",hint:"Operasyon kaydi"},
-    {id:"quotes",tabId:"quotes",eventTab:"quotes",label:"Teklif",hint:"Satis teklifi"},
-    {id:"sales",tabId:"sales",eventTab:"sales",label:"Satis Siparisi",hint:"Musteri siparisi"},
-    {id:"planning",tabId:"planning",eventTab:"planning",label:"Planlama",hint:"Plan kaydi"},
+    {id:"orders",tabId:"orders",eventTab:"orders",label:"İş Emri",hint:"Operasyon kaydı"},
+    {id:"quotes",tabId:"quotes",eventTab:"quotes",label:"Teklif",hint:"Satış teklifi"},
+    {id:"sales",tabId:"sales",eventTab:"sales",label:"Satış Siparişi",hint:"Müşteri siparişi"},
+    {id:"planning",tabId:"planning",eventTab:"planning",label:"Planlama",hint:"Plan kaydı"},
     {id:"parts",tabId:"parts",eventTab:"parts",label:"Ürün/Parça Merkezi",hint:"Ürün/parça kaydı"},
-    {id:"materials",tabId:"materials",eventTab:"materials",label:"Malzeme",hint:"Malzeme karti"},
-    {id:"tools",tabId:"tools",eventTab:"tools",label:"Takim",hint:"Takim kaydi"},
-    {id:"customers",tabId:"customers",eventTab:"customers",label:"Musteri",hint:"Musteri karti"},
-    {id:"assignments",tabId:"assignments",eventTab:"assignments",label:"Gorev",hint:"Calisan gorevlendirme"},
-    {id:"purchase_suppliers",tabId:"purchase_suppliers",eventTab:"purchase_suppliers",label:"Tedarikci",hint:"Tedarikci karti"},
+    {id:"materials",tabId:"materials",eventTab:"materials",label:"Malzeme",hint:"Malzeme kartı"},
+    {id:"tools",tabId:"tools",eventTab:"tools",label:"Takım",hint:"Takım kaydı"},
+    {id:"customers",tabId:"customers",eventTab:"customers",label:"Müşteri",hint:"Müşteri kartı"},
+    {id:"assignments",tabId:"assignments",eventTab:"assignments",label:"Görev",hint:"Çalışan görevlendirme"},
+    {id:"purchase_suppliers",tabId:"purchase_suppliers",eventTab:"purchase_suppliers",label:"Tedarikçi",hint:"Tedarikçi kartı"},
   ]),[]);
   const dashboardCreateOptions=useMemo(()=>{
     return dashboardCreateCatalog
