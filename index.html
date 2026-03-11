@@ -2242,6 +2242,348 @@ function buildDocumentTemplateSampleData(templateId,companyProfile={}){
     },
   };
 }
+function escapeDocumentHtml(value){
+  return String(value??"")
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;")
+    .replace(/'/g,"&#39;");
+}
+function documentHtmlMultiline(value){
+  return escapeDocumentHtml(value).replace(/\n/g,"<br/>");
+}
+function formatDocumentOutputDate(value){
+  const raw=String(value||"").trim();
+  if(!raw) return "";
+  if(/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0,10);
+  const stamp=Date.parse(raw);
+  if(Number.isFinite(stamp)) return ymdLocal(new Date(stamp));
+  return raw;
+}
+function formatDocumentMoney(value,currencyCode="TRY"){
+  return `${safeNum(value).toFixed(2)} ${String(currencyCode||"TRY").toUpperCase()}`;
+}
+function buildDocumentCompanyPayload(companyProfile={},currentUser=null){
+  const profile=normalizeQuoteTemplate(companyProfile||{});
+  return {
+    company:{
+      name:String(profile.companyName||DEFAULT_QUOTE_TEMPLATE.companyName||"Firma").trim()||"Firma",
+      address:String(profile.companyAddress||"").trim(),
+      phone:String(profile.companyPhone||"").trim(),
+      email:String(profile.companyEmail||"").trim(),
+      taxOffice:"",
+      taxNo:"",
+    },
+    customer:{
+      name:"",
+      address:"",
+      phone:"",
+      email:"",
+      taxOffice:"",
+      taxNo:"",
+      contact:"",
+    },
+    salesRep:{name:String(currentUser?.fullName||currentUser?.id||"").trim()},
+    document:{title:""},
+    quote:{},
+    order:{},
+    workOrder:{},
+    part:{},
+    material:{},
+    routing:{},
+    totals:{subTotal:"",discount:"",tax:"",grandTotal:""},
+    items:[],
+    operations:[],
+    materials:[],
+    notes:{
+      general:String(profile.footerNote||"").trim(),
+      setup:"",
+      quality:"",
+      operator:"",
+    },
+  };
+}
+function renderDocumentTemplateBlockHtml(block,data,{logoSrc=""}={}){
+  const accent=normalizeHexColor(block.accentColor||block.color||"#111827","#111827");
+  const accentSoft=rgbaFromHex(accent,0.08);
+  const accentBorder=rgbaFromHex(accent,0.18);
+  const spanClass=block.span===2?"dt-span-2":"dt-span-1";
+  if(block.type==="brandHeader"){
+    const companyName=escapeDocumentHtml(data?.company?.name||"Firma");
+    const metaHtml=documentHtmlMultiline(renderDocumentTemplateText(block.metaText,data)||"-");
+    const rightHtml=documentHtmlMultiline(renderDocumentTemplateText(block.rightText,data)||"-");
+    const hasLogo=Boolean(block.showLogo&&String(logoSrc||"").trim());
+    return `
+      <section class="dt-block ${spanClass}">
+        <div class="dt-brand" style="border-bottom:2px solid ${accent}">
+          <div class="dt-brand-main">
+            ${block.showLogo?`
+              <div class="dt-logo" style="border-color:${accentBorder}">
+                ${hasLogo
+                  ? `<img src="${escapeDocumentHtml(logoSrc)}" alt="Logo" />`
+                  : `<div class="dt-logo-fallback">${companyName}</div>`}
+              </div>
+            `:""}
+            <div class="dt-brand-copy">
+              <div class="dt-company-name">${companyName}</div>
+              <div class="dt-company-meta">${metaHtml}</div>
+            </div>
+          </div>
+          <div class="dt-brand-side" style="border-color:${accentBorder};background:${accentSoft}">
+            ${rightHtml}
+          </div>
+        </div>
+      </section>
+    `;
+  }
+  if(block.type==="text"){
+    return `
+      <section class="dt-block ${spanClass}">
+        <div class="dt-text" style="font-size:${Math.max(10,safeNum(block.fontSize)||12)}px;font-weight:${safeNum(block.weight)||600};text-align:${block.align||"left"};color:${escapeDocumentHtml(block.color||"#111827")}">
+          ${documentHtmlMultiline(renderDocumentTemplateText(block.content,data)||"-")}
+        </div>
+      </section>
+    `;
+  }
+  if(block.type==="fieldRow"){
+    return `
+      <section class="dt-block ${spanClass}">
+        <div class="dt-field-row" style="font-size:${Math.max(10,safeNum(block.fontSize)||11)}px;${block.showBorder?`border-bottom:1px solid ${accentBorder};padding-bottom:6px;`:""}">
+          <span class="dt-field-label">${escapeDocumentHtml(block.label||"Alan")}</span>
+          <span class="dt-field-value" style="font-weight:${safeNum(block.valueWeight)||700}">
+            ${documentHtmlMultiline(resolveDocumentTemplateToken(block.token,data)||"-")}
+          </span>
+        </div>
+      </section>
+    `;
+  }
+  if(block.type==="infoGrid"){
+    const itemsHtml=(block.items||[]).map(item=>`
+      <div class="dt-info-item">
+        <div class="dt-info-label">${escapeDocumentHtml(item.label||"Alan")}</div>
+        <div class="dt-info-value">${documentHtmlMultiline(resolveDocumentTemplateToken(item.token,data)||"-")}</div>
+      </div>
+    `).join("");
+    return `
+      <section class="dt-block ${spanClass}">
+        <div class="dt-box">
+          <div class="dt-box-head" style="background:${accentSoft};border-color:${accentBorder}">${escapeDocumentHtml(block.title||"Bilgi Kutusu")}</div>
+          <div class="dt-info-grid ${block.columns===2?"dt-info-grid-2":"dt-info-grid-1"}">
+            ${itemsHtml}
+          </div>
+        </div>
+      </section>
+    `;
+  }
+  if(block.type==="table"){
+    const rows=Array.isArray(data?.[block.source])?data[block.source]:[];
+    const headHtml=(block.columns||[]).map(col=>`<th style="text-align:${col.align||"left"}">${escapeDocumentHtml(col.label||"Kolon")}</th>`).join("");
+    const bodyHtml=rows.length>0
+      ? rows.map((row,idx)=>`
+          <tr>
+            ${(block.columns||[]).map(col=>`
+              <td style="text-align:${col.align||"left"}">${documentHtmlMultiline(resolveDocumentTemplateToken(col.token,data,row)||"-")}</td>
+            `).join("")}
+          </tr>
+        `).join("")
+      : `<tr><td colspan="${Math.max(1,(block.columns||[]).length)}" class="dt-table-empty">Veri bulunamadi.</td></tr>`;
+    return `
+      <section class="dt-block dt-span-2">
+        <div class="dt-box">
+          <div class="dt-box-head" style="background:${accentSoft};border-color:${accentBorder}">${escapeDocumentHtml(block.title||"Tablo")}</div>
+          <table class="dt-table">
+            <thead><tr>${headHtml}</tr></thead>
+            <tbody>${bodyHtml}</tbody>
+          </table>
+        </div>
+      </section>
+    `;
+  }
+  if(block.type==="summaryList"){
+    const itemsHtml=(block.items||[]).map((item,idx,arr)=>{
+      const strong=Boolean(block.emphasizeLastRow)&&idx===arr.length-1;
+      return `
+        <div class="dt-summary-row ${strong?"is-strong":""}">
+          <span>${escapeDocumentHtml(item.label||"Alan")}</span>
+          <span>${documentHtmlMultiline(resolveDocumentTemplateToken(item.token,data)||"-")}</span>
+        </div>
+      `;
+    }).join("");
+    return `
+      <section class="dt-block ${spanClass}">
+        <div class="dt-box">
+          <div class="dt-box-head" style="background:${accentSoft};border-color:${accentBorder}">${escapeDocumentHtml(block.title||"Ozet")}</div>
+          <div class="dt-summary">${itemsHtml}</div>
+        </div>
+      </section>
+    `;
+  }
+  if(block.type==="divider"){
+    return `
+      <section class="dt-block dt-span-2">
+        <div class="dt-divider" style="height:${Math.max(1,safeNum(block.thickness)||1)}px;background:${escapeDocumentHtml(block.color||accent)}"></div>
+      </section>
+    `;
+  }
+  return `
+    <section class="dt-block dt-span-2">
+      <div style="height:${Math.max(4,safeNum(block.height)||18)}px"></div>
+    </section>
+  `;
+}
+function buildDocumentTemplatePrintHtml({templateId,template,data,logoSrc="",documentCode=""}={}){
+  const normalizedTemplate=normalizeDocumentTemplate(templateId,template||{});
+  const pageTitle=String(data?.document?.title||normalizedTemplate.pageTitle||"Belge").trim()||"Belge";
+  const blocksHtml=(normalizedTemplate.blocks||[]).map(block=>renderDocumentTemplateBlockHtml(block,data,{logoSrc})).join("");
+  return `<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeDocumentHtml(pageTitle)}${documentCode?` - ${escapeDocumentHtml(documentCode)}`:""}</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #111827; background: #ffffff; }
+    .sheet { width: 100%; max-width: 186mm; margin: 0 auto; }
+    .dt-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+    .dt-block { break-inside: auto; page-break-inside: auto; }
+    .dt-span-2 { grid-column: 1 / -1; }
+    .dt-brand { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(180px, .8fr); gap: 16px; padding-bottom: 12px; margin-bottom: 2px; }
+    .dt-brand-main { display: flex; gap: 12px; align-items: flex-start; min-width: 0; }
+    .dt-logo { width: 88px; min-width: 88px; height: 88px; border: 1px solid #d1d5db; border-radius: 10px; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #ffffff; }
+    .dt-logo img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+    .dt-logo-fallback { font-size: 12px; font-weight: 800; text-align: center; line-height: 1.35; padding: 6px; }
+    .dt-brand-copy { min-width: 0; }
+    .dt-company-name { font-size: 28px; font-weight: 800; line-height: 1.05; word-break: break-word; }
+    .dt-company-meta { font-size: 11px; color: #4b5563; line-height: 1.5; margin-top: 6px; }
+    .dt-brand-side { border: 1px solid #d1d5db; border-radius: 10px; padding: 10px 12px; font-size: 11px; font-weight: 700; line-height: 1.5; white-space: pre-wrap; }
+    .dt-text { white-space: pre-wrap; line-height: 1.3; }
+    .dt-field-row { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+    .dt-field-label { color: #4b5563; }
+    .dt-field-value { color: #111827; text-align: right; }
+    .dt-box { border: 1px solid #d1d5db; border-radius: 12px; overflow: hidden; background: #ffffff; }
+    .dt-box-head { padding: 8px 10px; border-bottom: 1px solid #d1d5db; font-size: 11px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; }
+    .dt-info-grid { display: grid; gap: 10px; padding: 10px; }
+    .dt-info-grid-1 { grid-template-columns: 1fr; }
+    .dt-info-grid-2 { grid-template-columns: 1fr 1fr; }
+    .dt-info-item { display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: start; font-size: 11px; }
+    .dt-info-label { color: #4b5563; }
+    .dt-info-value { color: #111827; font-weight: 700; line-height: 1.45; word-break: break-word; }
+    .dt-table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+    .dt-table thead { display: table-header-group; }
+    .dt-table th, .dt-table td { border-bottom: 1px solid #e5e7eb; padding: 7px 8px; vertical-align: top; }
+    .dt-table th { background: #f3f4f6; color: #374151; font-weight: 700; }
+    .dt-table-empty { text-align: center; color: #6b7280; padding: 12px 10px; }
+    .dt-summary { padding: 10px; }
+    .dt-summary-row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid #e5e7eb; font-size: 11px; }
+    .dt-summary-row span:first-child { color: #4b5563; }
+    .dt-summary-row span:last-child { color: #111827; font-weight: 700; text-align: right; }
+    .dt-summary-row.is-strong span:first-child { font-weight: 700; }
+    .dt-summary-row.is-strong span:last-child { font-weight: 800; }
+    .dt-summary-row:last-child { border-bottom: none; }
+    .dt-divider { border-radius: 999px; }
+    @media print {
+      .sheet { max-width: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <div class="dt-grid">
+      ${blocksHtml||`<div>${escapeDocumentHtml(pageTitle)}</div>`}
+    </div>
+  </div>
+  <script>
+    window.addEventListener("load", function(){
+      setTimeout(function(){
+        window.focus();
+        window.print();
+      }, 250);
+    });
+  <\/script>
+</body>
+</html>`;
+}
+function buildDocumentPrintStatusHtml(title,message){
+  const safeTitle=escapeDocumentHtml(title||"Belge hazirlaniyor");
+  const safeMessage=documentHtmlMultiline(message||"Lutfen bekleyin...");
+  return `<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <title>${safeTitle}</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #111827;
+      background:
+        radial-gradient(circle at top, rgba(240, 90, 0, 0.14), transparent 42%),
+        linear-gradient(180deg, #fffaf5 0%, #f8fafc 100%);
+    }
+    .status-card {
+      width: min(460px, 100%);
+      border: 1px solid rgba(240, 90, 0, 0.18);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.96);
+      box-shadow: 0 20px 45px rgba(15, 23, 42, 0.12);
+      padding: 24px;
+    }
+    .status-kicker {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: #f05a00;
+    }
+    .status-title {
+      margin-top: 10px;
+      font-size: 26px;
+      font-weight: 800;
+      line-height: 1.1;
+    }
+    .status-message {
+      margin-top: 12px;
+      font-size: 13px;
+      line-height: 1.6;
+      color: #4b5563;
+    }
+  </style>
+</head>
+<body>
+  <div class="status-card">
+    <div class="status-kicker">Factorab</div>
+    <div class="status-title">${safeTitle}</div>
+    <div class="status-message">${safeMessage}</div>
+  </div>
+</body>
+</html>`;
+}
+function writeDocumentPrintWindow(printWindow,html){
+  if(!printWindow||printWindow.closed) return false;
+  try{
+    printWindow.document.open();
+    printWindow.document.write(String(html||""));
+    printWindow.document.close();
+    return true;
+  }catch{
+    return false;
+  }
+}
+function openDocumentPrintWindow(html=""){
+  if(typeof window==="undefined") return null;
+  const printWindow=window.open("","_blank","width=1120,height=900");
+  if(!printWindow) return null;
+  if(String(html||"").trim()) writeDocumentPrintWindow(printWindow,html);
+  return printWindow;
+}
 function hexToRgb(hex,fallback={r:87,g:190,b:144}){
   const clean=String(hex||"").replace("#","").trim();
   if(!/^[0-9a-fA-F]{6}$/.test(clean)) return fallback;
@@ -11497,200 +11839,117 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     setView("orders");
   }
 
-  async function exportSalesPdf(docType,doc){
-    const loaded=await ensureExternalScript(
-      "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
-      ()=>Boolean(window.jspdf&&window.jspdf.jsPDF)
-    );
-    if(!loaded||!window.jspdf||!window.jspdf.jsPDF){alert("PDF motoru yuklenemedi.");return;}
-    try{
-      const {jsPDF}=window.jspdf;
-      const pdf=new jsPDF({unit:"pt",format:"a4"});
-      const pageW=pdf.internal.pageSize.getWidth();
-      const pageH=pdf.internal.pageSize.getHeight();
-      const margin=34;
-      const contentW=pageW-(margin*2);
-      const template=normalizeQuoteTemplate(quoteTemplate||{});
-      const accent=hexToRgb(template.accentColor);
-      const isQuote=docType==="quote";
-      const titleBase=isQuote?template.documentTitleQuote:template.documentTitleOrder;
-      const title=`${titleBase} - ${doc.code||""}`;
-      const docCurrency=String(doc.currency||defaultQuoteCurrency||"TRY").toUpperCase();
-      const rows=(doc.lines||[]).map(r=>{
-        const qty=safeNum(r.qty);
-        const unit=safeNum(r.unitPrice);
-        const disc=safeNum(r.discountPct);
-        const total=qty*unit*(1-disc/100);
-        return {
-          partNo:r.partNo||"",
-          partName:r.partName||"",
-          qty,
-          unit,
-          disc,
-          total,
-          dueDate:r.dueDate||"",
-        };
-      });
-
-      pdf.setFillColor(accent.r,accent.g,accent.b);
-      pdf.rect(0,0,pageW,78,"F");
-
-      let titleX=margin;
-      if(template.showLogo&&brandingLogo&&String(brandingLogo).startsWith("data:image/")){
-        try{
-          pdf.addImage(brandingLogo,"PNG",margin,17,44,44);
-          titleX+=54;
-        }catch{}
-      }
-
-      pdf.setTextColor(255,255,255);
-      pdf.setFont("helvetica","bold");
-      pdf.setFontSize(16);
-      pdf.text(title,titleX,36);
-      pdf.setFont("helvetica","normal");
-      pdf.setFontSize(10);
-      const companyLine=[template.companyName,template.companyPhone,template.companyEmail].filter(Boolean).join(" · ");
-      if(companyLine) pdf.text(companyLine,titleX,54);
-
-      pdf.setTextColor(32,32,32);
-      let y=98;
-      const leftMeta=[
-        `Musteri: ${doc.customerName||"-"}`,
-        `Belge No: ${doc.code||"-"}`,
-        isQuote?`Gecerlilik: ${doc.validUntil||"-"}`:`Termin: ${doc.dueDate||"-"}`,
-      ];
-      if(!isQuote&&doc.customerOrderCode) leftMeta.push(`Musteri Siparis Kodu: ${doc.customerOrderCode}`);
-      if(template.companyAddress) leftMeta.push(`Adres: ${template.companyAddress}`);
-      leftMeta.forEach(line=>{
-        const lines=pdf.splitTextToSize(line,contentW);
-        pdf.text(lines,margin,y);
-        y+=lines.length*12;
-      });
-
-      y+=8;
-      const columns=isQuote
-        ? [
-          {label:"Parca No",key:"partNo",width:110,align:"left"},
-          {label:"Aciklama",key:"partName",width:250,align:"left"},
-          {label:"Adet",key:"qty",width:70,align:"right"},
-          {label:"Termin",key:"dueDate",width:90,align:"left"},
-        ]
-        : [
-          {label:"Parca No",key:"partNo",width:72,align:"left"},
-          {label:"Aciklama",key:"partName",width:146,align:"left"},
-          {label:"Adet",key:"qty",width:44,align:"right"},
-          {label:"Birim",key:"unit",width:58,align:"right"},
-          {label:"Isk.%",key:"disc",width:44,align:"right"},
-          {label:"Tutar",key:"total",width:66,align:"right"},
-          {label:"Termin",key:"dueDate",width:75,align:"left"},
-        ];
-      const tableW=columns.reduce((sum,c)=>sum+c.width,0);
-      const headerH=22;
-
-      const drawHeader=(rowY)=>{
-        pdf.setFillColor(238,244,252);
-        pdf.rect(margin,rowY,tableW,headerH,"F");
-        pdf.setDrawColor(208,214,223);
-        pdf.rect(margin,rowY,tableW,headerH);
-        let x=margin;
-        pdf.setFont("helvetica","bold");
-        pdf.setFontSize(9);
-        pdf.setTextColor(35,35,35);
-        columns.forEach(col=>{
-          pdf.text(col.label,x+4,rowY+14);
-          x+=col.width;
-        });
+  function buildSalesDocumentOutputData(doc,pageTitle){
+    const customer=customers.find(row=>row.id===doc?.customerId)||null;
+    const base=buildDocumentCompanyPayload(quoteTemplate,currentUser);
+    const currency=String(doc?.currency||defaultQuoteCurrency||"TRY").toUpperCase();
+    const sourceLines=Array.isArray(doc?.lines)?doc.lines:[];
+    const createdDate=formatDocumentOutputDate(doc?.createdAt||doc?.updatedAt||todayStr())||todayStr();
+    const deliveryDate=formatDocumentOutputDate(doc?.dueDate||doc?.deliveryDate||"");
+    const validUntil=formatDocumentOutputDate(doc?.validUntil||"");
+    const paymentTerms=`${Math.max(0,safeNum(doc?.paymentTermDays??0))} Gun`;
+    const itemRows=sourceLines.map((line,idx)=>{
+      const qty=Math.max(0,safeNum(line?.qty));
+      const unitPrice=Math.max(0,safeNum(line?.unitPrice));
+      const discountPct=Math.max(0,Math.min(100,safeNum(line?.discountPct)));
+      const total=qty*unitPrice*(1-(discountPct/100));
+      return {
+        lineNo:String(idx+1),
+        name:String(line?.partName||line?.partNo||"Kalem").trim(),
+        unitPrice:formatDocumentMoney(unitPrice,currency),
+        qty:String(qty),
+        total:formatDocumentMoney(total,currency),
       };
-
-      drawHeader(y);
-      y+=headerH;
-      pdf.setFont("helvetica","normal");
-      pdf.setFontSize(9);
-
-      rows.forEach(row=>{
-        const descCol=columns.find(c=>c.key==="partName");
-        const descWidth=(descCol?descCol.width:146)-8;
-        const descLines=pdf.splitTextToSize(String(row.partName||"-"),Math.max(40,descWidth));
-        const rowH=Math.max(18,descLines.length*11+4);
-        if(y+rowH>pageH-118){
-          pdf.addPage();
-          y=margin;
-          drawHeader(y);
-          y+=headerH;
-          pdf.setFont("helvetica","normal");
-          pdf.setFontSize(9);
-        }
-        let x=margin;
-        columns.forEach(col=>{
-          pdf.setDrawColor(223,228,234);
-          pdf.rect(x,y,col.width,rowH);
-          const raw=row[col.key];
-          let text="";
-          if(col.key==="qty") text=String(safeNum(raw));
-          else if(["unit","disc","total"].includes(col.key)) text=safeNum(raw).toFixed(2);
-          else text=String(raw||"-");
-          if(col.key==="partName"){
-            pdf.text(descLines,x+4,y+11);
-          }else if(col.align==="right"){
-            pdf.text(text,x+col.width-4,y+11,{align:"right"});
-          }else{
-            pdf.text(text,x+4,y+11);
-          }
-          x+=col.width;
-        });
-        y+=rowH;
-      });
-
-      y+=10;
-      if(!isQuote){
-        const calcGross=rows.reduce((sum,r)=>sum+(safeNum(r.qty)*safeNum(r.unit)),0);
-        const calcNet=rows.reduce((sum,r)=>sum+safeNum(r.total),0);
-        const grossRaw=safeNum(doc.grossAmount);
-        const discountRaw=safeNum(doc.discountAmount);
-        const netRaw=safeNum(doc.totalAmount);
-        const gross=grossRaw>0?grossRaw:calcGross;
-        const net=netRaw>0?netRaw:calcNet;
-        const discount=discountRaw>0?discountRaw:Math.max(0,gross-net);
-        const totals=[
-          ["Brut",gross.toFixed(2)],
-          ["Iskonto",discount.toFixed(2)],
-          ["Net",net.toFixed(2)],
-        ];
-        const boxW=172;
-        const boxX=margin+tableW-boxW;
-        totals.forEach((line,idx)=>{
-          const rowY=y+(idx*16);
-          pdf.setDrawColor(223,228,234);
-          pdf.rect(boxX,rowY,boxW,16);
-          pdf.setFont("helvetica",idx===2?"bold":"normal");
-          pdf.text(line[0],boxX+6,rowY+11);
-          pdf.text(`${line[1]} ${docCurrency}`,boxX+boxW-6,rowY+11,{align:"right"});
-        });
-        y+=totals.length*16+12;
-      }
-      const noteText=doc.note?`Not: ${doc.note}`:"";
-      if(noteText){
-        const lines=pdf.splitTextToSize(noteText,tableW);
-        if(y+lines.length*12>pageH-70){pdf.addPage();y=margin;}
-        pdf.setFont("helvetica","normal");
-        pdf.setTextColor(72,72,72);
-        pdf.text(lines,margin,y);
-        y+=lines.length*12+6;
-      }
-      if(template.footerNote){
-        const lines=pdf.splitTextToSize(template.footerNote,tableW);
-        if(y+lines.length*12>pageH-44){pdf.addPage();y=margin;}
-        pdf.setFont("helvetica","italic");
-        pdf.setTextColor(96,96,96);
-        pdf.text(lines,margin,y);
-      }
-
-      const codeSafe=String(doc.code||Date.now()).replace(/[^a-zA-Z0-9_-]/g,"_");
-      const prefix=isQuote?"teklif":"siparis";
-      pdf.save(`${prefix}-${codeSafe}.pdf`);
-    }catch{
-      alert("PDF olusturulamadi.");
+    });
+    const calcGross=itemRows.reduce((sum,_,idx)=>{
+      const line=sourceLines[idx]||{};
+      return sum+(Math.max(0,safeNum(line.qty))*Math.max(0,safeNum(line.unitPrice)));
+    },0);
+    const calcDiscount=sourceLines.reduce((sum,line)=>{
+      const qty=Math.max(0,safeNum(line?.qty));
+      const unitPrice=Math.max(0,safeNum(line?.unitPrice));
+      const gross=qty*unitPrice;
+      return sum+((gross*Math.max(0,Math.min(100,safeNum(line?.discountPct))))/100);
+    },0);
+    const calcNet=Math.max(0,calcGross-calcDiscount);
+    const gross=safeNum(doc?.grossAmount)>0?safeNum(doc.grossAmount):calcGross;
+    const discount=safeNum(doc?.discountAmount)>0?safeNum(doc.discountAmount):calcDiscount;
+    const tax=Math.max(0,safeNum(doc?.taxAmount||doc?.vatAmount));
+    const net=safeNum(doc?.totalAmount)>0?safeNum(doc.totalAmount):calcNet;
+    const documentTitle=String(pageTitle||"Belge").trim()||"Belge";
+    return {
+      ...base,
+      document:{title:documentTitle},
+      customer:{
+        name:String(doc?.customerName||customer?.name||"-").trim()||"-",
+        address:String(customer?.address||"").trim(),
+        phone:String(customer?.phone||"").trim(),
+        email:String(customer?.email||"").trim(),
+        taxOffice:"",
+        taxNo:"",
+        contact:String(customer?.contact||"").trim(),
+      },
+      quote:{
+        code:String(doc?.code||"-"),
+        date:createdDate,
+        validUntil,
+        deliveryDate,
+        currency,
+        paymentTerms,
+        revision:"",
+        deliveryMethod:"",
+        note:String(doc?.note||"").trim(),
+      },
+      order:{
+        code:String(doc?.code||"-"),
+        date:createdDate,
+        validUntil,
+        deliveryDate,
+        currency,
+        paymentTerms,
+      },
+      items:itemRows,
+      totals:{
+        subTotal:formatDocumentMoney(gross,currency),
+        discount:formatDocumentMoney(discount,currency),
+        tax:formatDocumentMoney(tax,currency),
+        grandTotal:formatDocumentMoney(net+tax,currency),
+      },
+      notes:{
+        ...base.notes,
+        general:String(doc?.note||base.notes.general||"").trim(),
+      },
+    };
+  }
+  async function exportSalesPdf(docType,doc){
+    if(!doc){alert("Belge bulunamadi.");return;}
+    const pendingLabel=docType==="quote"?"Teklif belgesi hazirlaniyor":"Siparis belgesi hazirlaniyor";
+    const printWindow=openDocumentPrintWindow(buildDocumentPrintStatusHtml(pendingLabel,doc.code||""));
+    if(!printWindow){
+      alert("Yazdirma penceresi acilamadi. Tarayici acilir pencereyi engellemis olabilir.");
+      return;
     }
+    try{
+      const templateDoc=await window.DB.getDoc("config","documentTemplates");
+      const templateLibrary=normalizeDocumentTemplateLibrary(templateDoc||{});
+      const templateId=docType==="quote"?"quote":"order";
+      const activeTemplate=templateLibrary.templates?.[templateId]||normalizeDocumentTemplate(templateId,{});
+      const fallbackTitle=docType==="quote"
+        ? (quoteTemplate.documentTitleQuote||DEFAULT_QUOTE_TEMPLATE.documentTitleQuote)
+        : (quoteTemplate.documentTitleOrder||DEFAULT_QUOTE_TEMPLATE.documentTitleOrder);
+      const data=buildSalesDocumentOutputData(doc,activeTemplate.pageTitle||fallbackTitle);
+      const html=buildDocumentTemplatePrintHtml({
+        templateId,
+        template:activeTemplate,
+        data,
+        logoSrc:brandingLogo,
+        documentCode:doc.code||"",
+      });
+      if(writeDocumentPrintWindow(printWindow,html)) return;
+    }catch{
+      writeDocumentPrintWindow(printWindow,buildDocumentPrintStatusHtml("Belge olusturulamadi","Sablon yuklenirken veya belge hazirlanirken bir hata olustu."));
+    }
+    alert("PDF olusturulamadi.");
   }
 
   function printQuote(q){
@@ -13574,6 +13833,87 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
       tooling:"",
     }];
   }
+  function buildWorkOrderDocumentOutputData(order,pageTitle){
+    const snapshot=(order?.partSnapshot&&typeof order.partSnapshot==="object")?order.partSnapshot:null;
+    const customer=customers.find(row=>row.id===order?.customerId)||null;
+    const base=buildDocumentCompanyPayload(workOrderTemplate,currentUser);
+    const produced=productionByOrder[order.code]||{correct:0,wrong:0,total:0};
+    const qtyTarget=Math.max(0,safeNum(order?.qty));
+    const setupText=fmtSec(Math.max(0,safeNum(snapshot?.setupSec)));
+    const operations=buildWorkOrderOperations(order).map(op=>({
+      seq:String(op.seq||"-"),
+      name:String(op.name||"-"),
+      machine:String(op.machine||"-"),
+      setup:fmtSec(op.setupSec)||"-",
+      cycle:fmtSec(op.cycleSec)||"-",
+    }));
+    const rawMaterialCode=String(snapshot?.material||order?.material||"-").trim()||"-";
+    const materialLabel=buildBarMaterialLabel(
+      order?.material||snapshot?.material||"",
+      snapshot?.partDiameterMm,
+      snapshot?.barLengthMm||DEFAULT_BAR_LENGTH_MM
+    );
+    const materialRows=rawMaterialCode==="-"&&materialLabel==="Ham Malzeme x 3000 mm Cubuk"
+      ? []
+      : [{
+          code:rawMaterialCode,
+          name:materialLabel||rawMaterialCode,
+          lotNo:"-",
+          qty:qtyTarget>0?String(qtyTarget):"1",
+          unit:"Adet",
+        }];
+    return {
+      ...base,
+      document:{title:String(pageTitle||"Is Emri Formu").trim()||"Is Emri Formu"},
+      customer:{
+        name:String(order?.customerName||customer?.name||"-").trim()||"-",
+        address:String(customer?.address||"").trim(),
+        phone:String(customer?.phone||"").trim(),
+        email:String(customer?.email||"").trim(),
+        taxOffice:"",
+        taxNo:"",
+        contact:String(customer?.contact||"").trim(),
+      },
+      order:{
+        code:String(order?.sourceSalesOrderCode||order?.copiedFromOrderCode||"-").trim()||"-",
+        date:formatDocumentOutputDate(order?.createdAt||order?.updatedAt||todayStr()),
+        validUntil:"",
+        deliveryDate:formatDocumentOutputDate(order?.dueDate||""),
+        currency:"",
+        paymentTerms:"",
+      },
+      workOrder:{
+        code:String(order?.code||"-").trim()||"-",
+        releaseDate:formatDocumentOutputDate(order?.createdAt||order?.updatedAt||todayStr()),
+        machine:resolveWorkOrderMachineLabel(order),
+        shift:"-",
+        priority:(PRIORITY_OPTIONS.find(row=>row.id===order?.priority)||{}).label||"-",
+        qty:qtyTarget>0?`${qtyTarget} Adet`:"-",
+        completedQty:`${safeNum(produced.total)} Adet`,
+      },
+      part:{
+        code:String(order?.partNo||snapshot?.partNo||"-").trim()||"-",
+        name:String(order?.name||snapshot?.partName||"-").trim()||"-",
+      },
+      material:{
+        code:rawMaterialCode,
+        name:String(order?.material||snapshot?.material||"-").trim()||"-",
+        lotNo:"-",
+      },
+      routing:{
+        primaryOperation:operations[0]?.name||"-",
+      },
+      operations,
+      materials:materialRows,
+      notes:{
+        ...base.notes,
+        general:String(order?.notes||base.notes.general||"").trim(),
+        setup:setupText?`Kurulum: ${setupText}`:"",
+        quality:"",
+        operator:String(order?.notes||"").trim(),
+      },
+    };
+  }
   function buildWorkOrderTravelerHtml(order){
     const snapshot=(order?.partSnapshot&&typeof order.partSnapshot==="object")?order.partSnapshot:null;
     const template=normalizeQuoteTemplate(workOrderTemplate||{});
@@ -13898,13 +14238,29 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
 </body>
 </html>`;
   }
-  function printWorkOrderForm(order){
+  async function printWorkOrderForm(order){
     if(!order){alert("Yazdirma icin is emri secin.");return;}
-    const printWindow=window.open("","_blank","width=1120,height=900");
-    if(!printWindow){alert("Yazdirma penceresi acilamadi. Tarayici acilir pencereyi engellemis olabilir.");return;}
-    printWindow.document.open();
-    printWindow.document.write(buildWorkOrderTravelerHtml(order));
-    printWindow.document.close();
+    const printWindow=openDocumentPrintWindow(buildDocumentPrintStatusHtml("Is emri formu hazirlaniyor",order.code||""));
+    if(!printWindow){
+      alert("Yazdirma penceresi acilamadi. Tarayici acilir pencereyi engellemis olabilir.");
+      return;
+    }
+    try{
+      const templateDoc=await window.DB.getDoc("config","documentTemplates");
+      const templateLibrary=normalizeDocumentTemplateLibrary(templateDoc||{});
+      const activeTemplate=templateLibrary.templates?.workOrder||normalizeDocumentTemplate("workOrder",{});
+      const data=buildWorkOrderDocumentOutputData(order,activeTemplate.pageTitle||"Is Emri Formu");
+      const html=buildDocumentTemplatePrintHtml({
+        templateId:"workOrder",
+        template:activeTemplate,
+        data,
+        logoSrc:workOrderBrandingLogo,
+        documentCode:order.code||"",
+      });
+      if(writeDocumentPrintWindow(printWindow,html)) return;
+    }catch{}
+    if(writeDocumentPrintWindow(printWindow,buildWorkOrderTravelerHtml(order))) return;
+    alert("Yazdirma penceresi acilamadi. Tarayici acilir pencereyi engellemis olabilir.");
   }
   const workSplitWrapStyle={
     display:"flex",
