@@ -527,7 +527,13 @@ function resolveShiftIdByMinute(shiftWindows,minute){
 }
 function minuteFromIsoLike(value){
   if(typeof value!=="string"||!value) return null;
-  const m=/T(\d{2}):(\d{2})/.exec(value);
+  const raw=String(value||"").trim();
+  if(!raw) return null;
+  const parsed=new Date(raw);
+  if(!Number.isNaN(parsed.getTime())){
+    return (parsed.getHours()*60)+parsed.getMinutes();
+  }
+  const m=/(?:T|\s)(\d{2}):(\d{2})/.exec(raw);
   if(!m) return null;
   return hmToMinute(`${m[1]}:${m[2]}`);
 }
@@ -14074,7 +14080,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     setSearch("");
   },[kioskMode,showPicker]);
   useEffect(()=>{
-    if(!kioskMode||typeof window==="undefined") return;
+    if(typeof window==="undefined") return;
     const onResize=()=>setKioskViewport({
       w:window.innerWidth||1920,
       h:window.innerHeight||1080,
@@ -14086,7 +14092,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
       window.removeEventListener("resize",onResize);
       window.removeEventListener("orientationchange",onResize);
     };
-  },[kioskMode]);
+  },[]);
 
   useEffect(()=>{
     if(typeof window==="undefined") return;
@@ -14181,11 +14187,18 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   }
   const selectedDateObj=parseYmdLocal(form.entryDate);
   const selectedDateLabel=new Intl.DateTimeFormat("tr-TR",{weekday:"long",day:"2-digit",month:"long",year:"numeric"}).format(selectedDateObj);
+  function findOrderRecordByRef(orderId="",orderCode=""){
+    const id=String(orderId||"").trim();
+    const code=String(orderCode||"").trim().toUpperCase();
+    return (id?orders.find(o=>String(o.id||"").trim()===id):null)
+      || (code?orders.find(o=>String(o.code||"").trim().toUpperCase()===code):null)
+      || null;
+  }
   function getPlannedOrder(machine,date){
     if(!machine||!date) return null;
     const planned=plans.find(p=>p.machine===machine&&p.date===date);
     if(!planned) return null;
-    const activeOrder=orders.find(o=>o.id===planned.orderId);
+    const activeOrder=findOrderRecordByRef(planned.orderId,planned.orderCode);
     if(activeOrder) return activeOrder;
     if(planned.orderCode||planned.orderName){
       return {
@@ -14198,6 +14211,24 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     }
     return null;
   }
+  useEffect(()=>{
+    setForm(prev=>{
+      const current=prev.selectedOrder;
+      if(!current) return prev;
+      const matched=findOrderRecordByRef(current.id,current.code);
+      if(!matched) return prev;
+      const currentFiles=Array.isArray(current.files)?current.files:[];
+      const matchedFiles=Array.isArray(matched.files)?matched.files:[];
+      const sameId=String(current.id||"")===String(matched.id||"");
+      const sameCode=String(current.code||"")===String(matched.code||"");
+      const sameName=String(current.name||"")===String(matched.name||"");
+      const sameQty=safeNum(current.qty)===safeNum(matched.qty);
+      const sameDue=String(current.dueDate||"")===String(matched.dueDate||"");
+      const sameFiles=currentFiles.length===matchedFiles.length;
+      if(sameId&&sameCode&&sameName&&sameQty&&sameDue&&sameFiles) return prev;
+      return {...prev,selectedOrder:matched};
+    });
+  },[orders]);
   function selectMachine(machine){
     if(lockedMachine) return;
     const plannedOrder=getPlannedOrder(machine,form.entryDate);
@@ -14511,7 +14542,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     const now=new Date();
     return (now.getHours()*60)+now.getMinutes();
   })();
-  const activeMinute=machineLocalMinute===null?nowMinute:machineLocalMinute;
+  const telemetryClockFresh=machineTelemetryTs!==null&&Math.abs(nowMs-machineTelemetryTs)<=(15*60*1000);
+  const activeMinute=(telemetryClockFresh&&machineLocalMinute!==null)?machineLocalMinute:nowMinute;
   const autoShiftId=resolveShiftIdByMinute(kioskSettings.shiftWindows,activeMinute);
   useEffect(()=>{
     if(!kioskMode) return;
@@ -14736,23 +14768,33 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const machineDisplayName=stationTag||form.machine||"-";
   const docsPreview=selectedOrderFiles.slice(0,4);
   const stockedToolsPreview=stockedTools.slice(0,6);
+  const viewportWidth=kioskViewport.w||((typeof window!=="undefined"&&window.innerWidth)?window.innerWidth:1280);
+  const isPhoneEntry=!kioskMode&&viewportWidth<680;
+  const isTabletEntry=!kioskMode&&viewportWidth>=680&&viewportWidth<1080;
   const standardHeroStyle={
     border:`1px solid ${rgbaFromHex(C.accent,0.24)}`,
     borderRadius:16,
-    padding:16,
+    padding:isPhoneEntry?12:16,
     background:`linear-gradient(135deg, ${rgbaFromHex(C.accent,0.16)} 0%, ${rgbaFromHex(C.accent,0.05)} 42%, ${C.card} 100%)`,
     boxShadow:"0 18px 34px rgba(15,23,42,.08)",
   };
   const standardSectionTitleStyle={fontSize:15,fontWeight:800,color:C.text};
   const standardSectionHintStyle={fontSize:12,color:C.muted2,marginTop:2};
-  const standardMetricGridStyle={display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10};
+  const standardMetricGridStyle={display:"grid",gridTemplateColumns:`repeat(auto-fit,minmax(${isPhoneEntry?130:150}px,1fr))`,gap:10};
   const standardMetricCardStyle={...rowCardStyle,padding:"12px 13px",display:"flex",flexDirection:"column",gap:4,boxShadow:"0 8px 20px rgba(15,23,42,.04)"};
-  const standardMainLayoutStyle={display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-start"};
-  const standardPrimaryCardStyle={...sectionCardStyle,padding:14,display:"flex",flexDirection:"column",gap:12,flex:"1 1 720px",minWidth:0};
-  const standardSidebarCardStyle={...sectionCardStyle,padding:14,display:"flex",flexDirection:"column",gap:10,flex:"1 1 340px",minWidth:0};
+  const standardMainLayoutStyle={display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-start",flexDirection:isPhoneEntry?"column":"row"};
+  const standardPrimaryCardStyle={...sectionCardStyle,padding:isPhoneEntry?12:14,display:"flex",flexDirection:"column",gap:12,flex:isPhoneEntry?"1 1 100%":"1 1 720px",minWidth:0,width:isPhoneEntry?"100%":"auto"};
+  const standardSidebarCardStyle={...sectionCardStyle,padding:isPhoneEntry?12:14,display:"flex",flexDirection:"column",gap:10,flex:isPhoneEntry?"1 1 100%":"1 1 340px",minWidth:0,width:isPhoneEntry?"100%":"auto"};
   const standardEmptyStateStyle={padding:"14px 12px",borderRadius:10,border:`1px dashed ${C.border}`,background:C.surface2,fontSize:12,color:C.muted2,textAlign:"center"};
   const standardProgressTrackStyle={height:10,borderRadius:999,background:rgbaFromHex(C.accent,0.12),overflow:"hidden"};
   const standardProgressFillStyle={height:"100%",borderRadius:999,background:`linear-gradient(90deg, ${C.accent} 0%, ${rgbaFromHex(C.accent,0.72)} 100%)`};
+  const standardHeroInfoGridStyle={flex:isPhoneEntry?"1 1 100%":"0 1 360px",minWidth:isPhoneEntry?0:280,display:"grid",gridTemplateColumns:isPhoneEntry?"1fr":"repeat(2,minmax(0,1fr))",gap:10};
+  const standardContextGridStyle={display:"grid",gridTemplateColumns:isPhoneEntry?"1fr":"repeat(auto-fit,minmax(240px,1fr))",gap:12};
+  const standardQtyGridStyle={display:"grid",gridTemplateColumns:isPhoneEntry?"1fr":"repeat(auto-fit,minmax(220px,1fr))",gap:12};
+  const standardProgressStatGridStyle={display:"grid",gridTemplateColumns:isPhoneEntry?"1fr 1fr":"repeat(auto-fit,minmax(120px,1fr))",gap:8};
+  const standardActionGridStyle={display:"grid",gridTemplateColumns:isPhoneEntry?"1fr":"repeat(auto-fit,minmax(170px,1fr))",gap:10};
+  const standardPickerHeaderGridStyle={padding:12,display:"grid",gridTemplateColumns:isPhoneEntry?"1fr":"minmax(240px,420px) 1fr",gap:10,alignItems:"center",borderBottom:`1px solid ${C.border}`,background:C.surface2};
+  const standardPickerCardsGridStyle={display:"grid",gridTemplateColumns:`repeat(auto-fill,minmax(${isPhoneEntry?220:320}px,1fr))`,gap:10};
   function fmtDurationLong(totalSec){
     const sec=Math.max(0,Math.floor(safeNum(totalSec)));
     const h=Math.floor(sec/3600);
@@ -15285,7 +15327,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             <div style={{display:"flex",justifyContent:"space-between",gap:16,flexWrap:"wrap",alignItems:"stretch"}}>
               <div style={{flex:"1 1 420px",minWidth:0,display:"flex",flexDirection:"column",gap:10}}>
                 <div style={{fontSize:11,fontWeight:800,letterSpacing:.8,textTransform:"uppercase",color:C.accent}}>Operasyon Merkezi</div>
-                <div style={{fontSize:28,fontWeight:900,color:C.text,lineHeight:1.08}}>Uretim Girisi</div>
+                <div style={{fontSize:isPhoneEntry?22:(isTabletEntry?24:28),fontWeight:900,color:C.text,lineHeight:1.08}}>Uretim Girisi</div>
                 <div style={{fontSize:13,color:C.muted,maxWidth:700}}>
                   Tezgah secimi, is emri ve vardiya girisi ayni akista toplanir. Once operasyon baglamini belirleyin, sonra dogru ve hurda miktarini girip vardiya kaydini onaylayin.
                 </div>
@@ -15298,10 +15340,10 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                   <span style={{...infoPillStyle,background:C.surface2,color:C.text,border:`1px solid ${C.border}`}}>Istasyon: {machineDisplayName}</span>
                 </div>
               </div>
-              <div style={{flex:"0 1 360px",minWidth:280,display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10}}>
+              <div style={standardHeroInfoGridStyle}>
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 13px"}}>
                   <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Tezgah</div>
-                  <div style={{fontSize:18,fontWeight:800,color:C.text,marginTop:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{form.machine||"-"}</div>
+                  <div style={{fontSize:18,fontWeight:800,color:C.text,marginTop:4,whiteSpace:isPhoneEntry?"normal":"nowrap",overflow:"hidden",textOverflow:"ellipsis",wordBreak:"break-word"}}>{form.machine||"-"}</div>
                 </div>
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 13px"}}>
                   <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Vardiya</div>
@@ -15310,8 +15352,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                 </div>
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 13px"}}>
                   <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Is Emri</div>
-                  <div style={{fontSize:14,fontWeight:800,color:C.text,marginTop:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{form.selectedOrder?.code||"Secilmedi"}</div>
-                  <div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{form.selectedOrder?.name||"Operasyona is emri baglayin"}</div>
+                  <div style={{fontSize:14,fontWeight:800,color:C.text,marginTop:4,whiteSpace:isPhoneEntry?"normal":"nowrap",overflow:"hidden",textOverflow:"ellipsis",wordBreak:"break-word"}}>{form.selectedOrder?.code||"Secilmedi"}</div>
+                  <div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:isPhoneEntry?"normal":"nowrap",overflow:"hidden",textOverflow:"ellipsis",wordBreak:"break-word"}}>{form.selectedOrder?.name||"Operasyona is emri baglayin"}</div>
                 </div>
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 13px"}}>
                   <div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Hedef</div>
@@ -15337,7 +15379,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               <div style={standardSectionTitleStyle}>Operasyon baglami</div>
               <div style={standardSectionHintStyle}>Tezgah, tarih, vardiya ve is emri ayni blokta tutulur. Kayit oncesi bu alanlari netlestirin.</div>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:12}}>
+            <div style={standardContextGridStyle}>
               <div style={{...rowCardStyle,padding:"12px 13px",display:"flex",flexDirection:"column",gap:10}}>
                 <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.7,fontWeight:700}}>Tezgah Secimi</div>
                 {isMachineLocked?(
@@ -15441,15 +15483,15 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               ):(
                 <div style={standardEmptyStateStyle}>Dogru hedef ve belge iliskisi icin once is emri secmeniz onerilir.</div>
               )}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12}}>
+              <div style={standardQtyGridStyle}>
                 <div style={{padding:"14px 14px",borderRadius:12,border:`1px solid ${rgbaFromHex(C.green,0.24)}`,background:rgbaFromHex(C.green,0.06),display:"flex",flexDirection:"column",gap:8}}>
                   <span style={{fontSize:11,fontWeight:800,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Dogru Adet</span>
-                  <input style={{...inputSt,...themedInputStyle,padding:"14px 12px",fontSize:28,fontWeight:900,textAlign:"center",borderColor:rgbaFromHex(C.green,0.26),background:C.card}} type="number" min="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/>
+                  <input style={{...inputSt,...themedInputStyle,padding:"14px 12px",fontSize:isPhoneEntry?24:28,fontWeight:900,textAlign:"center",borderColor:rgbaFromHex(C.green,0.26),background:C.card}} type="number" min="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/>
                   <div style={{fontSize:12,color:C.muted}}>Temiz uretim miktari.</div>
                 </div>
                 <div style={{padding:"14px 14px",borderRadius:12,border:`1px solid ${rgbaFromHex(C.red,0.24)}`,background:rgbaFromHex(C.red,0.06),display:"flex",flexDirection:"column",gap:8}}>
                   <span style={{fontSize:11,fontWeight:800,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Hurda Adet</span>
-                  <input style={{...inputSt,...themedInputStyle,padding:"14px 12px",fontSize:28,fontWeight:900,textAlign:"center",borderColor:rgbaFromHex(C.red,0.26),background:C.card}} type="number" min="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/>
+                  <input style={{...inputSt,...themedInputStyle,padding:"14px 12px",fontSize:isPhoneEntry?24:28,fontWeight:900,textAlign:"center",borderColor:rgbaFromHex(C.red,0.26),background:C.card}} type="number" min="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/>
                   <div style={{fontSize:12,color:C.muted}}>Hatali parca bilgisi.</div>
                 </div>
               </div>
@@ -15464,18 +15506,18 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                 <div style={standardProgressTrackStyle}>
                   <div style={{...standardProgressFillStyle,width:`${selectedOrderQty?progressPct:0}%`}}/>
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8}}>
+                <div style={standardProgressStatGridStyle}>
                   <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Hedef</div><div style={{fontSize:16,fontWeight:800,color:C.text,marginTop:4}}>{selectedOrderQty||"-"}</div></div>
                   <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Tamamlanan</div><div style={{fontSize:16,fontWeight:800,color:C.text,marginTop:4}}>{producedQty}</div></div>
                   <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Kalan</div><div style={{fontSize:16,fontWeight:800,color:C.text,marginTop:4}}>{selectedOrderQty?remainingQty:"-"}</div></div>
                   <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Toplam Hata</div><div style={{fontSize:16,fontWeight:800,color:C.red,marginTop:4}}>{scrapQty}</div></div>
                 </div>
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:10}}>
-                <button onClick={openShiftEndModal} style={{...btnSt(saved?"green":"primary"),padding:"12px 14px",fontSize:13,fontWeight:800,borderColor:"transparent"}}>{editId?"Vardiya Sonu Guncelle":"Vardiya Sonu Onayla"}</button>
-                <button onClick={openRejectPartsModal} style={{...btnSt("ghost"),padding:"12px 14px",fontSize:13,fontWeight:700,borderColor:rgbaFromHex(C.red,0.2),color:C.red,background:rgbaFromHex(C.red,0.04)}}>Hata Girisi</button>
-                <button onClick={openToolChangeModal} style={{...btnSt("ghost"),padding:"12px 14px",fontSize:13,fontWeight:700}}>Takim Degisimi</button>
-                <button onClick={()=>setShowOrderDataPanel(true)} disabled={!form.selectedOrder} style={{...btnSt("ghost"),padding:"12px 14px",fontSize:13,fontWeight:700,opacity:form.selectedOrder?1:.45,cursor:form.selectedOrder?"pointer":"not-allowed"}}>Is Emri Dokumanlari</button>
+              <div style={standardActionGridStyle}>
+                <button onClick={openShiftEndModal} style={{...btnSt(saved?"green":"primary"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:800,borderColor:"transparent"}}>{editId?"Vardiya Sonu Guncelle":"Vardiya Sonu Onayla"}</button>
+                <button onClick={openRejectPartsModal} style={{...btnSt("ghost"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:700,borderColor:rgbaFromHex(C.red,0.2),color:C.red,background:rgbaFromHex(C.red,0.04)}}>Hata Girisi</button>
+                <button onClick={openToolChangeModal} style={{...btnSt("ghost"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:700}}>Takim Degisimi</button>
+                <button onClick={()=>setShowOrderDataPanel(true)} disabled={!form.selectedOrder} style={{...btnSt("ghost"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:700,opacity:form.selectedOrder?1:.45,cursor:form.selectedOrder?"pointer":"not-allowed"}}>Is Emri Dokumanlari</button>
               </div>
             </div>
 
@@ -15492,13 +15534,13 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                   </span>
                   <span style={{fontSize:12,color:C.muted}}>Son guncelleme: {telemetryUpdatedLabel}</span>
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8}}>
+                <div style={{display:"grid",gridTemplateColumns:isPhoneEntry?"1fr 1fr":"repeat(2,minmax(0,1fr))",gap:8}}>
                   <div style={{...rowCardStyle,padding:"11px 12px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Aktif Sure</div><div style={{fontSize:18,fontWeight:900,color:C.text,marginTop:4}}>{fmtActiveShort(currentStatusElapsedSec)}</div></div>
                   <div style={{...rowCardStyle,padding:"11px 12px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Alarm</div><div style={{fontSize:18,fontWeight:900,color:activeAlarmCount>0?C.red:C.text,marginTop:4}}>{activeAlarmCount}</div></div>
                   <div style={{...rowCardStyle,padding:"11px 12px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Kullanim</div><div style={{fontSize:18,fontWeight:900,color:C.text,marginTop:4}}>%{utilizationPct}</div></div>
                   <div style={{...rowCardStyle,padding:"11px 12px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>OEE</div><div style={{fontSize:18,fontWeight:900,color:C.text,marginTop:4}}>%{oeePct}</div></div>
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:8}}>
+                <div style={{display:"grid",gridTemplateColumns:isPhoneEntry?"1fr":"repeat(3,minmax(0,1fr))",gap:8}}>
                   <div style={{...rowCardStyle,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Planlanan</div><div style={{fontSize:14,fontWeight:800,color:C.text,marginTop:4}}>{hasPlannedCycle?fmtSec(cycleExpectedSec):"--:--"}</div></div>
                   <div style={{...rowCardStyle,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Aktif Cevrim</div><div style={{fontSize:14,fontWeight:800,color:C.text,marginTop:4}}>{fmtSec(cycleCurrentSec)}</div></div>
                   <div style={{...rowCardStyle,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Sapma</div><div style={{fontSize:14,fontWeight:800,color:cycleDeviationExceeded?C.red:C.text,marginTop:4}}>{cycleDeviationSec>=0?"+":""}{fmtSec(cycleDeviationAbsSec)}</div></div>
@@ -15518,14 +15560,14 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                   <div style={{fontSize:14,fontWeight:800,color:C.text,marginTop:4}}>{machineToolPicked?`${machineToolPicked.code||machineToolPicked.name} x${Math.max(1,Number(form.machineToolQty)||1)}`:"Takim secilmedi"}</div>
                 </div>
                 {docsPreview.length===0&&<div style={standardEmptyStateStyle}>{form.selectedOrder?"Secili is emrinde belge yok.":"Belge gormek icin once is emri secin."}</div>}
-                {docsPreview.length>0&&docsPreview.map((f,i)=>(
-                  <div key={`${f.name||"file"}_${i}`} style={{...rowCardStyle,padding:"9px 10px",display:"flex",alignItems:"center",gap:10}}>
+              {docsPreview.length>0&&docsPreview.map((f,i)=>(
+                  <div key={`${f.name||"file"}_${i}`} style={{...rowCardStyle,padding:"9px 10px",display:"flex",alignItems:isPhoneEntry?"flex-start":"center",gap:10,flexWrap:isPhoneEntry?"wrap":"nowrap"}}>
                     <div style={{fontSize:16,lineHeight:1}}>{getFileIcon(f.name)}</div>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name||"Dokuman"}</div>
                       <div style={{fontSize:10,color:C.muted2,marginTop:2}}>{formatBytes(Number(f.size)||0)}</div>
                     </div>
-                    <button onClick={()=>openOrderFile(f)} style={{...btnSt("ghost"),padding:"5px 9px",fontSize:11}}>{canFilePreview(f)?"Onizle":"Indir"}</button>
+                    <button onClick={()=>openOrderFile(f)} style={{...btnSt("ghost"),padding:"5px 9px",fontSize:11,marginLeft:isPhoneEntry?26:0}}>{canFilePreview(f)?"Onizle":"Indir"}</button>
                   </div>
                 ))}
                 {stockedToolsPreview.length===0&&<div style={standardEmptyStateStyle}>Stokta kullanilabilir takim gorunmuyor.</div>}
@@ -15534,12 +15576,12 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                   const min=Math.max(0,safeNum(t.minQty));
                   const critical=qty<=min;
                   return (
-                    <div key={t.id} style={{...rowCardStyle,padding:"9px 10px",display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"center"}}>
+                    <div key={t.id} style={{...rowCardStyle,padding:"9px 10px",display:"grid",gridTemplateColumns:isPhoneEntry?"1fr":"1fr auto",gap:10,alignItems:"center"}}>
                       <div style={{minWidth:0}}>
                         <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.code||"-"} · {t.name||"Takim"}</div>
                         <div style={{fontSize:10,color:C.muted2,marginTop:2}}>{t.location||"Lokasyon yok"}</div>
                       </div>
-                      <div style={{textAlign:"right"}}>
+                      <div style={{textAlign:isPhoneEntry?"left":"right"}}>
                         <div style={{fontSize:14,fontWeight:900,color:critical?C.red:C.text}}>{qty}</div>
                         <div style={{fontSize:10,color:C.muted2}}>Min {min}</div>
                       </div>
@@ -15563,12 +15605,12 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                   const stampDate=new Date(stampRaw);
                   const stampText=Number.isNaN(stampDate.getTime())?(e.date||"--"):new Intl.DateTimeFormat("tr-TR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}).format(stampDate);
                   return (
-                    <div key={e.id} style={{...rowCardStyle,padding:"10px 11px",display:"flex",justifyContent:"space-between",gap:10,alignItems:"center"}}>
+                    <div key={e.id} style={{...rowCardStyle,padding:"10px 11px",display:"flex",justifyContent:"space-between",gap:10,alignItems:isPhoneEntry?"flex-start":"center",flexDirection:isPhoneEntry?"column":"row"}}>
                       <div style={{minWidth:0}}>
                         <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{title}</div>
-                        <div style={{fontSize:11,color:C.muted2,marginTop:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{detail}</div>
+                        <div style={{fontSize:11,color:C.muted2,marginTop:3,whiteSpace:isPhoneEntry?"normal":"nowrap",overflow:"hidden",textOverflow:"ellipsis",wordBreak:"break-word"}}>{detail}</div>
                       </div>
-                      <div style={{fontSize:11,color:C.muted,textAlign:"right",whiteSpace:"nowrap"}}>
+                      <div style={{fontSize:11,color:C.muted,textAlign:isPhoneEntry?"left":"right",whiteSpace:"nowrap",alignSelf:isPhoneEntry?"stretch":"auto"}}>
                         <div>{stampText}</div>
                         <div style={{marginTop:3}}>{shiftWindowMap[e.shift]?.label||e.shift||"-"}</div>
                       </div>
@@ -15584,12 +15626,12 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
         Bu ekran daha net bir is akisi icin yeniden duzenlendi. Uretim kaydi <strong>Vardiya Sonu</strong> onayinda tamamlanir.
       </div>
       {showOrderDataPanel&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(8,12,18,.56)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",zIndex:58,display:"flex",alignItems:"center",justifyContent:"center",padding:18}} onClick={()=>setShowOrderDataPanel(false)}>
-          <div style={{width:"100%",maxWidth:960,maxHeight:"88vh",display:"flex",flexDirection:"column",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:"0 24px 56px rgba(0,0,0,.34)"}} onClick={e=>e.stopPropagation()}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",background:C.surface,borderBottom:`1px solid ${C.border}`}}>
+        <div style={{position:"fixed",inset:0,background:"rgba(8,12,18,.56)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",zIndex:58,display:"flex",alignItems:"center",justifyContent:"center",padding:isPhoneEntry?10:18}} onClick={()=>setShowOrderDataPanel(false)}>
+          <div style={{width:"100%",maxWidth:960,maxHeight:isPhoneEntry?"92vh":"88vh",display:"flex",flexDirection:"column",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:"0 24px 56px rgba(0,0,0,.34)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:isPhoneEntry?"flex-start":"center",padding:"12px 14px",background:C.surface,borderBottom:`1px solid ${C.border}`,gap:10,flexWrap:"wrap"}}>
               <div style={{minWidth:0}}>
                 <div style={{fontSize:12,color:C.muted2,fontWeight:700,letterSpacing:.5,textTransform:"uppercase"}}>Uretim Girisi</div>
-                <div style={{fontSize:17,color:C.text,fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                <div style={{fontSize:17,color:C.text,fontWeight:800,whiteSpace:isPhoneEntry?"normal":"nowrap",overflow:"hidden",textOverflow:"ellipsis",wordBreak:"break-word"}}>
                   Is Emri Dokumanlari {form.selectedOrder?.code?`· ${form.selectedOrder.code}`:""}
                 </div>
               </div>
@@ -15607,13 +15649,13 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                 </div>
               )}
               {form.selectedOrder&&selectedOrderFiles.length>0&&selectedOrderFiles.map((f,i)=>(
-                <div key={`${f.name||"file"}_${i}`} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 10px",border:`1px solid ${C.border}`,borderRadius:10,background:C.surface}}>
+                <div key={`${f.name||"file"}_${i}`} style={{display:"flex",alignItems:isPhoneEntry?"flex-start":"center",gap:10,padding:"9px 10px",border:`1px solid ${C.border}`,borderRadius:10,background:C.surface,flexWrap:isPhoneEntry?"wrap":"nowrap"}}>
                   <div style={{fontSize:18,lineHeight:1}}>{getFileIcon(f.name)}</div>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name||"Dokuman"}</div>
                     <div style={{fontSize:11,color:C.muted2}}>{formatBytes(Number(f.size)||0)}</div>
                   </div>
-                  <button onClick={()=>openOrderFile(f)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11}}>
+                  <button onClick={()=>openOrderFile(f)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11,marginLeft:isPhoneEntry?28:0}}>
                     {canFilePreview(f)?"Onizle":"Indir"}
                   </button>
                 </div>
@@ -15623,8 +15665,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
         </div>
       )}
       {showPicker&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(8,12,18,.72)",zIndex:55,display:"flex",alignItems:"center",justifyContent:"center",padding:14}} onClick={()=>{setShowPicker(false);setSearch("");}}>
-          <div style={{width:"100%",maxWidth:1120,height:"min(88vh,860px)",background:C.card,border:`1px solid ${C.border}`,borderRadius:16,overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 24px 60px rgba(0,0,0,.35)"}} onClick={e=>e.stopPropagation()}>
+        <div style={{position:"fixed",inset:0,background:"rgba(8,12,18,.72)",zIndex:55,display:"flex",alignItems:"center",justifyContent:"center",padding:isPhoneEntry?8:14}} onClick={()=>{setShowPicker(false);setSearch("");}}>
+          <div style={{width:"100%",maxWidth:1120,height:isPhoneEntry?"92vh":"min(88vh,860px)",background:C.card,border:`1px solid ${C.border}`,borderRadius:16,overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 24px 60px rgba(0,0,0,.35)"}} onClick={e=>e.stopPropagation()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"12px 14px",borderBottom:`1px solid ${C.border}`,background:C.surface}}>
               <div>
                 <div style={{fontSize:12,color:C.muted2,letterSpacing:.5,textTransform:"uppercase",fontWeight:700}}>Uretim Girisi</div>
@@ -15632,13 +15674,13 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               </div>
               <button onClick={()=>{setShowPicker(false);setSearch("");}} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
             </div>
-            <div style={{padding:12,display:"grid",gridTemplateColumns:"minmax(240px,420px) 1fr",gap:10,alignItems:"center",borderBottom:`1px solid ${C.border}`,background:C.surface2}}>
+            <div style={standardPickerHeaderGridStyle}>
               <input style={{...inputSt,padding:"11px 12px",fontSize:14,background:C.card}} placeholder="Is emri ara..." value={search} onChange={e=>setSearch(e.target.value)} autoFocus/>
               <div style={{fontSize:13,color:C.muted,fontWeight:700}}>{filtered.length} is emri bulundu</div>
             </div>
             <div style={{flex:1,minHeight:0,overflowY:"auto",padding:12}}>
               {filtered.length===0&&<div style={{height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:C.muted2,fontWeight:700}}>Sonuc bulunamadi.</div>}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))",gap:10}}>
+              <div style={standardPickerCardsGridStyle}>
                 {filtered.map(o=>(
                   <button
                     key={o.id}
@@ -15656,13 +15698,13 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
         </div>
       )}
       {showToolModal&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={()=>setShowToolModal(false)}>
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:isPhoneEntry?10:14}} onClick={()=>setShowToolModal(false)}>
           <div style={{width:"100%",maxWidth:680,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:15}} onClick={e=>e.stopPropagation()}>
             <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>Takım Değişimi</div>
             <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
               <div style={{flex:"1 1 260px"}}>
                 <span style={labelSt}>İş Emri Takım Değişimi</span>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 95px",gap:8}}>
+                <div style={{display:"grid",gridTemplateColumns:isPhoneEntry?"1fr":"1fr 95px",gap:8}}>
                   <SearchableSelect
                     value={toolDraft.machineToolId}
                     onChange={v=>setToolDraft(p=>({...p,machineToolId:v}))}
@@ -15673,7 +15715,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                 </div>
               </div>
             </div>
-            <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14,flexWrap:"wrap"}}>
               <button onClick={()=>setShowToolModal(false)} style={{...btnSt("ghost"),padding:"10px 14px"}}>İptal</button>
               <button onClick={approveToolChange} style={{...btnSt("primary"),padding:"10px 14px"}}>Değişimi Onayla</button>
             </div>
@@ -15681,14 +15723,14 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
         </div>
       )}
       {showShiftModal&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={()=>setShowShiftModal(false)}>
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:isPhoneEntry?10:14}} onClick={()=>setShowShiftModal(false)}>
           <div style={{width:"100%",maxWidth:560,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:15}} onClick={e=>e.stopPropagation()}>
             <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>Vardiya Sonu</div>
-            <div style={{display:"flex",gap:10}}>
+            <div style={{display:"flex",gap:10,flexDirection:isPhoneEntry?"column":"row"}}>
               <div style={{flex:1}}><span style={labelSt}>Doğru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>
               <div style={{flex:1}}><span style={labelSt}>Hatalı Adet</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>
             </div>
-            <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14,flexWrap:"wrap"}}>
               <button onClick={()=>setShowShiftModal(false)} style={{...btnSt("ghost"),padding:"10px 14px"}}>İptal</button>
               <button onClick={approveShiftEnd} style={{...btnSt(saved?"green":"primary"),padding:"10px 14px"}}>{editId?"Güncellemeyi Onayla":"Vardiyayı Onayla"}</button>
             </div>
@@ -15696,15 +15738,15 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
         </div>
       )}
       {previewFile&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.72)",zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:0}} onClick={()=>setPreviewFile(null)}>
-          <div style={{width:"100%",maxWidth:960,maxHeight:"88vh",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>
-              <div style={{fontSize:13,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{previewFile.name}</div>
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.72)",zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:isPhoneEntry?8:0}} onClick={()=>setPreviewFile(null)}>
+          <div style={{width:"100%",maxWidth:960,maxHeight:isPhoneEntry?"92vh":"88vh",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:isPhoneEntry?"flex-start":"center",padding:"10px 12px",borderBottom:`1px solid ${C.border}`,gap:10,flexWrap:"wrap"}}>
+              <div style={{fontSize:13,fontWeight:700,color:C.text,whiteSpace:isPhoneEntry?"normal":"nowrap",overflow:"hidden",textOverflow:"ellipsis",wordBreak:"break-word"}}>{previewFile.name}</div>
               <button onClick={()=>setPreviewFile(null)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kapat</button>
             </div>
             <div style={{padding:10,overflow:"auto",background:C.surface}}>
               {isImageFile(previewFile)&&<img src={previewFile.data} alt={previewFile.name} style={{width:"100%",height:"auto",borderRadius:10,border:`1px solid ${C.border}`}}/>}
-              {isPdfFile(previewFile)&&<iframe title={previewFile.name} src={previewFile.data} style={{width:"100%",height:"70vh",border:`1px solid ${C.border}`,borderRadius:10,background:"#fff"}}/>}
+                {isPdfFile(previewFile)&&<iframe title={previewFile.name} src={previewFile.data} style={{width:"100%",height:isPhoneEntry?"60vh":"70vh",border:`1px solid ${C.border}`,borderRadius:10,background:"#fff"}}/>}
               {isStepFile(previewFile)&&<StepFileViewer file={previewFile}/>}
               {!canFilePreview(previewFile)&&(
                 <div style={{padding:22,textAlign:"center",color:C.muted2,fontSize:13,border:`1px dashed ${C.border}`,borderRadius:10,background:C.card}}>
@@ -15723,11 +15765,14 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             const machineToolQty=Number(e.machineToolQty??e.machineToolChange??0);
             return (
               <div key={e.id} style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 12px",marginBottom:8}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <div><span style={{fontWeight:700,fontSize:13,fontFamily:"monospace",color:C.text}}>{e.jobCode}</span><span style={{fontSize:12,color:C.muted2,marginLeft:6}}>{e.jobName}</span></div>
-                  <div style={{display:"flex",gap:5}}><Badge label={e.machine} color={C.accent}/><Badge label={shiftWindowMap[e.shift]?.label||e.shift||"-"} color={C.muted2}/></div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:isPhoneEntry?"flex-start":"center",gap:8,flexWrap:"wrap"}}>
+                  <div style={{minWidth:0}}>
+                    <span style={{fontWeight:700,fontSize:13,fontFamily:"monospace",color:C.text,display:"inline-block",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:isPhoneEntry?"normal":"nowrap",wordBreak:"break-word"}}>{e.jobCode}</span>
+                    <span style={{fontSize:12,color:C.muted2,marginLeft:isPhoneEntry?0:6,marginTop:isPhoneEntry?3:0,display:isPhoneEntry?"block":"inline"}}>{e.jobName}</span>
+                  </div>
+                  <div style={{display:"flex",gap:5,flexWrap:"wrap"}}><Badge label={e.machine} color={C.accent}/><Badge label={shiftWindowMap[e.shift]?.label||e.shift||"-"} color={C.muted2}/></div>
                 </div>
-                <div style={{display:"flex",gap:12,marginTop:7,fontSize:13}}>
+                <div style={{display:"flex",gap:12,marginTop:7,fontSize:13,flexWrap:"wrap"}}>
                   <span style={{color:C.green,fontWeight:600}}>Doğru: {e.correct}</span>
                   <span style={{color:C.red,fontWeight:600}}>Hatalı: {e.wrong}</span>
                   {p&&<span style={{color:C.muted2}}>Maks/gün: {p.max}</span>}
@@ -15735,9 +15780,9 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
                 {machineToolQty>0&&<div style={{display:"flex",gap:8,marginTop:7,fontSize:12,color:C.muted2,flexWrap:"wrap"}}>
                   {machineToolQty>0&&<Badge label={"İş Emri: "+((e.machineToolCode||e.machineToolName)?`${e.machineToolCode||e.machineToolName} x${machineToolQty}`:`${machineToolQty}`)} color={C.warn}/>}
                 </div>}
-                <div style={{marginTop:8,display:"flex",gap:8}}>
-                  <button onClick={()=>startEdit(e)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Düzenle</button>
-                  <button onClick={()=>removeEntry(e)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
+                <div style={{marginTop:8,display:"flex",gap:8,flexWrap:"wrap"}}>
+                  <button onClick={()=>startEdit(e)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,flex:isPhoneEntry?"1 1 140px":"0 0 auto"}}>Düzenle</button>
+                  <button onClick={()=>removeEntry(e)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12,flex:isPhoneEntry?"1 1 140px":"0 0 auto"}}>Sil</button>
                 </div>
                 {p&&<PerfBar perf={p.perf} small/>}
               </div>
@@ -17572,10 +17617,15 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     {id:"TESFIYE",label:"Tesfiye",status:"liquidation",color:C.red},
     {id:"SEVK",label:"Sevk",status:"shipped",color:C.warn},
   ];
-  const planningLaneOptions=[...machines.map(machine=>({id:machine,label:machine,isSpecial:false})),...planningSpecialLanes.map(row=>({...row,isSpecial:true}))];
+  const planningMachines=useMemo(
+    ()=>[...normalizeMachineList(machines,[])].sort((a,b)=>String(a||"").localeCompare(String(b||""),"tr")),
+    [machines.join("|")]
+  );
+  const defaultPlanningMachine=planningMachines[0]||"CNC-1";
+  const planningLaneOptions=[...planningMachines.map(machine=>({id:machine,label:machine,isSpecial:false})),...planningSpecialLanes.map(row=>({...row,isSpecial:true}))];
   const planningLaneIds=planningLaneOptions.map(row=>row.id);
   const planningSpecialLaneIdSet=new Set(planningSpecialLanes.map(row=>row.id));
-  const emptyForm={startDate:todayStr(),endDate:todayStr(),machine:machines[0]||"CNC-1",orderId:"",note:""};
+  const emptyForm={startDate:todayStr(),endDate:todayStr(),machine:defaultPlanningMachine,orderId:"",note:""};
   const [form,setForm]=useState(emptyForm);
   const [orders,setOrders]=useState([]);
   const [entries,setEntries]=useState([]);
@@ -17641,7 +17691,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       if(d.tab!=="planning") return;
       if(d.type==="refresh"){load();return;}
       if(d.type==="new"){
-        const machineDefault=(machines[0]||"CNC-1");
+        const machineDefault=defaultPlanningMachine;
         const today=todayStr();
         setEditId(null);
         setSelectedPlan(null);
@@ -17653,13 +17703,13 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     }
     window.addEventListener("mrp:tab-action",onTabAction);
     return ()=>window.removeEventListener("mrp:tab-action",onTabAction);
-  },[load,machines]);
+  },[defaultPlanningMachine,load]);
 
   useEffect(()=>{
     if(!planningLaneIds.includes(form.machine)){
-      setForm(f=>({...f,machine:machines[0]||"CNC-1"}));
+      setForm(f=>({...f,machine:defaultPlanningMachine}));
     }
-  },[planningLaneIds.join(","),machines.join(","),form.machine]);
+  },[defaultPlanningMachine,planningLaneIds.join(","),form.machine]);
   useEffect(()=>{
     if(planMachineFilter!=="all"&&!planningLaneIds.includes(planMachineFilter)){
       setPlanMachineFilter("all");
@@ -17708,7 +17758,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     });
   function openPlanModalForOrder(order){
     if(!order) return;
-    const pickedMachine=resolveOrderMachines(order)[0]||(machines[0]||"CNC-1");
+    const pickedMachine=resolveOrderMachines(order)[0]||defaultPlanningMachine;
     const baseDate=order.dueDate||todayStr();
     setEditId(null);
     setSelectedPlan(null);
@@ -17722,8 +17772,8 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     setShowPlanModal(true);
   }
   function resolveOrderMachines(order){
-    const orderMachines=Array.isArray(order?.machines)?order.machines.filter(m=>machines.includes(m)):[];
-    const ordered=[...orderMachines,...machines];
+    const orderMachines=Array.isArray(order?.machines)?order.machines.filter(m=>planningMachines.includes(m)):[];
+    const ordered=[...orderMachines,...planningMachines];
     const unique=[];
     const seen=new Set();
     ordered.forEach(machine=>{
@@ -17733,7 +17783,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       unique.push(key);
     });
     if(unique.length>0) return unique;
-    if(Array.isArray(machines)&&machines.length>0) return machines;
+    if(planningMachines.length>0) return planningMachines;
     return ["CNC-1"];
   }
   function openWeekPlanModalForOrder(order){
@@ -17741,7 +17791,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     const today=todayStr();
     const weekEnd=addDays(startOfWeekYmd(today),6);
     const endDate=weekEnd<today?today:weekEnd;
-    const pickedMachine=resolveOrderMachines(order)[0]||(machines[0]||"CNC-1");
+    const pickedMachine=resolveOrderMachines(order)[0]||defaultPlanningMachine;
     setEditId(null);
     setSelectedPlan(null);
     setForm({
@@ -18560,7 +18610,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     setForm({
       startDate:seg?.startDate||firstPlan?.date||todayStr(),
       endDate:seg?.endDate||firstPlan?.date||todayStr(),
-      machine:firstPlan?.machine||machines[0]||"CNC-1",
+      machine:firstPlan?.machine||defaultPlanningMachine,
       orderId:firstPlan?.orderId||"",
       note:firstPlan?.note||"",
     });
@@ -19158,7 +19208,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const activeCount=machineBoardRows.filter(r=>!isPlanningSpecialLane(r.machine)&&Boolean(r.activeSegment)).length;
   const scheduledCount=productionSegments.length;
   const onTimePct=dueKnownSegments.length>0?Math.max(0,Math.min(100,Math.round(((dueKnownSegments.length-behindCount)/dueKnownSegments.length)*100))):100;
-  const setupCount=machines.reduce((sum,m)=>sum+Math.max(0,((monthSegmentsByMachine[m]||[]).length-1)),0);
+  const setupCount=planningMachines.reduce((sum,m)=>sum+Math.max(0,((monthSegmentsByMachine[m]||[]).length-1)),0);
   const summaryCards=[
     {label:"Aktif",value:String(activeCount),sub:"Degisim Yok"},
     {label:"Planli",value:String(scheduledCount),sub:"Degisim Yok"},
@@ -19264,7 +19314,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
               onClick={()=>{
                 const today=todayStr();
                 setEditId(null);
-                setForm({startDate:today,endDate:today,machine:(machines[0]||"CNC-1"),orderId:"",note:""});
+                setForm({startDate:today,endDate:today,machine:defaultPlanningMachine,orderId:"",note:""});
                 setShowPlanModal(true);
               }}
               style={{...btnSt("primary"),padding:"6px 10px",fontSize:12}}
@@ -19287,7 +19337,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                   value={planMachineFilter}
                   onChange={v=>setPlanMachineFilter(v)}
                   placeholder="Tum Tezgahlar"
-                  options={[{value:"all",label:"Tum Tezgahlar"},...machines.map(m=>({value:m,label:m}))]}
+                  options={[{value:"all",label:"Tum Tezgahlar"},...planningMachines.map(m=>({value:m,label:m}))]}
                   style={{width:"100%"}}
                 />
               </div>
