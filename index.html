@@ -14063,6 +14063,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const [tools,setTools]=useState([]);
   const [plans,setPlans]=useState([]);
   const [telemetryRows,setTelemetryRows]=useState([]);
+  const [allEntries,setAllEntries]=useState([]);
   const [todayEntries,setTodayEntries]=useState([]);
   const [saved,setSaved]=useState(false);
   const [search,setSearch]=useState("");
@@ -14072,12 +14073,20 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const [stationTag,setStationTag]=useState("");
   const [showToolModal,setShowToolModal]=useState(false);
   const [showShiftModal,setShowShiftModal]=useState(false);
+  const [showEntryHistory,setShowEntryHistory]=useState(false);
   const [shiftModalMode,setShiftModalMode]=useState("shiftEnd");
   const [previewFile,setPreviewFile]=useState(null);
   const [showOrderDataPanel,setShowOrderDataPanel]=useState(false);
   const [mobileEntrySection,setMobileEntrySection]=useState("entry");
   const [toolDraft,setToolDraft]=useState({machineToolId:"",machineToolQty:"1"});
   const [shiftDraft,setShiftDraft]=useState({correct:"",wrong:""});
+  const [entryHistoryFilters,setEntryHistoryFilters]=useState({
+    search:"",
+    machine:"all",
+    shift:"all",
+    dateFrom:"",
+    dateTo:"",
+  });
   const [kioskViewport,setKioskViewport]=useState(()=>({
     w:(typeof window!=="undefined"&&window.innerWidth)?window.innerWidth:1920,
     h:(typeof window!=="undefined"&&window.innerHeight)?window.innerHeight:1080,
@@ -14194,8 +14203,19 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   },[kioskMode,machines.join("|")]);
 
   useEffect(()=>{
-    window.DB.getAll("entries").then(e=>setTodayEntries(e.filter(x=>x.date===form.entryDate&&x.operatorId===currentUser.id)));
-  },[currentUser.id,form.entryDate]);
+    let disposed=false;
+    window.DB.getAll("entries").then(rows=>{
+      if(disposed) return;
+      const mine=(rows||[])
+        .filter(x=>x.operatorId===currentUser.id)
+        .sort((a,b)=>(String(b.createdAt||b.updatedAt||`${b.date||""}T00:00:00`)).localeCompare(String(a.createdAt||a.updatedAt||`${a.date||""}T00:00:00`)));
+      setAllEntries(mine);
+    });
+    return ()=>{ disposed=true; };
+  },[currentUser.id]);
+  useEffect(()=>{
+    setTodayEntries(allEntries.filter(x=>x.date===form.entryDate));
+  },[allEntries,form.entryDate]);
 
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
   const filtered=orders.filter(o=>o.code.toLowerCase().includes(search.toLowerCase())||o.name.toLowerCase().includes(search.toLowerCase()));
@@ -14351,7 +14371,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     const prevEntry=editId?todayEntries.find(x=>x.id===editId):null;
     const preservedMachineToolQty=editId?Math.max(0,Number(prevEntry?.machineToolQty??prevEntry?.machineToolChange??0)):0;
     const d=parseYmdLocal(form.entryDate);
-    const entry={
+    const nowIso=new Date().toISOString();
+    const entryBase={
       date:ymdLocal(d), week:weekStart(d), month:monthStr(d),
       machine:form.machine, shift:form.shift, shiftLabel:selectedShiftMeta.label||form.shift||"",
       operatorId:currentUser.id, operatorName:currentUser.fullName,
@@ -14364,14 +14385,19 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
       machineToolQty:editId?preservedMachineToolQty:0,
       machineToolChange:editId?preservedMachineToolQty:0,
       entryType:"production",
+      updatedAt:nowIso,
     };
+    const entry=editId
+      ? {...entryBase,createdAt:prevEntry?.createdAt||prevEntry?.updatedAt||`${ymdLocal(d)}T00:00:00`}
+      : {...entryBase,createdAt:nowIso};
     const stockDelta=getDeltaMap(prevEntry,entry);
     const stockOk=await applyToolStockDelta(stockDelta);
     if(!stockOk) return false;
     if(editId){
       const ok=await window.DB.updateDoc("entries",editId,entry);
       if(ok){
-        setTodayEntries(e=>e.map(x=>x.id===editId?{...x,...entry}:x));
+        const updatedRow={...prevEntry,...entry,id:editId};
+        setAllEntries(rows=>rows.map(x=>x.id===editId?updatedRow:x).sort((a,b)=>(String(b.createdAt||b.updatedAt||`${b.date||""}T00:00:00`)).localeCompare(String(a.createdAt||a.updatedAt||`${a.date||""}T00:00:00`))));
         setEditId(null);
         setSaved(true); setTimeout(()=>setSaved(false),2000);
         resetEntryForm();
@@ -14385,7 +14411,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     }
     const id=await window.DB.addDoc("entries",entry);
     if(id){
-      setTodayEntries(e=>[{id,...entry},...e]);
+      const createdRow={id,...entry};
+      setAllEntries(rows=>[createdRow,...rows].sort((a,b)=>(String(b.createdAt||b.updatedAt||`${b.date||""}T00:00:00`)).localeCompare(String(a.createdAt||a.updatedAt||`${a.date||""}T00:00:00`))));
       setSaved(true); setTimeout(()=>setSaved(false),2000);
       resetEntryForm();
       setShiftDraft({correct:"",wrong:""});
@@ -14401,7 +14428,9 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     const matched=orders.find(o=>o.code===entry.jobCode);
     const selectedOrder=matched||{code:entry.jobCode,name:entry.jobName,partSec:entry.partSec};
     setEditId(entry.id);
+    setShowEntryHistory(false);
     setShowPicker(false);
+    setMobileEntrySection("entry");
     setForm({
       entryDate:entry.date||todayStr(),
       machine:entry.machine||machines[0]||"CNC-1",
@@ -14428,7 +14457,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
       await applyToolStockDelta(invertDeltaMap(stockDelta));
       return;
     }
-    setTodayEntries(e=>e.filter(x=>x.id!==entry.id));
+    setAllEntries(rows=>rows.filter(x=>x.id!==entry.id));
     if(editId===entry.id){
       setEditId(null);
       resetEntryForm();
@@ -14487,7 +14516,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
       alert("Takım değişimi kaydedilemedi.");
       return;
     }
-    setTodayEntries(e=>[{id,...entry},...e]);
+    setAllEntries(rows=>[{id,...entry},...rows].sort((a,b)=>(String(b.createdAt||b.updatedAt||`${b.date||""}T00:00:00`)).localeCompare(String(a.createdAt||a.updatedAt||`${a.date||""}T00:00:00`))));
     setForm(p=>({
       ...p,
       machineToolId,
@@ -14524,8 +14553,24 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     setShiftModalMode("shiftEnd");
   }
 
+  function confirmShiftEndApproval(correctValue,wrongValue){
+    const shiftLabel=selectedShiftMeta.label||form.shift||"-";
+    const shiftTime=selectedShiftMeta.time?` (${selectedShiftMeta.time})`:"";
+    const correctNum=Math.max(0,Number(correctValue)||0);
+    const wrongNum=Math.max(0,Number(wrongValue)||0);
+    const actionLabel=editId?"güncellemek":"kaydetmek";
+    return confirm(
+      `Kayıt ${shiftLabel}${shiftTime} vardiyasına işlenecek.\n`+
+      `Tarih: ${form.entryDate||todayStr()}\n`+
+      `Tezgah: ${form.machine||"-"}\n`+
+      `Doğru: ${correctNum} · Hatalı: ${wrongNum}\n\n`+
+      `Bu vardiya kaydını ${actionLabel} istediğinize emin misiniz?`
+    );
+  }
+
   async function approveShiftEnd(){
     const correctValue=shiftModalMode==="rejectOnly"?"0":shiftDraft.correct;
+    if(shiftModalMode==="shiftEnd"&&!confirmShiftEndApproval(correctValue,shiftDraft.wrong)) return;
     const ok=await submitShiftEnd(correctValue,shiftDraft.wrong);
     if(ok){
       setShowShiftModal(false);
@@ -14858,6 +14903,38 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const viewportWidth=kioskViewport.w||((typeof window!=="undefined"&&window.innerWidth)?window.innerWidth:1280);
   const isPhoneEntry=!kioskMode&&viewportWidth<680;
   const isTabletEntry=!kioskMode&&viewportWidth>=680&&viewportWidth<1080;
+  const productionHistoryEntries=useMemo(()=>
+    allEntries.filter(entry=>String(entry.entryType||"production")==="production")
+  ,[allEntries]);
+  const historyMachineOptions=useMemo(()=>
+    [...new Set(productionHistoryEntries.map(entry=>String(entry.machine||"").trim()).filter(Boolean))]
+      .sort((a,b)=>a.localeCompare(b,"tr"))
+  ,[productionHistoryEntries]);
+  const filteredHistoryEntries=useMemo(()=>{
+    const query=String(entryHistoryFilters.search||"").trim().toLocaleLowerCase("tr");
+    return productionHistoryEntries.filter(entry=>{
+      if(entryHistoryFilters.machine!=="all"&&String(entry.machine||"")!==entryHistoryFilters.machine) return false;
+      if(entryHistoryFilters.shift!=="all"&&String(entry.shift||"")!==entryHistoryFilters.shift) return false;
+      if(entryHistoryFilters.dateFrom&&String(entry.date||"")<entryHistoryFilters.dateFrom) return false;
+      if(entryHistoryFilters.dateTo&&String(entry.date||"")>entryHistoryFilters.dateTo) return false;
+      if(!query) return true;
+      const haystack=[
+        entry.jobCode,
+        entry.jobName,
+        entry.machine,
+        entry.date,
+        entry.shiftLabel,
+        shiftWindowMap[entry.shift]?.label,
+      ].filter(Boolean).join(" ").toLocaleLowerCase("tr");
+      return haystack.includes(query);
+    });
+  },[productionHistoryEntries,entryHistoryFilters,shiftWindowMap]);
+  function formatEntryHistoryStamp(entry){
+    const raw=entry?.createdAt||entry?.updatedAt||`${entry?.date||""}T00:00:00`;
+    const parsed=new Date(raw);
+    if(Number.isNaN(parsed.getTime())) return entry?.date||"-";
+    return new Intl.DateTimeFormat("tr-TR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}).format(parsed);
+  }
   useEffect(()=>{
     if(!isPhoneEntry&&mobileEntrySection!=="entry"){
       setMobileEntrySection("entry");
@@ -15393,6 +15470,11 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={closeShiftModal}>
             <div style={{width:"100%",maxWidth:560,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:15}} onClick={e=>e.stopPropagation()}>
               <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>{shiftModalMode==="rejectOnly"?"Hata Girişi":"Vardiya Sonu"}</div>
+              {shiftModalMode==="shiftEnd"&&(
+                <div style={{marginBottom:10,padding:"10px 12px",borderRadius:10,border:`1px solid ${C.border}`,background:C.surface,fontSize:12,color:C.muted2}}>
+                  Kayıt şu vardiyaya işlenecek: <strong style={{color:C.text}}>{selectedShiftMeta.label}</strong>{selectedShiftMeta.time?` (${selectedShiftMeta.time})`:""}
+                </div>
+              )}
               <div style={{display:"flex",gap:10}}>
                 {shiftModalMode!=="rejectOnly"&&<div style={{flex:1}}><span style={labelSt}>Doğru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>}
                 <div style={{flex:1}}><span style={labelSt}>{shiftModalMode==="rejectOnly"?"? Kaç Adet Hatalı?":"? Hatalı Adet"}</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>
@@ -15561,6 +15643,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
         <button onClick={openRejectPartsModal} style={{...btnSt("ghost"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:700,borderColor:rgbaFromHex(C.red,0.2),color:C.red,background:rgbaFromHex(C.red,0.04)}}>Hata Girişi</button>
         <button onClick={openToolChangeModal} style={{...btnSt("ghost"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:700}}>Takım Değişimi</button>
         <button onClick={()=>setShowOrderDataPanel(true)} disabled={!form.selectedOrder} style={{...btnSt("ghost"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:700,opacity:form.selectedOrder?1:.45,cursor:form.selectedOrder?"pointer":"not-allowed"}}>İş Emri Dokümanları</button>
+        <button onClick={()=>setShowEntryHistory(true)} style={{...btnSt("ghost"),padding:isPhoneEntry?"11px 12px":"12px 14px",fontSize:isPhoneEntry?12:13,fontWeight:700}}>Üretim Kayıtları</button>
       </div>
     </div>
   );
@@ -15666,7 +15749,10 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   );
   const todayEntriesCard=(
     <div style={{...sectionCardStyle,padding:12,display:"flex",flexDirection:"column",gap:8}}>
-      <div style={{fontSize:13,fontWeight:700,color:C.text}}>Seçili Gün Girişlerim ({Math.min(todayEntries.length,5)})</div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <div style={{fontSize:13,fontWeight:700,color:C.text}}>Seçili Gün Girişlerim ({Math.min(todayEntries.length,5)})</div>
+        <button onClick={()=>setShowEntryHistory(true)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11}}>Tüm Kayıtlar</button>
+      </div>
       {todayEntries.length===0&&<div style={standardEmptyStateStyle}>Seçili günde kayıt bulunmuyor.</div>}
       {todayEntries.length>0&&todayEntries.slice(0,5).map(e=>{
         const p=calcPerf(e.correct,e.wrong,e.partSec);
@@ -15902,6 +15988,9 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:isPhoneEntry?10:14}} onClick={()=>setShowShiftModal(false)}>
           <div style={{width:"100%",maxWidth:560,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:15}} onClick={e=>e.stopPropagation()}>
             <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>Vardiya Sonu</div>
+            <div style={{marginBottom:10,padding:"10px 12px",borderRadius:10,border:`1px solid ${C.border}`,background:C.surface,fontSize:12,color:C.muted2}}>
+              Kayıt şu vardiyaya işlenecek: <strong style={{color:C.text}}>{selectedShiftMeta.label}</strong>{selectedShiftMeta.time?` (${selectedShiftMeta.time})`:""}
+            </div>
             <div style={{display:"flex",gap:10,flexDirection:isPhoneEntry?"column":"row"}}>
               <div style={{flex:1}}><span style={labelSt}>Doğru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>
               <div style={{flex:1}}><span style={labelSt}>Hatalı Adet</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>
@@ -15909,6 +15998,86 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14,flexWrap:"wrap"}}>
               <button onClick={()=>setShowShiftModal(false)} style={{...btnSt("ghost"),padding:"10px 14px"}}>İptal</button>
               <button onClick={approveShiftEnd} style={{...btnSt(saved?"green":"primary"),padding:"10px 14px"}}>{editId?"Güncellemeyi Onayla":"Vardiyayı Onayla"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showEntryHistory&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(8,12,18,.68)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",zIndex:57,display:"flex",alignItems:"center",justifyContent:"center",padding:isPhoneEntry?8:16}} onClick={()=>setShowEntryHistory(false)}>
+          <div style={{width:"100%",maxWidth:1120,maxHeight:isPhoneEntry?"94vh":"90vh",background:C.card,border:`1px solid ${C.border}`,borderRadius:16,overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 24px 56px rgba(0,0,0,.34)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:isPhoneEntry?"flex-start":"center",gap:10,flexWrap:"wrap",padding:"12px 14px",borderBottom:`1px solid ${C.border}`,background:C.surface}}>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:12,color:C.muted2,fontWeight:700,letterSpacing:.5,textTransform:"uppercase"}}>Operatör</div>
+                <div style={{fontSize:18,color:C.text,fontWeight:800}}>Üretim Kayıtları</div>
+                <div style={{fontSize:12,color:C.muted2,marginTop:3}}>{filteredHistoryEntries.length} kayıt gösteriliyor</div>
+              </div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <button
+                  onClick={()=>setEntryHistoryFilters({search:"",machine:"all",shift:"all",dateFrom:"",dateTo:""})}
+                  style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}
+                >
+                  Filtreyi Temizle
+                </button>
+                <button onClick={()=>setShowEntryHistory(false)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
+              </div>
+            </div>
+            <div style={{padding:12,borderBottom:`1px solid ${C.border}`,background:C.surface2,display:"grid",gridTemplateColumns:isPhoneEntry?"1fr":"minmax(220px,2fr) repeat(4,minmax(140px,1fr))",gap:10}}>
+              <input
+                style={{...inputSt,background:C.card}}
+                placeholder="İş emri, parça, tezgah ara..."
+                value={entryHistoryFilters.search}
+                onChange={e=>setEntryHistoryFilters(prev=>({...prev,search:e.target.value}))}
+              />
+              <select style={{...inputSt,background:C.card}} value={entryHistoryFilters.machine} onChange={e=>setEntryHistoryFilters(prev=>({...prev,machine:e.target.value}))}>
+                <option value="all">Tüm Tezgahlar</option>
+                {historyMachineOptions.map(machine=><option key={machine} value={machine}>{machine}</option>)}
+              </select>
+              <select style={{...inputSt,background:C.card}} value={entryHistoryFilters.shift} onChange={e=>setEntryHistoryFilters(prev=>({...prev,shift:e.target.value}))}>
+                <option value="all">Tüm Vardiyalar</option>
+                {shiftOptions.map(shift=><option key={shift.id} value={shift.id}>{shift.label}</option>)}
+              </select>
+              <input style={{...inputSt,background:C.card}} type="date" value={entryHistoryFilters.dateFrom} onChange={e=>setEntryHistoryFilters(prev=>({...prev,dateFrom:e.target.value||""}))}/>
+              <input style={{...inputSt,background:C.card}} type="date" value={entryHistoryFilters.dateTo} onChange={e=>setEntryHistoryFilters(prev=>({...prev,dateTo:e.target.value||""}))}/>
+            </div>
+            <div style={{padding:12,overflowY:"auto",display:"flex",flexDirection:"column",gap:10}}>
+              {filteredHistoryEntries.length===0&&(
+                <div style={{padding:"22px 14px",borderRadius:12,border:`1px dashed ${C.border}`,background:C.surface,textAlign:"center",fontSize:13,color:C.muted2}}>
+                  Filtreye uygun üretim kaydı bulunamadı.
+                </div>
+              )}
+              {filteredHistoryEntries.map(entry=>{
+                const shiftLabel=shiftWindowMap[entry.shift]?.label||entry.shiftLabel||entry.shift||"-";
+                return (
+                  <div key={entry.id} style={{border:`1px solid ${C.border}`,borderRadius:12,background:C.surface,padding:"12px 13px",display:"flex",flexDirection:"column",gap:10}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:isPhoneEntry?"flex-start":"center",gap:10,flexWrap:"wrap"}}>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontFamily:"monospace",fontSize:14,fontWeight:800,color:C.text,whiteSpace:isPhoneEntry?"normal":"nowrap",overflow:"hidden",textOverflow:"ellipsis",wordBreak:"break-word"}}>{entry.jobCode||"-"}</div>
+                        <div style={{fontSize:12,color:C.muted2,marginTop:3,whiteSpace:isPhoneEntry?"normal":"nowrap",overflow:"hidden",textOverflow:"ellipsis",wordBreak:"break-word"}}>{entry.jobName||"-"}</div>
+                      </div>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                        <Badge label={entry.machine||"-"} color={C.accent}/>
+                        <Badge label={shiftLabel} color={C.muted2}/>
+                      </div>
+                    </div>
+                    <div style={{display:"grid",gridTemplateColumns:isPhoneEntry?"1fr 1fr":"repeat(5,minmax(0,1fr))",gap:8}}>
+                      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Tarih</div><div style={{fontSize:13,fontWeight:700,color:C.text,marginTop:4}}>{entry.date||"-"}</div></div>
+                      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Doğru</div><div style={{fontSize:13,fontWeight:700,color:C.green,marginTop:4}}>{safeNum(entry.correct)}</div></div>
+                      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Hatalı</div><div style={{fontSize:13,fontWeight:700,color:C.red,marginTop:4}}>{safeNum(entry.wrong)}</div></div>
+                      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Parça Süresi</div><div style={{fontSize:13,fontWeight:700,color:C.text,marginTop:4}}>{fmtSec(entry.partSec)}</div></div>
+                      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Kayıt Zamanı</div><div style={{fontSize:13,fontWeight:700,color:C.text,marginTop:4}}>{formatEntryHistoryStamp(entry)}</div></div>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:isPhoneEntry?"flex-start":"center",gap:10,flexWrap:"wrap"}}>
+                      <div style={{fontSize:11,color:C.muted2}}>
+                        Operatör: <strong style={{color:C.text}}>{entry.operatorName||currentUser.fullName||currentUser.id}</strong>
+                      </div>
+                      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                        <button onClick={()=>startEdit(entry)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Düzenle</button>
+                        <button onClick={()=>removeEntry(entry)} style={{...btnSt("danger"),padding:"7px 10px",fontSize:12}}>Sil</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
