@@ -2494,6 +2494,93 @@ function canFilePreview(file) {
   if(!getFileSource(file)) return false;
   return isImageFile(file) || isPdfFile(file) || isStepFile(file);
 }
+function FilePreviewModal({file,onClose,padding=0,maxWidth=960,maxHeight="88vh",frameHeight="70vh",compact=false}) {
+  const shellRef=useRef(null);
+  const [isFullscreen,setIsFullscreen]=useState(false);
+  useEffect(()=>{
+    const syncFullscreen=()=>{
+      setIsFullscreen(Boolean(typeof document!=="undefined"&&shellRef.current&&document.fullscreenElement===shellRef.current));
+    };
+    syncFullscreen();
+    document.addEventListener("fullscreenchange",syncFullscreen);
+    return ()=>document.removeEventListener("fullscreenchange",syncFullscreen);
+  },[]);
+  const closePreview=async()=>{
+    try{
+      if(typeof document!=="undefined"&&document.fullscreenElement===shellRef.current&&document.exitFullscreen){
+        await document.exitFullscreen();
+      }
+    }catch{}
+    onClose?.();
+  };
+  const toggleFullscreen=async()=>{
+    const el=shellRef.current;
+    if(!(el&&typeof document!=="undefined")) return;
+    try{
+      if(document.fullscreenElement===el){
+        if(document.exitFullscreen) await document.exitFullscreen();
+        return;
+      }
+      if(document.fullscreenElement&&document.exitFullscreen){
+        await document.exitFullscreen();
+      }
+      if(el.requestFullscreen) await el.requestFullscreen();
+    }catch{}
+  };
+  const viewerHeight=isFullscreen?"calc(100vh - 92px)":frameHeight;
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.72)",zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding}} onClick={closePreview}>
+      <div
+        ref={shellRef}
+        style={{
+          width:"100%",
+          height:isFullscreen?"100%":"auto",
+          maxWidth:isFullscreen?"100%":maxWidth,
+          maxHeight:isFullscreen?"100%":maxHeight,
+          background:C.card,
+          border:isFullscreen?"none":`1px solid ${C.border}`,
+          borderRadius:isFullscreen?0:14,
+          overflow:"hidden",
+          display:"flex",
+          flexDirection:"column"
+        }}
+        onClick={e=>e.stopPropagation()}
+      >
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:compact?"flex-start":"center",padding:"10px 12px",borderBottom:`1px solid ${C.border}`,gap:10,flexWrap:"wrap"}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.text,whiteSpace:compact?"normal":"nowrap",overflow:"hidden",textOverflow:"ellipsis",wordBreak:compact?"break-word":"normal"}}>
+            {file?.name||"Dosya Önizleme"}
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={toggleFullscreen} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>
+              {isFullscreen?"Tam Ekrandan Çık":"Tam Ekran"}
+            </button>
+            <button onClick={closePreview} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kapat</button>
+          </div>
+        </div>
+        <div style={{padding:isFullscreen?12:10,overflow:"auto",background:C.surface,flex:1}}>
+          {isImageFile(file)&&(
+            <img
+              src={file.data}
+              alt={file.name}
+              style={{display:"block",width:"100%",maxHeight:viewerHeight,height:"auto",objectFit:"contain",margin:"0 auto",borderRadius:10,border:`1px solid ${C.border}`}}
+            />
+          )}
+          {isPdfFile(file)&&<iframe title={file.name} src={file.data} style={{width:"100%",height:viewerHeight,border:`1px solid ${C.border}`,borderRadius:10,background:"#fff"}}/>}
+          {isStepFile(file)&&(
+            <div style={{minHeight:viewerHeight}}>
+              <StepFileViewer file={file}/>
+            </div>
+          )}
+          {!canFilePreview(file)&&(
+            <div style={{padding:22,textAlign:"center",color:C.muted2,fontSize:13,border:`1px dashed ${C.border}`,borderRadius:10,background:C.card}}>
+              Bu dosya türü için önizleme yok. Dosyayı indirip harici uygulamada açabilirsiniz.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 function getFileIcon(name) {
   const ext=getFileExt(name);
   if(["jpg","jpeg","png","gif","webp"].includes(ext)) return "IMG";
@@ -13780,26 +13867,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
           }
         </div>
 
-        {previewFile&&(
-          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.72)",zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:0}} onClick={()=>setPreviewFile(null)}>
-            <div style={{width:"100%",maxWidth:960,maxHeight:"88vh",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>
-                <div style={{fontSize:13,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{previewFile.name}</div>
-                <button onClick={()=>setPreviewFile(null)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kapat</button>
-              </div>
-              <div style={{padding:10,overflow:"auto",background:C.surface}}>
-                {isImageFile(previewFile)&&<img src={previewFile.data} alt={previewFile.name} style={{width:"100%",height:"auto",borderRadius:10,border:`1px solid ${C.border}`}}/>}
-                {isPdfFile(previewFile)&&<iframe title={previewFile.name} src={previewFile.data} style={{width:"100%",height:"70vh",border:`1px solid ${C.border}`,borderRadius:10,background:"#fff"}}/>}
-                {isStepFile(previewFile)&&<StepFileViewer file={previewFile}/>}
-                {!canFilePreview(previewFile)&&(
-                  <div style={{padding:22,textAlign:"center",color:C.muted2,fontSize:13,border:`1px dashed ${C.border}`,borderRadius:10,background:C.card}}>
-                    Bu dosya turu icin onizleme yok. Dosyayi indirip harici uygulama ile acabilirsiniz.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+        {previewFile&&<FilePreviewModal file={previewFile} onClose={()=>setPreviewFile(null)}/>}
       </div>
     );
   }
@@ -15336,26 +15404,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             </div>
           </div>
         )}
-        {previewFile&&(
-          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.72)",zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:0}} onClick={()=>setPreviewFile(null)}>
-            <div style={{width:"100%",maxWidth:960,maxHeight:"88vh",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",borderBottom:`1px solid ${C.border}`}}>
-                <div style={{fontSize:13,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{previewFile.name}</div>
-                <button onClick={()=>setPreviewFile(null)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kapat</button>
-              </div>
-              <div style={{padding:10,overflow:"auto",background:C.surface}}>
-                {isImageFile(previewFile)&&<img src={previewFile.data} alt={previewFile.name} style={{width:"100%",height:"auto",borderRadius:10,border:`1px solid ${C.border}`}}/>}
-                {isPdfFile(previewFile)&&<iframe title={previewFile.name} src={previewFile.data} style={{width:"100%",height:"70vh",border:`1px solid ${C.border}`,borderRadius:10,background:"#fff"}}/>}
-                {isStepFile(previewFile)&&<StepFileViewer file={previewFile}/>}
-                {!canFilePreview(previewFile)&&(
-                  <div style={{padding:22,textAlign:"center",color:C.muted2,fontSize:13,border:`1px dashed ${C.border}`,borderRadius:10,background:C.card}}>
-                    Bu dosya turu icin onizleme yok. Dosyayi indirip harici uygulamada acabilirsiniz.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+        {previewFile&&<FilePreviewModal file={previewFile} onClose={()=>setPreviewFile(null)}/>}
       </div>
     );
   }
@@ -15865,24 +15914,14 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
         </div>
       )}
       {previewFile&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.72)",zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:isPhoneEntry?8:0}} onClick={()=>setPreviewFile(null)}>
-          <div style={{width:"100%",maxWidth:960,maxHeight:isPhoneEntry?"92vh":"88vh",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:isPhoneEntry?"flex-start":"center",padding:"10px 12px",borderBottom:`1px solid ${C.border}`,gap:10,flexWrap:"wrap"}}>
-              <div style={{fontSize:13,fontWeight:700,color:C.text,whiteSpace:isPhoneEntry?"normal":"nowrap",overflow:"hidden",textOverflow:"ellipsis",wordBreak:"break-word"}}>{previewFile.name}</div>
-              <button onClick={()=>setPreviewFile(null)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kapat</button>
-            </div>
-            <div style={{padding:10,overflow:"auto",background:C.surface}}>
-              {isImageFile(previewFile)&&<img src={previewFile.data} alt={previewFile.name} style={{width:"100%",height:"auto",borderRadius:10,border:`1px solid ${C.border}`}}/>}
-                {isPdfFile(previewFile)&&<iframe title={previewFile.name} src={previewFile.data} style={{width:"100%",height:isPhoneEntry?"60vh":"70vh",border:`1px solid ${C.border}`,borderRadius:10,background:"#fff"}}/>}
-              {isStepFile(previewFile)&&<StepFileViewer file={previewFile}/>}
-              {!canFilePreview(previewFile)&&(
-                <div style={{padding:22,textAlign:"center",color:C.muted2,fontSize:13,border:`1px dashed ${C.border}`,borderRadius:10,background:C.card}}>
-                  Bu dosya türü için önizleme yok. Dosyayı indirip harici uygulamada açabilirsiniz.
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <FilePreviewModal
+          file={previewFile}
+          onClose={()=>setPreviewFile(null)}
+          padding={isPhoneEntry?8:0}
+          maxHeight={isPhoneEntry?"92vh":"88vh"}
+          frameHeight={isPhoneEntry?"60vh":"70vh"}
+          compact={isPhoneEntry}
+        />
       )}
       {!isPhoneEntry&&todayEntriesCard}
     </div>
