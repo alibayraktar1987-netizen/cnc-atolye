@@ -63,6 +63,7 @@ body{
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyA6BAv57T-M_oeg5c0-irynYThqQv0s1xI",
@@ -75,6 +76,47 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const storage = getStorage(app);
+
+function sanitizeStorageFileName(name){
+  const raw=String(name||"dosya").trim()||"dosya";
+  const normalized=raw.normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  const cleaned=normalized
+    .replace(/[^a-zA-Z0-9._-]+/g,"-")
+    .replace(/-+/g,"-")
+    .replace(/^-+|-+$/g,"");
+  return cleaned||`dosya-${Date.now()}`;
+}
+function buildStorageUploadPath(folder,fileName){
+  const safeFolder=String(folder||"attachments").replace(/^\/+|\/+$/g,"")||"attachments";
+  const stamp=new Date().toISOString().slice(0,7).replace("-","/");
+  const rand=Math.random().toString(36).slice(2,8);
+  return `${safeFolder}/${stamp}/${Date.now()}_${rand}_${sanitizeStorageFileName(fileName)}`;
+}
+async function uploadFileToStorage(file,{folder="attachments"}={}){
+  if(!(file instanceof Blob)) throw new Error("Yuklenecek dosya bulunamadi.");
+  const path=buildStorageUploadPath(folder,file.name||"dosya");
+  const refObj=storageRef(storage,path);
+  await uploadBytes(refObj,file,{contentType:file.type||"application/octet-stream"});
+  const url=await getDownloadURL(refObj);
+  return {
+    id:`upl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`,
+    name:String(file.name||"Dosya").trim()||"Dosya",
+    size:Math.max(0,Number(file.size)||0),
+    type:String(file.type||"").trim(),
+    url,
+    storagePath:path,
+    uploadedAt:new Date().toISOString(),
+  };
+}
+async function blobToDataUrl(blob){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(String(reader.result||""));
+    reader.onerror=reject;
+    reader.readAsDataURL(blob);
+  });
+}
 
 // ¦¦ DB HELPERS ¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦
 function sanitizeForFirestore(value) {
@@ -2904,6 +2946,26 @@ async function addAuditLog(actorId,entityType,entityId,action,beforeData,afterDa
 async function fileToBase64(file) {
   return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
 }
+async function loadFileBytes(file){
+  const source=getFileSource(file);
+  if(!source) throw new Error("Dosya kaynagi bulunamadi.");
+  if(/^data:/i.test(source)) return dataUrlToUint8Array(source);
+  const response=await fetch(source);
+  if(!response.ok) throw new Error("Dosya indirilemedi.");
+  return new Uint8Array(await response.arrayBuffer());
+}
+async function ensureFileDataUrl(file){
+  const source=getFileSource(file);
+  if(!source) throw new Error("Dosya kaynagi bulunamadi.");
+  if(/^data:/i.test(source)) return source;
+  const response=await fetch(source);
+  if(!response.ok) throw new Error("Dosya indirilemedi.");
+  const dataUrl=await blobToDataUrl(await response.blob());
+  if(file&&typeof file==="object"){
+    file.data=dataUrl;
+  }
+  return dataUrl;
+}
 function getFileExt(name) {
   return ((name||"").split(".").pop()||"").toLowerCase();
 }
@@ -2934,6 +2996,7 @@ function normalizeAttachedFileEntry(file,idx=0,prefix="file"){
   const url=typeof file.url==="string"?file.url.trim():"";
   const href=typeof file.href==="string"?file.href.trim():"";
   const src=typeof file.src==="string"?file.src.trim():"";
+  const storagePath=typeof file.storagePath==="string"?file.storagePath.trim():"";
   const name=String(file.name||"").trim();
   const type=String(file.type||"").trim();
   const uploadedAt=String(file.uploadedAt||file.createdAt||new Date().toISOString()).trim();
@@ -2948,6 +3011,7 @@ function normalizeAttachedFileEntry(file,idx=0,prefix="file"){
     url,
     href,
     src,
+    storagePath,
     uploadedAt,
   };
 }
@@ -3015,6 +3079,7 @@ function canFilePreview(file) {
 function FilePreviewModal({file,onClose,padding=0,maxWidth=960,maxHeight="88vh",frameHeight="70vh",compact=false}) {
   const shellRef=useRef(null);
   const [isFullscreen,setIsFullscreen]=useState(false);
+  const fileSource=getFileSource(file);
   useEffect(()=>{
     const syncFullscreen=()=>{
       setIsFullscreen(Boolean(typeof document!=="undefined"&&shellRef.current&&document.fullscreenElement===shellRef.current));
@@ -3078,12 +3143,12 @@ function FilePreviewModal({file,onClose,padding=0,maxWidth=960,maxHeight="88vh",
         <div style={{padding:isFullscreen?12:10,overflow:"auto",background:C.surface,flex:1}}>
           {isImageFile(file)&&(
             <img
-              src={file.data}
+              src={fileSource}
               alt={file.name}
               style={{display:"block",width:"100%",maxHeight:viewerHeight,height:"auto",objectFit:"contain",margin:"0 auto",borderRadius:10,border:`1px solid ${C.border}`}}
             />
           )}
-          {isPdfFile(file)&&<iframe title={file.name} src={file.data} style={{width:"100%",height:viewerHeight,border:`1px solid ${C.border}`,borderRadius:10,background:C.surface,colorScheme:C.bg==="#16181C"?"dark":"light"}}/>}
+          {isPdfFile(file)&&<iframe title={file.name} src={fileSource} style={{width:"100%",height:viewerHeight,border:`1px solid ${C.border}`,borderRadius:10,background:C.surface,colorScheme:C.bg==="#16181C"?"dark":"light"}}/>}
           {isStepFile(file)&&(
             <div style={{minHeight:viewerHeight}}>
               <StepFileViewer file={file}/>
@@ -3113,7 +3178,10 @@ function formatBytes(b) {
   return (b/1048576).toFixed(1)+" MB";
 }
 const FIRESTORE_DOC_SOFT_LIMIT_BYTES = 900 * 1024;
-const PART_EMBEDDED_FILE_LIMIT_BYTES = 600 * 1024;
+const PART_EMBEDDED_FILE_LIMIT_BYTES = 30 * 1024 * 1024;
+const PDF_IMPORT_FILE_LIMIT_BYTES = 25 * 1024 * 1024;
+const WORK_ORDER_FILE_LIMIT_BYTES = 25 * 1024 * 1024;
+const WORK_ORDER_STEP_FILE_LIMIT_BYTES = 30 * 1024 * 1024;
 function estimateSerializedBytes(value){
   try{
     const raw=JSON.stringify(sanitizeForFirestore(value));
@@ -3134,7 +3202,7 @@ function isPartEmbeddedFileTooLarge(file){
 }
 function buildPartEmbeddedFileLimitMessage(file){
   const fileName=String(file?.name||"Dosya").trim()||"Dosya";
-  return `"${fileName}" dokumani Firestore belge limitine takilmamasi icin otomatik kayda eklenmedi. Gomulu parca dosyalari en fazla ${formatBytes(PART_EMBEDDED_FILE_LIMIT_BYTES)} olabilir.`;
+  return `"${fileName}" dokumani parca yukleme limitini asiyor. Parca dokumanlari en fazla ${formatBytes(PART_EMBEDDED_FILE_LIMIT_BYTES)} olabilir.`;
 }
 function dataUrlToUint8Array(dataUrl) {
   const payload=(dataUrl||"").split(",")[1]||"";
@@ -3201,13 +3269,13 @@ function collectPdfTextLines(items){
     .filter(Boolean);
 }
 async function extractPdfTextFromDocument(file,{maxPages=3}={}){
-  if(!(file&&file.data)) throw new Error("PDF dosyasi bulunamadi.");
+  if(!getFileSource(file)) throw new Error("PDF dosyasi bulunamadi.");
   const pdfLibSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
   const pdfWorkerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
   const ok=await ensureExternalScript(pdfLibSrc,()=>Boolean(window.pdfjsLib&&window.pdfjsLib.getDocument));
   if(!ok||!window.pdfjsLib||!window.pdfjsLib.getDocument) throw new Error("PDF motoru yuklenemedi.");
   if(window.pdfjsLib.GlobalWorkerOptions) window.pdfjsLib.GlobalWorkerOptions.workerSrc=pdfWorkerSrc;
-  const task=window.pdfjsLib.getDocument({data:dataUrlToUint8Array(file.data)});
+  const task=window.pdfjsLib.getDocument({data:await loadFileBytes(file)});
   const pdf=await task.promise;
   const pageCount=Math.max(1,Number(pdf.numPages)||1);
   const lines=[];
@@ -3366,13 +3434,13 @@ function extractDimensionTokensFromText(text){
     });
 }
 async function autoBalloonPdfDrawing(file,{pageNumber=1,maxItems=260}={}){
-  if(!(file&&file.data)) throw new Error("PDF dosyasi bulunamadi.");
+  if(!getFileSource(file)) throw new Error("PDF dosyasi bulunamadi.");
   const pdfLibSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
   const pdfWorkerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
   const ok=await ensureExternalScript(pdfLibSrc,()=>Boolean(window.pdfjsLib&&window.pdfjsLib.getDocument));
   if(!ok||!window.pdfjsLib||!window.pdfjsLib.getDocument) throw new Error("PDF motoru yuklenemedi.");
   if(window.pdfjsLib.GlobalWorkerOptions) window.pdfjsLib.GlobalWorkerOptions.workerSrc=pdfWorkerSrc;
-  const bytes=dataUrlToUint8Array(file.data);
+  const bytes=await loadFileBytes(file);
   const task=window.pdfjsLib.getDocument({data:bytes});
   const pdf=await task.promise;
   const totalPages=Math.max(1,Number(pdf.numPages)||1);
@@ -3516,7 +3584,7 @@ function StepFileViewer({file}) {
         const occt=await window.occtimportjs();
         if(disposed) return;
 
-        const result=occt.ReadStepFile(dataUrlToUint8Array(file.data),null);
+        const result=occt.ReadStepFile(await loadFileBytes(file),null);
         if(!(result&&Array.isArray(result.meshes)&&result.meshes.length)){
           throw new Error("STEP modeli okunamadi.");
         }
@@ -10048,14 +10116,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     return [doc,...rest];
   };
   async function createPartDocumentFromFile(file){
-    return {
-      id:`doc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`,
-      name:file.name,
-      size:file.size,
-      type:file.type||"",
-      data:await fileToBase64(file),
-      uploadedAt:new Date().toISOString(),
-    };
+    return uploadFileToStorage(file,{folder:"parts"});
   }
   function buildPartPdfImportSummary(file,parsed,pdfInfo){
     const fields=[
@@ -10449,6 +10510,8 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
         docs.push(await createPartDocumentFromFile(file));
       }
       setPartForm(f=>({...f,documents:[...(f.documents||[]),...docs]}));
+    }catch(err){
+      alert(err?.message||"Dokuman yuklenemedi.");
     }finally{
       setUploading(false);
       e.target.value="";
@@ -10463,8 +10526,8 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
       e.target.value="";
       return;
     }
-    if(file.size>8*1024*1024){
-      alert(`"${file.name}" 8MB limitini asiyor.`);
+    if(file.size>PDF_IMPORT_FILE_LIMIT_BYTES){
+      alert(`"${file.name}" ${formatBytes(PDF_IMPORT_FILE_LIMIT_BYTES)} limitini asiyor.`);
       e.target.value="";
       return;
     }
@@ -10472,12 +10535,12 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     setPartPdfImportBusy(true);
     setPartPdfImportError("");
     setPartPdfImportSummary(null);
+    let doc=null;
     try{
-      const doc=await createPartDocumentFromFile(file);
+      doc=await createPartDocumentFromFile(file);
       const pdfInfo=await extractPdfTextFromDocument(doc,{maxPages:3});
       const parsed=guessPartFieldsFromPdf({text:pdfInfo.text,lines:pdfInfo.lines,fileName:file.name});
       const summary=buildPartPdfImportSummary(file,parsed,pdfInfo);
-      const attachImportedDoc=!isPartEmbeddedFileTooLarge(file);
       const matchedCustomer=parsed.customerName
         ? customers.find(c=>normalizeCustomerKey(c.name)===normalizeCustomerKey(parsed.customerName))||null
         : null;
@@ -10493,17 +10556,19 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
           partDiameterMm:parsed.partDiameterMm?formatMmValue(parsed.partDiameterMm):prev.partDiameterMm,
           partLengthMm:parsed.partLengthMm?formatMmValue(parsed.partLengthMm):prev.partLengthMm,
           barLengthMm:parsed.barLengthMm?formatMmValue(parsed.barLengthMm):prev.barLengthMm,
-          documents:attachImportedDoc?mergeImportedPartDocument(prev.documents,doc):prev.documents,
+          documents:mergeImportedPartDocument(prev.documents,doc),
         };
       });
       setPartPdfImportSummary(summary);
       const importNotes=[];
       if(summary.fields.length===0) importNotes.push("PDF eklendi ancak otomatik doldurulabilecek net alan bulunamadi. Formu manuel tamamlayabilirsiniz.");
       if(parsed.customerName&&!matchedCustomer) importNotes.push(`"${parsed.customerName}" musterisi listede bulunamadi. Musteriyi secim alanindan secin.`);
-      if(!attachImportedDoc) importNotes.push(buildPartEmbeddedFileLimitMessage(file));
       setPartPdfImportError(importNotes.join(" "));
     }catch(err){
-      setPartPdfImportError(err?.message||"PDF okunamadi.");
+      if(doc){
+        setPartForm(prev=>({...prev,documents:mergeImportedPartDocument(prev.documents,doc)}));
+      }
+      setPartPdfImportError([err?.message||"PDF okunamadi.",doc?"Dokuman yüklendi; alanlari manuel tamamlayabilirsiniz.":""].filter(Boolean).join(" "));
     }finally{
       setPartPdfImportBusy(false);
       e.target.value="";
@@ -10540,8 +10605,8 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
           issues.push(`${file.name}: PDF degil.`);
           continue;
         }
-        if(file.size>8*1024*1024){
-          issues.push(`${file.name}: 8MB limitini asiyor.`);
+        if(file.size>PDF_IMPORT_FILE_LIMIT_BYTES){
+          issues.push(`${file.name}: ${formatBytes(PDF_IMPORT_FILE_LIMIT_BYTES)} limitini asiyor.`);
           continue;
         }
         let doc=null;
@@ -10549,23 +10614,20 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
           doc=await createPartDocumentFromFile(file);
           const pdfInfo=await extractPdfTextFromDocument(doc,{maxPages:3});
           const parsed=guessPartFieldsFromPdf({text:pdfInfo.text,lines:pdfInfo.lines,fileName:file.name});
-          const attachImportedDoc=!isPartEmbeddedFileTooLarge(file);
           drafts.push(buildBulkImportDraft(
             file,
-            attachImportedDoc?doc:null,
+            doc,
             parsed,
             pdfInfo,
-            attachImportedDoc?"":buildPartEmbeddedFileLimitMessage(file)
+            ""
           ));
         }catch(err){
-          if(!doc) doc=await createPartDocumentFromFile(file);
-          const attachImportedDoc=!isPartEmbeddedFileTooLarge(file);
           drafts.push(buildBulkImportDraft(
             file,
-            attachImportedDoc?doc:null,
+            doc,
             {name:derivePdfFallbackPartName(file.name),revision:"A"},
             {pageCount:1},
-            [err?.message||"PDF okunamadi.",attachImportedDoc?"":buildPartEmbeddedFileLimitMessage(file)].filter(Boolean).join(" ")
+            err?.message||"PDF okunamadi."
           ));
         }
       }
@@ -11235,7 +11297,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
                       <span style={{fontSize:11,color:C.accent}}>{(partForm.documents||[]).length} dosya</span>
                       <input type="file" multiple style={{display:"none"}} onChange={pickPartDocuments}/>
                     </label>
-                    <div style={{fontSize:11,color:C.muted2,marginTop:4}}>Gomulu dosyalar en fazla {formatBytes(PART_EMBEDDED_FILE_LIMIT_BYTES)} olabilir. Daha buyuk PDF'ler analiz icin okunur, ama otomatik kayda eklenmez.</div>
+                    <div style={{fontSize:11,color:C.muted2,marginTop:4}}>Dokumanlar Firebase Storage'a yuklenir. Parca dokumanlari icin dosya basina en fazla {formatBytes(PART_EMBEDDED_FILE_LIMIT_BYTES)} desteklenir.</div>
                     {(partForm.documents||[]).length>0&&(
                       <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:5,maxHeight:120,overflowY:"auto",paddingRight:4}}>
                         {(partForm.documents||[]).map(doc=>(
@@ -11599,6 +11661,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   const [quoteForm,setQuoteForm]=useState({
     code:"",
     customerId:"",
+    currency:"TRY",
     validUntil:todayStr(),
     paymentTermDays:"30",
     priority:"normal",
@@ -11609,6 +11672,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     code:"",
     customerId:"",
     customerOrderCode:"",
+    currency:"TRY",
     dueDate:todayStr(),
     paymentTermDays:"30",
     priority:"normal",
@@ -11624,6 +11688,10 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     const c=String(currencyCode||defaultQuoteCurrency||"TRY").toUpperCase();
     const symbol=currencyMetaMap[c]?.symbol||"";
     return `${safeNum(value).toFixed(2)} ${symbol?`${symbol} `:""}${c}`;
+  }
+  function resolveSalesCurrencyCode(currencyCode){
+    const picked=String(currencyCode||"").toUpperCase();
+    return quoteCurrencies.some(c=>c.code===picked)?picked:defaultQuoteCurrency;
   }
 
   const nextCode=useCallback((prefix,list,regex)=>{
@@ -11682,6 +11750,16 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     const activeCodes=quoteCurrencies.map(x=>x.code);
     if(activeCodes.length===0) return;
     setPriceForm(f=>{
+      const current=String(f.currency||"").toUpperCase();
+      if(activeCodes.includes(current)) return f;
+      return {...f,currency:defaultQuoteCurrency};
+    });
+    setQuoteForm(f=>{
+      const current=String(f.currency||"").toUpperCase();
+      if(activeCodes.includes(current)) return f;
+      return {...f,currency:defaultQuoteCurrency};
+    });
+    setOrderForm(f=>{
       const current=String(f.currency||"").toUpperCase();
       if(activeCodes.includes(current)) return f;
       return {...f,currency:defaultQuoteCurrency};
@@ -11751,6 +11829,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
           setQuoteForm({
             code:nextCode("TKL",quotes,/^TKL-(\d+)$/),
             customerId:"",
+            currency:defaultQuoteCurrency,
             validUntil:todayStr(),
             paymentTermDays:"30",
             priority:"normal",
@@ -11766,6 +11845,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
             code:nextCode("SIP",salesOrders,/^SIP-(\d+)$/),
             customerId:"",
             customerOrderCode:"",
+            currency:defaultQuoteCurrency,
             dueDate:todayStr(),
             paymentTermDays:"30",
             priority:"normal",
@@ -12026,6 +12106,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     setQuoteForm({
       code:nextCode("TKL",quotes,/^TKL-(\d+)$/),
       customerId:"",
+      currency:defaultQuoteCurrency,
       validUntil:todayStr(),
       paymentTermDays:"30",
       priority:"normal",
@@ -12041,6 +12122,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       code:nextCode("SIP",salesOrders,/^SIP-(\d+)$/),
       customerId:"",
       customerOrderCode:"",
+      currency:defaultQuoteCurrency,
       dueDate:todayStr(),
       paymentTermDays:"30",
       priority:"normal",
@@ -12057,6 +12139,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     setQuoteForm({
       code:String(quote.code||"").toUpperCase(),
       customerId:quote.customerId||"",
+      currency:resolveSalesCurrencyCode(quote.currency),
       validUntil:quote.validUntil||todayStr(),
       paymentTermDays:String(Math.max(0,safeNum(quote.paymentTermDays??30))),
       priority:quote.priority||"normal",
@@ -12089,6 +12172,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       code:String(order.code||"").toUpperCase(),
       customerId:order.customerId||"",
       customerOrderCode:String(order.customerOrderCode||"").trim().toUpperCase(),
+      currency:resolveSalesCurrencyCode(order.currency),
       dueDate:order.dueDate||todayStr(),
       paymentTermDays:String(Math.max(0,safeNum(order.paymentTermDays??30))),
       priority:order.priority||"normal",
@@ -12466,6 +12550,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       code:(quoteForm.code||nextCode("TKL",quotes,/^TKL-(\d+)$/)).toUpperCase(),
       customerId:customer?.id||"",
       customerName:customer?.name||"",
+      currency:resolveSalesCurrencyCode(quoteForm.currency),
       validUntil:quoteForm.validUntil||todayStr(),
       paymentTermDays:Math.max(0,safeNum(quoteForm.paymentTermDays??30)),
       priority:quoteForm.priority||"normal",
@@ -12496,6 +12581,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     setQuoteForm({
       code:nextCode("TKL",nextQuoteSeed,/^TKL-(\d+)$/),
       customerId:"",
+      currency:defaultQuoteCurrency,
       validUntil:todayStr(),
       paymentTermDays:"30",
       priority:"normal",
@@ -12520,7 +12606,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       customerId:customer?.id||"",
       customerName:customer?.name||"",
       customerOrderCode:String(orderForm.customerOrderCode||"").trim().toUpperCase(),
-      currency:defaultQuoteCurrency,
+      currency:resolveSalesCurrencyCode(orderForm.currency),
       lines,
       qty:qtyTotal,
       dueDate:earliestDue,
@@ -12577,6 +12663,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       code:nextCode("SIP",nextOrderSeed,/^SIP-(\d+)$/),
       customerId:"",
       customerOrderCode:"",
+      currency:defaultQuoteCurrency,
       dueDate:todayStr(),
       paymentTermDays:"30",
       priority:"normal",
@@ -12596,6 +12683,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       code:nextCode("TKL",quotes,/^TKL-(\d+)$/),
       customerId:q.customerId||"",
       customerName:q.customerName||"",
+      currency:resolveSalesCurrencyCode(q.currency),
       validUntil:q.validUntil||todayStr(),
       paymentTermDays:Math.max(0,safeNum(q.paymentTermDays??30)),
       priority:q.priority||"normal",
@@ -13821,6 +13909,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                     options={customers.map(c=>({value:c.id,label:c.name||"-"}))}
                   />
                 </div>
+                <div><span style={labelSt}>Para Birimi</span><select style={inputSt} value={quoteForm.currency||defaultQuoteCurrency} onChange={e=>setQ("currency",e.target.value)}>{quoteCurrencies.map(cur=><option key={cur.code} value={cur.code}>{cur.code} · {cur.label}</option>)}</select></div>
                 <div><span style={labelSt}>Gecerlilik</span><input style={inputSt} type="date" value={quoteForm.validUntil} onChange={e=>setQ("validUntil",e.target.value)}/></div>
                 <div><span style={labelSt}>Odeme Vadesi (Gun)</span><input style={inputSt} type="number" min="0" value={quoteForm.paymentTermDays} onChange={e=>setQ("paymentTermDays",e.target.value)}/></div>
                 <div><span style={labelSt}>Oncelik</span><select style={inputSt} value={quoteForm.priority} onChange={e=>setQ("priority",e.target.value)}><option value="urgent">Acil</option><option value="normal">Normal</option><option value="low">Dusuk</option></select></div>
@@ -13967,6 +14056,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
                   />
                 </div>
                 <div><span style={labelSt}>Musteri Siparis Kodu</span><input style={inputSt} value={orderForm.customerOrderCode||""} onChange={e=>setO("customerOrderCode",e.target.value.toUpperCase())} placeholder="MUS-SIP-001"/></div>
+                <div><span style={labelSt}>Para Birimi</span><select style={inputSt} value={orderForm.currency||defaultQuoteCurrency} onChange={e=>setO("currency",e.target.value)}>{quoteCurrencies.map(cur=><option key={cur.code} value={cur.code}>{cur.code} · {cur.label}</option>)}</select></div>
                 <div><span style={labelSt}>Termin</span><input style={inputSt} type="date" value={orderForm.dueDate} onChange={e=>setO("dueDate",e.target.value)}/></div>
                 <div><span style={labelSt}>Odeme Vadesi (Gun)</span><input style={inputSt} type="number" min="0" value={orderForm.paymentTermDays} onChange={e=>setO("paymentTermDays",e.target.value)}/></div>
                 <div><span style={labelSt}>Oncelik</span><select style={inputSt} value={orderForm.priority} onChange={e=>setO("priority",e.target.value)}><option value="urgent">Acil</option><option value="normal">Normal</option><option value="low">Dusuk</option></select></div>
@@ -14004,9 +14094,9 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
               </div>
 
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
-                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Brut</div><div style={{fontWeight:800,color:C.text}}>{moneyFmt(orderTotals.gross)}</div></div>
-                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Iskonto</div><div style={{fontWeight:800,color:C.warn}}>{moneyFmt(orderTotals.discount)}</div></div>
-                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Net</div><div style={{fontWeight:800,color:C.accent}}>{moneyFmt(orderTotals.net)}</div></div>
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Brut</div><div style={{fontWeight:800,color:C.text}}>{formatByCurrency(orderTotals.gross,orderForm.currency||defaultQuoteCurrency)}</div></div>
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Iskonto</div><div style={{fontWeight:800,color:C.warn}}>{formatByCurrency(orderTotals.discount,orderForm.currency||defaultQuoteCurrency)}</div></div>
+                <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:11,color:C.muted2}}>Net</div><div style={{fontWeight:800,color:C.accent}}>{formatByCurrency(orderTotals.net,orderForm.currency||defaultQuoteCurrency)}</div></div>
               </div>
               {orderLineBarRows.length>0&&(
                 <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",display:"flex",flexDirection:"column",gap:8}}>
@@ -14600,16 +14690,19 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
   async function handleFiles(fileList) {
     setUploading(true);
     const results=[];
-    for(const file of Array.from(fileList)){
-      const ext=getFileExt(file.name);
-      const limitMb=isStepExtension(ext)?30:5;
-      const limit=limitMb*1024*1024;
-      if(file.size>limit){alert(`${file.name} ${limitMb}MB'dan buyuk, atlandi.`);continue;}
-      const b64=await fileToBase64(file);
-      results.push({name:file.name,size:file.size,type:file.type,data:b64});
+    try{
+      for(const file of Array.from(fileList)){
+        const ext=getFileExt(file.name);
+        const limit=isStepExtension(ext)?WORK_ORDER_STEP_FILE_LIMIT_BYTES:WORK_ORDER_FILE_LIMIT_BYTES;
+        if(file.size>limit){alert(`${file.name} ${formatBytes(limit)} limitini asiyor, atlandi.`);continue;}
+        results.push(await uploadFileToStorage(file,{folder:"work-orders"}));
+      }
+      fv("files",normalizeWorkOrderFiles([...(form.files||[]),...results]));
+    }catch(err){
+      alert(err?.message||"Dosya yuklenemedi.");
+    }finally{
+      setUploading(false);
     }
-    fv("files",normalizeWorkOrderFiles([...(form.files||[]),...results]));
-    setUploading(false);
   }
 
   async function save() {
@@ -15583,14 +15676,14 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
           <div onClick={()=>fileRef.current?.click()} style={{border:`2px dashed ${C.border}`,borderRadius:12,padding:20,textAlign:"center",cursor:"pointer",background:C.surface}} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();handleFiles(e.dataTransfer.files);}}>
             <div style={{fontSize:20,marginBottom:6,fontWeight:700}}>DOSYA</div>
             <div style={{color:C.muted2,fontSize:13}}>{uploading?"Yükleniyor...":"Dosya seç veya sürükle bırak"}</div>
-            <div style={{color:C.muted,fontSize:11,marginTop:4}}>Resim, PDF, DXF, DWG · Maks 5MB/dosya</div>
+            <div style={{color:C.muted,fontSize:11,marginTop:4}}>Resim, PDF, DXF, DWG icin {formatBytes(WORK_ORDER_FILE_LIMIT_BYTES)} · STEP/STP icin {formatBytes(WORK_ORDER_STEP_FILE_LIMIT_BYTES)}</div>
           </div>
           <input ref={fileRef} type="file" multiple accept="image/*,.pdf,.dxf,.dwg,.step,.stp" style={{display:"none"}} onChange={e=>handleFiles(e.target.files)}/>
           {form.files.map((f,i)=>(
             <div key={i} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",marginTop:8,display:"flex",alignItems:"center",gap:10}}>
               <span style={{fontSize:20}}>{getFileIcon(f.name)}</span>
               <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:C.text}}>{f.name}</div><div style={{fontSize:11,color:C.muted2}}>{formatBytes(f.size)}</div></div>
-              {f.data&&f.type&&f.type.startsWith("image/")&&<img src={f.data} alt="" style={{width:36,height:36,objectFit:"cover",borderRadius:6}}/>}
+              {getFileSource(f)&&isImageFile(f)&&<img src={getFileSource(f)} alt="" style={{width:36,height:36,objectFit:"cover",borderRadius:6}}/>}
               <button onClick={()=>fv("files",form.files.filter((_,idx)=>idx!==i))} style={{background:"transparent",border:"none",color:C.red,fontSize:18,cursor:"pointer"}}>×</button>
             </div>
           ))}
@@ -20680,8 +20773,12 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const ganttDate=new Date(...ganttMonth.split("-").map((x,i)=>i===1?Number(x)-1:Number(x)),1);
   const ganttDaysCount=new Date(ganttDate.getFullYear(),ganttDate.getMonth()+1,0).getDate();
   const ganttDays=Array.from({length:ganttDaysCount},(_,i)=>`${ganttMonth}-${pad2(i+1)}`);
-  const monthPlans=plans.filter(p=>(p.date||"").startsWith(ganttMonth+"-"));
-  const monthSegments=buildPlanSegments(monthPlans);
+  const ganttMonthStart=ganttDays[0]||`${ganttMonth}-01`;
+  const ganttMonthEnd=ganttDays[ganttDays.length-1]||ganttMonthStart;
+  const monthSegments=allPlanSegments.filter(seg=>
+    String(seg.startDate||"")<=ganttMonthEnd
+    && String(seg.endDate||seg.startDate||"")>=ganttMonthStart
+  );
   const monthSegmentsByMachine={};
   monthSegments.forEach(seg=>{
     const key=seg.machine||"";
@@ -20695,7 +20792,9 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     machineSegments.forEach(seg=>{
       segmentById[seg.id]=seg;
       (seg.plans||[]).forEach(cp=>{
-        byDate[cp.date]={...cp,_segmentId:seg.id,_isStart:cp.date===seg.startDate,_isEnd:cp.date===seg.endDate};
+        const cellDate=String(cp.date||"");
+        if(!cellDate||cellDate<ganttMonthStart||cellDate>ganttMonthEnd) return;
+        byDate[cellDate]={...cp,_segmentId:seg.id,_isStart:cellDate===seg.startDate,_isEnd:cellDate===seg.endDate};
       });
     });
     return {machine,byDate};
@@ -25985,13 +26084,13 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
     .filter(s=>["approved","in_production","delivered"].includes(s.status||""))
     .map(s=>s.id));
   const pdfOrders=(orders||[])
-    .filter(o=>Array.isArray(o.files)&&(o.files||[]).some(f=>f&&f.data&&isPdfFile(f)))
+    .filter(o=>Array.isArray(o.files)&&(o.files||[]).some(f=>f&&getFileSource(f)&&isPdfFile(f)))
     .filter(o=>!o.sourceSalesOrderId||approvedSalesOrderIds.has(o.sourceSalesOrderId));
   const pdfOrderById=Object.fromEntries(pdfOrders.map(o=>[o.id,o]));
   const selectedPdfOrder=pdfOrderById[balloonForm.orderId]||null;
   const selectedPdfFiles=selectedPdfOrder
     ? (selectedPdfOrder.files||[])
-      .filter(f=>f&&f.data&&isPdfFile(f))
+      .filter(f=>f&&getFileSource(f)&&isPdfFile(f))
       .map((f,idx)=>({
         ...f,
         _pickId:String(f.id||`pdf_${idx}`),
@@ -26006,7 +26105,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
     if(!pdfOrders.length) return;
     if(balloonForm.orderId&&pdfOrderById[balloonForm.orderId]) return;
     const first=pdfOrders[0];
-    const files=(first.files||[]).filter(f=>f&&f.data&&isPdfFile(f));
+    const files=(first.files||[]).filter(f=>f&&getFileSource(f)&&isPdfFile(f));
     setBalloonForm({
       orderId:first.id||"",
       fileId:String(files[0]?.id||"pdf_0"),
@@ -26191,7 +26290,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
     if(!run){setBalloonPreview(null);return;}
     const wo=pdfOrderById[run.orderId];
     if(!wo){setBalloonPreview(null);return;}
-    const pdfRows=(wo.files||[]).filter(f=>f&&f.data&&isPdfFile(f)).map((f,idx)=>({...f,_pickId:String(f.id||`pdf_${idx}`)}));
+    const pdfRows=(wo.files||[]).filter(f=>f&&getFileSource(f)&&isPdfFile(f)).map((f,idx)=>({...f,_pickId:String(f.id||`pdf_${idx}`)}));
     const picked=pdfRows.find(f=>f._pickId===run.filePickId)||pdfRows[0]||null;
     if(!picked){setBalloonPreview(null);return;}
     setBalloonForm(f=>({...f,orderId:wo.id||f.orderId,fileId:picked._pickId,page:String(run.page||1)}));
