@@ -2986,6 +2986,23 @@ function formatBytes(b) {
   if(b<1048576) return (b/1024).toFixed(1)+" KB";
   return (b/1048576).toFixed(1)+" MB";
 }
+const FIRESTORE_DOC_SOFT_LIMIT_BYTES = 900 * 1024;
+const PART_EMBEDDED_FILE_LIMIT_BYTES = 600 * 1024;
+function estimateSerializedBytes(value){
+  try{
+    const raw=JSON.stringify(sanitizeForFirestore(value));
+    return new TextEncoder().encode(raw).length;
+  }catch{
+    return Number.MAX_SAFE_INTEGER;
+  }
+}
+function isPartEmbeddedFileTooLarge(file){
+  return Math.max(0,Number(file?.size)||0)>PART_EMBEDDED_FILE_LIMIT_BYTES;
+}
+function buildPartEmbeddedFileLimitMessage(file){
+  const fileName=String(file?.name||"Dosya").trim()||"Dosya";
+  return `"${fileName}" dokumani Firestore belge limitine takilmamasi icin otomatik kayda eklenmedi. Gomulu parca dosyalari en fazla ${formatBytes(PART_EMBEDDED_FILE_LIMIT_BYTES)} olabilir.`;
+}
 function dataUrlToUint8Array(dataUrl) {
   const payload=(dataUrl||"").split(",")[1]||"";
   const binary=atob(payload);
@@ -9683,7 +9700,14 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     if(partNo&&rowPartNo&&partNo===rowPartNo) return true;
     const customerPartCode=normalizePartRecordKey(part.customerPartCode);
     const rowCustomerPartCode=normalizePartRecordKey(row.customerPartCode||rowSnapshot?.customerPartCode||"");
-    return Boolean(customerPartCode)&&Boolean(rowCustomerPartCode)&&customerPartCode===rowCustomerPartCode;
+    if(!(customerPartCode&&rowCustomerPartCode&&customerPartCode===rowCustomerPartCode)) return false;
+    const partCustomerId=String(part.customerId||"").trim();
+    const rowCustomerId=String(row.customerId||rowSnapshot?.customerId||"").trim();
+    if(partCustomerId&&rowCustomerId) return partCustomerId===rowCustomerId;
+    const partCustomerName=normalizeCustomerKey(getPartCompanyName(part)||"");
+    const rowCustomerName=normalizeCustomerKey(row.customerName||row.companyName||rowSnapshot?.customerName||"");
+    if(partCustomerName&&rowCustomerName) return partCustomerName===rowCustomerName;
+    return true;
   };
   const formatHistoryStamp=value=>{
     const raw=String(value||"").trim();
@@ -10064,6 +10088,60 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
       updatedBy:currentUser.id,
     };
   }
+  function findPartConflicts({partNo="",customerPartCode="",excludeId="",partPool=parts}={}){
+    const pool=Array.isArray(partPool)?partPool:[];
+    const excluded=String(excludeId||"").trim();
+    const normalizedPartNo=normalizePartRecordKey(partNo);
+    const normalizedCustomerPartCode=normalizePartRecordKey(customerPartCode);
+    return {
+      partNoConflict:normalizedPartNo
+        ? pool.find(row=>
+            normalizePartRecordKey(row?.partNo||"")===normalizedPartNo
+            && String(row?.id||"").trim()!==excluded
+          )||null
+        : null,
+      customerPartCodeConflict:normalizedCustomerPartCode
+        ? pool.find(row=>
+            normalizePartRecordKey(row?.customerPartCode||"")===normalizedCustomerPartCode
+            && String(row?.id||"").trim()!==excluded
+          )||null
+        : null,
+    };
+  }
+  function validatePartPayloadForSave({source,existing=null,resolvedCustomerId="",resolvedCustomerName="",partPool=parts}={}){
+    const payload=buildPartPayload({source,existing,resolvedCustomerId,resolvedCustomerName});
+    const originalPartNo=normalizePartRecordKey(existing?.partNo||"");
+    const originalCustomerPartCode=normalizePartRecordKey(existing?.customerPartCode||"");
+    const {partNoConflict,customerPartCodeConflict}=findPartConflicts({
+      partNo:payload.partNo,
+      customerPartCode:payload.customerPartCode,
+      excludeId:existing?.id||"",
+      partPool,
+    });
+    if(partNoConflict&&(!existing||normalizePartRecordKey(payload.partNo)!==originalPartNo)){
+      return {
+        ok:false,
+        payload,
+        message:`${payload.partNo} zaten kayitli. Yeni kayit acmadan once listeyi yenileyin.`,
+      };
+    }
+    if(customerPartCodeConflict&&payload.customerPartCode&&(!existing||normalizePartRecordKey(payload.customerPartCode)!==originalCustomerPartCode)){
+      return {
+        ok:false,
+        payload,
+        message:`Musteri parca kodu ${payload.customerPartCode} zaten ${customerPartCodeConflict.partNo||customerPartCodeConflict.name||"baska bir parca"} icin kullaniliyor.`,
+      };
+    }
+    const estimatedBytes=estimateSerializedBytes(payload);
+    if(estimatedBytes>FIRESTORE_DOC_SOFT_LIMIT_BYTES){
+      return {
+        ok:false,
+        payload,
+        message:`Parca kaydi Firestore belge limitini asiyor (${formatBytes(estimatedBytes)}). Dosya sayisini ya da boyutunu azaltin.`,
+      };
+    }
+    return {ok:true,payload,estimatedBytes};
+  }
   const findMaterialForBom=(code,name)=>{
     const codeKey=normalized(code);
     const nameKey=normalized(name);
@@ -10233,8 +10311,8 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
   async function pickPartDocuments(e){
     const files=Array.from((e.target.files||[]));
     if(files.length===0) return;
-    const tooBig=files.find(file=>file.size>8*1024*1024);
-    if(tooBig){alert(`"${tooBig.name}" 8MB limitini asiyor.`);e.target.value="";return;}
+    const tooBig=files.find(file=>isPartEmbeddedFileTooLarge(file));
+    if(tooBig){alert(buildPartEmbeddedFileLimitMessage(tooBig));e.target.value="";return;}
     setUploading(true);
     try{
       const docs=[];
@@ -10270,6 +10348,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
       const pdfInfo=await extractPdfTextFromDocument(doc,{maxPages:3});
       const parsed=guessPartFieldsFromPdf({text:pdfInfo.text,lines:pdfInfo.lines,fileName:file.name});
       const summary=buildPartPdfImportSummary(file,parsed,pdfInfo);
+      const attachImportedDoc=!isPartEmbeddedFileTooLarge(file);
       const matchedCustomer=parsed.customerName
         ? customers.find(c=>normalizeCustomerKey(c.name)===normalizeCustomerKey(parsed.customerName))||null
         : null;
@@ -10285,13 +10364,14 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
           partDiameterMm:parsed.partDiameterMm?formatMmValue(parsed.partDiameterMm):prev.partDiameterMm,
           partLengthMm:parsed.partLengthMm?formatMmValue(parsed.partLengthMm):prev.partLengthMm,
           barLengthMm:parsed.barLengthMm?formatMmValue(parsed.barLengthMm):prev.barLengthMm,
-          documents:mergeImportedPartDocument(prev.documents,doc),
+          documents:attachImportedDoc?mergeImportedPartDocument(prev.documents,doc):prev.documents,
         };
       });
       setPartPdfImportSummary(summary);
       const importNotes=[];
       if(summary.fields.length===0) importNotes.push("PDF eklendi ancak otomatik doldurulabilecek net alan bulunamadi. Formu manuel tamamlayabilirsiniz.");
       if(parsed.customerName&&!matchedCustomer) importNotes.push(`"${parsed.customerName}" musterisi listede bulunamadi. Musteriyi secim alanindan secin.`);
+      if(!attachImportedDoc) importNotes.push(buildPartEmbeddedFileLimitMessage(file));
       setPartPdfImportError(importNotes.join(" "));
     }catch(err){
       setPartPdfImportError(err?.message||"PDF okunamadi.");
@@ -10340,15 +10420,23 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
           doc=await createPartDocumentFromFile(file);
           const pdfInfo=await extractPdfTextFromDocument(doc,{maxPages:3});
           const parsed=guessPartFieldsFromPdf({text:pdfInfo.text,lines:pdfInfo.lines,fileName:file.name});
-          drafts.push(buildBulkImportDraft(file,doc,parsed,pdfInfo,""));
-        }catch(err){
-          if(!doc) doc=await createPartDocumentFromFile(file);
+          const attachImportedDoc=!isPartEmbeddedFileTooLarge(file);
           drafts.push(buildBulkImportDraft(
             file,
-            doc,
+            attachImportedDoc?doc:null,
+            parsed,
+            pdfInfo,
+            attachImportedDoc?"":buildPartEmbeddedFileLimitMessage(file)
+          ));
+        }catch(err){
+          if(!doc) doc=await createPartDocumentFromFile(file);
+          const attachImportedDoc=!isPartEmbeddedFileTooLarge(file);
+          drafts.push(buildBulkImportDraft(
+            file,
+            attachImportedDoc?doc:null,
             {name:derivePdfFallbackPartName(file.name),revision:"A"},
             {pageCount:1},
-            err?.message||"PDF okunamadi."
+            [err?.message||"PDF okunamadi.",attachImportedDoc?"":buildPartEmbeddedFileLimitMessage(file)].filter(Boolean).join(" ")
           ));
         }
       }
@@ -10445,12 +10533,18 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
         const matchedCustomer=!pickedCustomer&&typedCustomerName
           ? existingCustomerMap[`name:${normalizeCustomerKey(typedCustomerName)}`]||null
           : pickedCustomer;
-        const payload=buildPartPayload({
+        const validation=validatePartPayloadForSave({
           source:{...item,partNo:computedPartNo,name:cleanName},
           existing:null,
           resolvedCustomerId:matchedCustomer?.id||"",
           resolvedCustomerName:matchedCustomer?.name||typedCustomerName,
+          partPool:[...parts,...createdParts],
         });
+        if(!validation.ok){
+          failedItems.push({...item,partNo:computedPartNo,importError:validation.message});
+          continue;
+        }
+        const payload=validation.payload;
         const id=await window.DB.addDoc("parts",payload);
         if(!id){
           const err=window.DB.getLastError?window.DB.getLastError():"";
@@ -10483,16 +10577,25 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
   async function savePart(){
     if(!partForm.name.trim()){alert("Parca adi zorunlu.");return;}
     const computedPartNo=(String(partForm.partNo||"").trim().toUpperCase()||nextPartNo());
-    const existing=parts.find(p=>(p.partNo||"").toUpperCase()===computedPartNo);
+    const existing=String(selectedPartId||"").trim()
+      ? parts.find(p=>String(p.id||"").trim()===String(selectedPartId||"").trim())||null
+      : null;
+    if(selectedPartId&&!existing){
+      alert("Duzenlenen parca bulunamadi. Listeyi yenileyip tekrar deneyin.");
+      return;
+    }
     const pickedCustomer=customers.find(c=>c.id===partForm.customerId)||null;
     const resolvedCustomerId=pickedCustomer?.id||"";
     const resolvedCustomerName=pickedCustomer?.name||String(partForm.customerName||existing?.customerName||"").trim();
-    const payload=buildPartPayload({
+    const validation=validatePartPayloadForSave({
       source:{...partForm,partNo:computedPartNo},
       existing,
       resolvedCustomerId,
       resolvedCustomerName,
+      partPool:parts,
     });
+    if(!validation.ok){alert(validation.message);return;}
+    const payload=validation.payload;
     if(existing){
       const ok=await window.DB.updateDoc("parts",existing.id,payload);
       if(!ok){alert("Parca guncellenemedi.");return;}
@@ -11003,7 +11106,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
                       <span style={{fontSize:11,color:C.accent}}>{(partForm.documents||[]).length} dosya</span>
                       <input type="file" multiple style={{display:"none"}} onChange={pickPartDocuments}/>
                     </label>
-                    <div style={{fontSize:11,color:C.muted2,marginTop:4}}>Istedigin kadar dosya ekleyebilirsin. PDF modunda secilen dosya da burada otomatik listelenir.</div>
+                    <div style={{fontSize:11,color:C.muted2,marginTop:4}}>Gomulu dosyalar en fazla {formatBytes(PART_EMBEDDED_FILE_LIMIT_BYTES)} olabilir. Daha buyuk PDF'ler analiz icin okunur, ama otomatik kayda eklenmez.</div>
                     {(partForm.documents||[]).length>0&&(
                       <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:5,maxHeight:120,overflowY:"auto",paddingRight:4}}>
                         {(partForm.documents||[]).map(doc=>(
@@ -11627,6 +11730,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       partName:String(part.name||"").trim(),
       revision:String(part.revision||"A").trim().toUpperCase()||"A",
       customerPartCode:String(part.customerPartCode||"").trim().toUpperCase(),
+      customerId:String(part.customerId||"").trim(),
       customerName:String(part.customerName||part.companyName||"").trim(),
       material:String(part.material||"").trim(),
       setupSec:Math.max(0,safeNum(part.setupSec)),
