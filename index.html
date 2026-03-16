@@ -26747,14 +26747,16 @@ function IntegrationsReadinessModule(){
 }
 
 function MaterialQuoteBridgeModule(){
-  const EMBEDDED_URL="./cost-estimator/frontend/dist/index.html";
-  const DEV_URL="http://localhost:5173";
-  const API_DOCS_URL="http://localhost:8000/docs";
-  const API_BASE_URL="http://localhost:8000/api/v1";
-  const [source,setSource]=useState("embedded");
+  const frameSrc=typeof window!=="undefined"
+    ? new URL("./cost-estimator/frontend/dist/index.html",window.location.href).toString()
+    : "./cost-estimator/frontend/dist/index.html";
+  const API_BASE_URL=typeof window!=="undefined"
+    ? `${window.location.origin}/api/v1`
+    : "/api/v1";
+  const API_DOCS_URL=typeof window!=="undefined"
+    ? `${window.location.origin}/docs`
+    : "/docs";
   const [frameKey,setFrameKey]=useState(0);
-  const frameSrc=source==="dev"?DEV_URL:EMBEDDED_URL;
-  const sourceLabel=source==="dev"?"Gelistirme sunucusu":"Yerel gomulu uygulama";
   return (
     <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:0,height:"100%"}}>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
@@ -26762,7 +26764,7 @@ function MaterialQuoteBridgeModule(){
           <div>
             <div style={{fontWeight:700,color:C.text,fontSize:16}}>Malzeme Teklif ve Maliyet Analizi</div>
             <div style={{fontSize:13,color:C.muted2,marginTop:8}}>
-              Modul artik menunun icinde canli calisiyor. STEP yukleme, stok onerisi, operasyon siniflandirma ve CNC maliyet tahmini ayni ekranda acilir.
+              Modul ana menu icinde tek ekrandan acilir ve aktif domain uzerinden servisle haberlesir.
             </div>
           </div>
           <Badge label="Canli Modul" color={C.green}/>
@@ -26770,24 +26772,17 @@ function MaterialQuoteBridgeModule(){
       </div>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:10}}>
         <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
-          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Aktif Kaynak</div>
-          <div style={{marginTop:6,fontSize:14,color:C.text,fontWeight:700}}>{sourceLabel}</div>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Aktif Sayfa</div>
+          <div style={{marginTop:6,fontSize:14,color:C.text,fontWeight:700}}>Ana Menu Entegrasyonu</div>
           <div style={{marginTop:8,fontSize:12,color:C.muted2,wordBreak:"break-all"}}>{frameSrc}</div>
         </div>
         <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
-          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Yerel Gomulu</div>
-          <div style={{marginTop:6,fontSize:14,color:C.text,fontWeight:700}}>{EMBEDDED_URL}</div>
-          <div style={{marginTop:8,fontSize:12,color:C.muted2}}>Repo icindeki build ciktisi menude dogrudan acilir.</div>
-        </div>
-        <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
-          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Canli API</div>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Aktif API</div>
           <div style={{marginTop:6,fontSize:14,color:C.text,fontWeight:700}}>{API_BASE_URL}</div>
-          <div style={{marginTop:8,fontSize:12,color:C.muted2}}>API aciksa gercek servis kullanilir; degilse modul demo moduna gecer.</div>
+          <div style={{marginTop:8,fontSize:12,color:C.muted2}}>Frontend artik `localhost` yerine bulundugu domain uzerinden `/api/v1` servisini kullanir.</div>
         </div>
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        <button onClick={()=>setSource("embedded")} style={{...btnSt(source==="embedded"?"primary":"ghost"),padding:"9px 12px",fontSize:12}}>Yerel Gomulu Ac</button>
-        <button onClick={()=>setSource("dev")} style={{...btnSt(source==="dev"?"primary":"ghost"),padding:"9px 12px",fontSize:12}}>5173 Dev Sunucu</button>
         <button onClick={()=>setFrameKey(k=>k+1)} style={{...btnSt("ghost"),padding:"9px 12px",fontSize:12}}>Modulu Yenile</button>
         <button onClick={()=>window.open(frameSrc,"_blank")} style={{...btnSt("ghost"),padding:"9px 12px",fontSize:12}}>Yeni Sekmede Ac</button>
         <button onClick={()=>window.open(API_DOCS_URL,"_blank")} style={{...btnSt("ghost"),padding:"9px 12px",fontSize:12}}>API Dokumani</button>
@@ -26797,30 +26792,20 @@ function MaterialQuoteBridgeModule(){
           <div>
             <div style={{fontWeight:700,color:C.text}}>Canli Onizleme</div>
             <div style={{fontSize:12,color:C.muted2,marginTop:4}}>
-              Bos ekran gorursen once gomulu modu deneyin. Frontend guncellendiginde `cd cost-estimator/frontend && npm run build` ile ciktiyi yenileyebilirsiniz.
+              Ekran dogrudan ana menu akisi icinde acilir. Servis guncellemelerinde sadece modulu yenilemek yeterlidir.
             </div>
           </div>
-          <Badge label={source==="dev"?"Dev":"Embed"} color={source==="dev"?C.warn:C.accent}/>
+          <Badge label="Online" color={C.accent}/>
         </div>
         <div style={{border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",background:"#0b1018",flex:1,minHeight:"72vh"}}>
           <iframe
-            key={`${source}-${frameKey}`}
+            key={`online-${frameKey}`}
             title="Malzeme Teklif Modulu"
             src={frameSrc}
             loading="eager"
             style={{width:"100%",height:"100%",minHeight:"72vh",border:"none",background:"#0b1018",colorScheme:"dark"}}
           />
         </div>
-      </div>
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-        <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Kurulum Notu</div>
-        <pre style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,padding:12,overflow:"auto",fontSize:12,color:C.text}}>
-{`cd cost-estimator/frontend
-npm run build
-
-cd ../
-docker compose up --build`}
-        </pre>
       </div>
     </div>
   );

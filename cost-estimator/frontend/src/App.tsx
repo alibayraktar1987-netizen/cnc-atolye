@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  clearMockData,
   fetchJob,
   fetchMachineProfiles,
   fetchMaterials,
   fetchPart,
   fetchParts,
   getModelUrl,
-  isMockModeActive,
   uploadStep,
 } from "./api";
 import { EstimatePanel } from "./components/EstimatePanel";
@@ -33,7 +31,6 @@ function App() {
   const [activeJob, setActiveJob] = useState<AnalysisJob | null>(null);
   const [uploadBusy, setUploadBusy] = useState(false);
   const [globalError, setGlobalError] = useState("");
-  const [mockMode, setMockMode] = useState(isMockModeActive());
 
   async function loadInitial() {
     setGlobalError("");
@@ -46,7 +43,6 @@ function App() {
       setMaterials(materialsData);
       setMachineProfiles(machineProfilesData);
       setParts(partsData);
-      setMockMode(isMockModeActive());
       setSelectedPartId((current) => {
         if (partsData.length === 0) return null;
         if (current && partsData.some((p) => p.id === current)) return current;
@@ -55,7 +51,6 @@ function App() {
     } catch (error) {
       console.error(error);
       setGlobalError("API baglantisi basarisiz. Arka servis kontrol edin.");
-      setMockMode(isMockModeActive());
     }
   }
 
@@ -141,25 +136,6 @@ function App() {
       </header>
 
       {globalError && <div className="alert error">{globalError}</div>}
-      {mockMode && (
-        <div className="alert info">
-          Backend baglantisi olmadigi icin yerel demo modu aktif. Gosterilen model ve hesaplar gercek STEP analizinden
-          gelmez.
-          <button
-            className="ghost"
-            onClick={() => {
-              clearMockData();
-              setSelectedPartId(null);
-              setSelectedPart(null);
-              setActiveJob(null);
-              loadInitial();
-            }}
-            style={{ marginLeft: 10, padding: "4px 10px" }}
-          >
-            Demo veriyi temizle
-          </button>
-        </div>
-      )}
       {activeJob && (
         <div className={`alert ${activeJob.status === "failed" ? "error" : "info"}`}>
           Is {activeJob.id.slice(0, 8)}... durumu: <strong>{jobStatusLabel(activeJob.status)}</strong>
