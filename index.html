@@ -1162,6 +1162,8 @@ const CUSTOMER_LIST_COLUMNS = [
 const MATERIAL_LIBRARY_LIST_COLUMNS = [
   {id:"row_no",label:"No",width:54,required:true},
   {id:"material",label:"Malzeme",width:340,required:true},
+  {id:"form_shape",label:"Form / Sekil",width:150},
+  {id:"dimensions",label:"Olculer",width:220},
   {id:"stock_policy",label:"Stok Politikasi",width:200},
   {id:"supply",label:"Tedarik",width:150},
   {id:"actions",label:"Islem",width:170,align:"right",required:true},
@@ -8963,6 +8965,13 @@ function MaterialLibrary({filtersVisible=true}) {
     const safety=safeNum(m.safetyStock);
     const critical=stock<=Math.max(reorder,safety);
     const profileSummary=buildMaterialProfileSummary(m);
+    const stockFormId=normalizeMaterialStockForm(m);
+    const rodShapeLabel=getMaterialRodShapeLabel(m);
+    const rodDiameterText=formatMaterialDimensionText(m.rodDiameterMm);
+    const rodLengthText=formatMaterialDimensionText(m.rodLengthMm);
+    const plateWidthText=formatMaterialDimensionText(m.plateWidthMm);
+    const plateLengthText=formatMaterialDimensionText(m.plateLengthMm);
+    const plateThicknessText=formatMaterialDimensionText(m.plateThicknessMm);
     if(col.id==="row_no"){
       return <td key={col.id} style={{padding:"11px 12px",fontSize:11,color:C.muted2,textAlign:"center",fontWeight:700}}>{rowNo}</td>;
     }
@@ -8975,6 +8984,34 @@ function MaterialLibrary({filtersVisible=true}) {
           </div>
           {profileSummary&&<div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{profileSummary}</div>}
           {m.note&&<div style={{fontSize:11,color:C.muted,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.note}</div>}
+        </td>
+      );
+    }
+    if(col.id==="form_shape"){
+      return (
+        <td key={col.id} style={{padding:"11px 12px",fontSize:12,color:C.text}}>
+          <div style={{fontWeight:700}}>{getMaterialStockFormLabel(m)}</div>
+          <div style={{fontSize:11,color:C.muted2,marginTop:2}}>
+            {stockFormId==="rod"?rodShapeLabel:"Plaka"}
+          </div>
+        </td>
+      );
+    }
+    if(col.id==="dimensions"){
+      return (
+        <td key={col.id} style={{padding:"11px 12px",fontSize:12,color:C.muted2}}>
+          {stockFormId==="rod"?(
+            <>
+              <div>Cap: <span style={{color:C.text,fontWeight:700}}>{rodDiameterText||"-"}</span></div>
+              <div>Boy: <span style={{color:C.text,fontWeight:700}}>{rodLengthText||"-"}</span></div>
+            </>
+          ):(
+            <>
+              <div>En: <span style={{color:C.text,fontWeight:700}}>{plateWidthText||"-"}</span></div>
+              <div>Boy: <span style={{color:C.text,fontWeight:700}}>{plateLengthText||"-"}</span></div>
+              <div>Yukseklik: <span style={{color:C.text,fontWeight:700}}>{plateThicknessText||"-"}</span></div>
+            </>
+          )}
         </td>
       );
     }
