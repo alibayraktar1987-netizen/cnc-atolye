@@ -19704,6 +19704,8 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const [planMachineFilter,setPlanMachineFilter]=useState("all");
   const [planDateFrom,setPlanDateFrom]=useState("");
   const [planDateTo,setPlanDateTo]=useState("");
+  const [planQueueQuery,setPlanQueueQuery]=useState("");
+  const [planQueueStatusFilter,setPlanQueueStatusFilter]=useState("all");
   const [showGanttDetail,setShowGanttDetail]=useState(false);
   const ganttRef=useRef(null);
   const boardDragPayloadRef=useRef(null);
@@ -20035,20 +20037,50 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const ganttMinWidth=Math.max(980,machineColWidth+(ganttDays.length*dayColWidth));
   const ganttGridTemplate=`${machineColWidth}px repeat(${ganttDays.length}, minmax(${dayColWidth}px, 1fr))`;
   const planQueryText=String(planQuery||"").trim().toLowerCase();
+  const planQueueQueryText=String(planQueueQuery||"").trim().toLowerCase();
   const filteredPlanSegments=sortedPlanSegments.filter(seg=>{
     if(planMachineFilter!=="all"&&seg.machine!==planMachineFilter) return false;
     if(planDateFrom&&String(seg.endDate||"")<planDateFrom) return false;
     if(planDateTo&&String(seg.startDate||"")>planDateTo) return false;
     if(!planQueryText) return true;
+    const linkedOrder=orderById[seg.orderId]||orderByCode[String(seg.orderCode||"").trim().toUpperCase()]||null;
+    const opMeta=seg.orderId?(orderOperationMetaById[seg.orderId]||null):null;
     const hay=[
       seg.orderCode||"",
       seg.orderName||"",
       seg.orderCustomerName||"",
       seg.machine||"",
       seg.note||"",
+      linkedOrder?.partNo||"",
+      linkedOrder?.dueDate||"",
+      opMeta?.code||"",
+      opMeta?.name||"",
+      opMeta?.machine||"",
     ].join(" ").toLowerCase();
     return hay.includes(planQueryText);
   });
+  const filteredOrdersToPlan=ordersToPlan.filter(order=>{
+    const isPlanned=isOrderAlreadyInPlanning(order);
+    if(planQueueStatusFilter==="planned"&&!isPlanned) return false;
+    if(planQueueStatusFilter==="unplanned"&&isPlanned) return false;
+    if(!planQueueQueryText) return true;
+    const opMeta=orderOperationMetaById[order.id]||null;
+    const hay=[
+      order.code||"",
+      order.name||"",
+      order.customerName||"",
+      order.partNo||"",
+      order.notes||"",
+      order.dueDate||"",
+      Array.isArray(order.machines)?order.machines.join(" "):"",
+      opMeta?.code||"",
+      opMeta?.name||"",
+      opMeta?.machine||"",
+    ].join(" ").toLowerCase();
+    return hay.includes(planQueueQueryText);
+  });
+  const plannedQueueCount=ordersToPlan.filter(order=>isOrderAlreadyInPlanning(order)).length;
+  const unplannedQueueCount=Math.max(0,ordersToPlan.length-plannedQueueCount);
   const filteredGanttRows=ganttRows;
   const ganttRowHeight=23;
   const ganttHeaderHeight=24;
@@ -21611,16 +21643,54 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                 <div style={{fontSize:11,color:C.muted2,letterSpacing:.8,textTransform:"uppercase"}}>Planlama Kuyrugu</div>
                 <div style={{fontWeight:800,color:C.text,fontSize:15}}>Planlanacak Is Emirleri</div>
               </div>
-              <Badge label={`${ordersToPlan.length} Is Emri`} color={ordersToPlan.length>0?C.warn:C.green}/>
+              <Badge label={`${filteredOrdersToPlan.length} / ${ordersToPlan.length} Is Emri`} color={filteredOrdersToPlan.length>0?C.warn:C.green}/>
             </div>
+
+            {ordersToPlan.length>0&&(
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end",marginBottom:8}}>
+                <div style={{minWidth:220,flex:"1 1 320px"}}>
+                  <input
+                    value={planQueueQuery}
+                    onChange={e=>setPlanQueueQuery(e.target.value)}
+                    placeholder="Is emri, musteri, parca, operasyon ara..."
+                    style={{...inputSt,padding:"9px 11px",fontSize:12.5}}
+                  />
+                </div>
+                <div style={{minWidth:170,flex:"0 1 220px"}}>
+                  <SearchableSelect
+                    compact
+                    value={planQueueStatusFilter}
+                    onChange={v=>setPlanQueueStatusFilter(v)}
+                    placeholder="Tum Durumlar"
+                    options={[
+                      {value:"all",label:`Tum Durumlar (${ordersToPlan.length})`},
+                      {value:"planned",label:`Planli (${plannedQueueCount})`},
+                      {value:"unplanned",label:`Planlanmamis (${unplannedQueueCount})`},
+                    ]}
+                  />
+                </div>
+                <button
+                  onClick={()=>{setPlanQueueQuery("");setPlanQueueStatusFilter("all");}}
+                  style={{...btnSt("ghost"),padding:"9px 10px",fontSize:12,whiteSpace:"nowrap"}}
+                >
+                  Sifirla
+                </button>
+              </div>
+            )}
+
             {ordersToPlan.length===0&&(
               <div style={{fontSize:12,color:C.muted2,padding:"6px 2px"}}>
                 Planlanmayi bekleyen is emri yok.
               </div>
             )}
-            {ordersToPlan.length>0&&(
+            {ordersToPlan.length>0&&filteredOrdersToPlan.length===0&&(
+              <div style={{fontSize:12,color:C.muted2,padding:"6px 2px"}}>
+                Secili filtreye uygun is emri bulunamadi.
+              </div>
+            )}
+            {filteredOrdersToPlan.length>0&&(
               <div style={{display:"flex",flexDirection:"column",gap:5,maxHeight:180,overflowY:"auto",paddingRight:2}}>
-                {ordersToPlan.map(order=>{
+                {filteredOrdersToPlan.map(order=>{
                   const pMeta=PRIORITY_OPTIONS.find(p=>p.id===order.priority)||{label:(order.priority||"Normal"),color:C.muted2};
                   const statusMeta=getOrderStatusMeta(order.status||"planned");
                   const isPlanned=isOrderAlreadyInPlanning(order);
