@@ -10379,6 +10379,58 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     });
   }
 
+  function getPartDeleteImpact(part){
+    if(!part) return {workOrderCount:0,salesOrderCount:0,deliveryCount:0,priceCount:0,bomCount:0,routingCount:0,documentCount:0};
+    const matchedWorkOrders=workOrders.filter(row=>partRecordMatches(part,row));
+    const matchedSalesOrders=salesOrders.filter(order=>{
+      const lines=Array.isArray(order?.lines)?order.lines:[];
+      return lines.some(line=>partRecordMatches(part,line));
+    });
+    const deliveryCount=matchedSalesOrders.reduce((sum,order)=>sum+((Array.isArray(order?.deliveries)?order.deliveries.length:0)),0);
+    return {
+      workOrderCount:matchedWorkOrders.length,
+      salesOrderCount:matchedSalesOrders.length,
+      deliveryCount,
+      priceCount:Array.isArray(part?.priceHistory)?part.priceHistory.length:0,
+      bomCount:Array.isArray(part?.bomLines)?part.bomLines.length:0,
+      routingCount:Array.isArray(part?.routingOps)?part.routingOps.length:0,
+      documentCount:(Array.isArray(part?.documents)?part.documents.length:0)+(part?.drawingFile?1:0),
+    };
+  }
+
+  async function removePart(part){
+    if(!part||!part.id) return;
+    const impact=getPartDeleteImpact(part);
+    const impactNotes=[
+      impact.workOrderCount>0?`${impact.workOrderCount} bagli is emri`:null,
+      impact.salesOrderCount>0?`${impact.salesOrderCount} satis siparisi`:null,
+      impact.deliveryCount>0?`${impact.deliveryCount} teslim kaydi`:null,
+      impact.priceCount>0?`${impact.priceCount} fiyat gecmisi`:null,
+      impact.bomCount>0?`${impact.bomCount} BOM satiri`:null,
+      impact.routingCount>0?`${impact.routingCount} rota adimi`:null,
+      impact.documentCount>0?`${impact.documentCount} dokuman`:null,
+    ].filter(Boolean);
+    const title=`"${part.partNo||part.name||"Parca"}" silinsin mi?`;
+    const note=impactNotes.length>0
+      ? `\nBagli veri ozeti: ${impactNotes.join(", ")}.\nParca kutuphanesinden silinir; diger kayitlar otomatik silinmez.`
+      : "";
+    if(!await askAppConfirm(`${title}${note}`)) return;
+    const ok=await window.DB.deleteDoc("parts",part.id);
+    if(!ok){alert("Parca silinemedi.");return;}
+    await addAuditLog(currentUser.id,"part",part.id,"delete",part,null,{module:"parts"});
+    const nextParts=parts.filter(row=>row.id!==part.id);
+    setParts(nextParts);
+    if(selectedPartId===part.id){
+      setSelectedPartId("");
+      setPartPage("list");
+      setPartEntryMode("manual");
+      resetPartPdfImportState();
+      resetBulkPartImportState();
+      setPartForm({...emptyPartForm,partNo:nextPartNo(nextParts)});
+      setShowPartModal(false);
+    }
+  }
+
   async function addBomLine(){
     if(!selectedPart){alert("Once parca secin.");return;}
     if(!bomForm.componentCode.trim()||safeNum(bomForm.qtyPer)<=0){alert("BOM satiri eksik.");return;}
@@ -10484,6 +10536,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
               <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                 <Badge label={`Secili: ${selectedPart.partNo}`} color={C.accent}/>
                 <button onClick={()=>openEditPartModal(selectedPart)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:11}}>Seciliyi Duzenle</button>
+                <button onClick={()=>removePart(selectedPart)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:11}}>Seciliyi Sil</button>
               </div>
             </div>
           )}
@@ -10586,6 +10639,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
               <div style={{fontWeight:700,color:C.text,fontSize:16}}>Parca Tanimi</div>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
                 {selectedPart&&<Badge label={`Secili: ${selectedPart.partNo}`} color={C.accent}/>}
+                {selectedPart&&<button onClick={()=>removePart(selectedPart)} style={{...btnSt("danger"),padding:"8px 12px",fontSize:12}}>Sil</button>}
                 <button onClick={()=>setShowPartModal(false)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
               </div>
             </div>
@@ -10848,6 +10902,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
               </div>
               <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                 <button onClick={()=>{openPartListPage();openEditPartModal(selectedPart);}} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Duzenle</button>
+                <button onClick={()=>removePart(selectedPart)} style={{...btnSt("danger"),padding:"7px 10px",fontSize:12}}>Sil</button>
                 <button onClick={openPartListPage} style={{...btnSt("primary"),padding:"7px 10px",fontSize:12}}>Kapat</button>
               </div>
             </div>
@@ -14090,9 +14145,29 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
     if(!o||!o.id) return;
     const code=o.code||o.name||"Is Emri";
     if(!await askAppConfirm(`"${code}" silinsin mi?`)) return;
+    const orderId=String(o.id||"").trim();
+    const orderCode=String(o.code||"").trim().toUpperCase();
+    const linkedPlans=(await window.DB.getAll("plans")).filter(plan=>{
+      const planOrderId=String(plan?.orderId||"").trim();
+      const planOrderCode=String(plan?.orderCode||"").trim().toUpperCase();
+      return (orderId&&planOrderId===orderId)||(!planOrderId&&orderCode&&planOrderCode===orderCode)||(orderCode&&planOrderCode===orderCode);
+    });
     const ok=await window.DB.deleteDoc("orders",o.id);
     if(!ok){alert("Is emri silinemedi.");return;}
+    let failedPlanDeletes=0;
+    for(const plan of linkedPlans){
+      if(!plan?.id) continue;
+      const planOk=await window.DB.deleteDoc("plans",plan.id);
+      if(!planOk) failedPlanDeletes+=1;
+    }
+    await addAuditLog(currentUser.id,"workOrder",o.id,"delete",o,null,{module:"orders",removedPlanCount:linkedPlans.length});
     setOrders(prev=>prev.filter(x=>x.id!==o.id));
+    if(linkedPlans.length>0){
+      window.dispatchEvent(new CustomEvent("mrp:tab-action",{detail:{tab:"planning",type:"refresh"}}));
+    }
+    if(failedPlanDeletes>0){
+      alert(`Is emri silindi ama ${failedPlanDeletes} plan kaydi planlamadan kaldirilamadi.`);
+    }
     if(viewOrder&&viewOrder.id===o.id){
       setPreviewFile(null);
       setViewOrder(null);
