@@ -2991,9 +2991,16 @@ const PART_EMBEDDED_FILE_LIMIT_BYTES = 600 * 1024;
 function estimateSerializedBytes(value){
   try{
     const raw=JSON.stringify(sanitizeForFirestore(value));
-    return new TextEncoder().encode(raw).length;
-  }catch{
-    return Number.MAX_SAFE_INTEGER;
+    if(typeof TextEncoder!=="undefined"){
+      return new TextEncoder().encode(raw).length;
+    }
+    if(typeof Blob!=="undefined"){
+      return new Blob([raw]).size;
+    }
+    return unescape(encodeURIComponent(raw)).length;
+  }catch(err){
+    console.warn("estimateSerializedBytes failed",err);
+    return null;
   }
 }
 function isPartEmbeddedFileTooLarge(file){
@@ -10133,7 +10140,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
       };
     }
     const estimatedBytes=estimateSerializedBytes(payload);
-    if(estimatedBytes>FIRESTORE_DOC_SOFT_LIMIT_BYTES){
+    if(Number.isFinite(estimatedBytes)&&estimatedBytes>FIRESTORE_DOC_SOFT_LIMIT_BYTES){
       return {
         ok:false,
         payload,
