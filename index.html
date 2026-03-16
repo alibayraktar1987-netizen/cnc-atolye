@@ -9921,6 +9921,92 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
       return {...draft,partNo};
     });
   }
+  function normalizePartDocumentEntry(doc,idx=0){
+    if(!doc||typeof doc!=="object") return null;
+    const data=typeof doc.data==="string"?doc.data.trim():"";
+    const url=typeof doc.url==="string"?doc.url.trim():"";
+    const href=typeof doc.href==="string"?doc.href.trim():"";
+    const src=typeof doc.src==="string"?doc.src.trim():"";
+    const name=String(doc.name||"").trim();
+    const type=String(doc.type||"").trim();
+    const uploadedAt=String(doc.uploadedAt||doc.createdAt||new Date().toISOString()).trim();
+    if(!name&&!data&&!url&&!href&&!src) return null;
+    return {
+      id:String(doc.id||`doc_${Date.now().toString(36)}_${idx}`),
+      name:name||`Dosya ${idx+1}`,
+      size:Math.max(0,Number(doc.size)||0),
+      type,
+      data,
+      url,
+      href,
+      src,
+      uploadedAt,
+    };
+  }
+  function normalizePartDocuments(docs){
+    return (Array.isArray(docs)?docs:[])
+      .map((doc,idx)=>normalizePartDocumentEntry(doc,idx))
+      .filter(Boolean);
+  }
+  function normalizePartBomLines(lines){
+    return (Array.isArray(lines)?lines:[])
+      .filter(line=>line&&typeof line==="object")
+      .map((line,idx)=>({
+        id:String(line.id||`bom_${idx}_${Date.now().toString(36)}`),
+        componentType:String(line.componentType||"raw_material").trim()||"raw_material",
+        componentCode:String(line.componentCode||"").trim().toUpperCase(),
+        componentName:String(line.componentName||"").trim(),
+        qtyPer:Math.max(0,safeNum(line.qtyPer)),
+        scrapPct:Math.max(0,Math.min(100,safeNum(line.scrapPct))),
+        cutLengthMm:Math.max(0,safeNum(line.cutLengthMm)),
+        barDiameterMm:Math.max(0,safeNum(line.barDiameterMm)),
+        barLengthMm:Math.max(0,safeNum(line.barLengthMm)),
+        materialId:String(line.materialId||"").trim(),
+        materialDensity:Math.max(0,safeNum(line.materialDensity)),
+        requiredLengthMm:Math.max(0,safeNum(line.requiredLengthMm)),
+        barCount3m:Math.max(0,Math.round(safeNum(line.barCount3m))),
+        netWeightKg:Math.max(0,safeNum(line.netWeightKg)),
+        purchaseWeightKg:Math.max(0,safeNum(line.purchaseWeightKg)),
+      }));
+  }
+  function normalizePartRoutingOps(ops){
+    return (Array.isArray(ops)?ops:[])
+      .filter(op=>op&&typeof op==="object")
+      .map((op,idx)=>({
+        id:String(op.id||`op_${idx}_${Date.now().toString(36)}`),
+        operationTypeId:String(op.operationTypeId||"").trim(),
+        operationCode:String(op.operationCode||"").trim(),
+        operationName:String(op.operationName||op.operation||"").trim(),
+        operationIcon:String(op.operationIcon||"KS").trim()||"KS",
+        operationColor:normalizeHexColor(op.operationColor),
+        operation:String(op.operation||op.operationName||"").trim(),
+        machine:String(op.machine||"").trim(),
+        setupSec:Math.max(0,safeNum(op.setupSec)),
+        cycleSec:Math.max(0,safeNum(op.cycleSec)),
+        ncProgram:String(op.ncProgram||"").trim(),
+        tooling:String(op.tooling||"").trim(),
+      }));
+  }
+  function normalizePartPriceHistory(rows){
+    return (Array.isArray(rows)?rows:[])
+      .filter(row=>row&&typeof row==="object")
+      .map((row,idx)=>({
+        id:String(row.id||`ph_${idx}_${Date.now().toString(36)}`),
+        sourceType:String(row.sourceType||"").trim(),
+        sourceId:String(row.sourceId||"").trim(),
+        sourceCode:String(row.sourceCode||"").trim(),
+        customerId:String(row.customerId||"").trim(),
+        customerName:String(row.customerName||"").trim(),
+        currency:String(row.currency||"TRY").trim().toUpperCase()||"TRY",
+        unitPrice:Math.max(0,safeNum(row.unitPrice)),
+        discountPct:Math.max(0,Math.min(100,safeNum(row.discountPct))),
+        netUnitPrice:Math.max(0,safeNum(row.netUnitPrice)),
+        qty:Math.max(0,safeNum(row.qty)),
+        date:String(row.date||"").trim(),
+        updatedAt:String(row.updatedAt||row.date||"").trim(),
+        updatedBy:String(row.updatedBy||"").trim(),
+      }));
+  }
   function buildPartPayload({source,existing=null,resolvedCustomerId="",resolvedCustomerName=""}){
     const existingBreakdown=(existing&&typeof existing.costBreakdown==="object"&&existing.costBreakdown)?existing.costBreakdown:{};
     const preservedRawUnitCost=Math.max(0,safeNum(existing?.rawUnitCost));
@@ -9949,11 +10035,11 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
       ncProgramVersion:(String(source?.ncProgramVersion||"V1").trim().toUpperCase()||"V1"),
       unitCost:preservedUnitCost,
       costBreakdown:{materialCost:preservedMaterialCost,laborCost:preservedLaborCost,machineCost:preservedMachineCost},
-      documents:Array.isArray(source?.documents)?source.documents:[],
+      documents:normalizePartDocuments(Array.isArray(source?.documents)?source.documents:[]),
       notes:String(source?.notes||"").trim(),
-      bomLines:Array.isArray(existing?.bomLines)?existing.bomLines:[],
-      routingOps:Array.isArray(existing?.routingOps)?existing.routingOps:[],
-      priceHistory:Array.isArray(existing?.priceHistory)?existing.priceHistory:[],
+      bomLines:normalizePartBomLines(Array.isArray(existing?.bomLines)?existing.bomLines:[]),
+      routingOps:normalizePartRoutingOps(Array.isArray(existing?.routingOps)?existing.routingOps:[]),
+      priceHistory:normalizePartPriceHistory(Array.isArray(existing?.priceHistory)?existing.priceHistory:[]),
       updatedAt:new Date().toISOString(),
       updatedBy:currentUser.id,
     };
@@ -10388,7 +10474,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
       resolvedCustomerName,
     });
     if(existing){
-      const ok=await window.DB.updateDoc("parts",existing.id,{...existing,...payload});
+      const ok=await window.DB.updateDoc("parts",existing.id,payload);
       if(!ok){alert("Parca guncellenemedi.");return;}
       await addAuditLog(currentUser.id,"part",existing.id,"update",existing,payload,{module:"parts"});
       setParts(prev=>prev.map(x=>x.id===existing.id?{...x,...payload}:x));
