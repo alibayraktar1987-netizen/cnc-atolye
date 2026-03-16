@@ -20708,8 +20708,24 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     return orderColorPalette[Math.abs(h)%orderColorPalette.length];
   }
   const monthOrderMap={};
-  monthPlans.forEach(p=>{if(p.orderId&&!monthOrderMap[p.orderId]) monthOrderMap[p.orderId]={id:p.orderId,code:p.orderCode,name:p.orderName,customer:p.orderCustomerName||"",color:colorFromOrder(p.orderId)};});
-  const monthOrders=Object.values(monthOrderMap);
+  ganttRows.forEach(row=>{
+    Object.values(row.byDate||{}).forEach(planCell=>{
+      if(!planCell) return;
+      const orderId=String(planCell.orderId||"").trim();
+      const orderCode=String(planCell.orderCode||"").trim().toUpperCase();
+      const key=orderId||orderCode;
+      if(!key||monthOrderMap[key]) return;
+      const linkedOrder=(orderId&&planningOrderById[orderId])||(orderCode&&planningOrderByCode[orderCode])||null;
+      monthOrderMap[key]={
+        id:key,
+        code:linkedOrder?.code||planCell.orderCode||"",
+        name:linkedOrder?.name||planCell.orderName||"",
+        customer:linkedOrder?.customerName||planCell.orderCustomerName||"",
+        color:colorFromOrder(orderId||orderCode||planCell.orderName||""),
+      };
+    });
+  });
+  const monthOrders=Object.values(monthOrderMap).sort((a,b)=>String(a.code||a.name||"").localeCompare(String(b.code||b.name||""),"tr"));
   const dayColWidth=26;
   const machineColWidth=144;
   const ganttMinWidth=Math.max(980,machineColWidth+(ganttDays.length*dayColWidth));
@@ -21166,20 +21182,23 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       const rows=[...byMachine[machine]].sort((a,b)=>(a.date||"").localeCompare(b.date||""));
       let cur=null;
       rows.forEach(p=>{
+        const planPartNo=resolvePlanGroupPartNo(p);
         if(!cur){
-          cur={machine,orderId:p.orderId||"",orderCode:p.orderCode||"",orderName:p.orderName||"",orderCustomerName:p.orderCustomerName||"",note:p.note||"",startDate:p.date||"",endDate:p.date||"",plans:[p]};
+          cur={machine,orderId:p.orderId||"",orderCode:p.orderCode||"",orderName:p.orderName||"",orderCustomerName:p.orderCustomerName||"",orderPartNo:planPartNo,note:p.note||"",startDate:p.date||"",endDate:p.date||"",plans:[p]};
           return;
         }
         const nextDate=ymdLocal(new Date(parseYmdLocal(cur.endDate).getFullYear(),parseYmdLocal(cur.endDate).getMonth(),parseYmdLocal(cur.endDate).getDate()+1));
-        if(samePlanOrder(cur,p)&&p.date===nextDate){
-          cur.endDate=p.date;
+        const sameDay=String(p.date||"")===String(cur.endDate||"");
+        if(samePlanOrder(cur,p)&&(sameDay||p.date===nextDate)){
+          if(!sameDay) cur.endDate=p.date;
+          if(!cur.orderPartNo&&planPartNo) cur.orderPartNo=planPartNo;
           cur.plans.push(p);
         }else{
-          out.push({...cur,id:`${cur.machine}|${cur.orderId||cur.orderCode||"x"}|${cur.startDate}|${cur.endDate}`});
-          cur={machine,orderId:p.orderId||"",orderCode:p.orderCode||"",orderName:p.orderName||"",orderCustomerName:p.orderCustomerName||"",note:p.note||"",startDate:p.date||"",endDate:p.date||"",plans:[p]};
+          out.push({...cur,id:`${cur.machine}|${cur.orderId||cur.orderCode||"x"}|${cur.orderPartNo||"part"}|${cur.startDate}|${cur.endDate}`});
+          cur={machine,orderId:p.orderId||"",orderCode:p.orderCode||"",orderName:p.orderName||"",orderCustomerName:p.orderCustomerName||"",orderPartNo:planPartNo,note:p.note||"",startDate:p.date||"",endDate:p.date||"",plans:[p]};
         }
       });
-      if(cur) out.push({...cur,id:`${cur.machine}|${cur.orderId||cur.orderCode||"x"}|${cur.startDate}|${cur.endDate}`});
+      if(cur) out.push({...cur,id:`${cur.machine}|${cur.orderId||cur.orderCode||"x"}|${cur.orderPartNo||"part"}|${cur.startDate}|${cur.endDate}`});
     });
     return out.sort((a,b)=>{
       const da=(a.startDate||"").localeCompare(b.startDate||"");
