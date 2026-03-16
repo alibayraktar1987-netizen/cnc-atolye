@@ -7255,6 +7255,9 @@ function ToolStock({currentUser,filtersVisible=true}) {
   const [tools,setTools]=useState([]);
   const [loading,setLoading]=useState(true);
   const [search,setSearch]=useState("");
+  const [toolNameFilter,setToolNameFilter]=useState("");
+  const [categoryFilter,setCategoryFilter]=useState("");
+  const [geometryFilter,setGeometryFilter]=useState("");
   const [showForm,setShowForm]=useState(false);
   const [editId,setEditId]=useState(null);
   const [form,setForm]=useState({code:"",name:"",brand:"",supplierToolCode:"",category:"",qty:"",minQty:"",location:"",geometry:"",toolMaterial:"",expectedLife:"",notes:""});
@@ -7432,10 +7435,13 @@ function ToolStock({currentUser,filtersVisible=true}) {
       row.toolMaterial||"",
       row.notes||"",
     ].join(" ").toLowerCase().includes(toolQuery);
+    const nameOk=!toolNameFilter||String(row?.name||"").trim()===toolNameFilter;
+    const categoryOk=!categoryFilter||String(row?.category||"").trim()===categoryFilter;
+    const geometryOk=!geometryFilter||String(row?.geometry||"").trim()===geometryFilter;
     const statusOk=stockFilter==="all"||resolveStockStatus(row)===stockFilter;
     const dateYmd=toYmd(row.updatedAt)||toYmd(row.createdAt);
     const dateOk=inRange(dateYmd,updatedDateFrom,updatedDateTo);
-    return textOk&&statusOk&&dateOk;
+    return textOk&&nameOk&&categoryOk&&geometryOk&&statusOk&&dateOk;
   });
   const sortedTools=[...toolFilterRows].sort((a,b)=>{
     if(sortMode==="name_desc") return String(b.name||"").localeCompare(String(a.name||""),"tr");
@@ -7446,7 +7452,7 @@ function ToolStock({currentUser,filtersVisible=true}) {
   const toolTotalPages=Math.max(1,Math.ceil(sortedTools.length/Math.max(1,toolRowsPerPage)));
   useEffect(()=>{
     setToolListPageIdx(1);
-  },[search,stockFilter,updatedDateFrom,updatedDateTo,sortMode,toolRowsPerPage]);
+  },[search,toolNameFilter,categoryFilter,geometryFilter,stockFilter,updatedDateFrom,updatedDateTo,sortMode,toolRowsPerPage]);
   useEffect(()=>{
     setToolListPageIdx(prev=>Math.max(1,Math.min(prev,toolTotalPages)));
   },[toolTotalPages]);
@@ -7464,6 +7470,33 @@ function ToolStock({currentUser,filtersVisible=true}) {
     {id:"critical",label:"Kritik Stok"},
     {id:"out",label:"Stok Yok"},
   ];
+  const toolNameFilterOptions=useMemo(
+    ()=>[
+      {value:"",label:"Tum Takim Adlari"},
+      ...Array.from(new Set((tools||[]).map(row=>String(row?.name||"").trim()).filter(Boolean)))
+        .sort((a,b)=>a.localeCompare(b,"tr"))
+        .map(value=>({value,label:value})),
+    ],
+    [tools]
+  );
+  const toolCategoryFilterOptions=useMemo(
+    ()=>[
+      {value:"",label:"Tum Kategoriler"},
+      ...Array.from(new Set((tools||[]).map(row=>String(row?.category||"").trim()).filter(Boolean)))
+        .sort((a,b)=>a.localeCompare(b,"tr"))
+        .map(value=>({value,label:value})),
+    ],
+    [tools]
+  );
+  const toolGeometryFilterOptions=useMemo(
+    ()=>[
+      {value:"",label:"Tum Geometriler"},
+      ...Array.from(new Set((tools||[]).map(row=>String(row?.geometry||"").trim()).filter(Boolean)))
+        .sort((a,b)=>a.localeCompare(b,"tr"))
+        .map(value=>({value,label:value})),
+    ],
+    [tools]
+  );
   const movementMap=useMemo(()=>{
     const out={};
     movements.forEach(m=>{
@@ -7679,7 +7712,31 @@ function ToolStock({currentUser,filtersVisible=true}) {
         {filtersVisible&&(
           <div style={filterPanelStyle}>
             <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Takimlar</div>
-            <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Ad, kod, kategori, konum ara"/>
+            <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Ad, kod, kategori, geometri, konum ara"/>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Takim Adi</div>
+            <SearchableSelect
+              compact
+              value={toolNameFilter}
+              onChange={setToolNameFilter}
+              placeholder="Takim adi secin"
+              options={toolNameFilterOptions}
+            />
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Kategori</div>
+            <SearchableSelect
+              compact
+              value={categoryFilter}
+              onChange={setCategoryFilter}
+              placeholder="Kategori secin"
+              options={toolCategoryFilterOptions}
+            />
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Geometri</div>
+            <SearchableSelect
+              compact
+              value={geometryFilter}
+              onChange={setGeometryFilter}
+              placeholder="Geometri secin"
+              options={toolGeometryFilterOptions}
+            />
             <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Stok Durumu</div>
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               {stockFilterOptions.map(opt=>(
@@ -7696,7 +7753,7 @@ function ToolStock({currentUser,filtersVisible=true}) {
             <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Guncelleme Tarihi</div>
             <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={updatedDateFrom} onChange={e=>setUpdatedDateFrom(e.target.value||"")}/>
             <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={updatedDateTo} onChange={e=>setUpdatedDateTo(e.target.value||"")}/>
-            <button onClick={()=>{setStockFilter("all");setUpdatedDateFrom("");setUpdatedDateTo("");setSearch("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
+            <button onClick={()=>{setStockFilter("all");setToolNameFilter("");setCategoryFilter("");setGeometryFilter("");setUpdatedDateFrom("");setUpdatedDateTo("");setSearch("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
           </div>
         )}
         <div style={toolListColumnStyle}>
