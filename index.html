@@ -8601,6 +8601,14 @@ function MaterialLibrary({filtersVisible=true}) {
     const next=(nums.length?Math.max(...nums):0)+1;
     return `MLZ-${String(next).padStart(3,"0")}`;
   },[materials]);
+  function buildEmptyMaterialForm(code=nextMaterialCode()){
+    return {name:"",code,density:"",stock:"",type:"raw",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""};
+  }
+  function closeMaterialModal(nextCode=nextMaterialCode()){
+    setEditId(null);
+    setShowForm(false);
+    setForm(buildEmptyMaterialForm(nextCode));
+  }
 
   const load=useCallback(async()=>{
     const rows=await window.DB.getAll("materials");
@@ -8624,10 +8632,9 @@ function MaterialLibrary({filtersVisible=true}) {
         return;
       }
       if(d.type==="new"){
-        setEditId(null);
         setShowForm(true);
-        setForm({name:"",code:nextMaterialCode(),density:"",stock:"",type:"raw",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""});
-        window.scrollTo({top:0,behavior:"smooth"});
+        setEditId(null);
+        setForm(buildEmptyMaterialForm(nextMaterialCode()));
       }
     }
     window.addEventListener("mrp:tab-action",onTabAction);
@@ -8656,17 +8663,14 @@ function MaterialLibrary({filtersVisible=true}) {
       const ok=await window.DB.updateDoc("materials",editId,payload);
       if(!ok){alert("Malzeme güncellenemedi.");return;}
       setMaterials(prev=>prev.map(x=>x.id===editId?{...x,...payload}:x).sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
-      setEditId(null);
-      setShowForm(false);
-      setForm({name:"",code:nextMaterialCode(),density:"",stock:"",type:"raw",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""});
+      closeMaterialModal(nextMaterialCode());
       return;
     }
     const id=await window.DB.addDoc("materials",payload);
     if(!id){alert("Malzeme kaydedilemedi.");return;}
     const nextList=[{id,...payload,createdAt:new Date().toISOString()},...materials];
     setMaterials(nextList.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
-    setShowForm(false);
-    setForm({name:"",code:nextMaterialCode(nextList),density:"",stock:"",type:"raw",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""});
+    closeMaterialModal(nextMaterialCode(nextList));
   }
 
   async function removeMaterial(m){
@@ -8675,8 +8679,7 @@ function MaterialLibrary({filtersVisible=true}) {
     if(!ok){alert("Malzeme silinemedi.");return;}
     setMaterials(prev=>prev.filter(x=>x.id!==m.id));
     if(editId===m.id){
-      setEditId(null);
-      setForm({name:"",code:nextMaterialCode(materials.filter(x=>x.id!==m.id)),density:"",stock:"",type:"raw",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""});
+      closeMaterialModal(nextMaterialCode(materials.filter(x=>x.id!==m.id)));
     }
   }
   function openMaterialEditor(m){
@@ -8887,32 +8890,37 @@ function MaterialLibrary({filtersVisible=true}) {
   return (
     <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:"100%"}}>
       {showForm&&(
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-          <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>{editId?"Malzeme Duzenle":"Yeni Malzeme"}</div>
-          {editId&&<Badge label="Duzenleme" color={C.warn}/>}
+        <div style={{position:"fixed",inset:0,background:"rgba(8,12,18,.40)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:54,padding:14}} onClick={()=>closeMaterialModal()}>
+          <div style={{width:"100%",maxWidth:960,maxHeight:"92vh",overflowY:"auto",background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:14,boxShadow:"0 24px 56px rgba(0,0,0,.34)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+              <div style={{fontWeight:700,color:C.text,fontSize:16}}>{editId?"Malzeme Duzenle":"Yeni Malzeme"}</div>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                {editId&&<Badge label="Duzenleme" color={C.warn}/>}
+                <button onClick={()=>closeMaterialModal()} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8}}>
+              <div><span style={labelSt}>Malzeme Adi *</span><input style={inputSt} value={form.name} onChange={e=>fv("name",e.target.value)} placeholder="AISI 304"/></div>
+              <div><span style={labelSt}>Kod (Otomatik)</span><input style={{...inputSt,background:C.surface,color:C.muted2}} value={form.code||nextMaterialCode()} readOnly/></div>
+              <div><span style={labelSt}>Ozgul Agirlik (g/cm3)</span><input style={inputSt} type="number" step="0.001" min="0" value={form.density} onChange={e=>fv("density",e.target.value)} placeholder="7.850"/></div>
+              <div><span style={labelSt}>Stok</span><input style={inputSt} type="number" min="0" value={form.stock} onChange={e=>fv("stock",e.target.value)} placeholder="0"/></div>
+              <div><span style={labelSt}>Tur</span><select style={inputSt} value={form.type||"raw"} onChange={e=>fv("type",e.target.value)}>{MATERIAL_TYPE_OPTIONS.map(([id,l])=><option key={id} value={id}>{l}</option>)}</select></div>
+              <div><span style={labelSt}>Lead-Time (gun)</span><input style={inputSt} type="number" min="0" value={form.leadTimeDays} onChange={e=>fv("leadTimeDays",e.target.value)} placeholder="5"/></div>
+              <div><span style={labelSt}>Yeniden Siparis Noktasi</span><input style={inputSt} type="number" min="0" value={form.reorderPoint} onChange={e=>fv("reorderPoint",e.target.value)} placeholder="0"/></div>
+              <div><span style={labelSt}>Guvenlik Stogu</span><input style={inputSt} type="number" min="0" value={form.safetyStock} onChange={e=>fv("safetyStock",e.target.value)} placeholder="0"/></div>
+              <div><span style={labelSt}>Izleme Tipi</span><select style={inputSt} value={form.trackingMode||"lot"} onChange={e=>fv("trackingMode",e.target.value)}>{TRACKING_OPTIONS.map(([id,l])=><option key={id} value={id}>{l}</option>)}</select></div>
+              <div><span style={labelSt}>Maliyetleme Yontemi</span><select style={inputSt} value={form.valuationMethod||"fifo"} onChange={e=>fv("valuationMethod",e.target.value)}>{VALUATION_OPTIONS.map(([id,l])=><option key={id} value={id}>{l}</option>)}</select></div>
+            </div>
+            <div style={{marginTop:8}}>
+              <span style={labelSt}>Not</span>
+              <textarea rows={2} style={{...inputSt,minHeight:64,resize:"vertical"}} value={form.note} onChange={e=>fv("note",e.target.value)} placeholder="Opsiyonel not..."/>
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:12,justifyContent:"flex-end",flexWrap:"wrap"}}>
+              <button onClick={()=>closeMaterialModal()} style={{...btnSt("ghost"),padding:"10px 14px"}}>Iptal</button>
+              <button onClick={saveMaterial} style={{...btnSt("primary"),padding:"10px 14px"}}>{editId?"Malzemeyi Guncelle":"Malzeme Kaydet"}</button>
+            </div>
+          </div>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-          <div><span style={labelSt}>Malzeme Adi *</span><input style={inputSt} value={form.name} onChange={e=>fv("name",e.target.value)} placeholder="AISI 304"/></div>
-          <div><span style={labelSt}>Kod (Otomatik)</span><input style={{...inputSt,background:C.surface,color:C.muted2}} value={form.code||nextMaterialCode()} readOnly/></div>
-          <div><span style={labelSt}>Ozgul Agirlik (g/cm3)</span><input style={inputSt} type="number" step="0.001" min="0" value={form.density} onChange={e=>fv("density",e.target.value)} placeholder="7.850"/></div>
-          <div><span style={labelSt}>Stok</span><input style={inputSt} type="number" min="0" value={form.stock} onChange={e=>fv("stock",e.target.value)} placeholder="0"/></div>
-          <div><span style={labelSt}>Tur</span><select style={inputSt} value={form.type||"raw"} onChange={e=>fv("type",e.target.value)}>{MATERIAL_TYPE_OPTIONS.map(([id,l])=><option key={id} value={id}>{l}</option>)}</select></div>
-          <div><span style={labelSt}>Lead-Time (gun)</span><input style={inputSt} type="number" min="0" value={form.leadTimeDays} onChange={e=>fv("leadTimeDays",e.target.value)} placeholder="5"/></div>
-          <div><span style={labelSt}>Yeniden Siparis Noktasi</span><input style={inputSt} type="number" min="0" value={form.reorderPoint} onChange={e=>fv("reorderPoint",e.target.value)} placeholder="0"/></div>
-          <div><span style={labelSt}>Guvenlik Stogu</span><input style={inputSt} type="number" min="0" value={form.safetyStock} onChange={e=>fv("safetyStock",e.target.value)} placeholder="0"/></div>
-          <div><span style={labelSt}>Izleme Tipi</span><select style={inputSt} value={form.trackingMode||"lot"} onChange={e=>fv("trackingMode",e.target.value)}>{TRACKING_OPTIONS.map(([id,l])=><option key={id} value={id}>{l}</option>)}</select></div>
-          <div><span style={labelSt}>Maliyetleme Yontemi</span><select style={inputSt} value={form.valuationMethod||"fifo"} onChange={e=>fv("valuationMethod",e.target.value)}>{VALUATION_OPTIONS.map(([id,l])=><option key={id} value={id}>{l}</option>)}</select></div>
-        </div>
-        <div style={{marginTop:8}}>
-          <span style={labelSt}>Not</span>
-          <textarea rows={2} style={{...inputSt,minHeight:64,resize:"vertical"}} value={form.note} onChange={e=>fv("note",e.target.value)} placeholder="Opsiyonel not..."/>
-        </div>
-        <div style={{display:"flex",gap:8,marginTop:10}}>
-          <button onClick={saveMaterial} style={{...btnSt("primary"),flex:1,padding:12}}>{editId?"Malzemeyi Guncelle":"Malzeme Kaydet"}</button>
-          <button onClick={()=>{setEditId(null);setShowForm(false);setForm({name:"",code:nextMaterialCode(),density:"",stock:"",type:"raw",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""});}} style={{...btnSt("ghost"),padding:"12px 14px"}}>Iptal</button>
-        </div>
-      </div>
       )}
 
       <div style={{display:"flex",gap:10,alignItems:"stretch",flexWrap:"wrap"}}>
