@@ -7404,6 +7404,32 @@ function ToolStock({currentUser,filtersVisible=true}) {
     }
   }
 
+  async function duplicateTool(tool){
+    if(!tool) return;
+    const work=[...tools];
+    const id=`tool_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`;
+    const payload={
+      code:nextToolCode(work),
+      name:String(tool.name||"").trim(),
+      brand:String(tool.brand||"").trim(),
+      supplierToolCode:String(tool.supplierToolCode||"").trim().toUpperCase(),
+      category:String(tool.category||"").trim(),
+      qty:0,
+      minQty:Math.max(0,Number(tool.minQty)||0),
+      location:String(tool.location||"").trim(),
+      geometry:String(tool.geometry||"").trim(),
+      toolMaterial:String(tool.toolMaterial||"").trim(),
+      expectedLife:Math.max(0,Number(tool.expectedLife)||0),
+      notes:String(tool.notes||"").trim(),
+      copiedFromToolId:tool.id||"",
+      copiedFromToolCode:tool.code||"",
+      updatedAt:new Date().toISOString(),
+    };
+    const ok=await window.DB.setDoc("toolStock",id,payload);
+    if(!ok){alert("Takim kopyalanamadi.");return;}
+    setTools(prev=>[...prev,{id,...payload,createdAt:new Date().toISOString()}].sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+  }
+
   async function removeTool(id,name){
     if(!await askAppConfirm(`"${name}" takimini silmek istiyor musunuz?`)) return;
     const ok=await window.DB.deleteDoc("toolStock",id);
@@ -7625,6 +7651,7 @@ function ToolStock({currentUser,filtersVisible=true}) {
             <button onClick={()=>openMovement(t.id,"in")} style={{...btnSt("green"),padding:"5px 8px",fontSize:11}}>Giris</button>
             <button onClick={()=>openMovement(t.id,"out")} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Cikis</button>
             <button onClick={()=>{setEditId(t.id);setForm({code:t.code||"",name:t.name||"",brand:t.brand||"",supplierToolCode:t.supplierToolCode||"",category:t.category||"",qty:String(qty),minQty:String(min),location:t.location||"",geometry:t.geometry||"",toolMaterial:t.toolMaterial||"",expectedLife:String(t.expectedLife??""),notes:t.notes||""});setShowForm(true);}} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Duzenle</button>
+            <button onClick={()=>duplicateTool(t)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Kopyala</button>
             <button onClick={()=>removeTool(t.id,t.name||"Takim")} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Sil</button>
           </div>
         </td>
@@ -8763,6 +8790,40 @@ function MaterialLibrary({filtersVisible=true}) {
       setTraceMaterialId("");
     }
   }
+  async function duplicateMaterial(m){
+    if(!m) return;
+    const work=[...materials];
+    const payload={
+      name:String(m.name||"").trim(),
+      code:nextMaterialCode(work),
+      density:Number(m.density)||0,
+      stock:0,
+      type:m.type||"raw",
+      stockForm:normalizeMaterialStockForm(m),
+      rodShape:normalizeMaterialRodShape(m),
+      rodDiameterMm:normalizeMaterialStockForm(m)==="rod"?normalizeMaterialDimensionValue(m.rodDiameterMm):0,
+      rodLengthMm:normalizeMaterialStockForm(m)==="rod"?normalizeMaterialDimensionValue(m.rodLengthMm):0,
+      plateWidthMm:normalizeMaterialStockForm(m)==="plate"?normalizeMaterialDimensionValue(m.plateWidthMm):0,
+      plateLengthMm:normalizeMaterialStockForm(m)==="plate"?normalizeMaterialDimensionValue(m.plateLengthMm):0,
+      plateThicknessMm:normalizeMaterialStockForm(m)==="plate"?normalizeMaterialDimensionValue(m.plateThicknessMm):0,
+      reorderPoint:Math.max(0,Number(m.reorderPoint)||0),
+      safetyStock:Math.max(0,Number(m.safetyStock)||0),
+      leadTimeDays:Math.max(0,Number(m.leadTimeDays)||0),
+      trackingMode:m.trackingMode||"lot",
+      valuationMethod:m.valuationMethod||"fifo",
+      note:String(m.note||"").trim(),
+      supplierId:"",
+      supplierName:"",
+      lastReceiptDate:"",
+      copiedFromMaterialId:m.id||"",
+      copiedFromMaterialCode:m.code||"",
+      updatedAt:new Date().toISOString(),
+    };
+    const id=await window.DB.addDoc("materials",payload);
+    if(!id){alert("Malzeme kopyalanamadi.");return;}
+    const nextList=[{id,...payload,createdAt:new Date().toISOString()},...materials];
+    setMaterials(nextList.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+  }
   function openMaterialEditor(m){
     setEditId(m.id);
     setShowForm(true);
@@ -9153,6 +9214,7 @@ function MaterialLibrary({filtersVisible=true}) {
           <div style={{display:"inline-flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
             <button onClick={()=>openMaterialTrace(m)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Iz</button>
             <button onClick={()=>openMaterialEditor(m)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
+            <button onClick={()=>duplicateMaterial(m)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Kopyala</button>
             <button onClick={()=>removeMaterial(m)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
           </div>
         </td>
