@@ -1166,7 +1166,7 @@ const MATERIAL_LIBRARY_LIST_COLUMNS = [
   {id:"dimensions",label:"Olculer",width:220},
   {id:"stock_policy",label:"Stok Politikasi",width:200},
   {id:"supply",label:"Tedarik",width:150},
-  {id:"actions",label:"Islem",width:170,align:"right",required:true},
+  {id:"actions",label:"Islem",width:250,align:"right",required:true},
 ];
 const PART_LIBRARY_LIST_COLUMNS = [
   {id:"row_no",label:"No",width:54,required:true},
@@ -8624,6 +8624,7 @@ function MaterialLibrary({filtersVisible=true}) {
   const [loading,setLoading]=useState(true);
   const [showForm,setShowForm]=useState(false);
   const [editId,setEditId]=useState(null);
+  const [traceMaterialId,setTraceMaterialId]=useState("");
   const [search,setSearch]=useState("");
   const [sortMode,setSortMode]=useState("name_asc");
   const [stockFilter,setStockFilter]=useState("all");
@@ -8641,6 +8642,9 @@ function MaterialLibrary({filtersVisible=true}) {
   const [materialRowsPerPage,setMaterialRowsPerPage]=useState(10);
   const [materialPageIdx,setMaterialPageIdx]=useState(1);
   const [seedChecked,setSeedChecked]=useState(false);
+  const [purchaseOrders,setPurchaseOrders]=useState([]);
+  const [goodsReceipts,setGoodsReceipts]=useState([]);
+  const [usageEntries,setUsageEntries]=useState([]);
   const [form,setForm]=useState({name:"",code:"",density:"",stock:"",type:"raw",stockForm:"rod",rodShape:"round",rodDiameterMm:"",rodLengthMm:String(DEFAULT_BAR_LENGTH_MM),plateWidthMm:"",plateLengthMm:"",plateThicknessMm:"",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""});
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
   const nextMaterialCode=useCallback((list=materials)=>{
@@ -8661,8 +8665,16 @@ function MaterialLibrary({filtersVisible=true}) {
   }
 
   const load=useCallback(async()=>{
-    const rows=await window.DB.getAll("materials");
+    const [rows,poRows,receiptRows,entryRows]=await Promise.all([
+      window.DB.getAll("materials"),
+      window.DB.getAll("purchaseOrders"),
+      window.DB.getAll("goodsReceipts"),
+      window.DB.getAll("entries"),
+    ]);
     setMaterials(rows.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    setPurchaseOrders((poRows||[]).slice().sort((a,b)=>String(b.updatedAt||b.orderDate||b.createdAt||"").localeCompare(String(a.updatedAt||a.orderDate||a.createdAt||""))));
+    setGoodsReceipts((receiptRows||[]).slice().sort((a,b)=>String(b.receiptDate||b.createdAt||"").localeCompare(String(a.receiptDate||a.createdAt||""))));
+    setUsageEntries((entryRows||[]).slice().sort((a,b)=>String(b.date||b.createdAt||"").localeCompare(String(a.date||a.createdAt||""))));
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
@@ -8747,6 +8759,9 @@ function MaterialLibrary({filtersVisible=true}) {
     if(editId===m.id){
       closeMaterialModal(nextMaterialCode(materials.filter(x=>x.id!==m.id)));
     }
+    if(traceMaterialId===m.id){
+      setTraceMaterialId("");
+    }
   }
   function openMaterialEditor(m){
     setEditId(m.id);
@@ -8771,6 +8786,10 @@ function MaterialLibrary({filtersVisible=true}) {
       valuationMethod:m.valuationMethod||"fifo",
       note:m.note||"",
     });
+  }
+  function openMaterialTrace(m){
+    if(!m?.id) return;
+    setTraceMaterialId(m.id);
   }
   async function seedDefaultMaterials(showMessage=true){
     const existing=await window.DB.getAll("materials");
@@ -8935,6 +8954,95 @@ function MaterialLibrary({filtersVisible=true}) {
   const plateLengthFilterOptions=buildDimensionFilterOptions(materials,"plateLengthMm","Tum Uzunluklar",row=>normalizeMaterialStockForm(row)==="plate");
   const plateThicknessFilterOptions=buildDimensionFilterOptions(materials,"plateThicknessMm","Tum Kalinliklar",row=>normalizeMaterialStockForm(row)==="plate");
   const trackingFilterOptions=[["all","Tum Izleme Tipleri"],...TRACKING_OPTIONS];
+  const purchaseOrderById=useMemo(
+    ()=>Object.fromEntries((purchaseOrders||[]).map(row=>[row.id,row])),
+    [purchaseOrders]
+  );
+  const materialPurchaseMap=useMemo(()=>{
+    const out={};
+    const receiptKeySet=new Set();
+    (goodsReceipts||[]).forEach(row=>{
+      const po=purchaseOrderById[row.poId]||null;
+      const materialId=String(row.materialId||po?.materialId||"").trim();
+      if(!materialId) return;
+      const entry={
+        id:row.id||`${row.poId||"po"}_${row.receiptDate||row.createdAt||Date.now()}`,
+        entryKind:"receipt",
+        poId:po?.id||row.poId||"",
+        poCode:po?.code||row.poCode||"",
+        supplierId:po?.supplierId||row.supplierId||"",
+        supplierName:po?.supplierName||row.supplierName||"",
+        qty:safeNum(row.acceptedQty),
+        rejectedQty:safeNum(row.rejectedQty),
+        unitPrice:safeNum(po?.unitPrice),
+        currency:String(po?.currency||"TRY").toUpperCase(),
+        date:row.receiptDate||row.createdAt||"",
+        note:row.note||"",
+      };
+      if(!out[materialId]) out[materialId]=[];
+      out[materialId].push(entry);
+      if(entry.poId) receiptKeySet.add(`${materialId}__${entry.poId}`);
+    });
+    (purchaseOrders||[]).forEach(row=>{
+      const materialId=String(row.materialId||"").trim();
+      if(!materialId) return;
+      const key=`${materialId}__${row.id||""}`;
+      if(receiptKeySet.has(key)) return;
+      const entry={
+        id:`po_${row.id||key}`,
+        entryKind:"order",
+        poId:row.id||"",
+        poCode:row.code||"",
+        supplierId:row.supplierId||"",
+        supplierName:row.supplierName||"",
+        qty:safeNum(row.qty),
+        rejectedQty:safeNum(row.rejectedQty),
+        unitPrice:safeNum(row.unitPrice),
+        currency:String(row.currency||"TRY").toUpperCase(),
+        date:row.orderDate||row.expectedDate||row.updatedAt||"",
+        note:row.note||"",
+        status:row.status||"ordered",
+      };
+      if(!out[materialId]) out[materialId]=[];
+      out[materialId].push(entry);
+    });
+    Object.values(out).forEach(list=>{
+      list.sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
+    });
+    return out;
+  },[goodsReceipts,purchaseOrderById,purchaseOrders]);
+  const materialUsageMap=useMemo(()=>{
+    const out={};
+    (usageEntries||[])
+      .filter(row=>String(row.entryType||"")==="material_change"&&String(row.materialId||"").trim())
+      .forEach(row=>{
+        const materialId=String(row.materialId||"").trim();
+        const entry={
+          id:row.id||`${materialId}_${row.jobCode||row.date||Date.now()}`,
+          date:row.date||row.createdAt||"",
+          jobCode:row.jobCode||"",
+          jobName:row.jobName||"",
+          machine:row.machine||"",
+          shiftLabel:row.shiftLabel||row.shift||"",
+          qty:safeNum(row.materialChangeQty),
+          lotNo:row.materialLotNo||"",
+          operatorName:row.operatorName||"",
+          note:row.note||"",
+        };
+        if(!out[materialId]) out[materialId]=[];
+        out[materialId].push(entry);
+      });
+    Object.values(out).forEach(list=>{
+      list.sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
+    });
+    return out;
+  },[usageEntries]);
+  const selectedTraceMaterial=materials.find(row=>row.id===traceMaterialId)||null;
+  const selectedTracePurchases=selectedTraceMaterial?(materialPurchaseMap[selectedTraceMaterial.id]||[]):[];
+  const selectedTraceUsage=selectedTraceMaterial?(materialUsageMap[selectedTraceMaterial.id]||[]):[];
+  const selectedTraceJobCount=new Set(selectedTraceUsage.map(row=>row.jobCode||row.jobName).filter(Boolean)).size;
+  const selectedTracePurchaseQty=selectedTracePurchases.reduce((sum,row)=>sum+safeNum(row.qty),0);
+  const selectedTraceUsageQty=selectedTraceUsage.reduce((sum,row)=>sum+safeNum(row.qty),0);
   const filterPanelStyle={
     flex:"0 0 250px",
     width:"100%",
@@ -8972,6 +9080,11 @@ function MaterialLibrary({filtersVisible=true}) {
     const plateWidthText=formatMaterialDimensionText(m.plateWidthMm);
     const plateLengthText=formatMaterialDimensionText(m.plateLengthMm);
     const plateThicknessText=formatMaterialDimensionText(m.plateThicknessMm);
+    const purchaseTrace=materialPurchaseMap[m.id]||[];
+    const usageTrace=materialUsageMap[m.id]||[];
+    const latestPurchase=purchaseTrace[0]||null;
+    const latestUsage=usageTrace[0]||null;
+    const usageJobCount=new Set(usageTrace.map(item=>item.jobCode||item.jobName).filter(Boolean)).size;
     if(col.id==="row_no"){
       return <td key={col.id} style={{padding:"11px 12px",fontSize:11,color:C.muted2,textAlign:"center",fontWeight:700}}>{rowNo}</td>;
     }
@@ -8983,6 +9096,7 @@ function MaterialLibrary({filtersVisible=true}) {
             {m.code||"-"}{Number(m.density)>0?` · ${Number(m.density).toFixed(3)} g/cm3`:""} · {m.type||"raw"} · {m.trackingMode||"lot"}
           </div>
           {profileSummary&&<div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{profileSummary}</div>}
+          {latestUsage&&<div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{`Kullanim: ${usageJobCount||1} is · Son ${latestUsage.jobCode||latestUsage.jobName||"-"}`}</div>}
           {m.note&&<div style={{fontSize:11,color:C.muted,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.note}</div>}
         </td>
       );
@@ -9029,6 +9143,7 @@ function MaterialLibrary({filtersVisible=true}) {
         <td key={col.id} style={{padding:"11px 12px",fontSize:12,color:C.muted2}}>
           <div>Lead: {safeNum(m.leadTimeDays)} gun</div>
           <div>{String(m.valuationMethod||"fifo").toUpperCase()}</div>
+          <div style={{marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{`Son Tedarik: ${latestPurchase?.supplierName||m.supplierName||"-"}`}</div>
         </td>
       );
     }
@@ -9036,6 +9151,7 @@ function MaterialLibrary({filtersVisible=true}) {
       return (
         <td key={col.id} onClick={e=>e.stopPropagation()} style={{padding:"11px 12px",textAlign:"right"}}>
           <div style={{display:"inline-flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
+            <button onClick={()=>openMaterialTrace(m)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Iz</button>
             <button onClick={()=>openMaterialEditor(m)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Duzenle</button>
             <button onClick={()=>removeMaterial(m)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12}}>Sil</button>
           </div>
@@ -9093,6 +9209,72 @@ function MaterialLibrary({filtersVisible=true}) {
             <div style={{display:"flex",gap:8,marginTop:12,justifyContent:"flex-end",flexWrap:"wrap"}}>
               <button onClick={()=>closeMaterialModal()} style={{...btnSt("ghost"),padding:"10px 14px"}}>Iptal</button>
               <button onClick={saveMaterial} style={{...btnSt("primary"),padding:"10px 14px"}}>{editId?"Malzemeyi Guncelle":"Malzeme Kaydet"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {selectedTraceMaterial&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(8,12,18,.40)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:55,padding:14}} onClick={()=>setTraceMaterialId("")}>
+          <div style={{width:"100%",maxWidth:980,maxHeight:"92vh",overflowY:"auto",background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:14,boxShadow:"0 24px 56px rgba(0,0,0,.34)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap",marginBottom:12}}>
+              <div>
+                <div style={{fontWeight:700,color:C.text,fontSize:18}}>{selectedTraceMaterial.name||"Malzeme"}</div>
+                <div style={{fontSize:12,color:C.muted2,marginTop:4}}>{[selectedTraceMaterial.code||"-",buildMaterialProfileSummary(selectedTraceMaterial)].filter(Boolean).join(" · ")}</div>
+              </div>
+              <button onClick={()=>setTraceMaterialId("")} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Kapat</button>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8,marginBottom:12}}>
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:10}}>
+                <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.6}}>Son Tedarikci</div>
+                <div style={{fontSize:14,color:C.text,fontWeight:700,marginTop:4}}>{selectedTracePurchases[0]?.supplierName||selectedTraceMaterial.supplierName||"-"}</div>
+              </div>
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:10}}>
+                <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.6}}>Satinalma Kaydi</div>
+                <div style={{fontSize:14,color:C.text,fontWeight:700,marginTop:4}}>{selectedTracePurchases.length}</div>
+                <div style={{fontSize:11,color:C.muted2,marginTop:2}}>Toplam Qty: {selectedTracePurchaseQty}</div>
+              </div>
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:10}}>
+                <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.6}}>Kullanim Kaydi</div>
+                <div style={{fontSize:14,color:C.text,fontWeight:700,marginTop:4}}>{selectedTraceUsage.length}</div>
+                <div style={{fontSize:11,color:C.muted2,marginTop:2}}>Toplam Qty: {selectedTraceUsageQty}</div>
+              </div>
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:10}}>
+                <div style={{fontSize:11,color:C.muted2,textTransform:"uppercase",letterSpacing:.6}}>Kullanilan Is</div>
+                <div style={{fontSize:14,color:C.text,fontWeight:700,marginTop:4}}>{selectedTraceJobCount}</div>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:10}}>
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
+                <div style={{fontSize:13,fontWeight:800,color:C.text,marginBottom:8}}>Satinalma Gecmisi</div>
+                {selectedTracePurchases.length===0&&<div style={{fontSize:12,color:C.muted2}}>Bu malzeme icin satin alma kaydi bulunmuyor.</div>}
+                {selectedTracePurchases.length>0&&(
+                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                    {selectedTracePurchases.map(row=>(
+                      <div key={row.id} style={{border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px",background:C.card}}>
+                        <div style={{fontSize:12,color:C.text,fontWeight:700}}>{row.supplierName||"-"} {row.poCode?`· ${row.poCode}`:""}</div>
+                        <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{row.entryKind==="receipt"?"Teslimat":"Siparis"} · {row.date||"-"} · Qty {safeNum(row.qty)}{row.rejectedQty?` · Red ${safeNum(row.rejectedQty)}`:""}</div>
+                        {(row.unitPrice>0||row.note)&&<div style={{fontSize:11,color:C.muted2,marginTop:2}}>{[row.unitPrice>0?`Birim: ${safeNum(row.unitPrice)} ${row.currency||"TRY"}`:"",row.note||""].filter(Boolean).join(" · ")}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
+                <div style={{fontSize:13,fontWeight:800,color:C.text,marginBottom:8}}>Kullanim Gecmisi</div>
+                {selectedTraceUsage.length===0&&<div style={{fontSize:12,color:C.muted2}}>Bu malzeme icin kullanim kaydi bulunmuyor.</div>}
+                {selectedTraceUsage.length>0&&(
+                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                    {selectedTraceUsage.map(row=>(
+                      <div key={row.id} style={{border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px",background:C.card}}>
+                        <div style={{fontSize:12,color:C.text,fontWeight:700}}>{row.jobCode||"-"} {row.jobName?`· ${row.jobName}`:""}</div>
+                        <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{[row.date||"-",row.machine||"",row.shiftLabel||""].filter(Boolean).join(" · ")}</div>
+                        <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{[`Qty ${safeNum(row.qty)}`,row.lotNo?`Lot ${row.lotNo}`:"",row.operatorName||""].filter(Boolean).join(" · ")}</div>
+                        {row.note&&<div style={{fontSize:11,color:C.muted2,marginTop:2}}>{row.note}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -23984,7 +24166,7 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
     const accepted=Math.max(0,safeNum(recvForm.acceptedQty));
     const rejected=Math.max(0,safeNum(recvForm.rejectedQty));
     if(accepted+rejected<=0){alert("Alinan miktar girin.");return;}
-    const payload={poId:po.id,poCode:po.code||"",materialId:po.materialId||"",materialCode:po.materialCode||"",materialName:po.materialName||"",acceptedQty:accepted,rejectedQty:rejected,receiptDate:recvForm.receiptDate||todayStr(),note:recvForm.note.trim(),createdBy:currentUser.id,createdAt:new Date().toISOString()};
+    const payload={poId:po.id,poCode:po.code||"",supplierId:po.supplierId||"",supplierName:po.supplierName||"",materialId:po.materialId||"",materialCode:po.materialCode||"",materialName:po.materialName||"",acceptedQty:accepted,rejectedQty:rejected,receiptDate:recvForm.receiptDate||todayStr(),note:recvForm.note.trim(),createdBy:currentUser.id,createdAt:new Date().toISOString()};
     const rid=await window.DB.addDoc("goodsReceipts",payload);
     if(!rid){alert("Malzeme girisi kaydedilemedi.");return;}
     const newAccepted=safeNum(po.receivedQty)+accepted;
@@ -23994,7 +24176,7 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
     await window.DB.updateDoc("purchaseOrders",po.id,{receivedQty:newAccepted,rejectedQty:newRejected,status,updatedAt:new Date().toISOString()});
     if(po.materialId){
       const mat=matById[po.materialId];
-      if(mat) await window.DB.updateDoc("materials",mat.id,{stock:safeNum(mat.stock)+accepted,updatedAt:new Date().toISOString()});
+      if(mat) await window.DB.updateDoc("materials",mat.id,{stock:safeNum(mat.stock)+accepted,supplierId:po.supplierId||mat.supplierId||"",supplierName:po.supplierName||mat.supplierName||"",lastReceiptDate:recvForm.receiptDate||todayStr(),updatedAt:new Date().toISOString()});
     }
     if(accepted>0){
       const paymentTermDays=Math.max(0,safeNum(po.paymentTermDays??30));
