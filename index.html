@@ -2740,10 +2740,51 @@ function safeNum(v) {
 const DEFAULT_BAR_LENGTH_MM=3000;
 const BAR_END_TRIM_MM=250;
 const BAR_CUT_GAP_MM=3;
+const MATERIAL_STOCK_FORM_OPTIONS=[["rod","Mil"],["plate","Plaka"]];
+const MATERIAL_ROD_SHAPE_OPTIONS=[["round","Cap"],["hex","6 Kose"],["octagon","8 Kose"],["other","Diger"]];
 function formatMetricNumber(value) {
   const n=Math.round(safeNum(value)*100)/100;
   if(n<=0) return "";
   return Number.isInteger(n)?String(n):String(n).replace(/\.?0+$/,"");
+}
+function normalizeMaterialStockForm(value){
+  const raw=(value&&typeof value==="object")?value.stockForm:value;
+  return String(raw||"").trim()==="plate"?"plate":"rod";
+}
+function normalizeMaterialRodShape(value){
+  const raw=(value&&typeof value==="object")?value.rodShape:value;
+  const shape=String(raw||"").trim();
+  return ["round","hex","octagon","other"].includes(shape)?shape:"round";
+}
+function getMaterialStockFormLabel(value){
+  return (MATERIAL_STOCK_FORM_OPTIONS.find(([id])=>id===normalizeMaterialStockForm(value))||[])[1]||"Mil";
+}
+function getMaterialRodShapeLabel(value){
+  return (MATERIAL_ROD_SHAPE_OPTIONS.find(([id])=>id===normalizeMaterialRodShape(value))||[])[1]||"Cap";
+}
+function normalizeMaterialDimensionValue(value){
+  const rounded=Math.round(safeNum(value)*100)/100;
+  return rounded>0?rounded:0;
+}
+function formatMaterialDimensionText(value){
+  const text=formatMetricNumber(value);
+  return text?`${text} mm`:"";
+}
+function buildMaterialProfileSummary(material){
+  if(normalizeMaterialStockForm(material)==="plate"){
+    return [
+      "Plaka",
+      normalizeMaterialDimensionValue(material?.plateWidthMm)>0?`Genislik ${formatMaterialDimensionText(material?.plateWidthMm)}`:"",
+      normalizeMaterialDimensionValue(material?.plateLengthMm)>0?`Uzunluk ${formatMaterialDimensionText(material?.plateLengthMm)}`:"",
+      normalizeMaterialDimensionValue(material?.plateThicknessMm)>0?`Kalinlik ${formatMaterialDimensionText(material?.plateThicknessMm)}`:"",
+    ].filter(Boolean).join(" · ");
+  }
+  return [
+    "Mil",
+    getMaterialRodShapeLabel(material),
+    normalizeMaterialDimensionValue(material?.rodDiameterMm)>0?`Cap ${formatMaterialDimensionText(material?.rodDiameterMm)}`:"",
+    normalizeMaterialDimensionValue(material?.rodLengthMm)>0?`Boy ${formatMaterialDimensionText(material?.rodLengthMm)}`:"",
+  ].filter(Boolean).join(" · ");
 }
 function normalizeInventoryLookupKey(value){
   return String(value||"")
@@ -8585,13 +8626,20 @@ function MaterialLibrary({filtersVisible=true}) {
   const [sortMode,setSortMode]=useState("name_asc");
   const [stockFilter,setStockFilter]=useState("all");
   const [typeFilter,setTypeFilter]=useState("all");
+  const [stockFormFilter,setStockFormFilter]=useState("all");
+  const [rodShapeFilter,setRodShapeFilter]=useState("all");
+  const [rodDiameterFilter,setRodDiameterFilter]=useState("");
+  const [rodLengthFilter,setRodLengthFilter]=useState("");
+  const [plateWidthFilter,setPlateWidthFilter]=useState("");
+  const [plateLengthFilter,setPlateLengthFilter]=useState("");
+  const [plateThicknessFilter,setPlateThicknessFilter]=useState("");
   const [trackingFilter,setTrackingFilter]=useState("all");
   const [updatedDateFrom,setUpdatedDateFrom]=useState("");
   const [updatedDateTo,setUpdatedDateTo]=useState("");
   const [materialRowsPerPage,setMaterialRowsPerPage]=useState(10);
   const [materialPageIdx,setMaterialPageIdx]=useState(1);
   const [seedChecked,setSeedChecked]=useState(false);
-  const [form,setForm]=useState({name:"",code:"",density:"",stock:"",type:"raw",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""});
+  const [form,setForm]=useState({name:"",code:"",density:"",stock:"",type:"raw",stockForm:"rod",rodShape:"round",rodDiameterMm:"",rodLengthMm:String(DEFAULT_BAR_LENGTH_MM),plateWidthMm:"",plateLengthMm:"",plateThicknessMm:"",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""});
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
   const nextMaterialCode=useCallback((list=materials)=>{
     const nums=list.map(m=>{
@@ -8602,7 +8650,7 @@ function MaterialLibrary({filtersVisible=true}) {
     return `MLZ-${String(next).padStart(3,"0")}`;
   },[materials]);
   function buildEmptyMaterialForm(code=nextMaterialCode()){
-    return {name:"",code,density:"",stock:"",type:"raw",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""};
+    return {name:"",code,density:"",stock:"",type:"raw",stockForm:"rod",rodShape:"round",rodDiameterMm:"",rodLengthMm:String(DEFAULT_BAR_LENGTH_MM),plateWidthMm:"",plateLengthMm:"",plateThicknessMm:"",reorderPoint:"0",safetyStock:"0",leadTimeDays:"5",trackingMode:"lot",valuationMethod:"fifo",note:""};
   }
   function closeMaterialModal(nextCode=nextMaterialCode()){
     setEditId(null);
@@ -8645,12 +8693,28 @@ function MaterialLibrary({filtersVisible=true}) {
     if(!form.name.trim()){alert("Malzeme adı zorunlu.");return;}
     const finalCode=editId?(form.code||nextMaterialCode()):nextMaterialCode();
     const densityVal=Number(String(form.density).replace(",","."));
+    const stockForm=normalizeMaterialStockForm(form.stockForm);
+    if(stockForm==="rod"&&(normalizeMaterialDimensionValue(form.rodDiameterMm)<=0||normalizeMaterialDimensionValue(form.rodLengthMm)<=0)){
+      alert("Mil malzemede cap ve boy zorunlu.");
+      return;
+    }
+    if(stockForm==="plate"&&(normalizeMaterialDimensionValue(form.plateWidthMm)<=0||normalizeMaterialDimensionValue(form.plateLengthMm)<=0||normalizeMaterialDimensionValue(form.plateThicknessMm)<=0)){
+      alert("Plaka malzemede genislik, uzunluk ve kalinlik zorunlu.");
+      return;
+    }
     const payload={
       name:form.name.trim(),
       code:String(finalCode).toUpperCase(),
       density:densityVal>0?densityVal:0,
       stock:Math.max(0,Number(form.stock)||0),
       type:form.type||"raw",
+      stockForm,
+      rodShape:stockForm==="rod"?normalizeMaterialRodShape(form.rodShape):"",
+      rodDiameterMm:stockForm==="rod"?normalizeMaterialDimensionValue(form.rodDiameterMm):0,
+      rodLengthMm:stockForm==="rod"?normalizeMaterialDimensionValue(form.rodLengthMm):0,
+      plateWidthMm:stockForm==="plate"?normalizeMaterialDimensionValue(form.plateWidthMm):0,
+      plateLengthMm:stockForm==="plate"?normalizeMaterialDimensionValue(form.plateLengthMm):0,
+      plateThicknessMm:stockForm==="plate"?normalizeMaterialDimensionValue(form.plateThicknessMm):0,
       reorderPoint:Math.max(0,Number(form.reorderPoint)||0),
       safetyStock:Math.max(0,Number(form.safetyStock)||0),
       leadTimeDays:Math.max(0,Number(form.leadTimeDays)||0),
@@ -8691,6 +8755,13 @@ function MaterialLibrary({filtersVisible=true}) {
       density:String(m.density??""),
       stock:String(m.stock??""),
       type:m.type||"raw",
+      stockForm:normalizeMaterialStockForm(m),
+      rodShape:normalizeMaterialRodShape(m),
+      rodDiameterMm:normalizeMaterialDimensionValue(m.rodDiameterMm)>0?String(normalizeMaterialDimensionValue(m.rodDiameterMm)):"",
+      rodLengthMm:normalizeMaterialStockForm(m)==="rod"?String(normalizeMaterialDimensionValue(m.rodLengthMm)||DEFAULT_BAR_LENGTH_MM):"",
+      plateWidthMm:normalizeMaterialDimensionValue(m.plateWidthMm)>0?String(normalizeMaterialDimensionValue(m.plateWidthMm)):"",
+      plateLengthMm:normalizeMaterialDimensionValue(m.plateLengthMm)>0?String(normalizeMaterialDimensionValue(m.plateLengthMm)):"",
+      plateThicknessMm:normalizeMaterialDimensionValue(m.plateThicknessMm)>0?String(normalizeMaterialDimensionValue(m.plateThicknessMm)):"",
       reorderPoint:String(m.reorderPoint??0),
       safetyStock:String(m.safetyStock??0),
       leadTimeDays:String(m.leadTimeDays??5),
@@ -8713,6 +8784,13 @@ function MaterialLibrary({filtersVisible=true}) {
         density:Number(item.density)||0,
         stock:0,
         type:"raw",
+        stockForm:"rod",
+        rodShape:"round",
+        rodDiameterMm:0,
+        rodLengthMm:DEFAULT_BAR_LENGTH_MM,
+        plateWidthMm:0,
+        plateLengthMm:0,
+        plateThicknessMm:0,
         reorderPoint:0,
         safetyStock:0,
         leadTimeDays:5,
@@ -8739,6 +8817,17 @@ function MaterialLibrary({filtersVisible=true}) {
     setSeedChecked(true);
     seedDefaultMaterials(false);
   },[loading,seedChecked]);
+  useEffect(()=>{
+    if(stockFormFilter==="rod"){
+      setPlateWidthFilter("");
+      setPlateLengthFilter("");
+      setPlateThicknessFilter("");
+    }else if(stockFormFilter==="plate"){
+      setRodShapeFilter("all");
+      setRodDiameterFilter("");
+      setRodLengthFilter("");
+    }
+  },[stockFormFilter]);
 
   const toYmd=value=>{
     const raw=String(value||"").trim();
@@ -8772,13 +8861,29 @@ function MaterialLibrary({filtersVisible=true}) {
       row.type||"",
       row.trackingMode||"",
       row.valuationMethod||"",
+      getMaterialStockFormLabel(row),
+      getMaterialRodShapeLabel(row),
+      buildMaterialProfileSummary(row),
+      formatMetricNumber(row.rodDiameterMm)||"",
+      formatMetricNumber(row.rodLengthMm)||"",
+      formatMetricNumber(row.plateWidthMm)||"",
+      formatMetricNumber(row.plateLengthMm)||"",
+      formatMetricNumber(row.plateThicknessMm)||"",
     ].join(" ").toLowerCase().includes(q);
+    const stockFormId=normalizeMaterialStockForm(row);
     const stockOk=stockFilter==="all"||resolveStockStatus(row)===stockFilter;
     const typeOk=typeFilter==="all"||String(row.type||"")===typeFilter;
+    const stockFormOk=stockFormFilter==="all"||stockFormId===stockFormFilter;
+    const rodShapeOk=rodShapeFilter==="all"||(stockFormId==="rod"&&normalizeMaterialRodShape(row)===rodShapeFilter);
+    const rodDiameterOk=!rodDiameterFilter||(stockFormId==="rod"&&normalizeMaterialDimensionValue(row.rodDiameterMm)===normalizeMaterialDimensionValue(rodDiameterFilter));
+    const rodLengthOk=!rodLengthFilter||(stockFormId==="rod"&&normalizeMaterialDimensionValue(row.rodLengthMm)===normalizeMaterialDimensionValue(rodLengthFilter));
+    const plateWidthOk=!plateWidthFilter||(stockFormId==="plate"&&normalizeMaterialDimensionValue(row.plateWidthMm)===normalizeMaterialDimensionValue(plateWidthFilter));
+    const plateLengthOk=!plateLengthFilter||(stockFormId==="plate"&&normalizeMaterialDimensionValue(row.plateLengthMm)===normalizeMaterialDimensionValue(plateLengthFilter));
+    const plateThicknessOk=!plateThicknessFilter||(stockFormId==="plate"&&normalizeMaterialDimensionValue(row.plateThicknessMm)===normalizeMaterialDimensionValue(plateThicknessFilter));
     const trackingOk=trackingFilter==="all"||String(row.trackingMode||"")===trackingFilter;
     const dateYmd=toYmd(row.updatedAt)||toYmd(row.createdAt);
     const dateOk=inRange(dateYmd,updatedDateFrom,updatedDateTo);
-    return textOk&&stockOk&&typeOk&&trackingOk&&dateOk;
+    return textOk&&stockOk&&typeOk&&stockFormOk&&rodShapeOk&&rodDiameterOk&&rodLengthOk&&plateWidthOk&&plateLengthOk&&plateThicknessOk&&trackingOk&&dateOk;
   });
   const sortedMaterials=[...materialFilterRows].sort((a,b)=>{
     if(sortMode==="name_desc") return String(b.name||"").localeCompare(String(a.name||""),"tr");
@@ -8789,7 +8894,7 @@ function MaterialLibrary({filtersVisible=true}) {
   const materialTotalPages=Math.max(1,Math.ceil(sortedMaterials.length/Math.max(1,materialRowsPerPage)));
   useEffect(()=>{
     setMaterialPageIdx(1);
-  },[search,stockFilter,typeFilter,trackingFilter,updatedDateFrom,updatedDateTo,sortMode,materialRowsPerPage]);
+  },[search,stockFilter,typeFilter,stockFormFilter,rodShapeFilter,rodDiameterFilter,rodLengthFilter,plateWidthFilter,plateLengthFilter,plateThicknessFilter,trackingFilter,updatedDateFrom,updatedDateTo,sortMode,materialRowsPerPage]);
   useEffect(()=>{
     setMaterialPageIdx(prev=>Math.max(1,Math.min(prev,materialTotalPages)));
   },[materialTotalPages]);
@@ -8811,6 +8916,22 @@ function MaterialLibrary({filtersVisible=true}) {
     {id:"out",label:"Stok Yok"},
   ];
   const typeFilterOptions=[["all","Tum Turler"],...MATERIAL_TYPE_OPTIONS];
+  const stockFormFilterOptions=[["all","Tum Formlar"],...MATERIAL_STOCK_FORM_OPTIONS];
+  const rodShapeFilterOptions=[["all","Tum Mil Sekilleri"],...MATERIAL_ROD_SHAPE_OPTIONS];
+  const buildDimensionFilterOptions=(rows,field,allLabel,matcher=()=>true)=>[
+    ["",allLabel],
+    ...Array.from(new Set((rows||[])
+      .filter(row=>matcher(row))
+      .map(row=>normalizeMaterialDimensionValue(row?.[field]))
+      .filter(value=>value>0)))
+      .sort((a,b)=>a-b)
+      .map(value=>[String(value),formatMaterialDimensionText(value)]),
+  ];
+  const rodDiameterFilterOptions=buildDimensionFilterOptions(materials,"rodDiameterMm","Tum Caplar",row=>normalizeMaterialStockForm(row)==="rod");
+  const rodLengthFilterOptions=buildDimensionFilterOptions(materials,"rodLengthMm","Tum Boylar",row=>normalizeMaterialStockForm(row)==="rod");
+  const plateWidthFilterOptions=buildDimensionFilterOptions(materials,"plateWidthMm","Tum Genislikler",row=>normalizeMaterialStockForm(row)==="plate");
+  const plateLengthFilterOptions=buildDimensionFilterOptions(materials,"plateLengthMm","Tum Uzunluklar",row=>normalizeMaterialStockForm(row)==="plate");
+  const plateThicknessFilterOptions=buildDimensionFilterOptions(materials,"plateThicknessMm","Tum Kalinliklar",row=>normalizeMaterialStockForm(row)==="plate");
   const trackingFilterOptions=[["all","Tum Izleme Tipleri"],...TRACKING_OPTIONS];
   const filterPanelStyle={
     flex:"0 0 250px",
@@ -8841,6 +8962,7 @@ function MaterialLibrary({filtersVisible=true}) {
     const reorder=safeNum(m.reorderPoint);
     const safety=safeNum(m.safetyStock);
     const critical=stock<=Math.max(reorder,safety);
+    const profileSummary=buildMaterialProfileSummary(m);
     if(col.id==="row_no"){
       return <td key={col.id} style={{padding:"11px 12px",fontSize:11,color:C.muted2,textAlign:"center",fontWeight:700}}>{rowNo}</td>;
     }
@@ -8851,6 +8973,7 @@ function MaterialLibrary({filtersVisible=true}) {
           <div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
             {m.code||"-"}{Number(m.density)>0?` · ${Number(m.density).toFixed(3)} g/cm3`:""} · {m.type||"raw"} · {m.trackingMode||"lot"}
           </div>
+          {profileSummary&&<div style={{fontSize:11,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{profileSummary}</div>}
           {m.note&&<div style={{fontSize:11,color:C.muted,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.note}</div>}
         </td>
       );
@@ -8905,6 +9028,21 @@ function MaterialLibrary({filtersVisible=true}) {
               <div><span style={labelSt}>Ozgul Agirlik (g/cm3)</span><input style={inputSt} type="number" step="0.001" min="0" value={form.density} onChange={e=>fv("density",e.target.value)} placeholder="7.850"/></div>
               <div><span style={labelSt}>Stok</span><input style={inputSt} type="number" min="0" value={form.stock} onChange={e=>fv("stock",e.target.value)} placeholder="0"/></div>
               <div><span style={labelSt}>Tur</span><select style={inputSt} value={form.type||"raw"} onChange={e=>fv("type",e.target.value)}>{MATERIAL_TYPE_OPTIONS.map(([id,l])=><option key={id} value={id}>{l}</option>)}</select></div>
+              <div><span style={labelSt}>Malzeme Formu</span><select style={inputSt} value={form.stockForm||"rod"} onChange={e=>fv("stockForm",e.target.value)}>{MATERIAL_STOCK_FORM_OPTIONS.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></div>
+              {normalizeMaterialStockForm(form)==="rod"&&(
+                <>
+                  <div><span style={labelSt}>Mil Sekli</span><select style={inputSt} value={form.rodShape||"round"} onChange={e=>fv("rodShape",e.target.value)}>{MATERIAL_ROD_SHAPE_OPTIONS.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></div>
+                  <div><span style={labelSt}>Cap (mm)</span><input style={inputSt} type="number" min="0" step="0.01" value={form.rodDiameterMm} onChange={e=>fv("rodDiameterMm",e.target.value)} placeholder="20"/></div>
+                  <div><span style={labelSt}>Uzunluk / Boy (mm)</span><input style={inputSt} type="number" min="0" step="0.01" value={form.rodLengthMm} onChange={e=>fv("rodLengthMm",e.target.value)} placeholder={String(DEFAULT_BAR_LENGTH_MM)}/></div>
+                </>
+              )}
+              {normalizeMaterialStockForm(form)==="plate"&&(
+                <>
+                  <div><span style={labelSt}>Genislik (mm)</span><input style={inputSt} type="number" min="0" step="0.01" value={form.plateWidthMm} onChange={e=>fv("plateWidthMm",e.target.value)} placeholder="1000"/></div>
+                  <div><span style={labelSt}>Uzunluk (mm)</span><input style={inputSt} type="number" min="0" step="0.01" value={form.plateLengthMm} onChange={e=>fv("plateLengthMm",e.target.value)} placeholder="2000"/></div>
+                  <div><span style={labelSt}>Kalinlik (mm)</span><input style={inputSt} type="number" min="0" step="0.01" value={form.plateThicknessMm} onChange={e=>fv("plateThicknessMm",e.target.value)} placeholder="10"/></div>
+                </>
+              )}
               <div><span style={labelSt}>Lead-Time (gun)</span><input style={inputSt} type="number" min="0" value={form.leadTimeDays} onChange={e=>fv("leadTimeDays",e.target.value)} placeholder="5"/></div>
               <div><span style={labelSt}>Yeniden Siparis Noktasi</span><input style={inputSt} type="number" min="0" value={form.reorderPoint} onChange={e=>fv("reorderPoint",e.target.value)} placeholder="0"/></div>
               <div><span style={labelSt}>Guvenlik Stogu</span><input style={inputSt} type="number" min="0" value={form.safetyStock} onChange={e=>fv("safetyStock",e.target.value)} placeholder="0"/></div>
@@ -8927,7 +9065,7 @@ function MaterialLibrary({filtersVisible=true}) {
         {filtersVisible&&(
           <div style={filterPanelStyle}>
             <div style={{fontSize:13,fontWeight:800,color:C.text}}>Filtreleme Malzemeler</div>
-            <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Ad, kod, not ara"/>
+            <input style={{...inputSt,padding:"8px 10px",fontSize:12}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Ad, kod, sekil, olcu, not ara"/>
             <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Stok Durumu</div>
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               {stockFilterOptions.map(opt=>(
@@ -8945,6 +9083,42 @@ function MaterialLibrary({filtersVisible=true}) {
             <select style={{...inputSt,padding:"8px 10px",fontSize:12}} value={typeFilter} onChange={e=>setTypeFilter(e.target.value)}>
               {typeFilterOptions.map(([id,label])=><option key={id} value={id}>{label}</option>)}
             </select>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Malzeme Formu</div>
+            <select style={{...inputSt,padding:"8px 10px",fontSize:12}} value={stockFormFilter} onChange={e=>setStockFormFilter(e.target.value)}>
+              {stockFormFilterOptions.map(([id,label])=><option key={id} value={id}>{label}</option>)}
+            </select>
+            {stockFormFilter!=="plate"&&(
+              <>
+                <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Mil Sekli</div>
+                <select style={{...inputSt,padding:"8px 10px",fontSize:12}} value={rodShapeFilter} onChange={e=>setRodShapeFilter(e.target.value)}>
+                  {rodShapeFilterOptions.map(([id,label])=><option key={id} value={id}>{label}</option>)}
+                </select>
+                <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Cap</div>
+                <select style={{...inputSt,padding:"8px 10px",fontSize:12}} value={rodDiameterFilter} onChange={e=>setRodDiameterFilter(e.target.value)}>
+                  {rodDiameterFilterOptions.map(([id,label])=><option key={`${id || "all"}_rod_dia`} value={id}>{label}</option>)}
+                </select>
+                <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Boy</div>
+                <select style={{...inputSt,padding:"8px 10px",fontSize:12}} value={rodLengthFilter} onChange={e=>setRodLengthFilter(e.target.value)}>
+                  {rodLengthFilterOptions.map(([id,label])=><option key={`${id || "all"}_rod_len`} value={id}>{label}</option>)}
+                </select>
+              </>
+            )}
+            {stockFormFilter!=="rod"&&(
+              <>
+                <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Plaka Genislik</div>
+                <select style={{...inputSt,padding:"8px 10px",fontSize:12}} value={plateWidthFilter} onChange={e=>setPlateWidthFilter(e.target.value)}>
+                  {plateWidthFilterOptions.map(([id,label])=><option key={`${id || "all"}_plate_width`} value={id}>{label}</option>)}
+                </select>
+                <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Plaka Uzunluk</div>
+                <select style={{...inputSt,padding:"8px 10px",fontSize:12}} value={plateLengthFilter} onChange={e=>setPlateLengthFilter(e.target.value)}>
+                  {plateLengthFilterOptions.map(([id,label])=><option key={`${id || "all"}_plate_length`} value={id}>{label}</option>)}
+                </select>
+                <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Plaka Kalinlik</div>
+                <select style={{...inputSt,padding:"8px 10px",fontSize:12}} value={plateThicknessFilter} onChange={e=>setPlateThicknessFilter(e.target.value)}>
+                  {plateThicknessFilterOptions.map(([id,label])=><option key={`${id || "all"}_plate_thickness`} value={id}>{label}</option>)}
+                </select>
+              </>
+            )}
             <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Izleme Tipi</div>
             <select style={{...inputSt,padding:"8px 10px",fontSize:12}} value={trackingFilter} onChange={e=>setTrackingFilter(e.target.value)}>
               {trackingFilterOptions.map(([id,label])=><option key={id} value={id}>{label}</option>)}
@@ -8952,7 +9126,7 @@ function MaterialLibrary({filtersVisible=true}) {
             <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Guncelleme Tarihi</div>
             <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={updatedDateFrom} onChange={e=>setUpdatedDateFrom(e.target.value||"")}/>
             <input type="date" style={{...inputSt,padding:"8px 10px",fontSize:12}} value={updatedDateTo} onChange={e=>setUpdatedDateTo(e.target.value||"")}/>
-            <button onClick={()=>{setSearch("");setStockFilter("all");setTypeFilter("all");setTrackingFilter("all");setUpdatedDateFrom("");setUpdatedDateTo("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
+            <button onClick={()=>{setSearch("");setStockFilter("all");setTypeFilter("all");setStockFormFilter("all");setRodShapeFilter("all");setRodDiameterFilter("");setRodLengthFilter("");setPlateWidthFilter("");setPlateLengthFilter("");setPlateThicknessFilter("");setTrackingFilter("all");setUpdatedDateFrom("");setUpdatedDateTo("");}} style={{...btnSt("ghost"),padding:"8px 10px",fontSize:12}}>Filtreleri Temizle</button>
           </div>
         )}
         <div style={{flex:"1 1 760px",minWidth:0,display:"flex",flexDirection:"column",gap:8}}>
@@ -11346,13 +11520,14 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     const fullLabel=buildBarMaterialLabel(materialName,diameterMm,barLengthMm);
     const fullKey=normalizeInventoryLookupKey(fullLabel);
     const baseKey=normalizeInventoryLookupKey(materialName);
-    const exactMatch=materials.find(m=>{
+    const rodMaterials=materials.filter(m=>normalizeMaterialStockForm(m)==="rod");
+    const exactMatch=rodMaterials.find(m=>{
       const nameKey=normalizeInventoryLookupKey(m.name||"");
       const codeKey=normalizeInventoryLookupKey(m.code||"");
       return (fullKey&&nameKey===fullKey)||(fullKey&&codeKey===fullKey);
     })||null;
     if(exactMatch) return {material:exactMatch,matchMode:"exact"};
-    const baseMatch=materials.find(m=>{
+    const baseMatch=rodMaterials.find(m=>{
       const nameKey=normalizeInventoryLookupKey(m.name||"");
       const codeKey=normalizeInventoryLookupKey(m.code||"");
       return (baseKey&&nameKey===baseKey)||(baseKey&&codeKey===baseKey);
@@ -14869,8 +15044,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const filtered=orders.filter(o=>o.code.toLowerCase().includes(search.toLowerCase())||o.name.toLowerCase().includes(search.toLowerCase()));
   const toolOptions=[...tools].sort((a,b)=>(a.code||"").localeCompare(b.code||""));
   const materialBarRows=useMemo(()=>{
-    const rawRows=(materials||[]).filter(m=>String(m.type||"raw")==="raw");
-    const source=rawRows.length>0?rawRows:(materials||[]);
+    const rawRows=(materials||[]).filter(m=>String(m.type||"raw")==="raw"&&normalizeMaterialStockForm(m)==="rod");
+    const source=rawRows.length>0?rawRows:(materials||[]).filter(m=>normalizeMaterialStockForm(m)==="rod");
     return source.slice().sort((a,b)=>{
       const stockDiff=safeNum(b.stock)-safeNum(a.stock);
       if(stockDiff!==0) return stockDiff;
@@ -14880,7 +15055,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const materialSelectOptions=useMemo(()=>
     materialBarRows.map(m=>({
       value:m.id,
-      label:`${m.code||"-"} · ${m.name||"-"} · Stok ${safeNum(m.stock)} Cubuk`,
+      label:`${m.code||"-"} · ${m.name||"-"} · ${buildMaterialProfileSummary(m)} · Stok ${safeNum(m.stock)} Cubuk`,
     }))
   ,[materialBarRows]);
   const selectedMaterialCard=materials.find(m=>m.id===materialDraft.materialId)||null;
@@ -14890,7 +15065,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     if(rows.length===0) return "";
     if(query){
       const matched=rows.find(row=>{
-        const haystack=[row.name||"",row.code||"",row.note||""].join(" ").toLocaleLowerCase("tr");
+        const haystack=[row.name||"",row.code||"",row.note||"",buildMaterialProfileSummary(row)].join(" ").toLocaleLowerCase("tr");
         return haystack.includes(query);
       });
       if(matched) return matched.id;
