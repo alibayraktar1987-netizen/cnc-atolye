@@ -7251,6 +7251,7 @@ function TaskAssignmentModule({currentUser,machines=DEFAULT_MACHINES,filtersVisi
 function ToolStock({currentUser,filtersVisible=true}) {
   const isAdmin=currentUser.role==="admin";
   const TOOL_CATEGORY_OPTIONS=["Freze","Matkap","Rayba","Kılavuz","Torna","Insert","Tutucu","Olcu Takimi","Diger"];
+  const STANDARD_TOOL_MATERIAL_OPTIONS=["Sert Metal (Karbur)","HSS","HSS-E (Kobalt)","Toz Metal (PM-HSS)","Cermet","Seramik","CBN","PCD"];
   const [tools,setTools]=useState([]);
   const [loading,setLoading]=useState(true);
   const [search,setSearch]=useState("");
@@ -7558,6 +7559,15 @@ function ToolStock({currentUser,filtersVisible=true}) {
   const categoryOptions=(form.category&& !TOOL_CATEGORY_OPTIONS.includes(form.category))
     ? [...TOOL_CATEGORY_OPTIONS,form.category]
     : TOOL_CATEGORY_OPTIONS;
+  const toolMaterialOptions=useMemo(()=>{
+    const extraValues=(tools||[])
+      .map(row=>String(row?.toolMaterial||"").trim())
+      .filter(Boolean);
+    if(form.toolMaterial&& !extraValues.includes(form.toolMaterial)){
+      extraValues.push(form.toolMaterial);
+    }
+    return Array.from(new Set([...STANDARD_TOOL_MATERIAL_OPTIONS,...extraValues]));
+  },[form.toolMaterial,tools]);
   const toolSplitWrapStyle={
     display:"flex",
     gap:10,
@@ -7647,7 +7657,13 @@ function ToolStock({currentUser,filtersVisible=true}) {
               <div><span style={labelSt}>Minimum Adet</span><input style={inputSt} type="number" min="0" value={form.minQty} onChange={e=>fv("minQty",e.target.value)} placeholder="0"/></div>
               <div><span style={labelSt}>Konum</span><input style={inputSt} value={form.location} onChange={e=>fv("location",e.target.value)} placeholder="Raf A2"/></div>
               <div><span style={labelSt}>Geometri</span><input style={inputSt} value={form.geometry} onChange={e=>fv("geometry",e.target.value)} placeholder="D12 L75"/></div>
-              <div><span style={labelSt}>Takim Malzemesi</span><input style={inputSt} value={form.toolMaterial} onChange={e=>fv("toolMaterial",e.target.value)} placeholder="Carbide / HSS"/></div>
+              <div>
+                <span style={labelSt}>Takim Malzemesi</span>
+                <select style={inputSt} value={form.toolMaterial} onChange={e=>fv("toolMaterial",e.target.value)}>
+                  <option value="">Takim malzemesi secin...</option>
+                  {toolMaterialOptions.map(option=><option key={option} value={option}>{option}</option>)}
+                </select>
+              </div>
               <div><span style={labelSt}>Beklenen Omur (cevrim)</span><input style={inputSt} type="number" min="0" value={form.expectedLife} onChange={e=>fv("expectedLife",e.target.value)} placeholder="1200"/></div>
               <div style={{gridColumn:"1 / -1"}}><span style={labelSt}>Not</span><textarea style={{...inputSt,resize:"vertical",minHeight:70}} value={form.notes} onChange={e=>fv("notes",e.target.value)} placeholder="Aciklama..."/></div>
               <div style={{gridColumn:"1 / -1",display:"flex",gap:8,justifyContent:"flex-end"}}>
@@ -14618,6 +14634,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
 function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const [orders,setOrders]=useState([]);
   const [tools,setTools]=useState([]);
+  const [materials,setMaterials]=useState([]);
   const [plans,setPlans]=useState([]);
   const [telemetryRows,setTelemetryRows]=useState([]);
   const [allEntries,setAllEntries]=useState([]);
@@ -14629,13 +14646,16 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const [lockedMachine,setLockedMachine]=useState("");
   const [stationTag,setStationTag]=useState("");
   const [showToolModal,setShowToolModal]=useState(false);
+  const [showMaterialModal,setShowMaterialModal]=useState(false);
   const [showShiftModal,setShowShiftModal]=useState(false);
   const [showEntryHistory,setShowEntryHistory]=useState(false);
   const [shiftModalMode,setShiftModalMode]=useState("shiftEnd");
+  const [shiftModalShiftId,setShiftModalShiftId]=useState("");
   const [previewFile,setPreviewFile]=useState(null);
   const [showOrderDataPanel,setShowOrderDataPanel]=useState(false);
   const [mobileEntrySection,setMobileEntrySection]=useState("entry");
   const [toolDraft,setToolDraft]=useState({machineToolId:"",machineToolQty:"1"});
+  const [materialDraft,setMaterialDraft]=useState({materialId:"",lotNo:"",qty:"1",note:""});
   const [shiftDraft,setShiftDraft]=useState({correct:"",wrong:""});
   const [entryHistoryFilters,setEntryHistoryFilters]=useState({
     search:"",
@@ -14650,6 +14670,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   }));
   const [kioskSettings,setKioskSettings]=useState(DEFAULT_KIOSK_SETTINGS);
   const cycleDeviationStateRef=useRef({});
+  const toolsRef=useRef([]);
+  const materialsRef=useRef([]);
   const [form,setForm]=useState({
     entryDate:todayStr(),
     machine:machines[0]||"CNC-1",
@@ -14662,9 +14684,10 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   });
 
   useEffect(()=>{
-    Promise.all([window.DB.getAll("orders"),window.DB.getAll("toolStock"),window.DB.getAll("plans"),window.DB.getAll("machineTelemetryMock")]).then(([o,t,p,tel])=>{
+    Promise.all([window.DB.getAll("orders"),window.DB.getAll("toolStock"),window.DB.getAll("materials"),window.DB.getAll("plans"),window.DB.getAll("machineTelemetryMock")]).then(([o,t,m,p,tel])=>{
       setOrders(o.filter(x=>isOpenOrderStatus(x.status)));
       setTools(t);
+      setMaterials((m||[]).sort((a,b)=>(String(a.name||"")).localeCompare(String(b.name||""),"tr")));
       setPlans(p||[]);
       setTelemetryRows((tel||[]).sort((a,b)=>(b.collectedAtUtc||b.createdAt||"").localeCompare(a.collectedAtUtc||a.createdAt||"")));
     });
@@ -14773,10 +14796,42 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   useEffect(()=>{
     setTodayEntries(allEntries.filter(x=>x.date===form.entryDate));
   },[allEntries,form.entryDate]);
+  useEffect(()=>{
+    materialsRef.current=materials;
+  },[materials]);
 
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
   const filtered=orders.filter(o=>o.code.toLowerCase().includes(search.toLowerCase())||o.name.toLowerCase().includes(search.toLowerCase()));
   const toolOptions=[...tools].sort((a,b)=>(a.code||"").localeCompare(b.code||""));
+  const materialBarRows=useMemo(()=>{
+    const rawRows=(materials||[]).filter(m=>String(m.type||"raw")==="raw");
+    const source=rawRows.length>0?rawRows:(materials||[]);
+    return source.slice().sort((a,b)=>{
+      const stockDiff=safeNum(b.stock)-safeNum(a.stock);
+      if(stockDiff!==0) return stockDiff;
+      return String(a.name||"").localeCompare(String(b.name||""),"tr");
+    });
+  },[materials]);
+  const materialSelectOptions=useMemo(()=>
+    materialBarRows.map(m=>({
+      value:m.id,
+      label:`${m.code||"-"} · ${m.name||"-"} · Stok ${safeNum(m.stock)} Cubuk`,
+    }))
+  ,[materialBarRows]);
+  const selectedMaterialCard=materials.find(m=>m.id===materialDraft.materialId)||null;
+  function findDefaultMaterialId(materialLabel=""){
+    const query=String(materialLabel||"").trim().toLocaleLowerCase("tr");
+    const rows=materialBarRows;
+    if(rows.length===0) return "";
+    if(query){
+      const matched=rows.find(row=>{
+        const haystack=[row.name||"",row.code||"",row.note||""].join(" ").toLocaleLowerCase("tr");
+        return haystack.includes(query);
+      });
+      if(matched) return matched.id;
+    }
+    return rows.find(row=>safeNum(row.stock)>0)?.id||rows[0]?.id||"";
+  }
   const stockedTools=[...tools].filter(t=>safeNum(t.qty)>0).sort((a,b)=>{
     const qd=safeNum(b.qty)-safeNum(a.qty);
     if(qd!==0) return qd;
@@ -14834,6 +14889,30 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
       const d=delta.get(t.id)||0;
       return d===0?t:{...t,qty:(Number(t.qty)||0)+d};
     }));
+    return true;
+  }
+  async function applyMaterialStockDelta(materialId,deltaQty){
+    const id=String(materialId||"").trim();
+    const delta=safeNum(deltaQty);
+    if(!id||delta===0) return true;
+    const material=(materialsRef.current||[]).find(m=>m.id===id);
+    if(!material){
+      alert("Secili malzeme stok karti bulunamadi.");
+      return false;
+    }
+    const nextStock=safeNum(material.stock)+delta;
+    if(nextStock<0){
+      alert(`Yetersiz stok: ${material.code||material.name||"Malzeme"}`);
+      return false;
+    }
+    const payload={stock:nextStock,updatedAt:new Date().toISOString()};
+    const ok=await window.DB.updateDoc("materials",id,payload);
+    if(!ok){
+      alert("Malzeme stogu guncellenemedi.");
+      return false;
+    }
+    materialsRef.current=(materialsRef.current||[]).map(m=>m.id===id?{...m,...payload}:m);
+    setMaterials(prev=>prev.map(m=>m.id===id?{...m,...payload}:m));
     return true;
   }
   const selectedDateObj=parseYmdLocal(form.entryDate);
@@ -14897,14 +14976,14 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
       return {...prev,selectedOrder:plannedOrder||null};
     });
   },[editId,form.machine,form.entryDate,plans,orders]);
-  const resetEntryForm=()=>setForm(p=>{
+  const resetEntryForm=(nextShiftId="")=>setForm(p=>{
     const nextMachine=p.machine||machines[0]||"CNC-1";
     const nextDate=p.entryDate||todayStr();
     const autoOrder=kioskMode?getPlannedOrder(nextMachine,nextDate):null;
     return {
       entryDate:nextDate,
       machine:nextMachine,
-      shift:p.shift||(DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1"),
+      shift:nextShiftId||p.shift||(DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1"),
       selectedOrder:autoOrder||null,
       correct:"",
       wrong:"",
@@ -14917,7 +14996,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     window.setTimeout(()=>window.location.reload(),Math.max(0,Number(delayMs)||0));
   }
 
-  async function submitShiftEnd(correctValue,wrongValue) {
+  async function submitShiftEnd(correctValue,wrongValue,shiftId=form.shift) {
     if(!form.selectedOrder){
       alert(kioskMode?"Bu tezgah icin planlama kaydi yok. Planlama ekranindan is emri atayin.":"İş emri seçin!");
       return false;
@@ -14925,13 +15004,15 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     if(correctValue===""||Number(correctValue)<0){alert("Doğru adet zorunlu!");return false;}
     const correctNum=Number(correctValue);
     const wrongNum=Number(wrongValue)||0;
+    const effectiveShiftId=String(shiftId||form.shift||autoShiftId||shiftOptions[0]?.id||DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1").trim()||"shift_1";
+    const effectiveShiftMeta=getShiftMetaById(effectiveShiftId);
     const prevEntry=editId?todayEntries.find(x=>x.id===editId):null;
     const preservedMachineToolQty=editId?Math.max(0,Number(prevEntry?.machineToolQty??prevEntry?.machineToolChange??0)):0;
     const d=parseYmdLocal(form.entryDate);
     const nowIso=new Date().toISOString();
     const entryBase={
       date:ymdLocal(d), week:weekStart(d), month:monthStr(d),
-      machine:form.machine, shift:form.shift, shiftLabel:selectedShiftMeta.label||form.shift||"",
+      machine:form.machine, shift:effectiveShiftId, shiftLabel:effectiveShiftMeta.label||effectiveShiftId||"",
       operatorId:currentUser.id, operatorName:currentUser.fullName,
       jobCode:form.selectedOrder.code, jobName:form.selectedOrder.name,
       partSec:Number(form.selectedOrder.partSec),
@@ -14957,7 +15038,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
         setAllEntries(rows=>rows.map(x=>x.id===editId?updatedRow:x).sort((a,b)=>(String(b.createdAt||b.updatedAt||`${b.date||""}T00:00:00`)).localeCompare(String(a.createdAt||a.updatedAt||`${a.date||""}T00:00:00`))));
         setEditId(null);
         setSaved(true); setTimeout(()=>setSaved(false),2000);
-        resetEntryForm();
+        resetEntryForm(effectiveShiftId);
         setShiftDraft({correct:"",wrong:""});
         scheduleKioskReload();
         return true;
@@ -14971,7 +15052,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
       const createdRow={id,...entry};
       setAllEntries(rows=>[createdRow,...rows].sort((a,b)=>(String(b.createdAt||b.updatedAt||`${b.date||""}T00:00:00`)).localeCompare(String(a.createdAt||a.updatedAt||`${a.date||""}T00:00:00`))));
       setSaved(true); setTimeout(()=>setSaved(false),2000);
-      resetEntryForm();
+      resetEntryForm(effectiveShiftId);
       setShiftDraft({correct:"",wrong:""});
       scheduleKioskReload();
       return true;
@@ -14982,6 +15063,11 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   }
 
   function startEdit(entry){
+    const entryType=String(entry.entryType||"production");
+    if(entryType!=="production"){
+      alert(entryType==="material_change"?"Malzeme degisimi kaydi duzenlenemez. Gerekirse silip yeniden olusturun.":"Takim degisimi kaydi duzenlenemez. Gerekirse silip yeniden olusturun.");
+      return;
+    }
     const matched=orders.find(o=>o.code===entry.jobCode);
     const selectedOrder=matched||{code:entry.jobCode,name:entry.jobName,partSec:entry.partSec};
     setEditId(entry.id);
@@ -15009,8 +15095,19 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     const stockDelta=getDeltaMap(entry,null);
     const stockOk=await applyToolStockDelta(stockDelta);
     if(!stockOk) return;
+    const materialRestoreQty=String(entry.entryType||"")==="material_change"?Math.max(0,safeNum(entry.materialChangeQty)):0;
+    if(materialRestoreQty>0){
+      const materialOk=await applyMaterialStockDelta(entry.materialId,materialRestoreQty);
+      if(!materialOk){
+        await applyToolStockDelta(invertDeltaMap(stockDelta));
+        return;
+      }
+    }
     const ok=await window.DB.deleteDoc("entries",entry.id);
     if(!ok){
+      if(materialRestoreQty>0){
+        await applyMaterialStockDelta(entry.materialId,-materialRestoreQty);
+      }
       await applyToolStockDelta(invertDeltaMap(stockDelta));
       return;
     }
@@ -15027,6 +15124,73 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
       machineToolQty:String(form.machineToolQty||"1"),
     });
     setShowToolModal(true);
+  }
+
+  function openMaterialChangeModal(){
+    if(!form.selectedOrder){
+      alert(kioskMode?"Bu tezgah icin planlama kaydi yok. Planlama ekranindan is emri atayin.":"İş emri seçin!");
+      return;
+    }
+    if(materialBarRows.length===0){
+      alert("Malzeme kutuphanesinde secilebilir cubuk stogu bulunamadi.");
+      return;
+    }
+    setMaterialDraft({
+      materialId:findDefaultMaterialId(form.selectedOrder?.material),
+      lotNo:"",
+      qty:"1",
+      note:"",
+    });
+    setShowMaterialModal(true);
+  }
+
+  async function approveMaterialChange(){
+    if(!form.selectedOrder){
+      alert(kioskMode?"Bu tezgah icin planlama kaydi yok. Planlama ekranindan is emri atayin.":"İş emri seçin!");
+      return;
+    }
+    const materialId=String(materialDraft.materialId||"").trim();
+    if(!materialId){
+      alert("Malzeme secin.");
+      return;
+    }
+    const material=materials.find(m=>m.id===materialId);
+    if(!material){
+      alert("Secili malzeme stok karti bulunamadi.");
+      return;
+    }
+    const materialQty=Math.max(1,Number(materialDraft.qty)||1);
+    const stockOk=await applyMaterialStockDelta(materialId,-materialQty);
+    if(!stockOk) return;
+    const d=parseYmdLocal(form.entryDate||todayStr());
+    const entry={
+      date:ymdLocal(d), week:weekStart(d), month:monthStr(d),
+      machine:form.machine, shift:form.shift, shiftLabel:selectedShiftMeta.label||form.shift||"",
+      operatorId:currentUser.id, operatorName:currentUser.fullName,
+      jobCode:form.selectedOrder.code||"",
+      jobName:form.selectedOrder.name||"",
+      partSec:Number(form.selectedOrder.partSec)||0,
+      correct:0, wrong:0,
+      materialId:material.id,
+      materialCode:material.code||"",
+      materialName:material.name||"",
+      materialLotNo:String(materialDraft.lotNo||"").trim(),
+      materialChangeQty:materialQty,
+      note:String(materialDraft.note||"").trim()||"Malzeme degisimi",
+      entryType:"material_change",
+      createdAt:new Date().toISOString(),
+      updatedAt:new Date().toISOString(),
+    };
+    const id=await window.DB.addDoc("entries",entry);
+    if(!id){
+      await applyMaterialStockDelta(materialId,materialQty);
+      alert("Malzeme değişimi kaydedilemedi.");
+      return;
+    }
+    setAllEntries(rows=>[{id,...entry},...rows].sort((a,b)=>(String(b.createdAt||b.updatedAt||`${b.date||""}T00:00:00`)).localeCompare(String(a.createdAt||a.updatedAt||`${a.date||""}T00:00:00`))));
+    setShowMaterialModal(false);
+    setMaterialDraft({materialId:"",lotNo:"",qty:"1",note:""});
+    if(kioskMode) scheduleKioskReload(250);
   }
 
   async function approveToolChange(){
@@ -15083,8 +15247,10 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     if(kioskMode) scheduleKioskReload(250);
   }
 
-  function openShiftEndModal(){
+  async function openShiftEndModal(){
+    const nextShiftId=await resolveShiftModalSelection(form.shift);
     setShiftModalMode("shiftEnd");
+    setShiftModalShiftId(nextShiftId);
     setShiftDraft({
       correct:String(shiftDraft.correct||form.correct||""),
       wrong:String(shiftDraft.wrong||form.wrong||0),
@@ -15092,12 +15258,14 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     setShowShiftModal(true);
   }
 
-  function openRejectPartsModal(){
+  async function openRejectPartsModal(){
     if(!form.selectedOrder){
       alert(kioskMode?"Bu tezgah icin planlama kaydi yok. Planlama ekranindan is emri atayin.":"İş emri seçin!");
       return;
     }
+    const nextShiftId=await resolveShiftModalSelection(form.shift);
     setShiftModalMode("rejectOnly");
+    setShiftModalShiftId(nextShiftId);
     setShiftDraft({
       correct:"0",
       wrong:String(shiftDraft.wrong||form.wrong||""),
@@ -15108,19 +15276,26 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   function closeShiftModal(){
     setShowShiftModal(false);
     setShiftModalMode("shiftEnd");
+    setShiftModalShiftId("");
   }
 
-  async function confirmShiftEndApproval(correctValue,wrongValue){
-    const shiftLabel=selectedShiftMeta.label||form.shift||"-";
-    const shiftTime=selectedShiftMeta.time?` (${selectedShiftMeta.time})`:"";
+  async function confirmShiftEndApproval(correctValue,wrongValue,shiftId){
+    const shiftMeta=getShiftMetaById(shiftId);
+    const shiftLabel=shiftMeta.label||shiftId||"-";
+    const shiftTime=shiftMeta.time?` (${shiftMeta.time})`:"";
     const correctNum=Math.max(0,Number(correctValue)||0);
     const wrongNum=Math.max(0,Number(wrongValue)||0);
     const actionLabel=editId?"güncellemek":"kaydetmek";
+    const previousShiftId=String(form.shift||"").trim();
+    const overwriteNote=previousShiftId&&previousShiftId!==shiftId
+      ? `\nNot: Kayittaki vardiya ${getShiftMetaById(previousShiftId).label||previousShiftId} yerine ${shiftLabel} yazilacak.\n`
+      : "\n";
     return askAppConfirm(
       `Kayıt ${shiftLabel}${shiftTime} vardiyasına işlenecek.\n`+
       `Tarih: ${form.entryDate||todayStr()}\n`+
       `Tezgah: ${form.machine||"-"}\n`+
-      `Doğru: ${correctNum} · Hatalı: ${wrongNum}\n\n`+
+      `Doğru: ${correctNum} · Hatalı: ${wrongNum}`+
+      `${overwriteNote}\n`+
       `Bu vardiya kaydını ${actionLabel} istediğinize emin misiniz?`,
       {
         title:"Vardiya Onayi",
@@ -15132,11 +15307,13 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
 
   async function approveShiftEnd(){
     const correctValue=shiftModalMode==="rejectOnly"?"0":shiftDraft.correct;
-    if(shiftModalMode==="shiftEnd"&&!await confirmShiftEndApproval(correctValue,shiftDraft.wrong)) return;
-    const ok=await submitShiftEnd(correctValue,shiftDraft.wrong);
+    const effectiveShiftId=modalShiftId;
+    if(shiftModalMode==="shiftEnd"&&!await confirmShiftEndApproval(correctValue,shiftDraft.wrong,effectiveShiftId)) return;
+    const ok=await submitShiftEnd(correctValue,shiftDraft.wrong,effectiveShiftId);
     if(ok){
       setShowShiftModal(false);
       setShiftModalMode("shiftEnd");
+      setShiftModalShiftId("");
     }
   }
 
@@ -15257,6 +15434,44 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     label:fallbackShiftRow.label||form.shift||"Vardiya",
     time:`${normalizeHm(fallbackShiftRow.start,"00:00")}-${normalizeHm(fallbackShiftRow.end,normalizeHm(fallbackShiftRow.start,"00:00"))}`,
   };
+  function getShiftMetaById(shiftId){
+    const fallbackId=shiftOptions[0]?.id||DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1";
+    const safeId=String(shiftId||fallbackId).trim()||fallbackId;
+    const row=shiftOptions.find(item=>item.id===safeId)||shiftOptions[0]||DEFAULT_SHIFT_WINDOWS[0]||{id:safeId,label:"Vardiya",start:"00:00",end:"00:00"};
+    return shiftWindowMap[safeId]||{
+      label:row.label||safeId||"Vardiya",
+      time:`${normalizeHm(row.start,"00:00")}-${normalizeHm(row.end,normalizeHm(row.start,"00:00"))}`,
+    };
+  }
+  const modalShiftId=String(
+    shiftModalShiftId||
+    autoShiftId||
+    form.shift||
+    shiftOptions[0]?.id||
+    DEFAULT_SHIFT_WINDOWS[0]?.id||
+    "shift_1"
+  ).trim()||"shift_1";
+  const selectedModalShiftMeta=getShiftMetaById(modalShiftId);
+  async function resolveShiftModalSelection(existingShiftId=form.shift){
+    const detectedShiftId=String(autoShiftId||shiftOptions[0]?.id||DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1").trim()||"shift_1";
+    const currentShiftId=String(existingShiftId||"").trim();
+    if(currentShiftId&&currentShiftId!==detectedShiftId){
+      const currentMeta=getShiftMetaById(currentShiftId);
+      const detectedMeta=getShiftMetaById(detectedShiftId);
+      const overwrite=await askAppConfirm(
+        `Aktif vardiya ${detectedMeta.label}${detectedMeta.time?` (${detectedMeta.time})`:""} olarak algilandi.\n`+
+        `Kayitta/secimde ${currentMeta.label}${currentMeta.time?` (${currentMeta.time})`:""} vardiyasi var.\n\n`+
+        `Aktif vardiya ile uzerine yazilsin mi?`,
+        {
+          title:"Vardiya Farki",
+          confirmLabel:"Uzerine Yaz",
+          cancelLabel:"Mevcut Kalsin",
+        }
+      );
+      return overwrite?detectedShiftId:currentShiftId;
+    }
+    return detectedShiftId||currentShiftId||"shift_1";
+  }
   const statusMeta=(()=>{
     if(machineStatus==="running") return {label:"ÇALIŞIYOR",color:C.green,mode:"running"};
     if(machineStatus==="setup") return {label:"AYARDA",color:C.warn,mode:"idle"};
@@ -15920,10 +16135,11 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               </div>
             </div>
 
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",background:C.surface}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",background:C.surface}}>
               <button onClick={()=>setShowOrderDataPanel(true)} style={{...actionBtnStyle,fontSize:17}}>İş Emri Dosyaları</button>
               <button onClick={openShiftEndModal} style={actionBtnStyle}>Vardiya Sonlandır</button>
               <button onClick={openRejectPartsModal} style={actionBtnStyle}>Hata Girişi</button>
+              <button onClick={openMaterialChangeModal} style={actionBtnStyle}>Malzeme Değişimi</button>
               <button onClick={openToolChangeModal} style={{...actionBtnStyle,borderRight:"none"}}>Takım Değişimi</button>
             </div>
           </div>
@@ -16003,6 +16219,38 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
             </div>
           </div>
         )}
+        {showMaterialModal&&(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={()=>setShowMaterialModal(false)}>
+            <div style={{width:"100%",maxWidth:680,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:15}} onClick={e=>e.stopPropagation()}>
+              <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>Malzeme Değişimi</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:10}}>
+                <div>
+                  <span style={labelSt}>Malzeme Karti</span>
+                  <SearchableSelect value={materialDraft.materialId} onChange={v=>setMaterialDraft(p=>({...p,materialId:v}))} placeholder="Kutuphane malzemesi secin" options={materialSelectOptions}/>
+                </div>
+                <div style={{paddingTop:22,fontSize:12,color:C.muted2}}>
+                  {selectedMaterialCard?`Mevcut stok: ${safeNum(selectedMaterialCard.stock)} Cubuk`:"Malzeme secin"}
+                </div>
+                <div>
+                  <span style={labelSt}>Lot No</span>
+                  <input style={inputSt} value={materialDraft.lotNo} onChange={e=>setMaterialDraft(p=>({...p,lotNo:e.target.value}))} placeholder="Opsiyonel lot no"/>
+                </div>
+                <div>
+                  <span style={labelSt}>Cubuk Adedi</span>
+                  <input style={inputSt} type="number" min="1" value={materialDraft.qty} onChange={e=>setMaterialDraft(p=>({...p,qty:e.target.value}))}/>
+                </div>
+                <div style={{gridColumn:"1 / -1"}}>
+                  <span style={labelSt}>Not</span>
+                  <input style={inputSt} value={materialDraft.note} onChange={e=>setMaterialDraft(p=>({...p,note:e.target.value}))} placeholder="Opsiyonel açıklama"/>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
+                <button onClick={()=>setShowMaterialModal(false)} style={{...btnSt("ghost"),padding:"10px 14px"}}>İptal</button>
+                <button onClick={approveMaterialChange} style={{...btnSt("primary"),padding:"10px 14px"}}>Değişimi Onayla</button>
+              </div>
+            </div>
+          </div>
+        )}
         {showToolModal&&(
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={()=>setShowToolModal(false)}>
             <div style={{width:"100%",maxWidth:680,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:15}} onClick={e=>e.stopPropagation()}>
@@ -16032,11 +16280,15 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:14}} onClick={closeShiftModal}>
             <div style={{width:"100%",maxWidth:560,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:15}} onClick={e=>e.stopPropagation()}>
               <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>{shiftModalMode==="rejectOnly"?"Hata Girişi":"Vardiya Sonu"}</div>
-              {shiftModalMode==="shiftEnd"&&(
-                <div style={{marginBottom:10,padding:"10px 12px",borderRadius:10,border:`1px solid ${C.border}`,background:C.surface,fontSize:12,color:C.muted2}}>
-                  Kayıt şu vardiyaya işlenecek: <strong style={{color:C.text}}>{selectedShiftMeta.label}</strong>{selectedShiftMeta.time?` (${selectedShiftMeta.time})`:""}
+              <div style={{marginBottom:10,padding:"10px 12px",borderRadius:10,border:`1px solid ${C.border}`,background:C.surface,fontSize:12,color:C.muted2}}>
+                Kayıt şu vardiyaya işlenecek: <strong style={{color:C.text}}>{selectedModalShiftMeta.label}</strong>{selectedModalShiftMeta.time?` (${selectedModalShiftMeta.time})`:""}
+              </div>
+              <div style={{marginBottom:12}}>
+                <span style={labelSt}>Vardiya</span>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:8}}>
+                  {shiftOptions.map(s=><button key={s.id} onClick={()=>setShiftModalShiftId(s.id)} style={shiftButtonStyle(modalShiftId===s.id)}>{s.label}</button>)}
                 </div>
-              )}
+              </div>
               <div style={{display:"flex",gap:10}}>
                 {shiftModalMode!=="rejectOnly"&&<div style={{flex:1}}><span style={labelSt}>Doğru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>}
                 {shiftModalMode==="rejectOnly"&&<div style={{flex:1}}><span style={labelSt}>Kaç Adet Hatalı?</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>}
@@ -16287,10 +16539,17 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
       </div>
       {recentMachineEntries.length===0&&<div style={standardEmptyStateStyle}>Seçili tezgah için kayıt bulunmuyor.</div>}
       {recentMachineEntries.length>0&&recentMachineEntries.map(e=>{
+        const entryType=String(e.entryType||"production");
         const machineToolQty=Math.max(0,safeNum(e.machineToolQty??e.machineToolChange??0));
-        const isToolChange=String(e.entryType||"")==="tool_change"||(machineToolQty>0&&safeNum(e.correct)===0&&safeNum(e.wrong)===0);
-        const title=isToolChange?`${e.machineToolCode||e.machineToolName||"Takım"} değişimi`:`${e.jobCode||"-"} üretim kaydı`;
-        const detail=isToolChange?`Takım adedi: ${machineToolQty}`:`Doğru ${safeNum(e.correct)} · Hurda ${safeNum(e.wrong)}`;
+        const materialQty=Math.max(0,safeNum(e.materialChangeQty??0));
+        const isToolChange=entryType==="tool_change"||(machineToolQty>0&&safeNum(e.correct)===0&&safeNum(e.wrong)===0);
+        const isMaterialChange=entryType==="material_change";
+        const title=isMaterialChange
+          ? `${e.materialName||"Malzeme"} değişimi`
+          : (isToolChange?`${e.machineToolCode||e.machineToolName||"Takım"} değişimi`:`${e.jobCode||"-"} üretim kaydı`);
+        const detail=isMaterialChange
+          ? [`Lot: ${e.materialLotNo||"-"}`,`Adet: ${materialQty||1}`].join(" · ")
+          : (isToolChange?`Takım adedi: ${machineToolQty}`:`Doğru ${safeNum(e.correct)} · Hurda ${safeNum(e.wrong)}`);
         const stampRaw=e.createdAt||`${e.date||""}T00:00:00`;
         const stampDate=new Date(stampRaw);
         const stampText=Number.isNaN(stampDate.getTime())?(e.date||"--"):new Intl.DateTimeFormat("tr-TR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}).format(stampDate);
@@ -16317,30 +16576,42 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
       </div>
       {todayEntries.length===0&&<div style={standardEmptyStateStyle}>Seçili günde kayıt bulunmuyor.</div>}
       {todayEntries.length>0&&todayEntries.slice(0,5).map(e=>{
+        const entryType=String(e.entryType||"production");
+        const isMaterialChange=entryType==="material_change";
+        const isToolChange=entryType==="tool_change";
         const p=calcPerf(e.correct,e.wrong,e.partSec);
         const machineToolQty=Number(e.machineToolQty??e.machineToolChange??0);
+        const materialQty=Math.max(0,safeNum(e.materialChangeQty??0));
         return (
           <div key={e.id} style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 12px"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:isPhoneEntry?"flex-start":"center",gap:8,flexWrap:"wrap"}}>
               <div style={{minWidth:0}}>
-                <span style={{fontWeight:700,fontSize:13,fontFamily:"monospace",color:C.text,display:"inline-block",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:isPhoneEntry?"normal":"nowrap",wordBreak:"break-word"}}>{e.jobCode}</span>
-                <span style={{fontSize:12,color:C.muted2,marginLeft:isPhoneEntry?0:6,marginTop:isPhoneEntry?3:0,display:isPhoneEntry?"block":"inline"}}>{e.jobName}</span>
+                <span style={{fontWeight:700,fontSize:13,fontFamily:"monospace",color:C.text,display:"inline-block",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:isPhoneEntry?"normal":"nowrap",wordBreak:"break-word"}}>
+                  {isMaterialChange?(e.materialName||"Malzeme Değişimi"):e.jobCode}
+                </span>
+                <span style={{fontSize:12,color:C.muted2,marginLeft:isPhoneEntry?0:6,marginTop:isPhoneEntry?3:0,display:isPhoneEntry?"block":"inline"}}>
+                  {isMaterialChange?`Lot ${e.materialLotNo||"-"} · Adet ${materialQty||1}`:(e.jobName)}
+                </span>
               </div>
               <div style={{display:"flex",gap:5,flexWrap:"wrap"}}><Badge label={e.machine} color={C.accent}/><Badge label={shiftWindowMap[e.shift]?.label||e.shift||"-"} color={C.muted2}/></div>
             </div>
-            <div style={{display:"flex",gap:12,marginTop:7,fontSize:13,flexWrap:"wrap"}}>
+            {!isMaterialChange&&<div style={{display:"flex",gap:12,marginTop:7,fontSize:13,flexWrap:"wrap"}}>
               <span style={{color:C.green,fontWeight:600}}>Doğru: {e.correct}</span>
               <span style={{color:C.red,fontWeight:600}}>Hatalı: {e.wrong}</span>
-              {p&&<span style={{color:C.muted2}}>Maks/gün: {p.max}</span>}
-            </div>
+              {!isToolChange&&p&&<span style={{color:C.muted2}}>Maks/gün: {p.max}</span>}
+            </div>}
             {machineToolQty>0&&<div style={{display:"flex",gap:8,marginTop:7,fontSize:12,color:C.muted2,flexWrap:"wrap"}}>
               <Badge label={"İş Emri: "+((e.machineToolCode||e.machineToolName)?`${e.machineToolCode||e.machineToolName} x${machineToolQty}`:`${machineToolQty}`)} color={C.warn}/>
+            </div>}
+            {isMaterialChange&&<div style={{display:"flex",gap:8,marginTop:7,fontSize:12,color:C.muted2,flexWrap:"wrap"}}>
+              <Badge label={`Malzeme: ${e.materialName||"-"}`} color={C.warn}/>
+              {e.materialLotNo&&<Badge label={`Lot: ${e.materialLotNo}`} color={C.muted2}/>}
             </div>}
             <div style={{marginTop:8,display:"flex",gap:8,flexWrap:"wrap"}}>
               <button onClick={()=>startEdit(e)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,flex:isPhoneEntry?"1 1 140px":"0 0 auto"}}>Düzenle</button>
               <button onClick={()=>removeEntry(e)} style={{...btnSt("danger"),padding:"6px 10px",fontSize:12,flex:isPhoneEntry?"1 1 140px":"0 0 auto"}}>Sil</button>
             </div>
-            {p&&<PerfBar perf={p.perf} small/>}
+            {!isMaterialChange&&!isToolChange&&p&&<PerfBar perf={p.perf} small/>}
           </div>
         );
       })}
@@ -16521,6 +16792,38 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
           </div>
         </div>
       )}
+      {showMaterialModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:isPhoneEntry?10:14}} onClick={()=>setShowMaterialModal(false)}>
+          <div style={{width:"100%",maxWidth:680,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:15}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>Malzeme Değişimi</div>
+            <div style={{display:"grid",gridTemplateColumns:isPhoneEntry?"1fr":"repeat(auto-fit,minmax(220px,1fr))",gap:10}}>
+              <div>
+                <span style={labelSt}>Malzeme Karti</span>
+                <SearchableSelect value={materialDraft.materialId} onChange={v=>setMaterialDraft(p=>({...p,materialId:v}))} placeholder="Kutuphane malzemesi secin" options={materialSelectOptions}/>
+              </div>
+              <div style={{paddingTop:isPhoneEntry?0:22,fontSize:12,color:C.muted2}}>
+                {selectedMaterialCard?`Mevcut stok: ${safeNum(selectedMaterialCard.stock)} Cubuk`:"Malzeme secin"}
+              </div>
+              <div>
+                <span style={labelSt}>Lot No</span>
+                <input style={inputSt} value={materialDraft.lotNo} onChange={e=>setMaterialDraft(p=>({...p,lotNo:e.target.value}))} placeholder="Opsiyonel lot no"/>
+              </div>
+              <div>
+                <span style={labelSt}>Cubuk Adedi</span>
+                <input style={inputSt} type="number" min="1" value={materialDraft.qty} onChange={e=>setMaterialDraft(p=>({...p,qty:e.target.value}))}/>
+              </div>
+              <div style={{gridColumn:isPhoneEntry?"auto":"1 / -1"}}>
+                <span style={labelSt}>Not</span>
+                <input style={inputSt} value={materialDraft.note} onChange={e=>setMaterialDraft(p=>({...p,note:e.target.value}))} placeholder="Opsiyonel açıklama"/>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14,flexWrap:"wrap"}}>
+              <button onClick={()=>setShowMaterialModal(false)} style={{...btnSt("ghost"),padding:"10px 14px"}}>İptal</button>
+              <button onClick={approveMaterialChange} style={{...btnSt("primary"),padding:"10px 14px"}}>Değişimi Onayla</button>
+            </div>
+          </div>
+        </div>
+      )}
       {showToolModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:isPhoneEntry?10:14}} onClick={()=>setShowToolModal(false)}>
           <div style={{width:"100%",maxWidth:680,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:15}} onClick={e=>e.stopPropagation()}>
@@ -16550,9 +16853,15 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:isPhoneEntry?10:14}} onClick={closeShiftModal}>
           <div style={{width:"100%",maxWidth:560,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:15}} onClick={e=>e.stopPropagation()}>
             <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>{shiftModalMode==="rejectOnly"?"Hata Girişi":"Vardiya Sonu"}</div>
-            {shiftModalMode==="shiftEnd"&&<div style={{marginBottom:10,padding:"10px 12px",borderRadius:10,border:`1px solid ${C.border}`,background:C.surface,fontSize:12,color:C.muted2}}>
-              Kayıt şu vardiyaya işlenecek: <strong style={{color:C.text}}>{selectedShiftMeta.label}</strong>{selectedShiftMeta.time?` (${selectedShiftMeta.time})`:""}
-            </div>}
+            <div style={{marginBottom:10,padding:"10px 12px",borderRadius:10,border:`1px solid ${C.border}`,background:C.surface,fontSize:12,color:C.muted2}}>
+              Kayıt şu vardiyaya işlenecek: <strong style={{color:C.text}}>{selectedModalShiftMeta.label}</strong>{selectedModalShiftMeta.time?` (${selectedModalShiftMeta.time})`:""}
+            </div>
+            <div style={{marginBottom:12}}>
+              <span style={labelSt}>Vardiya</span>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:8}}>
+                {shiftOptions.map(s=><button key={s.id} onClick={()=>setShiftModalShiftId(s.id)} style={shiftButtonStyle(modalShiftId===s.id)}>{s.label}</button>)}
+              </div>
+            </div>
             <div style={{display:"flex",gap:10,flexDirection:isPhoneEntry?"column":"row"}}>
               {shiftModalMode!=="rejectOnly"&&<div style={{flex:1}}><span style={labelSt}>Doğru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>}
               {shiftModalMode==="rejectOnly"&&<div style={{flex:1}}><span style={labelSt}>Hatalı Adet</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>}
