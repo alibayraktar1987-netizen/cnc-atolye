@@ -507,6 +507,52 @@ function hmToMinute(value){
   if(!Number.isFinite(hh)||!Number.isFinite(mm)) return null;
   return (hh*60)+mm;
 }
+function shiftDurationSec(row,defaultHours=8){
+  const startMin=hmToMinute(row?.start);
+  const endMin=hmToMinute(row?.end);
+  if(startMin===null||endMin===null||startMin===endMin){
+    return Math.max(1,Math.round(defaultHours*3600));
+  }
+  if(startMin<endMin){
+    return Math.max(60,(endMin-startMin)*60);
+  }
+  return Math.max(60,((1440-startMin)+endMin)*60);
+}
+function shiftBoundsForMoment(now,row){
+  const startMin=hmToMinute(row?.start);
+  const endMin=hmToMinute(row?.end);
+  const base=new Date(now);
+  if(Number.isNaN(base.getTime())){
+    const fallbackNow=new Date();
+    return shiftBoundsForMoment(fallbackNow,row);
+  }
+  base.setHours(0,0,0,0);
+  const start=new Date(base);
+  const end=new Date(base);
+  start.setMinutes(startMin===null?360:startMin);
+  end.setMinutes(endMin===null?840:endMin);
+  const s=startMin===null?360:startMin;
+  const e=endMin===null?840:endMin;
+  const nowMin=now.getHours()*60+now.getMinutes();
+  if(s===e){
+    end.setTime(start.getTime()+(8*3600*1000));
+  }else if(s<e){
+    if(nowMin<e&&nowMin<s){
+      start.setDate(start.getDate()-1);
+      end.setDate(end.getDate()-1);
+    }
+  }else{
+    if(nowMin<e){
+      start.setDate(start.getDate()-1);
+    }else{
+      end.setDate(end.getDate()+1);
+    }
+  }
+  if(end<=start){
+    end.setTime(start.getTime()+Math.max(3600,shiftDurationSec(row))*1000);
+  }
+  return {start,end};
+}
 function resolveShiftIdByMinute(shiftWindows,minute){
   const rows=(Array.isArray(shiftWindows)&&shiftWindows.length>0)?shiftWindows:DEFAULT_SHIFT_WINDOWS;
   const fallbackId=rows[0]?.id||DEFAULT_SHIFT_WINDOWS[0]?.id||"shift_1";
@@ -2882,6 +2928,86 @@ function getFileSource(file){
   const raw=file.data||file.url||file.href||file.src||"";
   return typeof raw==="string"?raw.trim():"";
 }
+function normalizeAttachedFileEntry(file,idx=0,prefix="file"){
+  if(!file||typeof file!=="object") return null;
+  const data=typeof file.data==="string"?file.data.trim():"";
+  const url=typeof file.url==="string"?file.url.trim():"";
+  const href=typeof file.href==="string"?file.href.trim():"";
+  const src=typeof file.src==="string"?file.src.trim():"";
+  const name=String(file.name||"").trim();
+  const type=String(file.type||"").trim();
+  const uploadedAt=String(file.uploadedAt||file.createdAt||new Date().toISOString()).trim();
+  if(!name&&!data&&!url&&!href&&!src) return null;
+  const idPrefix=String(prefix||"file").trim()||"file";
+  return {
+    id:String(file.id||`${idPrefix}_${Date.now().toString(36)}_${idx}`),
+    name:name||`Dosya ${idx+1}`,
+    size:Math.max(0,Number(file.size)||0),
+    type,
+    data,
+    url,
+    href,
+    src,
+    uploadedAt,
+  };
+}
+function normalizeAttachedFiles(files,{prefix="file"}={}){
+  const seen=new Set();
+  return (Array.isArray(files)?files:[])
+    .map((file,idx)=>normalizeAttachedFileEntry(file,idx,prefix))
+    .filter(file=>{
+      if(!file) return false;
+      const key=[
+        String(file.name||"").trim().toLowerCase(),
+        Math.max(0,Number(file.size)||0),
+        String(file.type||"").trim().toLowerCase(),
+        getFileSource(file),
+      ].join("|");
+      if(seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+function normalizeWorkOrderFileEntry(file,idx=0){
+  return normalizeAttachedFileEntry(file,idx,"wof");
+}
+function normalizeWorkOrderFiles(files){
+  return normalizeAttachedFiles(files,{prefix:"wof"});
+}
+function resolveLinkedPartRecord(record,parts=[]){
+  if(!(record&&typeof record==="object")) return null;
+  const pool=Array.isArray(parts)?parts:[];
+  const partId=String(record.partId||"").trim();
+  const partNoKey=String(record.partNo||"").trim().toUpperCase();
+  if(partId){
+    const byId=pool.find(part=>String(part?.id||"").trim()===partId);
+    if(byId) return byId;
+  }
+  if(partNoKey){
+    return pool.find(part=>String(part?.partNo||"").trim().toUpperCase()===partNoKey)||null;
+  }
+  return null;
+}
+function getPartDocumentFiles(part){
+  if(!(part&&typeof part==="object")) return [];
+  const docs=(Array.isArray(part.documents)&&part.documents.length>0)
+    ? part.documents
+    : (part.drawingFile?[{...part.drawingFile,id:`legacy_${part.id||part.partNo||Date.now().toString(36)}`}]:[]);
+  return normalizeWorkOrderFiles(docs);
+}
+function getOrderDocumentFiles(order,parts=[]){
+  if(!(order&&typeof order==="object")) return [];
+  const orderFiles=normalizeWorkOrderFiles(Array.isArray(order.files)?order.files:[]);
+  if(orderFiles.length>0) return orderFiles;
+  const isAutoSalesOrder=String(order.sourceType||"").trim().toLowerCase()==="sales_auto" || Boolean(order.sourceSalesOrderId);
+  if(!isAutoSalesOrder){
+    return normalizeWorkOrderFiles(Array.isArray(order.partSnapshot?.documents)?order.partSnapshot.documents:[]);
+  }
+  const linkedPart=resolveLinkedPartRecord(order,parts);
+  const partFiles=getPartDocumentFiles(linkedPart);
+  if(partFiles.length>0) return partFiles;
+  return normalizeWorkOrderFiles(Array.isArray(order.partSnapshot?.documents)?order.partSnapshot.documents:[]);
+}
 function canFilePreview(file) {
   if(!getFileSource(file)) return false;
   return isImageFile(file) || isPdfFile(file) || isStepFile(file);
@@ -4533,6 +4659,21 @@ function AuthScreen({onLogin,logoSrc=LOGO_SRC,themeMode="light",onThemeToggle}) 
 function NavIcon({name,size=18}) {
   const st={width:size,height:size,display:"block"};
   const p={fill:"none",stroke:"currentColor",strokeWidth:"1.9",strokeLinecap:"round",strokeLinejoin:"round"};
+  if(name==="chevron_left") return (
+    <svg viewBox="0 0 24 24" style={st}><path {...p} d="M15 6l-6 6 6 6"/></svg>
+  );
+  if(name==="chevron_right") return (
+    <svg viewBox="0 0 24 24" style={st}><path {...p} d="M9 6l6 6-6 6"/></svg>
+  );
+  if(name==="cards") return (
+    <svg viewBox="0 0 24 24" style={st}><rect {...p} x="4" y="4" width="6" height="6" rx="1.2"/><rect {...p} x="14" y="4" width="6" height="6" rx="1.2"/><rect {...p} x="4" y="14" width="6" height="6" rx="1.2"/><rect {...p} x="14" y="14" width="6" height="6" rx="1.2"/></svg>
+  );
+  if(name==="compact") return (
+    <svg viewBox="0 0 24 24" style={st}><path {...p} d="M5 7h14M5 12h14M5 17h14"/></svg>
+  );
+  if(name==="table") return (
+    <svg viewBox="0 0 24 24" style={st}><rect {...p} x="4" y="5" width="16" height="14" rx="1.5"/><path {...p} d="M4 10h16M10 5v14M16 5v14"/></svg>
+  );
   if(name==="giris") return (
     <svg viewBox="0 0 24 24" style={st}><path {...p} d="M8 4h8l4 4v12H8z"/><path {...p} d="M16 4v4h4"/><path {...p} d="M10 13h6M10 17h4"/></svg>
   );
@@ -9973,26 +10114,7 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
     });
   }
   function normalizePartDocumentEntry(doc,idx=0){
-    if(!doc||typeof doc!=="object") return null;
-    const data=typeof doc.data==="string"?doc.data.trim():"";
-    const url=typeof doc.url==="string"?doc.url.trim():"";
-    const href=typeof doc.href==="string"?doc.href.trim():"";
-    const src=typeof doc.src==="string"?doc.src.trim():"";
-    const name=String(doc.name||"").trim();
-    const type=String(doc.type||"").trim();
-    const uploadedAt=String(doc.uploadedAt||doc.createdAt||new Date().toISOString()).trim();
-    if(!name&&!data&&!url&&!href&&!src) return null;
-    return {
-      id:String(doc.id||`doc_${Date.now().toString(36)}_${idx}`),
-      name:name||`Dosya ${idx+1}`,
-      size:Math.max(0,Number(doc.size)||0),
-      type,
-      data,
-      url,
-      href,
-      src,
-      uploadedAt,
-    };
+    return normalizeAttachedFileEntry(doc,idx,"doc");
   }
   function normalizePartDocuments(docs){
     return (Array.isArray(docs)?docs:[])
@@ -12565,9 +12687,14 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     const normalizedOrderLines=(order.lines||[]).map(l=>normalizeSalesLine(l,{dueDateFallback:order.dueDate||todayStr()}));
     for(const line of normalizedOrderLines){
       const code=nextCode("IE",seed,/^IE-(\d+)$/);
+      const linkedPart=resolvePartFromLine(line);
       const lineSnapshot=(line.partSnapshot&&typeof line.partSnapshot==="object")
         ? line.partSnapshot
-        : makePartSnapshot(resolvePartFromLine(line));
+        : makePartSnapshot(linkedPart);
+      const workOrderFiles=normalizeWorkOrderFiles([
+        ...getPartDocumentFiles(linkedPart),
+        ...((lineSnapshot&&Array.isArray(lineSnapshot.documents))?lineSnapshot.documents:[]),
+      ]);
       const woPayload={
         code,
         name:line.partName||line.partNo||order.code,
@@ -12585,7 +12712,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
         partSec:Math.max(1,safeNum(line.partSec)||60),
         machines:[line.machine||machines[0]||"CNC-1"],
         notes:`Siparis ${order.code} otomatik olusturma`,
-        files:[],
+        files:workOrderFiles,
         status:"planned",
         sourceType:"sales_auto",
         sourceSalesOrderId:order.id,
@@ -14184,6 +14311,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
   const [plans,setPlans]=useState([]);
   const [customers,setCustomers]=useState([]);
   const [materials,setMaterials]=useState([]);
+  const [parts,setParts]=useState([]);
   const [toolMovements,setToolMovements]=useState([]);
   const [entries,setEntries]=useState([]);
   const [workOrderTemplate,setWorkOrderTemplate]=useState(DEFAULT_QUOTE_TEMPLATE);
@@ -14234,12 +14362,13 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
   };
 
   const load=useCallback(async()=>{
-    const [o,p,m,c,ml,en,templateDoc,brandingDoc]=await Promise.all([
+    const [o,p,m,c,ml,partRows,en,templateDoc,brandingDoc]=await Promise.all([
       window.DB.getAll("orders"),
       window.DB.getAll("plans"),
       window.DB.getAll("toolMovements"),
       window.DB.getAll("customers"),
       window.DB.getAll("materials"),
+      window.DB.getAll("parts"),
       window.DB.getAll("entries"),
       window.DB.getDoc("config","quoteTemplate"),
       window.DB.getDoc("config","branding"),
@@ -14249,6 +14378,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
     setToolMovements(m.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
     setCustomers(c.sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
     setMaterials(ml.sort((a,b)=>(a.name||"").localeCompare(b.name||"","tr")));
+    setParts((partRows||[]).sort((a,b)=>(String(a.partNo||a.name||"")).localeCompare(String(b.partNo||b.name||""),"tr")));
     setEntries(en.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")));
     setWorkOrderTemplate(normalizeQuoteTemplate(templateDoc||{}));
     setWorkOrderBrandingLogo(typeof brandingDoc?.logo==="string"?brandingDoc.logo:"");
@@ -14351,6 +14481,106 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
     const names=resolveWorkOrderMachineNames(order);
     return names.length>0?names.join(", "):"-";
   }
+  const normalizeWorkOrderPartKey=value=>String(value||"").trim().toUpperCase();
+  function buildWorkOrderPartSnapshot(part){
+    if(!part) return null;
+    const routeOps=(Array.isArray(part.routingOps)?part.routingOps:[]).map(op=>({
+      id:op.id||"",
+      operationTypeId:op.operationTypeId||"",
+      operationCode:op.operationCode||"",
+      operationName:op.operationName||op.operation||"",
+      machine:op.machine||"",
+      setupSec:Math.max(0,safeNum(op.setupSec)),
+      cycleSec:Math.max(0,safeNum(op.cycleSec)),
+      ncProgram:op.ncProgram||"",
+      tooling:op.tooling||"",
+    }));
+    return {
+      partId:part.id||"",
+      partNo:normalizeWorkOrderPartKey(part.partNo||""),
+      partName:String(part.name||"").trim(),
+      revision:String(part.revision||"A").trim().toUpperCase()||"A",
+      customerPartCode:String(part.customerPartCode||"").trim().toUpperCase(),
+      customerId:String(part.customerId||"").trim(),
+      customerName:String(part.customerName||part.companyName||"").trim(),
+      material:String(part.material||"").trim(),
+      setupSec:Math.max(0,safeNum(part.setupSec)),
+      cycleSec:Math.max(1,safeNum(part.cycleSec)||60),
+      partDiameterMm:Math.max(0,safeNum(part.partDiameterMm)),
+      partLengthMm:Math.max(0,safeNum(part.partLengthMm)),
+      barLengthMm:Math.max(0,safeNum(part.barLengthMm)),
+      unitCost:Math.max(0,safeNum(part.unitCost)),
+      costBreakdown:{
+        materialCost:Math.max(0,safeNum(part.costBreakdown?.materialCost)),
+        laborCost:Math.max(0,safeNum(part.costBreakdown?.laborCost)),
+        machineCost:Math.max(0,safeNum(part.costBreakdown?.machineCost)),
+      },
+      ncProgramVersion:String(part.ncProgramVersion||"").trim().toUpperCase(),
+      routingOps:routeOps,
+      sourceUpdatedAt:part.updatedAt||part.createdAt||"",
+    };
+  }
+  const partCatalogOptions=useMemo(()=>[
+    {value:"__clear__",label:"Parca secimini temizle"},
+    ...parts.map(part=>({
+      value:String(part.id||part.partNo||""),
+      label:[
+        String(part.partNo||"-").trim()||"-",
+        String(part.name||"Adsiz parca").trim()||"Adsiz parca",
+        part.revision?`Rev.${String(part.revision).trim().toUpperCase()}`:"",
+      ].filter(Boolean).join(" · "),
+    })),
+  ],[parts]);
+  const selectedFormPart=useMemo(()=>{
+    const partId=String(form.partId||"").trim();
+    if(partId){
+      const byId=parts.find(part=>String(part?.id||"").trim()===partId);
+      if(byId) return byId;
+    }
+    const partNoKey=normalizeWorkOrderPartKey(form.partNo||"");
+    if(partNoKey){
+      return parts.find(part=>normalizeWorkOrderPartKey(part?.partNo||"")===partNoKey)||null;
+    }
+    return null;
+  },[form.partId,form.partNo,parts]);
+  const selectedFormPartId=String(selectedFormPart?.id||selectedFormPart?.partNo||"");
+  function applyPartToWorkOrderForm(partId){
+    if(String(partId||"").trim()==="__clear__") partId="";
+    const selected=parts.find(part=>String(part?.id||"").trim()===String(partId||"").trim())
+      || parts.find(part=>normalizeWorkOrderPartKey(part?.partNo||"")===normalizeWorkOrderPartKey(partId||""))
+      || null;
+    if(!selected){
+      setForm(prev=>({
+        ...prev,
+        partId:"",
+        partNo:"",
+        name:"",
+        revision:"A",
+        customerPartCode:"",
+        partSnapshot:null,
+        partSec:"",
+      }));
+      return;
+    }
+    setForm(prev=>{
+      const nextFiles=(Array.isArray(prev.files)&&prev.files.length>0)
+        ? normalizeWorkOrderFiles(prev.files)
+        : getPartDocumentFiles(selected);
+      return {
+        ...prev,
+        partId:selected.id||"",
+        partNo:normalizeWorkOrderPartKey(selected.partNo||prev.partNo||""),
+        name:String(selected.name||prev.name||"").trim(),
+        revision:String(selected.revision||prev.revision||"A").trim().toUpperCase()||"A",
+        customerPartCode:String(selected.customerPartCode||prev.customerPartCode||"").trim().toUpperCase(),
+        partSnapshot:buildWorkOrderPartSnapshot(selected),
+        customerId:selected.customerId||prev.customerId||"",
+        material:String(selected.material||prev.material||"").trim(),
+        partSec:String(Math.max(1,safeNum(selected.cycleSec)||safeNum(prev.partSec)||60)),
+        files:nextFiles,
+      };
+    });
+  }
   useEffect(()=>{
     if(!viewOrder){ setViewOrderMoves([]); return; }
     const stockMoves=toolMovements.filter(m=>(m.orderId&&m.orderId===viewOrder.id)||(!m.orderId&&m.orderCode===viewOrder.code));
@@ -14361,6 +14591,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
   const fv=(k,v)=>setForm(p=>({...p,[k]:v}));
   const toggleMachine=m=>fv("machines",form.machines.includes(m)?form.machines.filter(x=>x!==m):[...form.machines,m]);
   const canPreview=f=>canFilePreview(f);
+  const viewOrderFiles=getOrderDocumentFiles(viewOrder,parts);
   function openWorkOrderView(order){
     setPreviewFile(null);
     setViewOrder(order);
@@ -14377,7 +14608,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
       const b64=await fileToBase64(file);
       results.push({name:file.name,size:file.size,type:file.type,data:b64});
     }
-    fv("files",[...form.files,...results]);
+    fv("files",normalizeWorkOrderFiles([...(form.files||[]),...results]));
     setUploading(false);
   }
 
@@ -14406,7 +14637,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
       partSec:Number(form.partSec),
       machines:form.machines,
       notes:form.notes,
-      files:form.files,
+      files:normalizeWorkOrderFiles(form.files),
       sourceType:form.sourceType||"manual",
       status:editId?(form.status||"planned"):"planned",
       updatedAt:new Date().toISOString(),
@@ -14485,7 +14716,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
       partSec:Math.max(1,safeNum(order.partSec)||1),
       machines:[...(order.machines||[])],
       notes:[(order.notes||""),`Kopya: ${order.code||"-"}`].filter(Boolean).join(" · "),
-      files:[...(order.files||[])],
+      files:normalizeWorkOrderFiles(getOrderDocumentFiles(order,parts)),
       sourceType:order.sourceType||"manual",
       status:"planned",
       copiedFromOrderId:order.id||"",
@@ -14570,11 +14801,12 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
       return <td key={col.id} style={{padding:"10px 12px",textAlign:"center",fontSize:11,color:C.muted2,fontWeight:700}}>{rowNo}</td>;
     }
     if(col.id==="work_order"){
+      const orderFiles=getOrderDocumentFiles(o,parts);
       return (
         <td key={col.id} style={{padding:"10px 12px",minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
             <span style={{fontWeight:800,fontSize:13,fontFamily:"monospace",color:C.text,whiteSpace:"nowrap"}}>{o.code}</span>
-            {(o.files||[]).length>0&&<Badge label={`${o.files.length} dosya`} color={C.purple}/>}
+            {orderFiles.length>0&&<Badge label={`${orderFiles.length} dosya`} color={C.purple}/>}
           </div>
           <div style={{fontSize:12,color:C.muted2,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.name||"-"}</div>
           <div style={{fontSize:11,color:C.muted2,marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
@@ -14616,7 +14848,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
           <div style={{display:"flex",gap:6,justifyContent:"flex-end",alignItems:"center",flexWrap:"wrap"}}>
             <button onClick={()=>openWorkOrderView(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Goruntule</button>
             <button onClick={()=>printWorkOrderForm(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Form</button>
-            <button onClick={()=>{setForm({code:o.code,name:o.name,partId:o.partId||"",partNo:o.partNo||"",revision:o.revision||"A",customerPartCode:o.customerPartCode||"",partSnapshot:(o.partSnapshot&&typeof o.partSnapshot==="object")?o.partSnapshot:null,customerId:o.customerId||"",material:o.material||"",qty:String(o.qty??"1"),dueDate:o.dueDate||todayStr(),priority:o.priority||"normal",dependencies:o.dependencies||[],partSec:o.partSec,machines:o.machines||[],notes:o.notes||"",files:o.files||[],status:o.status||"planned",sourceType:o.sourceType||"manual"});setEditId(o.id);setShowForm(true);}} style={{...btnSt(),padding:"5px 8px",fontSize:11}}>Duzenle</button>
+            <button onClick={()=>{setForm({code:o.code,name:o.name,partId:o.partId||"",partNo:o.partNo||"",revision:o.revision||"A",customerPartCode:o.customerPartCode||"",partSnapshot:(o.partSnapshot&&typeof o.partSnapshot==="object")?o.partSnapshot:null,customerId:o.customerId||"",material:o.material||"",qty:String(o.qty??"1"),dueDate:o.dueDate||todayStr(),priority:o.priority||"normal",dependencies:o.dependencies||[],partSec:o.partSec,machines:o.machines||[],notes:o.notes||"",files:getOrderDocumentFiles(o,parts),status:o.status||"planned",sourceType:o.sourceType||"manual"});setEditId(o.id);setShowForm(true);}} style={{...btnSt(),padding:"5px 8px",fontSize:11}}>Duzenle</button>
             <button onClick={()=>duplicateWorkOrder(o)} style={{...btnSt("ghost"),padding:"5px 8px",fontSize:11}}>Kopyala</button>
             <select style={{...inputSt,width:130,padding:"5px 8px",fontSize:11}} value={o.status||"passive"} onChange={e=>setOrderStatus(o,e.target.value)}>
               {ORDER_STATUS_OPTIONS.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
@@ -14791,7 +15023,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
       ["Parca Olculeri",`Cap ${partDiameterText} mm · Boy ${partLengthText} mm · Cubuk ${barLengthText} mm`],
       ["NC Program Rev",snapshot?.ncProgramVersion||"-"],
     ];
-    const documents=(order.files||[]).map(file=>escapePrintHtml(file.name||"-"));
+    const documents=getOrderDocumentFiles(order,parts).map(file=>escapePrintHtml(file.name||"-"));
     const opRowsHtml=operations.map((op,idx)=>`
       <tr>
         <td>${escapePrintHtml(op.seq||`OP${idx+1}`)}</td>
@@ -15240,10 +15472,10 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
         </div>
 
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:12}}>
-          <div style={{fontSize:11,color:C.muted2,letterSpacing:.8,textTransform:"uppercase",marginBottom:8}}>Teknik Dosyalar ({(viewOrder.files||[]).length})</div>
-          {(viewOrder.files||[]).length===0
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:.8,textTransform:"uppercase",marginBottom:8}}>Teknik Dosyalar ({viewOrderFiles.length})</div>
+          {viewOrderFiles.length===0
             ? <div style={{fontSize:13,color:C.muted2,textAlign:"center",padding:18,border:`1px dashed ${C.border}`,borderRadius:10,background:C.surface}}>Dosya yuklenmemis.</div>
-            : (viewOrder.files||[]).map((f,i)=>(
+            : viewOrderFiles.map((f,i)=>(
               <div key={i} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px",marginBottom:7,display:"grid",gridTemplateColumns:"32px 1fr auto",alignItems:"center",gap:10}}>
                 <div style={{fontSize:20,lineHeight:1}}>{getFileIcon(f.name)}</div>
                 <div style={{minWidth:0}}>
@@ -15270,10 +15502,26 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
       <div style={{color:C.muted2,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:16}}>{editId?"İş Emri Düzenle":"Yeni İş Emri"}</div>
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
         <div><span style={labelSt}>İş Emri Kodu *</span><input style={{...inputSt,background:editId?C.surface:C.card,color:editId?C.text:C.accent,fontWeight:700}} placeholder="IE-001" value={form.code} readOnly={!editId} onChange={e=>fv("code",e.target.value.toUpperCase())}/></div>
-        <div><span style={labelSt}>Parça Adı *</span><input style={inputSt} placeholder="Parça adı" value={form.name} onChange={e=>fv("name",e.target.value)}/></div>
+        <div>
+          <span style={labelSt}>Parça Adı *</span>
+          <SearchableSelect
+            value={selectedFormPartId}
+            onChange={applyPartToWorkOrderForm}
+            placeholder="Parça seçin"
+            options={partCatalogOptions}
+            searchPlaceholder="Parça adı veya kod ara..."
+            noResultsText="Parça bulunamadı"
+          />
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:8}}>
+            <Badge label={`Parça Kodu: ${form.partNo||"-"}`} color={selectedFormPart?C.accent:C.muted2}/>
+            <Badge label={`Müşteri Kodu: ${form.customerPartCode||"-"}`} color={selectedFormPart?C.green:C.muted2}/>
+            <Badge label={`Rev: ${form.revision||"A"}`} color={selectedFormPart?C.warn:C.muted2}/>
+          </div>
+          {(selectedFormPart||form.name)&&<div style={{fontSize:11,color:C.muted2,marginTop:6}}>{form.name||selectedFormPart?.name||"-"}{(selectedFormPart?.material||form.material)?` · ${selectedFormPart?.material||form.material}`:""}{selectedFormPart?.cycleSec?` · Cevrim ${fmtSec(selectedFormPart.cycleSec)}`:""}</div>}
+        </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-          <div><span style={labelSt}>Parca No</span><input style={inputSt} placeholder="PRT-001" value={form.partNo||""} onChange={e=>fv("partNo",e.target.value)}/></div>
-          <div><span style={labelSt}>Revizyon</span><input style={inputSt} placeholder="A" value={form.revision||"A"} onChange={e=>fv("revision",e.target.value)}/></div>
+          <div><span style={labelSt}>Parca No</span><input style={{...inputSt,background:C.surface,color:C.text,fontWeight:700}} placeholder="PRT-001" value={form.partNo||""} readOnly/></div>
+          <div><span style={labelSt}>Revizyon</span><input style={{...inputSt,background:C.surface,color:C.text,fontWeight:700}} placeholder="A" value={form.revision||"A"} readOnly/></div>
           <div><span style={labelSt}>Miktar</span><input style={inputSt} type="number" min="0" value={form.qty||"1"} onChange={e=>fv("qty",e.target.value)}/></div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
@@ -15452,6 +15700,7 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
 // ============================================================
 function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const [orders,setOrders]=useState([]);
+  const [parts,setParts]=useState([]);
   const [tools,setTools]=useState([]);
   const [materials,setMaterials]=useState([]);
   const [plans,setPlans]=useState([]);
@@ -15503,8 +15752,9 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   });
 
   useEffect(()=>{
-    Promise.all([window.DB.getAll("orders"),window.DB.getAll("toolStock"),window.DB.getAll("materials"),window.DB.getAll("plans"),window.DB.getAll("machineTelemetryMock")]).then(([o,t,m,p,tel])=>{
+    Promise.all([window.DB.getAll("orders"),window.DB.getAll("parts"),window.DB.getAll("toolStock"),window.DB.getAll("materials"),window.DB.getAll("plans"),window.DB.getAll("machineTelemetryMock")]).then(([o,partRows,t,m,p,tel])=>{
       setOrders(o.filter(x=>isOpenOrderStatus(x.status)));
+      setParts((partRows||[]).sort((a,b)=>(String(a.partNo||a.name||"")).localeCompare(String(b.partNo||b.name||""),"tr")));
       setTools(t);
       setMaterials((m||[]).sort((a,b)=>(String(a.name||"")).localeCompare(String(b.name||""),"tr")));
       setPlans(p||[]);
@@ -16137,9 +16387,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   }
 
   const machineToolPicked=tools.find(t=>t.id===form.machineToolId);
-  const selectedOrderFiles=Array.isArray(form.selectedOrder?.files)
-    ? form.selectedOrder.files.filter(f=>f&&(f.name||getFileSource(f)))
-    : [];
+  const selectedOrderFiles=getOrderDocumentFiles(form.selectedOrder,parts);
   const shiftWindowMap=useMemo(()=>{
     const map={};
     (kioskSettings.shiftWindows||[]).forEach(row=>{
@@ -16615,6 +16863,25 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
   const cycleDeviationThresholdSec=Math.max(1,safeNum(kioskSettings.cycleDeviationThresholdSec)||DEFAULT_KIOSK_SETTINGS.cycleDeviationThresholdSec);
   const cycleDeviationExceeded=cycleDeviationAbsSec>=cycleDeviationThresholdSec;
   const expectedQty=selectedOrderQty>0?selectedOrderQty:(producedQty+remainingQty);
+  const shiftReferenceNow=(()=>{
+    if(selectedDateKey<currentDateKey){
+      const ref=parseYmdLocal(selectedDateKey);
+      ref.setHours(23,59,59,999);
+      return ref;
+    }
+    if(telemetryClockFresh&&typeof machineTelemetry?.machineLocalTime==="string"){
+      const ref=new Date(machineTelemetry.machineLocalTime);
+      if(!Number.isNaN(ref.getTime())) return ref;
+    }
+    return new Date();
+  })();
+  const selectedShiftBounds=shiftBoundsForMoment(shiftReferenceNow,fallbackShiftRow);
+  const selectedShiftTotalSec=Math.max(60,Math.floor((selectedShiftBounds.end.getTime()-selectedShiftBounds.start.getTime())/1000)||shiftDurationSec(fallbackShiftRow));
+  let selectedShiftElapsedSec=Math.max(0,Math.min(selectedShiftTotalSec,Math.floor((shiftReferenceNow.getTime()-selectedShiftBounds.start.getTime())/1000)));
+  if(selectedDateKey<currentDateKey) selectedShiftElapsedSec=selectedShiftTotalSec;
+  const shiftExpectedQty=hasPlannedCycle?Math.max(0,Math.floor(selectedShiftElapsedSec/Math.max(1,cycleExpectedSec))):0;
+  const shiftExpectedQtyLabel=hasPlannedCycle?String(shiftExpectedQty):"-";
+  const shiftCapacityQtyLabel=hasPlannedCycle?String(Math.max(0,Math.floor(selectedShiftTotalSec/Math.max(1,cycleExpectedSec)))):"-";
   const behindQty=Math.max(0,expectedQty-producedQty);
   const goalPct=selectedOrderQty>0?Math.max(0,Math.min(999,Math.round((producedQty/selectedOrderQty)*100))):0;
   const utilizationPct=Math.max(0,Math.min(100,Math.round(safeNum(machineTelemetry?.utilizationPct)||safeNum(machineTelemetry?.utilization)||progressPct)));
@@ -16870,6 +17137,17 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               <div style={{padding:"24px 20px",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",gap:8}}>
                 <div style={{fontSize:52,color:"#667790",fontWeight:600,textAlign:"center"}}>Beklenen Üretim</div>
                 <div style={{fontSize:134,color:"#65758d",fontWeight:800,lineHeight:.95}}>{expectedQty||"-"}</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8,width:"100%",maxWidth:420,marginTop:8}}>
+                  <div style={{background:"#f7f9fd",border:"1px solid #dce3ed",borderRadius:12,padding:"10px 12px",textAlign:"center"}}>
+                    <div style={{fontSize:11,color:"#8594aa",fontWeight:800,letterSpacing:.6,textTransform:"uppercase"}}>Toplam Beklenen</div>
+                    <div style={{fontSize:28,color:"#53647c",fontWeight:900,marginTop:4}}>{expectedQty||"-"}</div>
+                  </div>
+                  <div style={{background:"#f7f9fd",border:"1px solid #dce3ed",borderRadius:12,padding:"10px 12px",textAlign:"center"}}>
+                    <div style={{fontSize:11,color:"#8594aa",fontWeight:800,letterSpacing:.6,textTransform:"uppercase"}}>Vardiya Beklenen</div>
+                    <div style={{fontSize:28,color:"#53647c",fontWeight:900,marginTop:4}}>{shiftExpectedQtyLabel}</div>
+                    <div style={{fontSize:11,color:"#8f9bb0",marginTop:2}}>Kapasite {shiftCapacityQtyLabel}</div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -17235,6 +17513,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
           <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
             <span style={{...infoPillStyle,background:C.card,border:`1px solid ${C.border}`,color:C.text}}>Çevrim: {fmtSec(form.selectedOrder.partSec)}</span>
             <span style={{...infoPillStyle,background:C.card,border:`1px solid ${C.border}`,color:C.text}}>Hedef: {selectedOrderQty||"-"}</span>
+            <span style={{...infoPillStyle,background:C.card,border:`1px solid ${C.border}`,color:C.text}}>Vardiya Beklenen: {shiftExpectedQtyLabel}</span>
             {form.selectedOrder?.dueDate&&<span style={{...infoPillStyle,background:C.card,border:`1px solid ${C.border}`,color:C.text}}>Termin: {form.selectedOrder.dueDate}</span>}
           </div>
         </div>
@@ -17265,6 +17544,8 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
           <div style={{...standardProgressFillStyle,width:`${selectedOrderQty?progressPct:0}%`}}/>
         </div>
         <div style={standardProgressStatGridStyle}>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Toplam Beklenen</div><div style={{fontSize:16,fontWeight:800,color:C.text,marginTop:4}}>{expectedQty||"-"}</div></div>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Vardiya Beklenen</div><div style={{fontSize:16,fontWeight:800,color:C.text,marginTop:4}}>{shiftExpectedQtyLabel}</div></div>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Hedef</div><div style={{fontSize:16,fontWeight:800,color:C.text,marginTop:4}}>{selectedOrderQty||"-"}</div></div>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Tamamlanan</div><div style={{fontSize:16,fontWeight:800,color:C.text,marginTop:4}}>{producedQty}</div></div>
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 11px"}}><div style={{fontSize:10,color:C.muted2,textTransform:"uppercase",letterSpacing:.7}}>Kalan</div><div style={{fontSize:16,fontWeight:800,color:C.text,marginTop:4}}>{selectedOrderQty?remainingQty:"-"}</div></div>
@@ -20157,6 +20438,42 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     const st=String(order?.status||"").toLowerCase();
     return !["completed","cancelled","passive","liquidation","shipped"].includes(st);
   }
+  const normalizePlanningPartNo=partNo=>String(partNo||"").trim().toUpperCase();
+  const planningOrderById={};
+  const planningOrderByCode={};
+  orders.forEach(order=>{
+    const id=String(order?.id||"").trim();
+    const code=String(order?.code||"").trim().toUpperCase();
+    if(id) planningOrderById[id]=order;
+    if(code&&!planningOrderByCode[code]) planningOrderByCode[code]=order;
+  });
+  function resolvePlanGroupOrderKey(plan){
+    const orderId=String(plan?.orderId||"").trim();
+    if(orderId&&planningOrderById[orderId]) return `id:${orderId}`;
+    const orderCode=String(plan?.orderCode||"").trim().toUpperCase();
+    if(orderCode){
+      const matched=planningOrderByCode[orderCode]||null;
+      if(matched?.id) return `id:${matched.id}`;
+      return `code:${orderCode}`;
+    }
+    if(orderId) return `id:${orderId}`;
+    return "";
+  }
+  function resolvePlanGroupPartNo(plan){
+    const direct=normalizePlanningPartNo(plan?.orderPartNo||plan?.partNo||"");
+    if(direct) return direct;
+    const orderId=String(plan?.orderId||"").trim();
+    if(orderId){
+      const byIdPartNo=normalizePlanningPartNo(planningOrderById[orderId]?.partNo||"");
+      if(byIdPartNo) return byIdPartNo;
+    }
+    const orderCode=String(plan?.orderCode||"").trim().toUpperCase();
+    if(orderCode){
+      const byCodePartNo=normalizePlanningPartNo(planningOrderByCode[orderCode]?.partNo||"");
+      if(byCodePartNo) return byCodePartNo;
+    }
+    return "";
+  }
   const priorityWeight={urgent:0,acil:0,normal:1,low:2,dusuk:2};
   const ordersToPlan=[...orders]
     .filter(o=>isOrderIncomplete(o))
@@ -20238,6 +20555,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       orderId:order.id,
       orderCode:order.code||"",
       orderName:order.name||"",
+      orderPartNo:normalizePlanningPartNo(order.partNo||""),
       orderPartSec:Number(order.partSec)||0,
       orderCustomerName:order.customerName||"",
       note:order.notes||"",
@@ -20828,7 +21146,13 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     return out;
   }
   function samePlanOrder(a,b){
-    return String(a?.orderId||a?.orderCode||"")===String(b?.orderId||b?.orderCode||"");
+    const orderKeyA=resolvePlanGroupOrderKey(a);
+    const orderKeyB=resolvePlanGroupOrderKey(b);
+    if(!orderKeyA||!orderKeyB||orderKeyA!==orderKeyB) return false;
+    const partNoA=resolvePlanGroupPartNo(a);
+    const partNoB=resolvePlanGroupPartNo(b);
+    if(partNoA&&partNoB) return partNoA===partNoB;
+    return true;
   }
   function buildPlanSegments(list){
     const byMachine={};
@@ -20892,6 +21216,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       orderId:picked.id,
       orderCode:picked.code,
       orderName:picked.name,
+      orderPartNo:normalizePlanningPartNo(picked.partNo||seedPlan.orderPartNo||""),
       orderPartSec:Number(picked.partSec)||0,
       orderCustomerName:picked.customerName||"",
       note:form.note.trim(),
@@ -20991,6 +21316,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       orderId:picked.id,
       orderCode:picked.code,
       orderName:picked.name,
+      orderPartNo:normalizePlanningPartNo(picked.partNo||""),
       orderPartSec:Number(picked.partSec)||0,
       orderCustomerName:picked.customerName||"",
       note:form.note.trim(),
@@ -21087,6 +21413,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       orderId:seed?.orderId||"",
       orderCode:seed?.orderCode||"",
       orderName:seed?.orderName||"",
+      orderPartNo:normalizePlanningPartNo(seed?.orderPartNo||""),
       orderPartSec:Number(seed?.orderPartSec)||0,
       orderCustomerName:seed?.orderCustomerName||"",
       note:seed?.note||"",
@@ -21886,9 +22213,13 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
                 <div style={{fontWeight:800,color:C.text,fontSize:14}}>Detayli Gantt</div>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                <button onClick={()=>shiftGanttMonth(-1)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>?</button>
+                <button onClick={()=>shiftGanttMonth(-1)} title="Onceki ay" aria-label="Onceki ay" style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,display:"inline-flex",alignItems:"center",justifyContent:"center",minWidth:34}}>
+                  <NavIcon name="chevron_left" size={14}/>
+                </button>
                 <div style={{fontSize:13,color:C.text,minWidth:150,textAlign:"center",textTransform:"capitalize",fontWeight:700}}>{ganttMonthLabel}</div>
-                <button onClick={()=>shiftGanttMonth(1)} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>?</button>
+                <button onClick={()=>shiftGanttMonth(1)} title="Sonraki ay" aria-label="Sonraki ay" style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,display:"inline-flex",alignItems:"center",justifyContent:"center",minWidth:34}}>
+                  <NavIcon name="chevron_right" size={14}/>
+                </button>
                 <button onClick={()=>setGanttMonth(monthStr())} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12}}>Bu Ay</button>
                 <button onClick={exportGanttPng} disabled={exporting} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,opacity:exporting?0.7:1}}>PNG</button>
                 <button onClick={exportGanttPdf} disabled={exporting} style={{...btnSt("ghost"),padding:"6px 10px",fontSize:12,opacity:exporting?0.7:1}}>PDF</button>
@@ -23729,9 +24060,9 @@ function MRPDashboard({
     {id:"name_asc",label:"Makine (A-Z)"},
   ];
   const viewChoices=[
-    {id:"cards",label:"Kartlar",icon:"\u25A6"},
-    {id:"compact",label:"Liste",icon:"\u2630"},
-    {id:"table",label:"Tablo",icon:"\u25A4"},
+    {id:"cards",label:"Kartlar",icon:"cards"},
+    {id:"compact",label:"Liste",icon:"compact"},
+    {id:"table",label:"Tablo",icon:"table"},
   ];
   const quickActions=[
     {id:"notif",label:"Bildirimler",icon:"notifications"},
@@ -23829,7 +24160,7 @@ function MRPDashboard({
             <div style={{display:"flex",alignItems:"center",gap:4,padding:"4px",border:`1px solid ${C.border}`,borderRadius:9,background:C.card}}>
               {viewChoices.map(mode=>(
                 <button key={mode.id} onClick={()=>setViewMode(mode.id)} title={mode.label} style={{border:"none",background:viewMode===mode.id?C.accent:"transparent",color:viewMode===mode.id?"#fff":C.muted2,padding:"6px 8px",fontSize:12,borderRadius:6,cursor:"pointer"}}>
-                  {mode.icon}
+                  <span style={{width:16,height:16,display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon name={mode.icon} size={14}/></span>
                 </button>
               ))}
             </div>
@@ -28721,9 +29052,9 @@ function App() {
     {id:"mail",label:"Mesajlar",icon:"sales"},
   ];
   const topViewChoices=[
-    {id:"cards",label:"Kartlar",icon:"\u25A6"},
-    {id:"compact",label:"Liste",icon:"\u2630"},
-    {id:"table",label:"Tablo",icon:"\u25A4"},
+    {id:"cards",label:"Kartlar",icon:"cards"},
+    {id:"compact",label:"Liste",icon:"compact"},
+    {id:"table",label:"Tablo",icon:"table"},
   ];
   const appCommandBarTone=buildTopBarTone(menuAccentColor,themeMode);
   const appHeroGridColumns=layoutMode==="desktop"
@@ -28931,7 +29262,7 @@ function App() {
           <div style={{display:"flex",alignItems:"center",gap:4,padding:"4px",border:`1px solid ${C.border}`,borderRadius:9,background:C.card}}>
             {topViewChoices.map(mode=>(
               <button key={mode.id} onClick={()=>applyTopViewMode(mode.id)} title={mode.label} style={{border:"none",background:globalViewMode===mode.id?C.accent:"transparent",color:globalViewMode===mode.id?"#fff":C.muted2,padding:"6px 8px",fontSize:12,borderRadius:6,cursor:"pointer"}}>
-                {mode.icon}
+                <span style={{width:16,height:16,display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon name={mode.icon} size={14}/></span>
               </button>
             ))}
           </div>
