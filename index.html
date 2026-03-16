@@ -9634,6 +9634,26 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
   },[parts,selectedPartId]);
 
   const selectedPart=parts.find(p=>p.id===selectedPartId)||null;
+  const partMaterialRows=useMemo(()=>{
+    if(partForm.material&&!materials.some(x=>String(x?.name||"")===String(partForm.material||""))){
+      return [...materials,{id:"__current__",name:partForm.material}];
+    }
+    return materials;
+  },[materials,partForm.material]);
+  const partMaterialOptions=useMemo(()=>
+    partMaterialRows.map(m=>{
+      const name=String(m?.name||"").trim();
+      const code=String(m?.code||"").trim();
+      const profile=m?.id==="__current__"?"":buildMaterialProfileSummary(m);
+      return {
+        value:name,
+        label:[code?`${code} - ${name}`:name,profile].filter(Boolean).join(" · "),
+      };
+    }).filter(opt=>opt.value)
+  ,[partMaterialRows]);
+  const selectedPartMaterialCard=useMemo(()=>
+    materials.find(m=>String(m?.name||"")===String(partForm.material||""))||null
+  ,[materials,partForm.material]);
   const normalizeCustomerKey=value=>String(value||"").trim().toLocaleLowerCase("tr");
   const customerById=useMemo(()=>{
     const map={};
@@ -10962,8 +10982,14 @@ function PartProductManagement({currentUser,machines=DEFAULT_MACHINES,filtersVis
                       value={partForm.material}
                       onChange={v=>fv("material",v)}
                       placeholder="Malzeme secin..."
-                      options={materials.map(m=>({value:m.name||"",label:`${m.code?`${m.code} - `:""}${m.name||""}`}))}
+                      searchPlaceholder="Kod, ad, cap, boy ara..."
+                      options={partMaterialOptions}
                     />
+                    {selectedPartMaterialCard&&(
+                      <div style={{fontSize:11,color:C.muted2,marginTop:4}}>
+                        {buildMaterialProfileSummary(selectedPartMaterialCard)}
+                      </div>
+                    )}
                   </div>
                   <div><span style={labelSt}>Cevrim (sn)</span><input style={inputSt} type="number" min="0" value={partForm.cycleSec} onChange={e=>fv("cycleSec",e.target.value)}/></div>
                   <div><span style={labelSt}>Parca Capi (mm)</span><input style={inputSt} type="number" min="0" step="0.01" value={partForm.partDiameterMm} onChange={e=>fv("partDiameterMm",e.target.value)}/></div>
