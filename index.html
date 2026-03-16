@@ -1294,6 +1294,7 @@ const PURCHASE_ORDER_LIST_COLUMNS = [
   {id:"material_qty",label:"Malzeme / Miktar",width:220},
   {id:"receipt",label:"Alinan / Red",width:160},
   {id:"status",label:"Durum",width:120},
+  {id:"actions",label:"Islem",width:220,align:"right",required:true},
 ];
 const SUPPLIER_PERF_LIST_COLUMNS = [
   {id:"row_no",label:"No",width:54,required:true},
@@ -11977,6 +11978,34 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       machine:line?.machine||machines[0]||"CNC-1",
     };
   }
+  function findCustomerPriceForSalesLine(customerId,partNo){
+    const customerKey=String(customerId||"").trim();
+    const partKey=String(partNo||"").trim().toUpperCase();
+    if(!customerKey||!partKey) return null;
+    return customerPrices.find(row=>
+      String(row.customerId||"").trim()===customerKey
+      && String(row.partNo||"").trim().toUpperCase()===partKey
+    )||null;
+  }
+  function applyPricingToSalesLine(line,customerId){
+    const unitPrice=Math.max(0,safeNum(line?.unitPrice));
+    const discountPct=Math.max(0,Math.min(100,safeNum(line?.discountPct)));
+    if(unitPrice>0||discountPct>0){
+      return {...line,unitPrice,discountPct};
+    }
+    const priceRow=findCustomerPriceForSalesLine(customerId,line?.partNo||line?.partSnapshot?.partNo||"");
+    if(!priceRow){
+      return {...line,unitPrice,discountPct};
+    }
+    return {
+      ...line,
+      unitPrice:Math.max(0,safeNum(priceRow.price)),
+      discountPct:Math.max(0,Math.min(100,safeNum(priceRow.discountPct))),
+    };
+  }
+  function calcSalesLinesNetTotal(lines){
+    return (Array.isArray(lines)?lines:[]).reduce((sum,line)=>sum+lineTotal(line).net,0);
+  }
   function applyPartToQuoteLine(idx,part){
     if(!part) return;
     const routeMachine=(part.routingOps||[])[0]?.machine||"";
@@ -12545,7 +12574,8 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     const customer=customers.find(c=>c.id===quoteForm.customerId);
     const normalizedLines=quoteForm.lines
       .map(l=>normalizeSalesLine(l,{dueDateFallback:todayStr()}))
-      .map(l=>({...l,unitPrice:0,discountPct:0}));
+      .map(l=>applyPricingToSalesLine(l,customer?.id||""));
+    const totalAmount=calcSalesLinesNetTotal(normalizedLines);
     const payload={
       code:(quoteForm.code||nextCode("TKL",quotes,/^TKL-(\d+)$/)).toUpperCase(),
       customerId:customer?.id||"",
@@ -12556,6 +12586,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       priority:quoteForm.priority||"normal",
       note:quoteForm.note.trim(),
       lines:normalizedLines,
+      totalAmount,
       updatedAt:new Date().toISOString(),
     };
     if(quoteEditId){
@@ -12677,8 +12708,9 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
   async function duplicateQuote(q){
     const lines=(q.lines||[])
       .map(l=>normalizeSalesLine(l,{dueDateFallback:todayStr()}))
-      .map(l=>({...l,unitPrice:0,discountPct:0}));
+      .map(l=>applyPricingToSalesLine(l,q.customerId||""));
     if(lines.length===0){alert("Kopyalanacak teklif satiri yok.");return;}
+    const totalAmount=calcSalesLinesNetTotal(lines);
     const payload={
       code:nextCode("TKL",quotes,/^TKL-(\d+)$/),
       customerId:q.customerId||"",
@@ -12689,6 +12721,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       priority:q.priority||"normal",
       note:(q.note||"").trim(),
       lines,
+      totalAmount,
       status:"offer",
       copiedFromQuoteId:q.id||"",
       copiedFromQuoteCode:q.code||"",
@@ -12831,9 +12864,12 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
     const existing=salesOrders.find(s=>s.sourceQuoteId===q.id);
     if(existing){alert(`Bu teklif zaten siparise donustu: ${existing.code}`);return;}
     const orderCode=nextCode("SIP",salesOrders,/^SIP-(\d+)$/);
-    const normalizedQuoteLines=(q.lines||[]).map(l=>normalizeSalesLine(l,{dueDateFallback:todayStr()}));
+    const normalizedQuoteLines=(q.lines||[])
+      .map(l=>normalizeSalesLine(l,{dueDateFallback:todayStr()}))
+      .map(l=>applyPricingToSalesLine(l,q.customerId||""));
     const qtyTotal=normalizedQuoteLines.reduce((sum,l)=>sum+safeNum(l.qty),0);
     const dueDate=[...normalizedQuoteLines].sort((a,b)=>String(a.dueDate||"").localeCompare(String(b.dueDate||"")))[0]?.dueDate||todayStr();
+    const totalAmount=calcSalesLinesNetTotal(normalizedQuoteLines);
     const payload={
       code:orderCode,
       customerId:q.customerId||"",
@@ -12847,7 +12883,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       dueDate,
       paymentTermDays:Math.max(0,safeNum(q.paymentTermDays??30)),
       priority:q.priority||"normal",
-      totalAmount:safeNum(q.totalAmount),
+      totalAmount:totalAmount>0?totalAmount:Math.max(0,safeNum(q.totalAmount)),
       deliveredQty:0,
       deliveries:[],
       status:"approved",
@@ -25303,6 +25339,18 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
     if(!ok) return;
     setRequests(prev=>prev.map(x=>x.id===r.id?{...x,...patch}:x));
   }
+  async function removeRequest(r){
+    if(!r||!r.id) return;
+    const linkedOrders=orders.filter(o=>String(o.requestId||"")===String(r.id||""));
+    if(linkedOrders.length>0){
+      alert(`Bu talebe bagli PO kayitlari var: ${linkedOrders.map(o=>o.code||"-").join(", ")}. Once PO kaydini silin.`);
+      return;
+    }
+    if(!await askAppConfirm(`"${r.code||"Talep"}" silinsin mi?`,{title:"Talep Sil",confirmLabel:"Sil",cancelLabel:"Vazgec"})) return;
+    const ok=await window.DB.deleteDoc("purchaseRequests",r.id);
+    if(!ok){alert("Talep silinemedi.");return;}
+    setRequests(prev=>prev.filter(x=>x.id!==r.id));
+  }
   async function saveQuote(){
     if(!quoteForm.requestId||!quoteForm.supplierId){alert("Talep ve tedarikci secin.");return;}
     const req=reqById[quoteForm.requestId];
@@ -25317,6 +25365,29 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
     setOrders(prev=>[{id,...payload},...prev]);
     setQuoteForm(buildDefaultQuoteForm());
     setShowQuoteModal(false);
+  }
+  async function removePurchaseOrder(po){
+    if(!po||!po.id) return;
+    const linkedReceipts=receipts.filter(row=>String(row.poId||"")===String(po.id||""));
+    if(linkedReceipts.length>0||safeNum(po.receivedQty)>0||safeNum(po.rejectedQty)>0){
+      alert("Bu PO icin malzeme girisi oldugu icin silinemez.");
+      return;
+    }
+    if(!await askAppConfirm(`"${po.code||"PO"}" silinsin mi?`,{title:"PO Sil",confirmLabel:"Sil",cancelLabel:"Vazgec"})) return;
+    const ok=await window.DB.deleteDoc("purchaseOrders",po.id);
+    if(!ok){alert("PO silinemedi.");return;}
+    if(po.requestId){
+      const linkedRequest=requests.find(row=>String(row.id||"")===String(po.requestId||""))||null;
+      if(linkedRequest&&(linkedRequest.status||"")==="ordered"){
+        const patch={status:"approved",updatedAt:new Date().toISOString()};
+        const reqOk=await window.DB.updateDoc("purchaseRequests",linkedRequest.id,patch);
+        if(reqOk){
+          setRequests(prev=>prev.map(row=>row.id===linkedRequest.id?{...row,...patch}:row));
+        }
+      }
+    }
+    setOrders(prev=>prev.filter(x=>x.id!==po.id));
+    setRecvForm(prev=>String(prev.poId||"")===String(po.id||"")?{...prev,poId:"",acceptedQty:"",rejectedQty:"0",note:""}:prev);
   }
   async function receivePo(){
     const po=orders.find(o=>o.id===recvForm.poId);
@@ -25613,6 +25684,7 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
             <button onClick={()=>setRequestStatus(r,"approved")} style={{...btnSt("ghost"),padding:"6px 8px",fontSize:11}}>Onayla</button>
             <button onClick={()=>canCreatePo&&openQuoteModal(r)} disabled={!canCreatePo} style={{...btnSt("green"),padding:"6px 8px",fontSize:11,opacity:canCreatePo?1:0.5,cursor:canCreatePo?"pointer":"not-allowed"}}>PO Olustur</button>
             <button onClick={()=>setRequestStatus(r,"cancelled")} style={{...btnSt("danger"),padding:"6px 8px",fontSize:11}}>Iptal</button>
+            <button onClick={()=>removeRequest(r)} style={{...btnSt("ghost"),padding:"6px 8px",fontSize:11}}>Sil</button>
           </div>
         </td>
       );
@@ -25634,6 +25706,16 @@ function PurchasingModule({currentUser,filtersVisible=true,defaultView="requests
     }
     if(col.id==="status"){
       return <td key={col.id} style={{padding:"8px 10px"}}><Badge label={o.status||"ordered"} color={o.status==="received"?C.green:C.warn}/></td>;
+    }
+    if(col.id==="actions"){
+      const canDelete=receipts.every(row=>String(row.poId||"")!==String(o.id||""))&&safeNum(o.receivedQty)<=0&&safeNum(o.rejectedQty)<=0;
+      return (
+        <td key={col.id} style={{padding:"8px 10px",textAlign:"right"}}>
+          <div style={{display:"inline-flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
+            <button onClick={()=>removePurchaseOrder(o)} disabled={!canDelete} style={{...btnSt("ghost"),padding:"6px 8px",fontSize:11,opacity:canDelete?1:0.5,cursor:canDelete?"pointer":"not-allowed"}}>Sil</button>
+          </div>
+        </td>
+      );
     }
     return null;
   };
