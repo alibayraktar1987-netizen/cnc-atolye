@@ -16039,7 +16039,7 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               )}
               <div style={{display:"flex",gap:10}}>
                 {shiftModalMode!=="rejectOnly"&&<div style={{flex:1}}><span style={labelSt}>Doğru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>}
-                <div style={{flex:1}}><span style={labelSt}>{shiftModalMode==="rejectOnly"?"? Kaç Adet Hatalı?":"? Hatalı Adet"}</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>
+                {shiftModalMode==="rejectOnly"&&<div style={{flex:1}}><span style={labelSt}>Kaç Adet Hatalı?</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>}
               </div>
               <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
                 <button onClick={closeShiftModal} style={{...btnSt("ghost"),padding:"10px 14px"}}>İptal</button>
@@ -16547,19 +16547,19 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
         </div>
       )}
       {showShiftModal&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:isPhoneEntry?10:14}} onClick={()=>setShowShiftModal(false)}>
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40,padding:isPhoneEntry?10:14}} onClick={closeShiftModal}>
           <div style={{width:"100%",maxWidth:560,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:15}} onClick={e=>e.stopPropagation()}>
-            <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>Vardiya Sonu</div>
-            <div style={{marginBottom:10,padding:"10px 12px",borderRadius:10,border:`1px solid ${C.border}`,background:C.surface,fontSize:12,color:C.muted2}}>
+            <div style={{fontWeight:700,color:C.text,fontSize:16,marginBottom:10}}>{shiftModalMode==="rejectOnly"?"Hata Girişi":"Vardiya Sonu"}</div>
+            {shiftModalMode==="shiftEnd"&&<div style={{marginBottom:10,padding:"10px 12px",borderRadius:10,border:`1px solid ${C.border}`,background:C.surface,fontSize:12,color:C.muted2}}>
               Kayıt şu vardiyaya işlenecek: <strong style={{color:C.text}}>{selectedShiftMeta.label}</strong>{selectedShiftMeta.time?` (${selectedShiftMeta.time})`:""}
-            </div>
+            </div>}
             <div style={{display:"flex",gap:10,flexDirection:isPhoneEntry?"column":"row"}}>
-              <div style={{flex:1}}><span style={labelSt}>Doğru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>
-              <div style={{flex:1}}><span style={labelSt}>Hatalı Adet</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>
+              {shiftModalMode!=="rejectOnly"&&<div style={{flex:1}}><span style={labelSt}>Doğru Adet *</span><input style={{...inputSt,borderColor:C.green+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.correct} onChange={e=>setShiftDraft(p=>({...p,correct:e.target.value}))}/></div>}
+              {shiftModalMode==="rejectOnly"&&<div style={{flex:1}}><span style={labelSt}>Hatalı Adet</span><input style={{...inputSt,borderColor:C.red+"50"}} type="number" min="0" placeholder="0" value={shiftDraft.wrong} onChange={e=>setShiftDraft(p=>({...p,wrong:e.target.value}))}/></div>}
             </div>
             <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14,flexWrap:"wrap"}}>
-              <button onClick={()=>setShowShiftModal(false)} style={{...btnSt("ghost"),padding:"10px 14px"}}>İptal</button>
-              <button onClick={approveShiftEnd} style={{...btnSt(saved?"green":"primary"),padding:"10px 14px"}}>{editId?"Güncellemeyi Onayla":"Vardiyayı Onayla"}</button>
+              <button onClick={closeShiftModal} style={{...btnSt("ghost"),padding:"10px 14px"}}>İptal</button>
+              <button onClick={approveShiftEnd} style={{...btnSt(saved?"green":"primary"),padding:"10px 14px"}}>{shiftModalMode==="rejectOnly"?"Hata Kaydet":(editId?"Güncellemeyi Onayla":"Vardiyayı Onayla")}</button>
             </div>
           </div>
         </div>
@@ -25979,37 +25979,78 @@ function IntegrationsReadinessModule(){
 }
 
 function MaterialQuoteBridgeModule(){
+  const EMBEDDED_URL="./cost-estimator/frontend/dist/index.html";
+  const DEV_URL="http://localhost:5173";
+  const API_DOCS_URL="http://localhost:8000/docs";
+  const API_BASE_URL="http://localhost:8000/api/v1";
+  const [source,setSource]=useState("embedded");
+  const [frameKey,setFrameKey]=useState(0);
+  const frameSrc=source==="dev"?DEV_URL:EMBEDDED_URL;
+  const sourceLabel=source==="dev"?"Gelistirme sunucusu":"Yerel gomulu uygulama";
   return (
-    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:0}}>
+    <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:0,height:"100%"}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-          <div style={{fontWeight:700,color:C.text,fontSize:16}}>Malzeme Teklif ve Maliyet Analizi</div>
-          <Badge label="Yeni Full-Stack Modul" color={C.accent}/>
-        </div>
-        <div style={{fontSize:13,color:C.muted2,marginTop:8}}>
-          STEP yukleme, stok belirleme, operasyon siniflandirma ve CNC maliyet tahmini modulu ayri servis olarak eklendi.
+          <div>
+            <div style={{fontWeight:700,color:C.text,fontSize:16}}>Malzeme Teklif ve Maliyet Analizi</div>
+            <div style={{fontSize:13,color:C.muted2,marginTop:8}}>
+              Modul artik menunun icinde canli calisiyor. STEP yukleme, stok onerisi, operasyon siniflandirma ve CNC maliyet tahmini ayni ekranda acilir.
+            </div>
+          </div>
+          <Badge label="Canli Modul" color={C.green}/>
         </div>
       </div>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:10}}>
         <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
-          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>On Yuz</div>
-          <div style={{marginTop:6,fontSize:14,color:C.text,fontWeight:700}}>http://localhost:5173</div>
-          <div style={{marginTop:8,fontSize:12,color:C.muted2}}>3D goruntuleyici + teklif paneli</div>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Aktif Kaynak</div>
+          <div style={{marginTop:6,fontSize:14,color:C.text,fontWeight:700}}>{sourceLabel}</div>
+          <div style={{marginTop:8,fontSize:12,color:C.muted2,wordBreak:"break-all"}}>{frameSrc}</div>
         </div>
         <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
-          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>API</div>
-          <div style={{marginTop:6,fontSize:14,color:C.text,fontWeight:700}}>http://localhost:8000/api/v1</div>
-          <div style={{marginTop:8,fontSize:12,color:C.muted2}}>Yukleme, is, parca, malzeme endpointleri</div>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Yerel Gomulu</div>
+          <div style={{marginTop:6,fontSize:14,color:C.text,fontWeight:700}}>{EMBEDDED_URL}</div>
+          <div style={{marginTop:8,fontSize:12,color:C.muted2}}>Repo icindeki build ciktisi menude dogrudan acilir.</div>
+        </div>
+        <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
+          <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Canli API</div>
+          <div style={{marginTop:6,fontSize:14,color:C.text,fontWeight:700}}>{API_BASE_URL}</div>
+          <div style={{marginTop:8,fontSize:12,color:C.muted2}}>API aciksa gercek servis kullanilir; degilse modul demo moduna gecer.</div>
         </div>
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        <button onClick={()=>window.open("http://localhost:5173","_blank")} style={{...btnSt("primary"),padding:"9px 12px",fontSize:12}}>Modulu Ac</button>
-        <button onClick={()=>window.open("http://localhost:8000/docs","_blank")} style={{...btnSt("ghost"),padding:"9px 12px",fontSize:12}}>API Dokumani</button>
+        <button onClick={()=>setSource("embedded")} style={{...btnSt(source==="embedded"?"primary":"ghost"),padding:"9px 12px",fontSize:12}}>Yerel Gomulu Ac</button>
+        <button onClick={()=>setSource("dev")} style={{...btnSt(source==="dev"?"primary":"ghost"),padding:"9px 12px",fontSize:12}}>5173 Dev Sunucu</button>
+        <button onClick={()=>setFrameKey(k=>k+1)} style={{...btnSt("ghost"),padding:"9px 12px",fontSize:12}}>Modulu Yenile</button>
+        <button onClick={()=>window.open(frameSrc,"_blank")} style={{...btnSt("ghost"),padding:"9px 12px",fontSize:12}}>Yeni Sekmede Ac</button>
+        <button onClick={()=>window.open(API_DOCS_URL,"_blank")} style={{...btnSt("ghost"),padding:"9px 12px",fontSize:12}}>API Dokumani</button>
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,display:"flex",flexDirection:"column",gap:12,flex:1,minHeight:0}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <div>
+            <div style={{fontWeight:700,color:C.text}}>Canli Onizleme</div>
+            <div style={{fontSize:12,color:C.muted2,marginTop:4}}>
+              Bos ekran gorursen once gomulu modu deneyin. Frontend guncellendiginde `cd cost-estimator/frontend && npm run build` ile ciktiyi yenileyebilirsiniz.
+            </div>
+          </div>
+          <Badge label={source==="dev"?"Dev":"Embed"} color={source==="dev"?C.warn:C.accent}/>
+        </div>
+        <div style={{border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",background:"#0b1018",flex:1,minHeight:"72vh"}}>
+          <iframe
+            key={`${source}-${frameKey}`}
+            title="Malzeme Teklif Modulu"
+            src={frameSrc}
+            loading="eager"
+            style={{width:"100%",height:"100%",minHeight:"72vh",border:"none",background:"#0b1018",colorScheme:"dark"}}
+          />
+        </div>
       </div>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-        <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Kurulum</div>
+        <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Kurulum Notu</div>
         <pre style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,padding:12,overflow:"auto",fontSize:12,color:C.text}}>
-{`cd cost-estimator
+{`cd cost-estimator/frontend
+npm run build
+
+cd ../
 docker compose up --build`}
         </pre>
       </div>
