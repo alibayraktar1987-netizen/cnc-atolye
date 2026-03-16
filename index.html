@@ -20444,7 +20444,6 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   const ganttRef=useRef(null);
   const boardDragPayloadRef=useRef(null);
   const autoStatusSyncRef=useRef(false);
-  const autoFinishedMoveRef=useRef(false);
 
   function isPlanningSpecialLane(machine){
     return planningSpecialLaneIdSet.has(String(machine||"").trim());
@@ -20720,6 +20719,89 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       isFinished,
     };
   }
+  function resolvePlanningOrderGroupKey(order){
+    const id=String(order?.id||"").trim();
+    if(id) return `id:${id}`;
+    const code=String(order?.code||"").trim().toUpperCase();
+    return code?`code:${code}`:"";
+  }
+  function isPlanningSeedLinkedToOrder(seed,order){
+    const orderKey=resolvePlanningOrderGroupKey(order);
+    if(!orderKey) return false;
+    const seedKey=resolvePlanGroupOrderKey(seed);
+    if(seedKey!==orderKey) return false;
+    const orderPartNo=normalizePlanningPartNo(order?.partNo||"");
+    const seedPartNo=resolvePlanGroupPartNo(seed);
+    if(orderPartNo&&seedPartNo) return orderPartNo===seedPartNo;
+    return true;
+  }
+  function getOrderLanePlans(order,machine){
+    const lane=String(machine||"").trim();
+    if(!order||!lane) return [];
+    return plans.filter(plan=>String(plan.machine||"").trim()===lane&&isPlanningSeedLinkedToOrder(plan,order));
+  }
+  function sumPlanningQty(list){
+    return (Array.isArray(list)?list:[]).reduce((sum,row)=>sum+Math.max(0,safeNum(row?.planQty)),0);
+  }
+  function getOrderFlowMeta(order){
+    const productionMeta=getOrderProductionMeta(order);
+    const qtyTarget=productionMeta.qtyTarget;
+    const tesfiyePlans=getOrderLanePlans(order,"TESFIYE");
+    const sevkPlans=getOrderLanePlans(order,"SEVK");
+    const rawSevkQty=sumPlanningQty(sevkPlans);
+    const hasLegacySevk=sevkPlans.some(plan=>Math.max(0,safeNum(plan?.planQty))<=0);
+    let sevkQty=rawSevkQty;
+    if(sevkQty<=0&&hasLegacySevk&&qtyTarget>0){
+      sevkQty=qtyTarget;
+    }
+    sevkQty=qtyTarget>0?Math.min(qtyTarget,sevkQty):sevkQty;
+    const rawTesfiyeQty=sumPlanningQty(tesfiyePlans);
+    const hasLegacyTesfiye=tesfiyePlans.some(plan=>Math.max(0,safeNum(plan?.planQty))<=0);
+    let tesfiyeQty=rawTesfiyeQty;
+    if(tesfiyeQty<=0&&hasLegacyTesfiye){
+      tesfiyeQty=qtyTarget>0?Math.max(0,qtyTarget-sevkQty):0;
+    }
+    tesfiyeQty=qtyTarget>0?Math.min(Math.max(0,qtyTarget-sevkQty),tesfiyeQty):tesfiyeQty;
+    const completedQty=tesfiyeQty+sevkQty;
+    const remainingProductionQty=qtyTarget>0?Math.max(0,qtyTarget-completedQty):0;
+    return {
+      ...productionMeta,
+      tesfiyeQty,
+      sevkQty,
+      completedQty,
+      remainingProductionQty,
+    };
+  }
+  function getSegmentFlowQty(seg,linkedOrder=null){
+    if(!seg) return 0;
+    const order=linkedOrder||(orderById[seg.orderId]||orderByCode[String(seg.orderCode||"").trim().toUpperCase()]||null);
+    const directQty=(seg.plans||[]).reduce((sum,plan)=>sum+Math.max(0,safeNum(plan?.planQty)),0);
+    if(!order) return directQty;
+    const flowMeta=getOrderFlowMeta(order);
+    if(String(seg.machine||"")==="TESFIYE") return flowMeta.tesfiyeQty>0?flowMeta.tesfiyeQty:directQty;
+    if(String(seg.machine||"")==="SEVK") return flowMeta.sevkQty>0?flowMeta.sevkQty:directQty;
+    if(flowMeta.qtyTarget>0) return flowMeta.remainingProductionQty;
+    return Math.max(0,safeNum(order?.qty));
+  }
+  function canMarkSegmentDone(seg,linkedOrder=null){
+    if(!seg) return false;
+    if(String(seg.machine||"")==="SEVK") return false;
+    return getSegmentFlowQty(seg,linkedOrder)>0;
+  }
+  function buildPlanningSeedFromOrder(order,seed={}){
+    return {
+      ...seed,
+      orderId:order?.id||seed?.orderId||"",
+      orderCode:order?.code||seed?.orderCode||"",
+      orderName:order?.name||seed?.orderName||"",
+      orderPartNo:normalizePlanningPartNo(order?.partNo||seed?.orderPartNo||""),
+      orderPartSec:Number(order?.partSec??seed?.orderPartSec)||0,
+      orderCustomerName:order?.customerName||seed?.orderCustomerName||"",
+      note:seed?.note||order?.notes||"",
+      status:seed?.status||"planned",
+      createdBy:seed?.createdBy||currentUser.id,
+    };
+  }
   const sortedPlanSegments=allPlanSegments;
   const mpsBaseWeek=startOfWeekYmd(todayStr());
   const mpsBuckets=Array.from({length:8},(_,i)=>{
@@ -20898,6 +20980,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     return `seg:${seg?.id||""}`;
   }
   function buildMachineQueueSpecs(machine){
+    const specialLane=isPlanningSpecialLane(machine);
     return allPlanSegments
       .filter(seg=>seg.machine===machine)
       .sort((a,b)=>{
@@ -20910,10 +20993,18 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       .map(seg=>({
         token:getSegmentToken(seg),
         machine,
-        seed:(seg.plans&&seg.plans.length>0)?seg.plans[0]:null,
+        seed:(seg.plans&&seg.plans.length>0)
+          ? {
+              ...seg.plans[0],
+              ...(specialLane?{planQty:Math.max(0,safeNum(getSegmentFlowQty(seg)))}:{}),
+            }
+          : null,
         startDate:String(seg.startDate||todayStr()),
-        endDate:String(seg.endDate||seg.startDate||todayStr()),
-        days:Math.max(1,dayDiff(seg.startDate||todayStr(),seg.endDate||seg.startDate||todayStr())+1),
+        endDate:specialLane
+          ? String(seg.startDate||todayStr())
+          : String(seg.endDate||seg.startDate||todayStr()),
+        days:specialLane?1:Math.max(1,dayDiff(seg.startDate||todayStr(),seg.endDate||seg.startDate||todayStr())+1),
+        qty:specialLane?Math.max(0,safeNum(getSegmentFlowQty(seg))):0,
         planIds:(seg.plans||[]).map(p=>p.id).filter(Boolean),
       }));
   }
@@ -20974,6 +21065,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       if(String(a[i]?.startDate||"")!==String(b[i]?.startDate||"")) return i;
       if(String(a[i]?.endDate||"")!==String(b[i]?.endDate||"")) return i;
       if(Math.max(1,Math.floor(Number(a[i]?.days)||1))!==Math.max(1,Math.floor(Number(b[i]?.days)||1))) return i;
+      if(Math.max(0,safeNum(a[i]?.qty))!==Math.max(0,safeNum(b[i]?.qty))) return i;
     }
     if(a.length!==b.length) return len;
     return -1;
@@ -21172,11 +21264,16 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     if(!isPlanningSpecialLane(targetMachine)) return true;
     const seg=allSegmentById[segmentId]||null;
     if(!seg) return false;
+    if(targetMachine==="SEVK"&&!isPlanningSpecialLane(seg.machine)){
+      alert("Uretimden cikis once Tesfiye alanina alinmali.");
+      return false;
+    }
     if(isPlanningSpecialLane(seg.machine)) return true;
     const order=orderById[seg.orderId]||orderByCode[String(seg.orderCode||"").trim().toUpperCase()]||null;
+    const flowMeta=getOrderFlowMeta(order);
     const productionMeta=getOrderProductionMeta(order);
-    if(productionMeta.isFinished) return true;
-    alert("Sadece tamamlanan isler Tesfiye veya Sevk alanina tasinabilir.");
+    if(flowMeta.remainingProductionQty<=0||productionMeta.isFinished) return true;
+    alert("Kismi veya tam gecis icin karttaki Bitti butonunu kullanin.");
     return false;
   }
   async function handleGanttDrop(e,{targetMachine="",targetDate=""}={}){
@@ -21526,6 +21623,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   }
 
   function buildPlanPayloadFromSeed(seed,machine,date){
+    const planQty=Math.max(0,safeNum(seed?.planQty));
     return {
       machine,
       orderId:seed?.orderId||"",
@@ -21540,6 +21638,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       date,
       week:weekStart(parseYmdLocal(date)),
       month:monthStr(parseYmdLocal(date)),
+      ...(isPlanningSpecialLane(machine)&&planQty>0?{planQty}:{}),
       updatedAt:new Date().toISOString(),
     };
   }
@@ -21628,6 +21727,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       orderId:order.id,
       orderCode:order.code||"",
       orderName:order.name||"",
+      orderPartNo:normalizePlanningPartNo(order.partNo||""),
       orderPartSec:Number(order.partSec)||0,
       orderCustomerName:order.customerName||"",
       note:order.notes||"",
@@ -21695,6 +21795,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     const seg=allSegmentById[segmentId];
     if(!seg||!targetMachine) return false;
     if(seg.machine===targetMachine) return true;
+    const clearPlanQty=isPlanningSpecialLane(seg.machine)&&!isPlanningSpecialLane(targetMachine);
     const segIds=new Set((seg.plans||[]).map(p=>p.id));
     const dates=getDateRange(seg.startDate,seg.endDate);
     const conflicts=dates.filter(dt=>plans.some(p=>p.machine===targetMachine&&p.date===dt&&!segIds.has(p.id)));
@@ -21704,14 +21805,14 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     }
     const nowIso=new Date().toISOString();
     for(const p of seg.plans||[]){
-      const ok=await window.DB.updateDoc("plans",p.id,{machine:targetMachine,updatedAt:nowIso});
+      const ok=await window.DB.updateDoc("plans",p.id,{machine:targetMachine,updatedAt:nowIso,...(clearPlanQty?{planQty:0}:{})});
       if(!ok){
         alert("Operasyon tasinamadi.");
         await refreshPlans();
         return false;
       }
     }
-    setPlans(prev=>prev.map(p=>segIds.has(p.id)?{...p,machine:targetMachine,updatedAt:nowIso}:p));
+    setPlans(prev=>prev.map(p=>segIds.has(p.id)?{...p,machine:targetMachine,updatedAt:nowIso,...(clearPlanQty?{planQty:0}:{})}:p));
     return true;
   }
 
@@ -21904,6 +22005,10 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     const code=String(o.code||"").trim().toUpperCase();
     if(code) orderByCode[code]=o;
   });
+  const selectedPlanOrder=selectedPlan?(orderById[selectedPlan.orderId]||orderByCode[String(selectedPlan.orderCode||"").trim().toUpperCase()]||null):null;
+  const selectedPlanFlowMeta=selectedPlanOrder?getOrderFlowMeta(selectedPlanOrder):null;
+  const selectedPlanQty=Math.max(0,safeNum(getSegmentFlowQty(selectedPlanSegment||selectedPlan,selectedPlanOrder)));
+  const selectedPlanCanFinish=canMarkSegmentDone(selectedPlanSegment||selectedPlan,selectedPlanOrder);
   function resolvePlanningOrderStatus(order){
     const currentStatus=String(order?.status||"planned").toLowerCase();
     if(["cancelled","passive"].includes(currentStatus)) return currentStatus;
@@ -21912,8 +22017,9 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     const hasTesfiye=segments.some(seg=>String(seg.machine||"")==="TESFIYE");
     const hasProductionLane=segments.some(seg=>!isPlanningSpecialLane(seg.machine));
     const productionMeta=getOrderProductionMeta(order);
-    if(hasSevk) return "shipped";
-    if(hasTesfiye || productionMeta.isFinished) return "liquidation";
+    const flowMeta=getOrderFlowMeta(order);
+    if((flowMeta.qtyTarget>0&&flowMeta.sevkQty>=flowMeta.qtyTarget)||(flowMeta.qtyTarget<=0&&hasSevk)) return "shipped";
+    if(flowMeta.tesfiyeQty>0||hasTesfiye||flowMeta.sevkQty>0) return "liquidation";
     if(productionMeta.producedTotal>0) return "in_production";
     if(hasProductionLane) return "planned";
     return currentStatus;
@@ -21943,24 +22049,6 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       autoStatusSyncRef.current=false;
     })();
   },[allPlanSegments,entries,loading,orders]);
-  useEffect(()=>{
-    if(loading||autoFinishedMoveRef.current||allPlanSegments.length===0) return;
-    const candidates=allPlanSegments.filter(seg=>{
-      if(isPlanningSpecialLane(seg.machine)) return false;
-      const order=orderById[seg.orderId]||orderByCode[String(seg.orderCode||"").trim().toUpperCase()]||null;
-      if(!order) return false;
-      const productionMeta=getOrderProductionMeta(order);
-      return productionMeta.isFinished&&productionMeta.producedToday>0;
-    });
-    if(candidates.length===0) return;
-    const nextSegment=candidates[0];
-    autoFinishedMoveRef.current=true;
-    (async()=>{
-      const desiredDate=resolvePlanningLaneStartDate("TESFIYE",planningToday,nextSegment.id);
-      await moveSegmentOnGantt(nextSegment.id,"TESFIYE",desiredDate);
-      autoFinishedMoveRef.current=false;
-    })();
-  },[allPlanSegments,entries,loading,orders,planningToday]);
   function segmentDisplayStartDate(seg){
     return String(seg?.displayStartDate||seg?.startDate||planningToday);
   }
@@ -22047,7 +22135,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     const ord=orderById[seg.orderId]||orderByCode[String(seg.orderCode||"").trim().toUpperCase()]||null;
     const op=orderOperationMetaById[seg.orderId]||null;
     const tone=segmentTone(seg);
-    const qty=Math.max(0,safeNum(ord?.qty));
+    const qty=Math.max(0,safeNum(getSegmentFlowQty(seg,ord)));
     const due=isPlanningSpecialLane(seg.machine)?"-":String(ord?.dueDate||segmentDisplayEndDate(seg)||"-");
     const displayStart=segmentDisplayStartDate(seg);
     const displayEnd=segmentDisplayEndDate(seg);
@@ -22063,9 +22151,194 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       tone,
       op,
       active,
+      canFinish:canMarkSegmentDone(seg,ord),
       segment:seg,
       seedPlan:(seg.plans&&seg.plans[0])?seg.plans[0]:null,
     };
+  }
+  async function rebuildMachineQueue(machine,specs,{forceStartDate=""}={}){
+    const lane=String(machine||"");
+    const rows=(Array.isArray(specs)?specs:[]).map(spec=>{
+      const startDate=String(spec?.startDate||planningToday);
+      const qty=Math.max(0,safeNum(spec?.qty??spec?.seed?.planQty));
+      return {
+        ...spec,
+        machine:lane,
+        seed:isPlanningSpecialLane(lane)?{...(spec?.seed||{}),planQty:qty}:(spec?.seed||null),
+        startDate,
+        endDate:isPlanningSpecialLane(lane)?startDate:String(spec?.endDate||startDate),
+        days:isPlanningSpecialLane(lane)?1:Math.max(1,Math.floor(Number(spec?.days)||1)),
+        qty:isPlanningSpecialLane(lane)?qty:0,
+      };
+    });
+    const firstStart=String(forceStartDate||rows[0]?.startDate||planningToday);
+    const scheduled=rows.length>0
+      ? applySequentialDatesToSpecs(rows,{anchorIndex:0,forceStartDate:firstStart})
+      : [];
+    const currentRows=plans.filter(plan=>String(plan.machine||"")===lane);
+    const removeIds=currentRows.map(plan=>plan.id).filter(Boolean);
+    for(const id of removeIds){
+      const ok=await window.DB.deleteDoc("plans",id);
+      if(!ok){
+        alert("Plan sirasi guncellenemedi (silme).");
+        await refreshPlans();
+        return false;
+      }
+    }
+    const recreated=[];
+    for(const spec of scheduled){
+      const seed=spec?.seed||{};
+      const dates=getDateRange(spec.startDate,spec.endDate);
+      for(const dt of dates){
+        const payload=buildPlanPayloadFromSeed(seed,lane,dt);
+        const id=await window.DB.addDoc("plans",payload);
+        if(!id){
+          alert("Plan sirasi guncellenemedi (ekleme).");
+          await refreshPlans();
+          return false;
+        }
+        recreated.push({id,...payload});
+      }
+    }
+    const removedSet=new Set(removeIds);
+    setPlans(prev=>[...recreated.reverse(),...prev.filter(plan=>!removedSet.has(plan.id))]);
+    return true;
+  }
+  async function setOrderSpecialLaneQty(order,machine,nextQty,{seedOverride=null}={}){
+    const lane=String(machine||"").trim();
+    if(!order||!isPlanningSpecialLane(lane)) return false;
+    const normalizedQty=Math.max(0,safeNum(nextQty));
+    const machineSpecs=buildMachineQueueSpecs(lane);
+    const queueStart=String(machineSpecs[0]?.startDate||planningToday);
+    const matchingIndices=machineSpecs.reduce((acc,spec,idx)=>{
+      if(isPlanningSeedLinkedToOrder(spec?.seed||{},order)) acc.push(idx);
+      return acc;
+    },[]);
+    const primarySpec=matchingIndices.length>0?machineSpecs[matchingIndices[0]]:null;
+    const nextSpecs=machineSpecs.filter((_,idx)=>!matchingIndices.includes(idx));
+    if(normalizedQty>0){
+      const insertIdx=matchingIndices.length>0?Math.min(matchingIndices[0],nextSpecs.length):nextSpecs.length;
+      const startDate=matchingIndices.length>0
+        ? String(primarySpec?.startDate||planningToday)
+        : resolvePlanningLaneStartDate(lane,planningToday,"");
+      nextSpecs.splice(insertIdx,0,{
+        token:primarySpec?.token||`flow:${lane}:${resolvePlanningOrderGroupKey(order)||Date.now()}:${Date.now()}`,
+        machine:lane,
+        seed:{...buildPlanningSeedFromOrder(order,seedOverride||primarySpec?.seed||{}),planQty:normalizedQty},
+        startDate,
+        endDate:startDate,
+        days:1,
+        qty:normalizedQty,
+        planIds:Array.isArray(primarySpec?.planIds)?primarySpec.planIds.filter(Boolean):[],
+      });
+    }
+    return rebuildMachineQueue(lane,nextSpecs,{forceStartDate:queueStart});
+  }
+  async function removeOrderFromProductionQueues(order){
+    if(!order) return false;
+    const segments=getOrderSegments(order).filter(seg=>!isPlanningSpecialLane(seg.machine));
+    if(segments.length===0) return true;
+    const byMachine={};
+    segments.forEach(seg=>{
+      const machine=String(seg.machine||"").trim();
+      if(!machine) return;
+      if(!byMachine[machine]) byMachine[machine]=[];
+      byMachine[machine].push(seg);
+    });
+    for(const [machine,machineSegments] of Object.entries(byMachine)){
+      const originalSpecs=buildMachineQueueSpecs(machine);
+      const queueStart=String(originalSpecs[0]?.startDate||planningToday);
+      const removeTokens=new Set(machineSegments.map(seg=>getSegmentToken(seg)));
+      const machineSpecs=originalSpecs.filter(spec=>!removeTokens.has(String(spec?.token||"")));
+      const ok=await rebuildMachineQueue(machine,machineSpecs,{forceStartDate:queueStart});
+      if(!ok) return false;
+    }
+    return true;
+  }
+  function getPlanningFinishAction(segment,order){
+    if(!segment||!order) return null;
+    if(String(segment.machine||"")==="TESFIYE"){
+      return {
+        stageLabel:"Tesfiye",
+        targetLane:"SEVK",
+        targetLabel:"Sevk",
+        sourceQty:Math.max(0,safeNum(getOrderFlowMeta(order).tesfiyeQty)),
+      };
+    }
+    if(String(segment.machine||"")==="SEVK") return null;
+    return {
+      stageLabel:planningLaneLabel(segment.machine),
+      targetLane:"TESFIYE",
+      targetLabel:"Tesfiye",
+      sourceQty:Math.max(0,safeNum(getOrderFlowMeta(order).remainingProductionQty)),
+    };
+  }
+  async function askPlanningFinishedQty(segment,order){
+    const action=getPlanningFinishAction(segment,order);
+    if(!action||action.sourceQty<=0) return null;
+    const fullDone=await askAppConfirm(
+      `"${order?.code||segment?.orderCode||"-"}" icin ${formatMetricNumber(action.sourceQty)||action.sourceQty} adet tamamlandi mi?`,
+      {title:"Bitti",confirmLabel:"Tamami",cancelLabel:"Kismi"}
+    );
+    if(fullDone) return action.sourceQty;
+    const raw=prompt(
+      `${action.targetLabel} alanina aktarilacak miktari girin.\n\nMaksimum: ${formatMetricNumber(action.sourceQty)||action.sourceQty} adet`
+    );
+    if(raw===null) return null;
+    const normalized=String(raw).trim().replace(",",".");
+    if(!normalized) return null;
+    const qty=Number(normalized);
+    if(!Number.isFinite(qty)||qty<=0){
+      alert("Gecerli bir miktar girin.");
+      return null;
+    }
+    if(qty>action.sourceQty){
+      alert(`Girilen miktar kalan adedi asiyor. Maksimum: ${formatMetricNumber(action.sourceQty)||action.sourceQty}`);
+      return null;
+    }
+    return qty;
+  }
+  async function completePlanningSegment(segment){
+    const seg=(segment&&Array.isArray(segment.plans)&&segment.plans.length>0)?segment:(findSegmentForPlan(segment)||null);
+    if(!seg){
+      alert("Tamamlanacak plan bulunamadi.");
+      return;
+    }
+    const order=orderById[seg.orderId]||orderByCode[String(seg.orderCode||"").trim().toUpperCase()]||null;
+    if(!order){
+      alert("Bagli is emri bulunamadi.");
+      return;
+    }
+    const action=getPlanningFinishAction(seg,order);
+    if(!action||action.sourceQty<=0){
+      alert("Aktarilacak miktar kalmadi.");
+      return;
+    }
+    const movedQty=await askPlanningFinishedQty(seg,order);
+    if(!(movedQty>0)) return;
+    const flowMeta=getOrderFlowMeta(order);
+    const targetCurrentQty=action.targetLane==="TESFIYE"?flowMeta.tesfiyeQty:flowMeta.sevkQty;
+    const targetNextQty=flowMeta.qtyTarget>0
+      ? Math.min(flowMeta.qtyTarget,targetCurrentQty+movedQty)
+      : (targetCurrentQty+movedQty);
+    const seedPlan=(seg.plans&&seg.plans[0])?seg.plans[0]:seg;
+    const targetOk=await setOrderSpecialLaneQty(order,action.targetLane,targetNextQty,{seedOverride:seedPlan});
+    if(!targetOk){
+      alert(`${action.targetLabel} alanina aktarim yapilamadi.`);
+      await refreshPlans();
+      return;
+    }
+    let sourceOk=true;
+    if(String(seg.machine||"")==="TESFIYE"){
+      sourceOk=await setOrderSpecialLaneQty(order,"TESFIYE",Math.max(0,flowMeta.tesfiyeQty-movedQty),{seedOverride:seedPlan});
+    }else if(movedQty>=action.sourceQty){
+      sourceOk=await removeOrderFromProductionQueues(order);
+    }
+    await refreshPlans();
+    setSelectedPlan(null);
+    if(!sourceOk){
+      alert("Miktar aktarıldı ancak kaynak plan tamamen temizlenemedi. Lütfen planı kontrol edin.");
+    }
   }
   const machineBoardRows=planningLaneIds.map(machine=>{
     const orderedSegs=filteredPlanSegments
@@ -22166,7 +22439,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
           <div style={{fontSize:11,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.orderName||"-"}</div>
           <div style={{fontSize:10.5,color:C.muted2,marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.customer||"-"}</div>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:6,marginTop:4}}>
-            <div style={{fontSize:compact?16:17,fontWeight:800,color:card.tone.text,lineHeight:1}}>{card.qty}</div>
+            <div style={{fontSize:compact?16:17,fontWeight:800,color:card.tone.text,lineHeight:1}}>{formatMetricNumber(card.qty)||"0"}</div>
             <div style={{fontSize:10.5,color:dueTone,fontWeight:700}}>Termin: {card.due||"-"}</div>
           </div>
           <div style={{fontSize:10.5,color:C.muted2,marginTop:2}}>{card.spanLabel}</div>
@@ -22179,6 +22452,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
           )}
           {!compact&&segment&&(
             <div style={{display:"flex",gap:6,marginTop:5}}>
+              {card.canFinish&&<button onClick={async e=>{e.stopPropagation();await completePlanningSegment(segment);}} style={{...btnSt("primary"),padding:"2px 6px",fontSize:10.5}}>Bitti</button>}
               <button onClick={e=>{e.stopPropagation();startEdit(segment);}} style={{...btnSt("ghost"),padding:"2px 6px",fontSize:10.5}}>Duzenle</button>
               <button onClick={e=>{e.stopPropagation();removePlan(segment);}} style={{...btnSt("danger"),padding:"2px 6px",fontSize:10.5}}>Sil</button>
             </div>
@@ -22588,6 +22862,10 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
               <div><strong>Ad:</strong> {selectedPlan.orderName||"-"}</div>
               <div><strong>Firma:</strong> {selectedPlan.orderCustomerName||"-"}</div>
               <div><strong>Gün:</strong> {(selectedPlanSegment?.plans||[]).length||1}</div>
+              <div><strong>Miktar:</strong> {formatMetricNumber(selectedPlanQty)||"0"}</div>
+              {selectedPlanFlowMeta&&<div><strong>Uretimde Kalan:</strong> {formatMetricNumber(selectedPlanFlowMeta.remainingProductionQty)||"0"}</div>}
+              {selectedPlanFlowMeta&&<div><strong>Tesfiye:</strong> {formatMetricNumber(selectedPlanFlowMeta.tesfiyeQty)||"0"}</div>}
+              {selectedPlanFlowMeta&&<div><strong>Sevk:</strong> {formatMetricNumber(selectedPlanFlowMeta.sevkQty)||"0"}</div>}
               {selectedPlanOperationMeta&&(
                 <div style={{gridColumn:"1 / -1"}}>
                   <strong>Operasyon:</strong>{" "}
@@ -22600,6 +22878,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
             {selectedPlan.note&&<div style={{marginTop:10,fontSize:13,color:C.muted2}}>{selectedPlan.note}</div>}
             <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
               <button onClick={()=>setSelectedPlan(null)} style={{...btnSt("ghost"),padding:"9px 12px"}}>Kapat</button>
+              {selectedPlanCanFinish&&<button onClick={async()=>{const p=selectedPlanSegment||selectedPlan;await completePlanningSegment(p);}} style={{...btnSt("primary"),padding:"9px 12px"}}>Bitti</button>}
               <button onClick={()=>{startEdit(selectedPlan);setSelectedPlan(null);}} style={{...btnSt("ghost"),padding:"9px 12px"}}>Düzenle</button>
               <button onClick={async()=>{const p=selectedPlan;setSelectedPlan(null);await removePlan(p);}} style={{...btnSt("danger"),padding:"9px 12px"}}>Sil</button>
             </div>
