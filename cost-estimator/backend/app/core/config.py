@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     debug: bool = False
 
     api_prefix: str = "/api/v1"
-    cors_origins: List[str] = Field(default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"])
+    cors_origins: List[str] = Field(default_factory=list)
 
     database_url: str = "postgresql+psycopg://cnc:cnc@postgres:5432/cnc_cost"
     redis_url: str = "redis://redis:6379/0"

@@ -9,12 +9,30 @@ Mevcut uygulama su anda agirlikla is emri, siparis, stok, planlama ve raporlama 
 - Veri: Firebase Firestore
 - Ek sayfa: `orders.html` + `js/orders.js`
 
-## Yerel Calistirma
+## Gelistirme Ortami
 
 1. Statik dosya olarak dogrudan acabilirsiniz:
    `index.html`
 2. Alternatif olarak bir lokal web server ile:
    `python -m http.server 8080`
+
+## Online Deployment
+
+Bu proje online yayin icin uygundur. Ana mantik sudur:
+
+- Kullanici tek domain uzerinden uygulamayi acar
+- Nginx statik arayuzu sunar
+- `Cost Estimator` frontend build cikisi ayni domain altindan yayinlanir
+- `/api/v1` istekleri ayni domain altindan FastAPI servisine proxy edilir
+- PostgreSQL, Redis ve MinIO ic servis olarak container aginda kalir
+
+Ornek:
+
+```bash
+docker compose up --build -d
+```
+
+Varsayilan olarak `docker-compose.yml` online/same-origin kurulum mantigina gore hazirlandi. Domain bazli CORS gerekiyorsa `.env` icinden `CORS_ORIGINS` degiskeniyle JSON dizi olarak verilebilir.
 
 ## Kapsam Dokumanlari
 
@@ -46,5 +64,6 @@ Mevcut uygulama su anda agirlikla is emri, siparis, stok, planlama ve raporlama 
 
 - Konum: `cost-estimator/`
 - Stack: FastAPI + React/TS + Celery + Redis + PostgreSQL + MinIO + three.js
-- Calistirma:
+- Gelistirme icin ayri calistirma:
   `cd cost-estimator && docker compose up --build`
+- Uretim/online kullanimda ana `docker-compose.yml` icine entegredir

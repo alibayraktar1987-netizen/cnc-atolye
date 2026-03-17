@@ -28053,7 +28053,7 @@ function MaterialQuoteBridgeModule(){
       }
       setFrameSrc(frameCandidates[0]||"");
       setFrameState("missing");
-      setFrameNote("Modul dosyasi bu sunucuda bulunamadi. Gerekirse ana uygulamayi `docker compose up --build` ile yeniden baslatin veya Cost Estimator frontendini `localhost:5173` uzerinden acin.");
+      setFrameNote("Modul dosyasi bu yayinda bulunamadi. Online kurulumda Cost Estimator build cikisi ayni domain altinda yayinlanmali ve `/api/v1` yolu aktif olmalidir.");
     }
     resolveFrameSource();
     return ()=>{

@@ -34,7 +34,7 @@ This module is a full-stack STEP-based cost estimation app for CNC machining.
 5. Estimate cycle time and cost using formula-based rules
 6. Render generated 3D preview model in browser (`glb` output)
 
-## Run
+## Development Run
 
 From `cost-estimator/`:
 
@@ -47,6 +47,19 @@ Endpoints:
 - Frontend: `http://localhost:5173`
 - API: `http://localhost:8000/api/v1`
 - MinIO Console: `http://localhost:9001` (`minioadmin` / `minioadmin`)
+
+## Online Deployment
+
+Online kullanimda bu modulu ayri `localhost` portlariyla calistirmak zorunda degilsiniz.
+
+Onerilen yapi:
+
+- Ana uygulama ve Cost Estimator ayni domain altindan yayinlanir
+- `cost-estimator/frontend/dist` build'i nginx ile servis edilir
+- API istekleri ayni domaindeki `/api/v1` yolundan FastAPI'ye proxy edilir
+- CORS ancak farkli domain kullaniliyorsa gerekir
+
+Bu repo icinde ana `docker-compose.yml` ve nginx konfigrasyonu bu same-origin online model icin duzenlenmistir.
 
 ## API Highlights
 
