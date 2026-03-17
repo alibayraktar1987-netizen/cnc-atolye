@@ -27987,16 +27987,103 @@ function IntegrationsReadinessModule(){
 }
 
 function MaterialQuoteBridgeModule(){
-  const frameSrc=typeof window!=="undefined"
-    ? new URL("./cost-estimator/frontend/dist/index.html",window.location.href).toString()
-    : "./cost-estimator/frontend/dist/index.html";
-  const API_BASE_URL=typeof window!=="undefined"
-    ? `${window.location.origin}/api/v1`
-    : "/api/v1";
-  const API_DOCS_URL=typeof window!=="undefined"
-    ? `${window.location.origin}/docs`
-    : "/docs";
+  const isBrowser=typeof window!=="undefined";
+  const isHttpRuntime=isBrowser&&/^https?:$/i.test(String(window.location.protocol||""));
+  const runtimeOrigin=isHttpRuntime?window.location.origin:"";
+  const frameCandidates=useMemo(()=>{
+    if(!isBrowser){
+      return ["./cost-estimator/frontend/dist/","./cost-estimator/frontend/dist/index.html"];
+    }
+    const base=window.location.href;
+    const host=String(window.location.hostname||"").toLowerCase();
+    const protocol=String(window.location.protocol||"").toLowerCase();
+    const list=[
+      new URL("./cost-estimator/frontend/dist/",base).toString(),
+      new URL("./cost-estimator/frontend/dist/index.html",base).toString(),
+    ];
+    if(protocol==="file:"||host==="localhost"||host==="127.0.0.1"){
+      list.push("http://localhost:5173/","http://127.0.0.1:5173/");
+    }
+    return Array.from(new Set(list));
+  },[isBrowser]);
+  const API_BASE_URL=runtimeOrigin?`${runtimeOrigin}/api/v1`:"http://localhost:8000/api/v1";
+  const API_DOCS_URL=runtimeOrigin?`${runtimeOrigin}/docs`:"http://localhost:8000/docs";
   const [frameKey,setFrameKey]=useState(0);
+  const [frameSrc,setFrameSrc]=useState(frameCandidates[0]||"");
+  const [frameState,setFrameState]=useState("checking");
+  const [frameNote,setFrameNote]=useState("Cost Estimator kaynagi kontrol ediliyor.");
+  const frameRef=useRef(null);
+
+  useEffect(()=>{
+    let cancelled=false;
+    async function probeFrameSource(candidate){
+      if(!candidate||!isBrowser) return false;
+      try{
+        const target=new URL(candidate,window.location.href);
+        const isHttpTarget=target.protocol==="http:"||target.protocol==="https:";
+        const sameOriginHttp=Boolean(runtimeOrigin)&&isHttpTarget&&target.origin===runtimeOrigin;
+        if(sameOriginHttp){
+          const res=await fetch(target.toString(),{cache:"no-store"});
+          if(!res.ok) return false;
+          const text=String(await res.text()).slice(0,600).toLowerCase();
+          if(text.includes("not found")||text.includes("cannot get /")||text.includes("<title>404")) return false;
+          return true;
+        }
+        if(isHttpTarget){
+          await fetch(target.toString(),{mode:"no-cors",cache:"no-store"});
+          return true;
+        }
+        return target.protocol==="file:";
+      }catch{
+        return false;
+      }
+    }
+    async function resolveFrameSource(){
+      setFrameState("checking");
+      setFrameNote("Cost Estimator kaynagi kontrol ediliyor.");
+      for(const candidate of frameCandidates){
+        const ok=await probeFrameSource(candidate);
+        if(cancelled) return;
+        if(ok){
+          setFrameSrc(candidate);
+          setFrameState("ready");
+          setFrameNote("");
+          return;
+        }
+      }
+      setFrameSrc(frameCandidates[0]||"");
+      setFrameState("missing");
+      setFrameNote("Modul dosyasi bu sunucuda bulunamadi. Gerekirse ana uygulamayi `docker compose up --build` ile yeniden baslatin veya Cost Estimator frontendini `localhost:5173` uzerinden acin.");
+    }
+    resolveFrameSource();
+    return ()=>{
+      cancelled=true;
+    };
+  },[frameCandidates,frameKey,isBrowser,runtimeOrigin]);
+
+  const activeFrameSrc=frameSrc||frameCandidates[0]||"";
+  const frameBadgeLabel=frameState==="checking"?"Kontrol":(frameState==="missing"?"Bulunamadi":"Online");
+  const frameBadgeColor=frameState==="checking"?C.warn:(frameState==="missing"?C.red:C.accent);
+  const handleFrameLoad=useCallback(()=>{
+    const node=frameRef.current;
+    if(!node) return;
+    try{
+      const doc=node.contentDocument;
+      if(!doc) return;
+      const title=String(doc.title||"").trim().toLowerCase();
+      const bodyText=String(doc.body?.innerText||doc.documentElement?.innerText||"").trim().toLowerCase();
+      const failed=bodyText==="not found"||bodyText.startsWith("not found")||bodyText.startsWith("cannot get /")||title==="404";
+      if(failed){
+        setFrameState("missing");
+        setFrameNote("Onizleme yolu acildi ancak sunucu Cost Estimator dosyasini donmedi.");
+        return;
+      }
+      setFrameState("ready");
+      setFrameNote("");
+    }catch{
+      setFrameState(prev=>prev==="checking"?"ready":prev);
+    }
+  },[]);
   return (
     <div style={{padding:0,display:"flex",flexDirection:"column",gap:12,minHeight:0,height:"100%"}}>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
@@ -28014,7 +28101,7 @@ function MaterialQuoteBridgeModule(){
         <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
           <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Aktif Sayfa</div>
           <div style={{marginTop:6,fontSize:14,color:C.text,fontWeight:700}}>Ana Menu Entegrasyonu</div>
-          <div style={{marginTop:8,fontSize:12,color:C.muted2,wordBreak:"break-all"}}>{frameSrc}</div>
+          <div style={{marginTop:8,fontSize:12,color:C.muted2,wordBreak:"break-all"}}>{activeFrameSrc||"-"}</div>
         </div>
         <div style={{background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,padding:12}}>
           <div style={{fontSize:11,color:C.muted2,letterSpacing:.6,textTransform:"uppercase"}}>Aktif API</div>
@@ -28024,7 +28111,7 @@ function MaterialQuoteBridgeModule(){
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <button onClick={()=>setFrameKey(k=>k+1)} style={{...btnSt("ghost"),padding:"9px 12px",fontSize:12}}>Modulu Yenile</button>
-        <button onClick={()=>window.open(frameSrc,"_blank")} style={{...btnSt("ghost"),padding:"9px 12px",fontSize:12}}>Yeni Sekmede Ac</button>
+        <button onClick={()=>window.open(activeFrameSrc,"_blank")} style={{...btnSt("ghost"),padding:"9px 12px",fontSize:12}} disabled={!activeFrameSrc}>Yeni Sekmede Ac</button>
         <button onClick={()=>window.open(API_DOCS_URL,"_blank")} style={{...btnSt("ghost"),padding:"9px 12px",fontSize:12}}>API Dokumani</button>
       </div>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,display:"flex",flexDirection:"column",gap:12,flex:1,minHeight:0}}>
@@ -28035,16 +28122,40 @@ function MaterialQuoteBridgeModule(){
               Ekran dogrudan ana menu akisi icinde acilir. Servis guncellemelerinde sadece modulu yenilemek yeterlidir.
             </div>
           </div>
-          <Badge label="Online" color={C.accent}/>
+          <Badge label={frameBadgeLabel} color={frameBadgeColor}/>
         </div>
         <div style={{border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",background:"#0b1018",flex:1,minHeight:"72vh"}}>
-          <iframe
-            key={`online-${frameKey}`}
-            title="Cost Estimator Modulu"
-            src={frameSrc}
-            loading="eager"
-            style={{width:"100%",height:"100%",minHeight:"72vh",border:"none",background:"#0b1018",colorScheme:"dark"}}
-          />
+          {frameState==="missing" ? (
+            <div style={{display:"flex",flexDirection:"column",gap:12,minHeight:"72vh",padding:"22px 18px",background:"#0b1018"}}>
+              <div style={{fontSize:22,fontWeight:800,color:"#F5F7FA"}}>Cost Estimator acilamadi</div>
+              <div style={{fontSize:13,lineHeight:1.6,color:"rgba(245,247,250,.76)"}}>
+                {frameNote||"Modul dosyasi veya yayinlanan yol bulunamadi."}
+              </div>
+              <div style={{fontSize:12,color:"rgba(245,247,250,.58)"}}>Kontrol edilen adresler</div>
+              <div style={{display:"grid",gap:8}}>
+                {frameCandidates.map((candidate,idx)=>(
+                  <div key={candidate} style={{border:"1px solid rgba(255,255,255,.08)",borderRadius:10,padding:"10px 12px",background:"rgba(255,255,255,.02)"}}>
+                    <div style={{fontSize:11,color:"rgba(245,247,250,.45)",textTransform:"uppercase",letterSpacing:.7}}>Kaynak {idx+1}</div>
+                    <div style={{marginTop:6,fontSize:12,color:"rgba(245,247,250,.82)",wordBreak:"break-all"}}>{candidate}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : frameState==="checking" ? (
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"72vh",padding:18,color:"rgba(245,247,250,.78)",fontSize:14}}>
+              Cost Estimator yukleniyor...
+            </div>
+          ) : (
+            <iframe
+              key={`online-${frameKey}-${activeFrameSrc}`}
+              ref={frameRef}
+              title="Cost Estimator Modulu"
+              src={activeFrameSrc}
+              loading="eager"
+              onLoad={handleFrameLoad}
+              style={{width:"100%",height:"100%",minHeight:"72vh",border:"none",background:"#0b1018",colorScheme:"dark"}}
+            />
+          )}
         </div>
       </div>
     </div>
