@@ -2,6 +2,12 @@
 .github
 docs
 node_modules
+cost-estimator/frontend/node_modules
+cost-estimator/backend/__pycache__
+cost-estimator/backend/app/__pycache__
+cost-estimator/backend/app/**/__pycache__
+cost-estimator/backend/.pytest_cache
+cost-estimator/backend/.mypy_cache
+cost-estimator/backend/.venv
 *.log
 *.tmp
-

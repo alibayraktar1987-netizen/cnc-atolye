@@ -727,7 +727,7 @@ const ROLE_MODULE_CATALOG = [
   {id:"rapor",label:"Raporlar",group:"Analiz"},
   {id:"finance",label:"Finans",group:"Analiz"},
   {id:"cost",label:"Maliyetleme",group:"Analiz"},
-  {id:"materialquote",label:"Malzeme Teklif",group:"Analiz"},
+  {id:"materialquote",label:"Cost Estimator",group:"Analiz"},
   {id:"progenergy",label:"Program ve Enerji",group:"Analiz"},
   {id:"toolcycle",label:"Takım ve Çevrim",group:"Analiz"},
   {id:"closedloop",label:"Ölçüm ve Depo",group:"Analiz"},
@@ -755,7 +755,7 @@ const DEFAULT_ROLE_PROFILES = [
     parentId:"profile_admin",
     description:"Vardiya, plan ve saha operasyonu yonetimi.",
     permissions:[...ROLE_PERMISSION_DEFAULTS.supervisor],
-    moduleAccess:["dashboard","planning","orders","assignments","cncmonitor","downtime","quality","rapor"],
+    moduleAccess:["dashboard","planning","orders","assignments","cncmonitor","downtime","quality","rapor","materialquote"],
     locked:true,
     order:1,
   },
@@ -777,7 +777,7 @@ const DEFAULT_ROLE_PROFILES = [
     parentId:"profile_admin",
     description:"Finans ve rapor ekranlari icin ornek profil.",
     permissions:["view_reports"],
-    moduleAccess:["dashboard","finance","rapor"],
+    moduleAccess:["dashboard","finance","rapor","materialquote"],
     locked:true,
     order:3,
   },
@@ -788,7 +788,7 @@ const DEFAULT_ROLE_PROFILES = [
     parentId:"profile_admin",
     description:"Teklif ve satis siparisi sureci.",
     permissions:[...ROLE_PERMISSION_DEFAULTS.sales],
-    moduleAccess:["dashboard","customers","quotes","sales","rapor","finance"],
+    moduleAccess:["dashboard","customers","quotes","sales","rapor","finance","materialquote"],
     locked:true,
     order:4,
   },
@@ -799,7 +799,7 @@ const DEFAULT_ROLE_PROFILES = [
     parentId:"profile_admin",
     description:"Planlama, parca ve is emri yonetimi.",
     permissions:[...ROLE_PERMISSION_DEFAULTS.planner],
-    moduleAccess:["dashboard","parts","planning","orders","assignments","rapor","cost"],
+    moduleAccess:["dashboard","parts","planning","orders","assignments","rapor","cost","materialquote"],
     locked:true,
     order:5,
   },
@@ -810,7 +810,7 @@ const DEFAULT_ROLE_PROFILES = [
     parentId:"profile_admin",
     description:"Talep, PO ve tedarik surecleri.",
     permissions:[...ROLE_PERMISSION_DEFAULTS.purchasing],
-    moduleAccess:["dashboard","materials","purchase_requests","purchase_suppliers","tools","rapor","finance"],
+    moduleAccess:["dashboard","materials","purchase_requests","purchase_suppliers","tools","rapor","finance","materialquote"],
     locked:true,
     order:6,
   },
@@ -821,7 +821,7 @@ const DEFAULT_ROLE_PROFILES = [
     parentId:"profile_admin",
     description:"Kalite kayitlari ve izlenebilirlik.",
     permissions:[...ROLE_PERMISSION_DEFAULTS.quality],
-    moduleAccess:["dashboard","quality","rapor"],
+    moduleAccess:["dashboard","quality","rapor","materialquote"],
     locked:true,
     order:7,
   },
@@ -832,7 +832,7 @@ const DEFAULT_ROLE_PROFILES = [
     parentId:"profile_admin",
     description:"Sadece izleme ve rapor erisimi.",
     permissions:[...ROLE_PERMISSION_DEFAULTS.viewer],
-    moduleAccess:["dashboard","rapor"],
+    moduleAccess:["dashboard","rapor","materialquote"],
     locked:true,
     order:8,
   },
@@ -1456,7 +1456,7 @@ function normalizeNotificationDeliverySettings(raw){
     updatedBy:pick(src,"updatedBy",""),
   };
 }
-const MENU_ALWAYS_VISIBLE_TAB_IDS = ["users"];
+const MENU_ALWAYS_VISIBLE_TAB_IDS = ["users","materialquote"];
 function normalizeMenuVisibilityConfig(raw){
   const src=(raw&&typeof raw==="object")?raw:{};
   const input=Array.isArray(src.hiddenTabs)?src.hiddenTabs:(Array.isArray(src.hidden)?src.hidden:[]);
@@ -28002,9 +28002,9 @@ function MaterialQuoteBridgeModule(){
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
           <div>
-            <div style={{fontWeight:700,color:C.text,fontSize:16}}>Malzeme Teklif ve Maliyet Analizi</div>
+            <div style={{fontWeight:700,color:C.text,fontSize:16}}>Cost Estimator</div>
             <div style={{fontSize:13,color:C.muted2,marginTop:8}}>
-              Modul ana menu icinde tek ekrandan acilir ve aktif domain uzerinden servisle haberlesir.
+              STEP yukleme, malzeme secimi ve maliyet analizi tek ekranda calisir.
             </div>
           </div>
           <Badge label="Canli Modul" color={C.green}/>
@@ -28040,7 +28040,7 @@ function MaterialQuoteBridgeModule(){
         <div style={{border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",background:"#0b1018",flex:1,minHeight:"72vh"}}>
           <iframe
             key={`online-${frameKey}`}
-            title="Malzeme Teklif Modulu"
+            title="Cost Estimator Modulu"
             src={frameSrc}
             loading="eager"
             style={{width:"100%",height:"100%",minHeight:"72vh",border:"none",background:"#0b1018",colorScheme:"dark"}}
@@ -28866,7 +28866,7 @@ function App() {
       {id:"rapor",icon:"rapor",label:"Raporlar",group:"Analiz",enabled:canReport},
       {id:"finance",icon:"cost",label:"Finans",group:"Analiz",enabled:(canSales||canPurchasing||canReport)},
       {id:"cost",icon:"cost",label:"Maliyetleme",group:"Analiz",enabled:(canOrders||canReport||canSales)},
-      {id:"materialquote",icon:"cost",label:"Malzeme Teklif",group:"Analiz",enabled:(canOrders||canSales||canPurchasing||canReport)},
+      {id:"materialquote",icon:"cost",label:"Cost Estimator",group:"Analiz",enabled:(canOrders||canSales||canPurchasing||canReport)},
       {id:"progenergy",icon:"integration",label:"Program ve Enerji",group:"Analiz",enabled:canSmartFactory},
       {id:"toolcycle",icon:"tools",label:"Takım ve Çevrim",group:"Analiz",enabled:canSmartFactory},
       {id:"closedloop",icon:"quality",label:"Ölçüm ve Depo",group:"Analiz",enabled:canSmartFactory},
