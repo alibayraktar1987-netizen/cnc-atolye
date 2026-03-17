@@ -1,0 +1,99 @@
+databases:
+  - name: cnc-atolye-db
+    databaseName: cnc_cost
+    user: cnc
+
+services:
+  - type: web
+    name: cnc-atolye-web
+    runtime: docker
+    dockerContext: .
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    envVars:
+      - key: API_UPSTREAM_HOSTPORT
+        fromService:
+          type: pserv
+          name: cnc-atolye-api
+          property: hostport
+
+  - type: pserv
+    name: cnc-atolye-api
+    runtime: docker
+    dockerContext: ./cost-estimator/backend
+    dockerfilePath: ./cost-estimator/backend/Dockerfile
+    healthCheckPath: /docs
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cnc-atolye-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: cnc-atolye-redis
+          property: connectionString
+      - key: MINIO_ENDPOINT
+        fromService:
+          type: pserv
+          name: cnc-atolye-minio
+          property: hostport
+      - key: MINIO_ACCESS_KEY
+        value: minioadmin
+      - key: MINIO_SECRET_KEY
+        value: minioadmin
+      - key: MINIO_SECURE
+        value: "false"
+      - key: CORS_ORIGINS
+        value: '[]'
+
+  - type: worker
+    name: cnc-atolye-worker
+    runtime: docker
+    dockerContext: ./cost-estimator/backend
+    dockerfilePath: ./cost-estimator/backend/Dockerfile
+    dockerCommand: celery -A app.tasks.celery_app.celery_app worker --loglevel=info --pool=solo
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cnc-atolye-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: cnc-atolye-redis
+          property: connectionString
+      - key: MINIO_ENDPOINT
+        fromService:
+          type: pserv
+          name: cnc-atolye-minio
+          property: hostport
+      - key: MINIO_ACCESS_KEY
+        value: minioadmin
+      - key: MINIO_SECRET_KEY
+        value: minioadmin
+      - key: MINIO_SECURE
+        value: "false"
+
+  - type: pserv
+    name: cnc-atolye-minio
+    runtime: docker
+    dockerContext: ./render/minio
+    dockerfilePath: ./render/minio/Dockerfile
+    disk:
+      name: minio-data
+      mountPath: /data
+      sizeGB: 10
+    envVars:
+      - key: MINIO_ROOT_USER
+        value: minioadmin
+      - key: MINIO_ROOT_PASSWORD
+        value: minioadmin
+
+  - type: keyvalue
+    name: cnc-atolye-redis
+

@@ -34,6 +34,11 @@ docker compose up --build -d
 
 Varsayilan olarak `docker-compose.yml` online/same-origin kurulum mantigina gore hazirlandi. Domain bazli CORS gerekiyorsa `.env` icinden `CORS_ORIGINS` degiskeniyle JSON dizi olarak verilebilir.
 
+Render uzerinden yayinlamak icin:
+
+- Blueprint dosyasi: `render.yaml`
+- Adim adim rehber: `docs/render-deploy.md`
+
 ## Kapsam Dokumanlari
 
 - Gereksinim matrisi: `docs/requirements.md`

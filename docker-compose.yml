@@ -5,8 +5,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    environment:
+      PORT: 10000
+      API_UPSTREAM_HOSTPORT: api:8000
     ports:
-      - "${APP_PORT:-8080}:80"
+      - "${APP_PORT:-8080}:10000"
     depends_on:
       api:
         condition: service_started
