@@ -19,7 +19,7 @@ ENV API_UPSTREAM_HOSTPORT=api:8000
 COPY *.html ./
 COPY css ./css
 COPY js ./js
-COPY --from=estimator-build /build/cost-estimator/frontend/dist ./cost-estimator
+COPY --from=estimator-build /build/cost-estimator/frontend/dist ./estimator
 COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
 
 EXPOSE 10000

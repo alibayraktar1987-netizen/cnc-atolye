@@ -41,12 +41,12 @@ server {
 
   # Cost Estimator is served as a first-class module under the same origin.
   # This keeps its assets and /api/v1 calls independent of localhost ports.
-  location = /cost-estimator {
-    return 301 /cost-estimator/;
+  location = /estimator {
+    return 301 /estimator/;
   }
 
-  location /cost-estimator/ {
-    try_files $uri $uri/ /cost-estimator/index.html;
+  location /estimator/ {
+    try_files $uri $uri/ /estimator/index.html;
   }
 
   location / {
