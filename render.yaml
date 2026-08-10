@@ -22,7 +22,6 @@ services:
     runtime: docker
     dockerContext: ./cost-estimator/backend
     dockerfilePath: ./cost-estimator/backend/Dockerfile
-    healthCheckPath: /docs
     envVars:
       - key: APP_ENV
         value: production
@@ -100,3 +99,4 @@ services:
 
   - type: keyvalue
     name: cnc-atolye-redis
+    ipAllowList: []
