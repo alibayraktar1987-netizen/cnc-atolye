@@ -26987,7 +26987,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
     setInspections(prev=>[{id,...payload},...prev]);
     setInspForm({traceId:"",result:"pass",measurements:"",scrapQty:"0",scrapReason:"",scrapCost:"0"});
   }
-  async function runAutoBalloon(){
+  async function runAutoBalloon({replaceRunId=""}={}){
     const wo=pdfOrderById[balloonForm.orderId];
     if(!wo){alert("PDF icin is emri secin.");return;}
     if(!selectedPdfFile){alert("PDF secin.");return;}
@@ -26996,6 +26996,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
     setBalloonError("");
     try{
       const result=await autoBalloonPdfDrawing(selectedPdfFile,{pageNumber:Math.max(1,safeNum(balloonForm.page)||1)});
+      const now=new Date().toISOString();
       const payload={
         orderId:wo.id||"",
         orderCode:wo.code||"",
@@ -27017,13 +27018,25 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
         source:"auto_pdfjs_v2",
         status:"draft",
         createdBy:currentUser.id,
-        createdAt:new Date().toISOString(),
-        updatedAt:new Date().toISOString(),
+        createdAt:now,
+        updatedAt:now,
       };
-      const id=await window.DB.addDoc("faiBalloonRuns",payload);
-      if(!id){throw new Error("Balon kaydi saklanamadi.");}
-      const saved={id,...payload};
-      setBalloonRuns(prev=>[saved,...prev]);
+      const existingId=String(replaceRunId||"").trim();
+      let id=existingId;
+      let saved;
+      if(existingId){
+        const previous=balloonRuns.find(run=>run.id===existingId)||null;
+        const patch={...payload,createdBy:previous?.createdBy||payload.createdBy,createdAt:previous?.createdAt||payload.createdAt,rerunAt:now,rerunBy:currentUser.id};
+        const ok=await window.DB.updateDoc("faiBalloonRuns",existingId,patch);
+        if(!ok){throw new Error("Balon calismasi guncellenemedi.");}
+        saved={id:existingId,...patch};
+        setBalloonRuns(prev=>prev.map(run=>run.id===existingId?saved:run));
+      }else{
+        id=await window.DB.addDoc("faiBalloonRuns",payload);
+        if(!id){throw new Error("Balon kaydi saklanamadi.");}
+        saved={id,...payload};
+        setBalloonRuns(prev=>[saved,...prev]);
+      }
       setBalloonPreview({
         runId:id,
         previewDataUrl:result.previewDataUrl,
@@ -27071,6 +27084,22 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
       return;
     }
     await runAutoBalloon();
+  }
+  async function rerunAutoBalloon(){
+    const wo=pdfOrderById[balloonForm.orderId];
+    if(!wo||!selectedPdfFile){alert("Is emri ve teknik resim PDF secin.");return;}
+    const requestedPage=Math.max(1,safeNum(balloonForm.page)||1);
+    const matchingRun=balloonRuns.find(run=>
+      run.orderId===wo.id&&
+      String(run.filePickId||"")===String(selectedPdfFile._pickId||"")&&
+      Math.max(1,safeNum(run.page)||1)===requestedPage
+    );
+    if(!matchingRun){
+      await runAutoBalloon();
+      return;
+    }
+    if(!await askAppConfirm("Mevcut balon numaralari ve manuel duzeltmeler, yeni otomatik tespitle guncellenecek. Devam edilsin mi?")) return;
+    await runAutoBalloon({replaceRunId:matchingRun.id});
   }
   function bindSelectedBalloonRunToFai(runId){
     const run=balloonRuns.find(r=>r.id===runId)||null;
@@ -27232,6 +27261,9 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
                 <button onClick={openOrCreateAutoBalloon} disabled={balloonBusy||!balloonForm.orderId||!balloonForm.fileId} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,opacity:(balloonBusy||!balloonForm.orderId||!balloonForm.fileId)?0.65:1}}>
                   {balloonBusy?"Oto Balonlanıyor...":"Oto Balon Çalışmasını Aç"}
                 </button>
+                {balloonWorkspaceOpen&&<button onClick={rerunAutoBalloon} disabled={balloonBusy||!balloonForm.orderId||!balloonForm.fileId} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,opacity:(balloonBusy||!balloonForm.orderId||!balloonForm.fileId)?0.65:1}}>
+                  {balloonBusy?"Yeniden Taranıyor...":"Yeniden Oto Balonla"}
+                </button>}
                 <button onClick={addEditableBalloonRow} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>
                   + Manuel Olcu
                 </button>
