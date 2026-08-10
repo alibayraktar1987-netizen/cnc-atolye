@@ -3641,6 +3641,57 @@ async function autoBalloonPdfDrawing(file,{pageNumber=1,maxItems=260}={}){
     },
   };
 }
+async function autoBalloonAiDrawing(file,{pageNumber=1,maxItems=260}={}){
+  if(!getFileSource(file)) throw new Error("PDF dosyasi bulunamadi.");
+  const pdfLibSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+  const pdfWorkerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  const ok=await ensureExternalScript(pdfLibSrc,()=>Boolean(window.pdfjsLib&&window.pdfjsLib.getDocument));
+  if(!ok||!window.pdfjsLib?.getDocument) throw new Error("PDF motoru yuklenemedi.");
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc=pdfWorkerSrc;
+  const bytes=await loadFileBytes(file);
+  const pdf=await window.pdfjsLib.getDocument({data:bytes}).promise;
+  const totalPages=Math.max(1,Number(pdf.numPages)||1);
+  const safePage=Math.min(totalPages,Math.max(1,Number(pageNumber)||1));
+  const page=await pdf.getPage(safePage);
+  const viewport=page.getViewport({scale:1.5});
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.max(1,Math.round(viewport.width));
+  canvas.height=Math.max(1,Math.round(viewport.height));
+  const ctx=canvas.getContext("2d");
+  await page.render({canvasContext:ctx,viewport}).promise;
+  const previewDataUrl=canvas.toDataURL("image/jpeg",.88);
+  const response=await fetch("/api/v1/fai/auto-balloon-ai",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({image_data_url:previewDataUrl,page_number:safePage,page_width:viewport.width,page_height:viewport.height}),
+  });
+  const body=await response.json().catch(()=>({}));
+  if(!response.ok) throw new Error(String(body?.detail||"AI olcu tespiti basarisiz."));
+  const seen={};
+  const rows=(Array.isArray(body?.dimensions)?body.dimensions:[])
+    .map(row=>({
+      text:normalizeDimensionToken(row?.text||""),
+      page:safePage,
+      xPct:Math.max(0,Math.min(100,safeNum(row?.xPct))),
+      yPct:Math.max(0,Math.min(100,safeNum(row?.yPct))),
+      confidence:Math.max(0,Math.min(1,safeNum(row?.confidence))),
+      source:"openai_vision",
+    }))
+    .filter(row=>row.text&&isLikelyDimensionToken(row.text))
+    .filter(row=>{
+      const key=`${canonicalDimensionToken(row.text)}|${Math.round(row.xPct/2)}|${Math.round(row.yPct/2)}`;
+      if(seen[key]) return false;
+      seen[key]=true;
+      return true;
+    })
+    .slice(0,Math.max(1,Math.min(500,Number(maxItems)||260)));
+  return {
+    page:safePage,pageCount:totalPages,pageWidth:viewport.width,pageHeight:viewport.height,previewDataUrl,
+    tokens:rows,
+    balloons:rows.map((row,idx)=>({...row,no:idx+1})),
+    detection:{engine:"openai_vision",detectedCount:rows.length,balloonCount:rows.length,lineCount:0,limited:false,note:(body?.notes||[]).join(" ")||"AI goruntu analiziyle tespit edildi. Kritik olculeri onaylayin."},
+  };
+}
 function disposeThreeObject(root) {
   if(!(root&&root.traverse)) return;
   root.traverse(node=>{
@@ -26987,7 +27038,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
     setInspections(prev=>[{id,...payload},...prev]);
     setInspForm({traceId:"",result:"pass",measurements:"",scrapQty:"0",scrapReason:"",scrapCost:"0"});
   }
-  async function runAutoBalloon({replaceRunId=""}={}){
+  async function runAutoBalloon({replaceRunId="",engine="pdf"}={}){
     const wo=pdfOrderById[balloonForm.orderId];
     if(!wo){alert("PDF icin is emri secin.");return;}
     if(!selectedPdfFile){alert("PDF secin.");return;}
@@ -26995,7 +27046,9 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
     setBalloonBusy(true);
     setBalloonError("");
     try{
-      const result=await autoBalloonPdfDrawing(selectedPdfFile,{pageNumber:Math.max(1,safeNum(balloonForm.page)||1)});
+      const result=engine==="ai"
+        ? await autoBalloonAiDrawing(selectedPdfFile,{pageNumber:Math.max(1,safeNum(balloonForm.page)||1)})
+        : await autoBalloonPdfDrawing(selectedPdfFile,{pageNumber:Math.max(1,safeNum(balloonForm.page)||1)});
       const now=new Date().toISOString();
       const payload={
         orderId:wo.id||"",
@@ -27015,7 +27068,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
         })),
         detectedTokens:result.tokens||[],
         detection:result.detection||null,
-        source:"auto_pdfjs_v2",
+        source:engine==="ai"?"openai_vision":"auto_pdfjs_v2",
         status:"draft",
         createdBy:currentUser.id,
         createdAt:now,
@@ -27100,6 +27153,14 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
     }
     if(!await askAppConfirm("Mevcut balon numaralari ve manuel duzeltmeler, yeni otomatik tespitle guncellenecek. Devam edilsin mi?")) return;
     await runAutoBalloon({replaceRunId:matchingRun.id});
+  }
+  async function runAiAutoBalloon(){
+    const wo=pdfOrderById[balloonForm.orderId];
+    if(!wo||!selectedPdfFile){alert("Is emri ve teknik resim PDF secin.");return;}
+    const requestedPage=Math.max(1,safeNum(balloonForm.page)||1);
+    const matchingRun=balloonRuns.find(run=>run.orderId===wo.id&&String(run.filePickId||"")===String(selectedPdfFile._pickId||"")&&Math.max(1,safeNum(run.page)||1)===requestedPage);
+    if(matchingRun&&!await askAppConfirm("AI tespiti mevcut balon listesini guncelleyecek. Devam edilsin mi?")) return;
+    await runAutoBalloon({replaceRunId:matchingRun?.id||"",engine:"ai"});
   }
   function bindSelectedBalloonRunToFai(runId){
     const run=balloonRuns.find(r=>r.id===runId)||null;
@@ -27263,6 +27324,9 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
                 </button>
                 {balloonWorkspaceOpen&&<button onClick={rerunAutoBalloon} disabled={balloonBusy||!balloonForm.orderId||!balloonForm.fileId} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,opacity:(balloonBusy||!balloonForm.orderId||!balloonForm.fileId)?0.65:1}}>
                   {balloonBusy?"Yeniden Taranıyor...":"Yeniden Oto Balonla"}
+                </button>}
+                {balloonWorkspaceOpen&&<button onClick={runAiAutoBalloon} disabled={balloonBusy||!balloonForm.orderId||!balloonForm.fileId} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,opacity:(balloonBusy||!balloonForm.orderId||!balloonForm.fileId)?0.65:1}}>
+                  {balloonBusy?"AI Teknik Resmi Okuyor...":"AI ile Ölçü Tespit Et"}
                 </button>}
                 <button onClick={addEditableBalloonRow} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>
                   + Manuel Olcu

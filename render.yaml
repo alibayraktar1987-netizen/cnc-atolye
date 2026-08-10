@@ -48,6 +48,10 @@ services:
         value: "false"
       - key: CORS_ORIGINS
         value: '[]'
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5
 
   - type: worker
     name: cnc-atolye-worker
@@ -96,4 +100,3 @@ services:
 
   - type: keyvalue
     name: cnc-atolye-redis
-

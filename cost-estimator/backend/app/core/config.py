@@ -27,6 +27,8 @@ class Settings(BaseSettings):
 
     default_allowance_mm: float = 3.0
     default_non_cut_factor: float = 0.2
+    openai_api_key: str = ""
+    openai_model: str = "gpt-5"
 
 
 @lru_cache(maxsize=1)
