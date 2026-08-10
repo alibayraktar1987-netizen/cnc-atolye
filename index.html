@@ -29120,6 +29120,22 @@ function ModulePlaceholder({title,desc,items=[]}) {
 // ============================================================
 //  MAIN APP
 // ============================================================
+function getModuleHelp(tab,label){
+  const guides={
+    dashboard:{purpose:"Günlük üretim, iş yükü ve önemli uyarıları tek ekrandan takip edin.",steps:["Üstteki arama alanından kayıt, parça veya müşteri bulun.","Yeni Kayıt ile işlem başlatın.","Kartlardaki gecikme ve kalite uyarılarını öncelik sırasına göre inceleyin."]},
+    planning:{purpose:"İş emirlerini kapasite, termin ve makine uygunluğuna göre planlayın.",steps:["Planlanacak iş emrini seçin.","Makine, başlangıç-bitiş zamanı ve sorumlu atamasını kontrol edin.","Çakışma veya kapasite uyarılarını çözerek planı kaydedin."]},
+    orders:{purpose:"Üretim iş emirlerini açın, ilerlemesini kaydedin ve kapatın.",steps:["Yeni iş emrinde müşteri, parça, miktar ve termin bilgilerini girin.","Operasyon ve malzeme ihtiyaçlarını doğrulayın.","Üretim kaydı tamamlanınca iş emrini izlenebilir şekilde kapatın."]},
+    quality_trace:{purpose:"Lot, işlem ve muayene kayıtlarıyla uçtan uca izlenebilirlik sağlayın.",steps:["İş emri veya lotu seçin.","Operasyon, ölçüm ve kabul/red sonucunu kaydedin.","Belge veya kanıtları ilgili kayda ekleyin."]},
+    quality_inspect:{purpose:"Muayene sonuçlarını, uygunsuzlukları ve hurdayı yönetin.",steps:["Muayene planı ve iş emrini doğrulayın.","Ölçüm sonuçlarını nominal/tolerans ile girin.","Red veya hurda varsa nedenini ve aksiyonu kaydedin."]},
+    quality_fai:{purpose:"FAI ilk numune kontrolü ve teknik resim balonlama çalışmalarını yönetin.",steps:["İş emrini ve teknik resim PDF dosyasını seçin.","Oto Balon Çalışmasını Aç ile mevcut çalışmayı inceleyin.","Yeniden Oto Balonla ile taramayı güncelleyin; kritik ölçüleri manuel onaylayın."]},
+    compliance_qms:{purpose:"QMS dokümanlarının sürüm, onay ve dağıtım kayıtlarını yönetin.",steps:["Doküman türü ve sorumlusunu seçin.","Revizyon, yürürlük tarihi ve onay akışını kaydedin.","Dağıtım ve gözden geçirme tarihlerini takip edin."]},
+    compliance_as9100:{purpose:"AS9100 kapsamındaki NCR, MRB ve CAPA süreçlerini kayıt altına alın.",steps:["Uygunsuzluğu kanıt ve etki bilgisiyle açın.","Kök neden ve düzeltici faaliyeti atayın.","Etkinlik doğrulaması sonrasında kaydı kapatın."]},
+    compliance_eydep:{purpose:"EYDEP yetkinlik, olgunluk, denetim ve aksiyon çalışmalarını yönetin.",steps:["Değerlendirme alanını ve mevcut durumu kaydedin.","Kanıtları ve geliştirme aksiyonlarını ekleyin.","Sorumlu ve hedef tarihleri periyodik olarak gözden geçirin."]},
+    compliance_security:{purpose:"Tesis güvenliği ziyaretçi, erişim, medya ve olay kayıtlarını yönetin.",steps:["Giriş/erişim talebini yetki seviyesine göre kaydedin.","Gizlilik ve refakat gereksinimlerini doğrulayın.","Olay varsa delil, aksiyon ve kapanış kaydını tamamlayın."]},
+    cost:{purpose:"Maliyet varsayımlarını, operasyon sürelerini ve teklif etkisini değerlendirin.",steps:["Parça, malzeme ve operasyon girdilerini doğrulayın.","Çevrim süresi ile işçilik oranlarını kontrol edin.","Sonucu teklif veya karar kaydına aktarın."]},
+  };
+  return guides[tab]||{purpose:`${label||"Bu modül"} içindeki kayıtları güvenli ve izlenebilir biçimde yönetin.`,steps:["Önce filtre veya arama ile ilgili kaydı bulun.","Yeni Kayıt ile zorunlu alanları doldurun ve kaydedin.","Değişikliklerden sonra ilgili durum, sorumlu ve tarih bilgisini güncelleyin."]};
+}
 function App() {
   const [currentUser,setCurrentUser]=useState(null);
   const [loading,setLoading]=useState(true);
@@ -29161,6 +29177,7 @@ function App() {
   const [globalSearchLoading,setGlobalSearchLoading]=useState(false);
   const [globalSearchVersion,setGlobalSearchVersion]=useState(0);
   const [systemDialogs,setSystemDialogs]=useState([]);
+  const [helpOpen,setHelpOpen]=useState(false);
   const tabFromUrlAppliedRef=useRef(false);
   const machinesRef=useRef(DEFAULT_MACHINES);
   const globalSearchContainerRef=useRef(null);
@@ -30383,6 +30400,7 @@ function App() {
     </div>
   );
   const showLegacyTopBar=tab!=="dashboard";
+  const activeHelp=getModuleHelp(tab,tabLabelById[tab]||activeContextLabel);
 
   return (
     <div style={{background:C.bg,height:"100dvh",minHeight:"100vh",overflow:"hidden",color:C.text}}>
@@ -30501,6 +30519,41 @@ function App() {
             {dashboardCreateOptions.length===0&&(
               <div style={{marginTop:10,fontSize:12,color:C.muted2}}>Bu kullanici icin uygun yeni kayit tipi bulunamadi.</div>
             )}
+          </div>
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={()=>setHelpOpen(true)}
+        title="Bu sayfa için yardım"
+        aria-label="Bu sayfa için yardım"
+        style={{position:"fixed",right:isMobile?14:22,bottom:isMobile?88:22,zIndex:70,width:44,height:44,borderRadius:"50%",border:`1px solid ${C.accent}`,background:C.accent,color:"#fff",fontSize:23,fontWeight:800,lineHeight:1,cursor:"pointer",boxShadow:"0 8px 22px rgba(15,23,42,.28)"}}
+      >?</button>
+      {helpOpen&&(
+        <div role="dialog" aria-modal="true" aria-label="Yardım merkezi" onClick={()=>setHelpOpen(false)} style={{position:"fixed",inset:0,zIndex:90,background:"rgba(15,23,42,.68)",display:"flex",alignItems:"center",justifyContent:"center",padding:isMobile?12:24}}>
+          <div onClick={e=>e.stopPropagation()} className="mrp-scrollbar" style={{width:"100%",maxWidth:760,maxHeight:"88vh",overflowY:"auto",background:C.card,border:`1px solid ${C.border}`,borderRadius:16,boxShadow:"0 24px 60px rgba(0,0,0,.32)"}}>
+            <div style={{padding:"16px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12}}>
+              <div>
+                <div style={{fontSize:11,fontWeight:800,letterSpacing:.8,textTransform:"uppercase",color:C.accent}}>Yardım Merkezi</div>
+                <div style={{fontSize:21,fontWeight:800,color:C.text,marginTop:3}}>{tabLabelById[tab]||activeContextLabel}</div>
+              </div>
+              <button onClick={()=>setHelpOpen(false)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Kapat</button>
+            </div>
+            <div style={{padding:18,display:"grid",gap:16}}>
+              <div style={{padding:13,border:`1px solid ${C.border}`,borderRadius:11,background:C.surface}}>
+                <div style={{fontSize:12,fontWeight:800,color:C.text,marginBottom:5}}>Bu alan ne için kullanılır?</div>
+                <div style={{fontSize:13,lineHeight:1.6,color:C.muted2}}>{activeHelp.purpose}</div>
+              </div>
+              <div>
+                <div style={{fontSize:14,fontWeight:800,color:C.text,marginBottom:9}}>Nasıl kullanılır?</div>
+                <ol style={{margin:0,paddingLeft:21,display:"grid",gap:9,color:C.text}}>
+                  {activeHelp.steps.map((step,index)=><li key={index} style={{fontSize:13,lineHeight:1.5,paddingLeft:3}}>{step}</li>)}
+                </ol>
+              </div>
+              <div style={{padding:"11px 13px",borderRadius:10,background:C.accentSoft,border:`1px solid ${C.accentBorder}`,fontSize:12,color:C.text,lineHeight:1.55}}>
+                İpucu: Kayıt oluşturmadan önce ilgili iş emri, müşteri veya parça bilgisini arama alanından doğrulayın. Kritik kalite ve güvenlik kayıtlarında kanıt ile sorumlu bilgisini ekleyin.
+              </div>
+            </div>
           </div>
         </div>
       )}
