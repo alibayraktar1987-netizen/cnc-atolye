@@ -3445,33 +3445,111 @@ function guessPartFieldsFromPdf({text="",lines=[],fileName=""}={}){
   };
 }
 function normalizeDimensionToken(token){
-  return String(token||"").replace(/\s+/g," ").trim().replace(/,+/g,",").replace(/\.+/g,".");
+  return String(token||"")
+    .replace(/[⌀⏥]/g,"Ø")
+    .replace(/[×]/g,"x")
+    .replace(/[‐‑–—]/g,"-")
+    .replace(/\s+/g," ")
+    .trim()
+    .replace(/,+/g,",")
+    .replace(/\.+/g,".");
+}
+function canonicalDimensionToken(token){
+  return normalizeDimensionToken(token).replace(/,/g,".").replace(/\s+/g,"").toUpperCase();
 }
 function isLikelyDimensionToken(token){
   const raw=normalizeDimensionToken(token);
   if(!raw) return false;
   const compact=raw.replace(/\s+/g,"");
   if(!/\d/.test(compact)) return false;
-  if(compact.length<2||compact.length>28) return false;
+  if(compact.length<2||compact.length>36) return false;
   if(/^[0-9]+$/.test(compact)) return false;
-  const hasMarker=/[Ø?R±°]|MM$/i.test(compact)||/M\d+/i.test(compact)||/\d+[.,]\d+/.test(compact)||/\d+[xX]\d+/.test(compact);
+  const hasMarker=/[ØR±°]|MM$/i.test(compact)||/M\d+/i.test(compact)||/\d+[.,]\d+/.test(compact)||/\d+[xX]\d+/.test(compact)||/[HhGgFfJjKk][0-9]{1,2}$/.test(compact)||/[+]\d+(?:[.,]\d+)?(?:\/-|-)\d+(?:[.,]\d+)?/.test(compact);
   return hasMarker;
 }
 function extractDimensionTokensFromText(text){
-  const cleaned=String(text||"").replace(/\s+/g," ").trim();
+  const cleaned=normalizeDimensionToken(text);
   if(!cleaned) return [];
-  const regex=/(?:Ø|R|M)?\s*\d{1,4}(?:[.,]\d{1,3})?(?:\s*[xX]\s*\d{1,4}(?:[.,]\d{1,3})?)*(?:\s*(?:mm|°))?(?:\s*[±]\s*\d+(?:[.,]\d+)?)?/g;
-  const matches=cleaned.match(regex)||[];
-  const uniq={};
-  return matches
+  const number="\\d{1,4}(?:[.,]\\d{1,4})?";
+  const patterns=[
+    new RegExp(`(?:Ø|R)\\s*${number}(?:\\s*(?:H|h|g|f|js|k)\\d{1,2})?(?:\\s*[±]\\s*${number}|\\s*\\+\\s*${number}\\s*(?:\\/|-)\\s*-?\\s*${number})?`,"gi"),
+    new RegExp(`\\bM\\s*${number}(?:\\s*[xX]\\s*${number})?(?:\\s*-?\\s*(?:6[GH]|[0-9]{1,2}[A-Za-z]))?\\b`,"gi"),
+    new RegExp(`\\b${number}(?:\\s*[xX]\\s*${number}){1,2}(?:\\s*mm)?\\b`,"gi"),
+    new RegExp(`\\b${number}\\s*(?:[±]\\s*${number}|\\+\\s*${number}\\s*(?:\\/|-)\\s*-?\\s*${number})\\b`,"gi"),
+    new RegExp(`\\b${number}\\s*(?:H|h|g|f|js|k)\\d{1,2}\\b`,"gi"),
+    new RegExp(`\\b${number}\\s*°`,"gi"),
+    new RegExp(`\\b${number}\\s*mm\\b`,"gi"),
+  ];
+  const matches=[];
+  patterns.forEach(regex=>{
+    let match;
+    while((match=regex.exec(cleaned))!==null){
+      matches.push(match[0]);
+      if(match.index===regex.lastIndex) regex.lastIndex++;
+    }
+  });
+  const normalized=matches
     .map(normalizeDimensionToken)
-    .filter(isLikelyDimensionToken)
+    .filter(isLikelyDimensionToken);
+  const uniq={};
+  return normalized
+    .filter((token,index,list)=>!list.some((other,otherIndex)=>{
+      if(otherIndex===index) return false;
+      const current=canonicalDimensionToken(token);
+      const candidate=canonicalDimensionToken(other);
+      return candidate.length>current.length&&candidate.includes(current);
+    }))
     .filter(token=>{
-      const key=token.toUpperCase();
+      const key=canonicalDimensionToken(token);
       if(uniq[key]) return false;
       uniq[key]=true;
       return true;
     });
+}
+function collectPdfTextGeometry(items,viewport){
+  const runs=(items||[]).map(item=>{
+    const text=String(item?.str||"").replace(/\s+/g," ").trim();
+    if(!text) return null;
+    const tr=Array.isArray(item?.transform)?item.transform:[1,0,0,1,0,0];
+    const x=Math.max(0,safeNum(tr[4]));
+    const y=Math.max(0,safeNum(tr[5]));
+    const height=Math.max(6,Math.abs(safeNum(item?.height))||Math.abs(safeNum(tr[3]))||8);
+    const width=Math.max(1,Math.abs(safeNum(item?.width))||text.length*Math.max(4,height*.45));
+    return {text,x,yTop:Math.max(0,viewport.height-y-height),width,height};
+  }).filter(Boolean).sort((a,b)=>Math.abs(a.yTop-b.yTop)>2?a.yTop-b.yTop:a.x-b.x);
+  const lines=[];
+  runs.forEach(run=>{
+    let line=lines.find(candidate=>Math.abs(candidate.yTop-run.yTop)<=Math.max(3,Math.min(9,Math.max(candidate.height,run.height)*.6)));
+    if(!line){
+      line={runs:[],x:run.x,yTop:run.yTop,width:run.width,height:run.height};
+      lines.push(line);
+    }
+    line.runs.push(run);
+    line.x=Math.min(line.x,run.x);
+    line.yTop=Math.min(line.yTop,run.yTop);
+    line.width=Math.max(line.width,(run.x+run.width)-line.x);
+    line.height=Math.max(line.height,run.height);
+  });
+  return lines.map(line=>{
+    const sorted=line.runs.sort((a,b)=>a.x-b.x);
+    let previous=null;
+    const text=sorted.map(run=>{
+      const gap=previous?run.x-(previous.x+previous.width):0;
+      const spacer=previous&&gap>Math.max(1,Math.min(previous.height,run.height)*.18)?" ":"";
+      previous=run;
+      return spacer+run.text;
+    }).join("");
+    return {...line,text:normalizeDimensionToken(text)};
+  });
+}
+function scoreDimensionCandidate(token,lineText){
+  const compact=canonicalDimensionToken(token);
+  let score=.54;
+  if(/[ØR]/.test(compact)||/^M\d/.test(compact)) score+=.24;
+  if(/[±°]|\+\d+(?:\/-|-)/.test(compact)||/[HhGgFfJjKk]\d{1,2}$/.test(compact)) score+=.15;
+  if(/\d(?:X)\d/.test(compact)||/MM$/.test(compact)) score+=.1;
+  if(/(?:REV|DATE|SCALE|SHEET|DRAWN|CHECKED|MATERIAL)/i.test(lineText||"")) score-=.22;
+  return Math.max(.1,Math.min(.99,Number(score.toFixed(2))));
 }
 async function autoBalloonPdfDrawing(file,{pageNumber=1,maxItems=260}={}){
   if(!getFileSource(file)) throw new Error("PDF dosyasi bulunamadi.");
@@ -3488,25 +3566,26 @@ async function autoBalloonPdfDrawing(file,{pageNumber=1,maxItems=260}={}){
   const page=await pdf.getPage(safePage);
   const viewport=page.getViewport({scale:1});
   const textContent=await page.getTextContent();
+  if(!(textContent.items||[]).some(item=>String(item?.str||"").trim())){
+    throw new Error("PDF'de secilebilir metin bulunamadi. Taranmis resim PDF'lerde olculeri manuel ekleyin veya metin katmanli teknik resim kullanin.");
+  }
   const rows=[];
-  (textContent.items||[]).forEach(item=>{
-    const rawText=String(item?.str||"").trim();
-    if(!rawText) return;
-    const tokens=extractDimensionTokensFromText(rawText);
+  const lines=collectPdfTextGeometry(textContent.items||[],viewport);
+  lines.forEach(line=>{
+    const tokens=extractDimensionTokensFromText(line.text);
     if(tokens.length===0) return;
-    const tr=Array.isArray(item?.transform)?item.transform:[1,0,0,1,0,0];
-    const x=Math.max(0,safeNum(tr[4]));
-    const y=Math.max(0,safeNum(tr[5]));
-    const h=Math.max(7,Math.abs(safeNum(tr[3]))||safeNum(item?.height)||8);
-    const yTop=Math.max(0,viewport.height-y-h);
     tokens.forEach(token=>{
-      rows.push({text:token,x,yTop,height:h});
+      const index=Math.max(0,line.text.toUpperCase().indexOf(token.toUpperCase()));
+      const ratio=line.text.length?index/line.text.length:0;
+      const confidence=scoreDimensionCandidate(token,line.text);
+      if(confidence<.52) return;
+      rows.push({text:token,x:line.x+(line.width*ratio),yTop:line.yTop,height:line.height,confidence,source:"pdf_text_line"});
     });
   });
   const dedupe={};
   const uniqueRows=[];
   rows.forEach(row=>{
-    const key=`${row.text}|${Math.round(row.x)}|${Math.round(row.yTop)}`;
+    const key=`${canonicalDimensionToken(row.text)}|${Math.round(row.x/8)}|${Math.round(row.yTop/8)}`;
     if(dedupe[key]) return;
     dedupe[key]=true;
     uniqueRows.push(row);
@@ -3522,6 +3601,8 @@ async function autoBalloonPdfDrawing(file,{pageNumber=1,maxItems=260}={}){
     page:safePage,
     xPct:Math.max(0,Math.min(100,(row.x/Math.max(1,viewport.width))*100)),
     yPct:Math.max(0,Math.min(100,(row.yTop/Math.max(1,viewport.height))*100)),
+    confidence:row.confidence,
+    source:row.source,
   }));
   const balloons=limited.map((row,idx)=>({
     no:idx+1,
@@ -3529,6 +3610,7 @@ async function autoBalloonPdfDrawing(file,{pageNumber=1,maxItems=260}={}){
     page:safePage,
     xPct:Math.max(0,Math.min(100,(row.x/Math.max(1,viewport.width))*100)),
     yPct:Math.max(0,Math.min(100,(row.yTop/Math.max(1,viewport.height))*100)),
+    confidence:row.confidence,
   }));
   const canvas=document.createElement("canvas");
   canvas.width=Math.max(1,Math.round(viewport.width));
@@ -3543,6 +3625,15 @@ async function autoBalloonPdfDrawing(file,{pageNumber=1,maxItems=260}={}){
     previewDataUrl:canvas.toDataURL("image/png"),
     tokens,
     balloons,
+    detection:{
+      engine:"pdf_text_line_v2",
+      textItemCount:(textContent.items||[]).length,
+      lineCount:lines.length,
+      detectedCount:uniqueRows.length,
+      balloonCount:balloons.length,
+      limited:uniqueRows.length>limited.length,
+      note:uniqueRows.length===0?"Olcu formati tespit edilemedi; PDF uzerinde kutu cizerek veya Manuel Olcu ile ekleyin.":"Olculer PDF metin katmanindan konumlariyla tespit edildi. Kritik olculeri onaylayin.",
+    },
   };
 }
 function disposeThreeObject(root) {
@@ -26705,13 +26796,14 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
         previewDataUrl:result.previewDataUrl,
         balloons:Array.isArray(run.dimensions)?run.dimensions:[],
         tokens:result.tokens||[],
+        detection:result.detection||run.detection||null,
         fileName:run.fileName||picked.name||"drawing.pdf",
         page:result.page,
       });
       setLastSelection(null);
-    }catch{
+    }catch(err){
       setBalloonPreview(null);
-      setBalloonError("Secili run icin PDF onizleme yuklenemedi.");
+      setBalloonError(String(err?.message||"Secili run icin PDF onizleme yuklenemedi."));
     }finally{
       setBalloonBusy(false);
     }
@@ -26752,6 +26844,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
         dimensionCount:rows.length,
         dimensions:rows,
         detectedTokens:Array.isArray(balloonPreview?.tokens)?balloonPreview.tokens:[],
+        detection:balloonPreview?.detection||null,
         source:"manual",
         status:"draft",
         createdBy:currentUser.id,
@@ -26864,7 +26957,8 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
           yPct:d.yPct,
         })),
         detectedTokens:result.tokens||[],
-        source:"auto_pdfjs",
+        detection:result.detection||null,
+        source:"auto_pdfjs_v2",
         status:"draft",
         createdBy:currentUser.id,
         createdAt:new Date().toISOString(),
@@ -26879,6 +26973,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
         previewDataUrl:result.previewDataUrl,
         balloons:result.balloons||[],
         tokens:result.tokens||[],
+        detection:result.detection||null,
         fileName:payload.fileName,
         page:payload.page,
       });
@@ -27020,7 +27115,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
           <div style={{fontWeight:700,color:C.text,marginBottom:8}}>FAI Akisi</div>
           <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10,marginBottom:10}}>
-            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:7}}>Teknik Resim Oto Balon (Beta)</div>
+            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:7}}>Teknik Resim Oto Balon · Metin Tespiti V2</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr .4fr 1fr",gap:8}}>
               <div>
                 <span style={labelSt}>Onayli Siparisten Gelen Is Emri</span>
@@ -27074,6 +27169,11 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
               </div>
             </div>
             {balloonError&&<div style={{fontSize:12,color:C.red,marginTop:7}}>{balloonError}</div>}
+            {balloonPreview?.detection&&(
+              <div style={{fontSize:12,color:balloonPreview.detection.detectedCount?C.muted2:C.warn,marginTop:7}}>
+                Tespit: {balloonPreview.detection.detectedCount||0} olcu · {balloonPreview.detection.lineCount||0} metin satiri tarandi{balloonPreview.detection.limited?" · liste siniri uygulandi":""}. {balloonPreview.detection.note}
+              </div>
+            )}
             {(balloonPreview||editableBalloons.length>0)&&(
               <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1.3fr .9fr",gap:10}}>
                 <div style={{border:`1px solid ${C.border}`,borderRadius:8,overflow:"auto",maxHeight:520,background:"#fff"}}>
