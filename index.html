@@ -723,7 +723,9 @@ const ROLE_MODULE_CATALOG = [
   {id:"assignments",label:"Çalışan Görevlendirme",group:"Operasyon"},
   {id:"cncmonitor",label:"CNC İzleme",group:"Operasyon"},
   {id:"downtime",label:"Duruş Yönetimi",group:"Operasyon"},
-  {id:"quality",label:"Ürün Kalitesi ve İzlenebilirlik",group:"Kalite Yönetimi"},
+  {id:"quality_trace",label:"İz Kaydı",group:"Kalite Yönetimi"},
+  {id:"quality_inspect",label:"Muayene ve Hurda",group:"Kalite Yönetimi"},
+  {id:"quality_fai",label:"FAI ve Oto Balon",group:"Kalite Yönetimi"},
   {id:"compliance",label:"QMS, EYDEP ve Tesis Güvenliği",group:"Uyum ve Güvenlik"},
   {id:"materials",label:"Malzeme Kütüphanesi",group:"Kaynak ve Tedarik"},
   {id:"tools",label:"Takım Yönetimi",group:"Kaynak ve Tedarik"},
@@ -760,7 +762,7 @@ const DEFAULT_ROLE_PROFILES = [
     parentId:"profile_admin",
     description:"Vardiya, plan ve saha operasyonu yonetimi.",
     permissions:[...ROLE_PERMISSION_DEFAULTS.supervisor],
-    moduleAccess:["dashboard","planning","orders","assignments","cncmonitor","downtime","quality","rapor","materialquote"],
+    moduleAccess:["dashboard","planning","orders","assignments","cncmonitor","downtime","quality_trace","quality_inspect","quality_fai","rapor","materialquote"],
     locked:true,
     order:1,
   },
@@ -826,7 +828,7 @@ const DEFAULT_ROLE_PROFILES = [
     parentId:"profile_admin",
     description:"Kalite kayitlari ve izlenebilirlik.",
     permissions:[...ROLE_PERMISSION_DEFAULTS.quality],
-    moduleAccess:["dashboard","quality","compliance","rapor","materialquote"],
+    moduleAccess:["dashboard","quality_trace","quality_inspect","quality_fai","compliance","rapor","materialquote"],
     locked:true,
     order:7,
   },
@@ -26530,7 +26532,7 @@ function DowntimeModule({currentUser,machines=DEFAULT_MACHINES,filtersVisible=tr
   );
 }
 
-function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
+function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initialView="trace"}){
   const [loading,setLoading]=useState(true);
   const [orders,setOrders]=useState([]);
   const [salesOrders,setSalesOrders]=useState([]);
@@ -26572,6 +26574,9 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    if(["trace","inspect","fai"].includes(initialView)) setView(initialView);
+  },[initialView]);
   const orderById=Object.fromEntries(orders.map(o=>[o.id,o]));
   const approvedSalesOrderIds=new Set((salesOrders||[])
     .filter(s=>["approved","in_production","delivered"].includes(s.status||""))
@@ -27066,10 +27071,10 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
 
   return (
     <div style={{padding:0,display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        <button onClick={()=>setView("trace")} style={chip(view==="trace",C.accent)}>Iz Kaydi</button>
-        <button onClick={()=>setView("inspect")} style={chip(view==="inspect",C.warn)}>Muayene/Hurda</button>
-        <button onClick={()=>setView("fai")} style={chip(view==="fai",C.green)}>FAI</button>
+      <div style={{display:"flex",alignItems:"center",gap:8,color:C.muted2,fontSize:12}}>
+        <span style={{fontWeight:800,color:C.text}}>Kalite Yönetimi</span>
+        <span>›</span>
+        <span>{view==="trace"?"İz Kaydı":(view==="inspect"?"Muayene ve Hurda":"FAI ve Oto Balon")}</span>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>Toplam Iz Kaydi</div><div style={{fontSize:23,color:C.text,fontWeight:800}}>{traces.length}</div></div>
@@ -29242,7 +29247,9 @@ function App() {
       {id:"assignments",icon:"tasks",label:"Çalışan Görevlendirme",group:"Operasyon",enabled:true},
       {id:"cncmonitor",icon:"monitor",label:"CNC İzleme",group:"Operasyon",enabled:canMonitor},
       {id:"downtime",icon:"downtime",label:"Duruş Yönetimi",group:"Operasyon",enabled:canDowntime},
-      {id:"quality",icon:"quality",label:"Ürün Kalitesi ve İzlenebilirlik",group:"Kalite Yönetimi",enabled:canQuality},
+      {id:"quality_trace",icon:"quality",label:"İz Kaydı",group:"Kalite Yönetimi",enabled:canQuality},
+      {id:"quality_inspect",icon:"quality",label:"Muayene ve Hurda",group:"Kalite Yönetimi",enabled:canQuality},
+      {id:"quality_fai",icon:"quality",label:"FAI ve Oto Balon",group:"Kalite Yönetimi",enabled:canQuality},
       {id:"compliance",icon:"quality",label:"QMS, EYDEP ve Tesis Güvenliği",group:"Uyum ve Güvenlik",enabled:canCompliance},
       {id:"materials",icon:"materials",label:"Malzeme Kütüphanesi",group:"Kaynak ve Tedarik",enabled:(canOrders||canPurchasing)},
       {id:"tools",icon:"tools",label:"Takım Yönetimi",group:"Kaynak ve Tedarik",enabled:canTools},
@@ -29749,7 +29756,9 @@ function App() {
     if(tab==="purchase"||tab==="purchase_requests") return <PurchasingModule currentUser={currentUser} filtersVisible={purchaseFilterOpen} defaultView="requests"/>;
     if(tab==="purchase_suppliers") return <PurchasingModule currentUser={currentUser} filtersVisible={purchaseFilterOpen} defaultView="suppliers"/>;
     if(tab==="downtime") return <DowntimeModule currentUser={currentUser} machines={machines} filtersVisible={downtimeFilterOpen}/>;
-    if(tab==="quality") return <QualityTraceabilityModule currentUser={currentUser} machines={machines}/>;
+    if(tab==="quality"||tab==="quality_trace") return <QualityTraceabilityModule currentUser={currentUser} machines={machines} initialView="trace"/>;
+    if(tab==="quality_inspect") return <QualityTraceabilityModule currentUser={currentUser} machines={machines} initialView="inspect"/>;
+    if(tab==="quality_fai") return <QualityTraceabilityModule currentUser={currentUser} machines={machines} initialView="fai"/>;
     if(tab==="compliance") return <ComplianceGovernanceModule currentUser={currentUser}/>;
     if(tab==="notifications") return <NotificationCenterModule currentUser={currentUser}/>;
     if(tab==="finance") return <FinanceModule currentUser={currentUser} filtersVisible={financeFilterOpen}/>;
