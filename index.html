@@ -27991,15 +27991,11 @@ function MaterialQuoteBridgeModule(){
   const isHttpRuntime=isBrowser&&/^https?:$/i.test(String(window.location.protocol||""));
   const runtimeOrigin=isHttpRuntime?window.location.origin:"";
   const frameCandidates=useMemo(()=>{
-    if(!isBrowser){
-      return ["./cost-estimator/frontend/dist/","./cost-estimator/frontend/dist/index.html"];
-    }
-    const base=window.location.href;
+    if(!isBrowser) return ["/cost-estimator/"];
     const host=String(window.location.hostname||"").toLowerCase();
     const protocol=String(window.location.protocol||"").toLowerCase();
     const list=[
-      new URL("./cost-estimator/frontend/dist/",base).toString(),
-      new URL("./cost-estimator/frontend/dist/index.html",base).toString(),
+      new URL("/cost-estimator/",window.location.origin).toString(),
     ];
     if(protocol==="file:"||host==="localhost"||host==="127.0.0.1"){
       list.push("http://localhost:5173/","http://127.0.0.1:5173/");
@@ -28053,7 +28049,7 @@ function MaterialQuoteBridgeModule(){
       }
       setFrameSrc(frameCandidates[0]||"");
       setFrameState("missing");
-      setFrameNote("Modul dosyasi bu yayinda bulunamadi. Online kurulumda Cost Estimator build cikisi ayni domain altinda yayinlanmali ve `/api/v1` yolu aktif olmalidir.");
+      setFrameNote("Cost Estimator paketi bu yayinda bulunamadi. Nginx `/cost-estimator/` yolunu, API ise ayni domaindeki `/api/v1` yolunu servis etmelidir.");
     }
     resolveFrameSource();
     return ()=>{
