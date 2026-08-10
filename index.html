@@ -27991,11 +27991,11 @@ function MaterialQuoteBridgeModule(){
   const isHttpRuntime=isBrowser&&/^https?:$/i.test(String(window.location.protocol||""));
   const runtimeOrigin=isHttpRuntime?window.location.origin:"";
   const frameCandidates=useMemo(()=>{
-    if(!isBrowser) return ["/cost-estimator/"];
+    if(!isBrowser) return ["/estimator/"];
     const host=String(window.location.hostname||"").toLowerCase();
     const protocol=String(window.location.protocol||"").toLowerCase();
     const list=[
-      new URL("/cost-estimator/",window.location.origin).toString(),
+      new URL("/estimator/",window.location.origin).toString(),
     ];
     if(protocol==="file:"||host==="localhost"||host==="127.0.0.1"){
       list.push("http://localhost:5173/","http://127.0.0.1:5173/");
@@ -28049,7 +28049,7 @@ function MaterialQuoteBridgeModule(){
       }
       setFrameSrc(frameCandidates[0]||"");
       setFrameState("missing");
-      setFrameNote("Cost Estimator paketi bu yayinda bulunamadi. Nginx `/cost-estimator/` yolunu, API ise ayni domaindeki `/api/v1` yolunu servis etmelidir.");
+      setFrameNote("Cost Estimator paketi bu yayinda bulunamadi. Nginx `/estimator/` yolunu, API ise ayni domaindeki `/api/v1` yolunu servis etmelidir.");
     }
     resolveFrameSource();
     return ()=>{
