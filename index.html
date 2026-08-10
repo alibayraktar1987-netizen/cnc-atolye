@@ -723,8 +723,8 @@ const ROLE_MODULE_CATALOG = [
   {id:"assignments",label:"Çalışan Görevlendirme",group:"Operasyon"},
   {id:"cncmonitor",label:"CNC İzleme",group:"Operasyon"},
   {id:"downtime",label:"Duruş Yönetimi",group:"Operasyon"},
-  {id:"quality",label:"Kalite ve İzlenebilirlik",group:"Kalite"},
-  {id:"compliance",label:"Kalite, EYDEP ve Güvenlik",group:"Kalite"},
+  {id:"quality",label:"Ürün Kalitesi ve İzlenebilirlik",group:"Kalite"},
+  {id:"compliance",label:"QMS, EYDEP ve Tesis Güvenliği",group:"Kalite"},
   {id:"materials",label:"Malzeme Kütüphanesi",group:"Stok ve Tedarik"},
   {id:"tools",label:"Takım Yönetimi",group:"Stok ve Tedarik"},
   {id:"purchase_requests",label:"Talep ve PO",group:"Stok ve Tedarik"},
@@ -2959,6 +2959,29 @@ async function addAuditLog(actorId,entityType,entityId,action,beforeData,afterDa
       createdAt:new Date().toISOString(),
     });
   }catch{}
+}
+async function ensureCapaFromQualityFailure(inspectionId,inspection,currentUser){
+  if(!inspectionId||!inspection||inspection.result!=="fail") return null;
+  try{
+    const existing=await window.DB.getAll("complianceRecords");
+    const duplicate=(existing||[]).find(row=>row.type==="capa"&&row.sourceInspectionId===inspectionId);
+    if(duplicate) return duplicate.id;
+    const now=new Date().toISOString();
+    const payload={
+      recordNo:`CAPA-${Date.now().toString().slice(-8)}`,
+      type:"capa",area:"AS9100",status:"open",securityLevel:"internal",revision:1,
+      title:`Kalite uygunsuzluğu · ${inspection.orderCode||inspection.partNo||inspectionId}`,
+      owner:currentUser?.fullName||currentUser?.username||currentUser?.id||"Kalite",
+      dueDate:"",reference:`Muayene: ${inspectionId}`,
+      details:inspection.scrapReason||inspection.measurements||"Limit dışı veya başarısız muayene sonucu.",
+      evidence:"",effectiveness:"",sourceInspectionId:inspectionId,
+      sourceTraceId:inspection.traceId||"",orderId:inspection.orderId||"",orderCode:inspection.orderCode||"",partNo:inspection.partNo||"",
+      createdBy:currentUser?.id||"",createdAt:now,updatedBy:currentUser?.id||"",updatedAt:now,
+    };
+    const id=await window.DB.addDoc("complianceRecords",payload);
+    if(id) await addAuditLog(currentUser?.id||"","complianceRecord",id,"create_from_quality_failure",null,payload,{module:"quality",inspectionId});
+    return id||null;
+  }catch{return null;}
 }
 async function fileToBase64(file) {
   return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
@@ -18861,6 +18884,7 @@ function OperatorWorkspace({currentUser,machines=DEFAULT_MACHINES,onOpenModule})
     const inspectionId=await window.DB.addDoc("qualityInspections",inspectionPayload);
     if(inspectionId&&result==="fail"){
       await window.DB.addDoc("notifications",{type:"quality",title:"Kalite Sapmasi",message:`${selectedOrder.code||"-"} icin fail kaydi olustu.`,severity:"high",status:"new",sourceKey:inspectionId,createdAt:new Date().toISOString()});
+      await ensureCapaFromQualityFailure(inspectionId,inspectionPayload,currentUser);
     }
     setBusy(b=>({...b,quality:false}));
     if(!inspectionId){showFlash("err","Kalite kaydi olusturulamadi.");return;}
@@ -26809,6 +26833,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
     if(!id){alert("Muayene kaydi eklenemedi.");return;}
     if(payload.result==="fail"){
       await window.DB.addDoc("notifications",{type:"quality",title:"Kalite Sapmasi",message:`${payload.orderCode} icin fail muayene kaydi olustu.`,severity:"high",status:"new",sourceKey:id,createdAt:new Date().toISOString()});
+      await ensureCapaFromQualityFailure(id,payload,currentUser);
     }
     setInspections(prev=>[{id,...payload},...prev]);
     setInspForm({traceId:"",result:"pass",measurements:"",scrapQty:"0",scrapReason:"",scrapCost:"0"});
@@ -28003,7 +28028,7 @@ function IntegrationsReadinessModule(){
 }
 
 const COMPLIANCE_RECORD_TYPES = [
-  {id:"document",label:"Kontrollü Doküman",code:"DOC",area:"AS9100",statuses:["draft","review","approved","published","obsolete"]},
+  {id:"document",label:"Kontrollü Doküman Kaydı",code:"DOC",area:"QMS",statuses:["draft","review","approved","published","obsolete"]},
   {id:"capa",label:"NCR / MRB / CAPA",code:"CAPA",area:"AS9100",statuses:["open","containment","root_cause","action","effectiveness","closed"]},
   {id:"risk",label:"Risk ve Fırsat",code:"RISK",area:"EYDEP",statuses:["open","monitoring","treated","closed"]},
   {id:"audit",label:"İç Denetim",code:"AUD",area:"EYDEP",statuses:["planned","in_progress","finding","closed"]},
@@ -28079,7 +28104,7 @@ function ComplianceGovernanceModule({currentUser}){
   return <div style={{display:"flex",flexDirection:"column",gap:14,paddingBottom:20}}>
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16}}>
       <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
-        <div><div style={{fontSize:18,fontWeight:800,color:C.text}}>Kalite, EYDEP ve Tesis Güvenliği</div><div style={{fontSize:12,color:C.muted2,marginTop:5}}>Denetlenebilir kayıt, aksiyon, kanıt ve elektronik durum geçişi merkezi.</div></div>
+        <div><div style={{fontSize:18,fontWeight:800,color:C.text}}>QMS, EYDEP ve Tesis Güvenliği</div><div style={{fontSize:12,color:C.muted2,marginTop:5}}>Yönetişim, CAPA, kanıt ve tesis güvenliği kayıt merkezi. Ürün muayeneleri ayrı kalite ekranında tutulur.</div></div>
         <Badge label={canManage?"Yönetim Yetkisi":"Salt Okunur"} color={canManage?C.green:C.muted2}/>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginTop:14}}>
@@ -29090,8 +29115,8 @@ function App() {
       {id:"assignments",icon:"tasks",label:"Çalışan Görevlendirme",group:"Operasyon",enabled:true},
       {id:"cncmonitor",icon:"monitor",label:"CNC İzleme",group:"Operasyon",enabled:canMonitor},
       {id:"downtime",icon:"downtime",label:"Duruş Yönetimi",group:"Operasyon",enabled:canDowntime},
-      {id:"quality",icon:"quality",label:"Kalite ve İzlenebilirlik",group:"Kalite",enabled:canQuality},
-      {id:"compliance",icon:"quality",label:"Kalite, EYDEP ve Güvenlik",group:"Kalite",enabled:canCompliance},
+      {id:"quality",icon:"quality",label:"Ürün Kalitesi ve İzlenebilirlik",group:"Kalite",enabled:canQuality},
+      {id:"compliance",icon:"quality",label:"QMS, EYDEP ve Tesis Güvenliği",group:"Kalite",enabled:canCompliance},
       {id:"materials",icon:"materials",label:"Malzeme Kütüphanesi",group:"Stok ve Tedarik",enabled:(canOrders||canPurchasing)},
       {id:"tools",icon:"tools",label:"Takım Yönetimi",group:"Stok ve Tedarik",enabled:canTools},
       {id:"purchase_requests",icon:"purchase",label:"Talep ve PO",group:"Stok ve Tedarik",enabled:canPurchasing},
