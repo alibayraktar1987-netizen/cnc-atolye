@@ -726,7 +726,10 @@ const ROLE_MODULE_CATALOG = [
   {id:"quality_trace",label:"İz Kaydı",group:"Kalite Yönetimi"},
   {id:"quality_inspect",label:"Muayene ve Hurda",group:"Kalite Yönetimi"},
   {id:"quality_fai",label:"FAI ve Oto Balon",group:"Kalite Yönetimi"},
-  {id:"compliance",label:"QMS, EYDEP ve Tesis Güvenliği",group:"Uyum ve Güvenlik"},
+  {id:"compliance_qms",label:"QMS ve Doküman Yönetimi",group:"Uyum ve Güvenlik"},
+  {id:"compliance_as9100",label:"AS9100 · NCR / CAPA",group:"Uyum ve Güvenlik"},
+  {id:"compliance_eydep",label:"EYDEP Yetkinlik ve Olgunluk",group:"Uyum ve Güvenlik"},
+  {id:"compliance_security",label:"Tesis Güvenliği",group:"Uyum ve Güvenlik"},
   {id:"materials",label:"Malzeme Kütüphanesi",group:"Kaynak ve Tedarik"},
   {id:"tools",label:"Takım Yönetimi",group:"Kaynak ve Tedarik"},
   {id:"purchase_requests",label:"Talep ve PO",group:"Kaynak ve Tedarik"},
@@ -828,7 +831,7 @@ const DEFAULT_ROLE_PROFILES = [
     parentId:"profile_admin",
     description:"Kalite kayitlari ve izlenebilirlik.",
     permissions:[...ROLE_PERMISSION_DEFAULTS.quality],
-    moduleAccess:["dashboard","quality_trace","quality_inspect","quality_fai","compliance","rapor","materialquote"],
+    moduleAccess:["dashboard","quality_trace","quality_inspect","quality_fai","compliance_qms","compliance_as9100","compliance_eydep","compliance_security","rapor","materialquote"],
     locked:true,
     order:7,
   },
@@ -839,7 +842,7 @@ const DEFAULT_ROLE_PROFILES = [
     parentId:"profile_admin",
     description:"Tesis guvenligi ve kontrollu alan kayitlari.",
     permissions:[...ROLE_PERMISSION_DEFAULTS.security],
-    moduleAccess:["dashboard","compliance","rapor"],
+    moduleAccess:["dashboard","compliance_security","rapor"],
     locked:true,
     order:8,
   },
@@ -28176,7 +28179,7 @@ function complianceTypeMeta(id){
 function complianceStatusLabel(status){
   return ({draft:"Taslak",review:"İncelemede",approved:"Onaylı",published:"Yayınlandı",obsolete:"Arşiv",open:"Açık",containment:"Geçici Önlem",root_cause:"Kök Neden",action:"Faaliyet",effectiveness:"Etkinlik Doğrulama",closed:"Kapalı",monitoring:"İzlemede",treated:"İşlem Yapıldı",planned:"Planlandı",in_progress:"Devam Ediyor",finding:"Bulgu Var",held:"Yapıldı",actions_open:"Aksiyon Açık",active:"Aktif",expired:"Süresi Geçti",inside:"İçeride",checked_out:"Çıkış Yapıldı",requested:"Talep",revoked:"İptal",returned:"İade Edildi",investigating:"İncelemede"})[status]||status||"-";
 }
-function ComplianceGovernanceModule({currentUser}){
+function ComplianceGovernanceModule({currentUser,initialType="document",allowedTypes=[],moduleLabel="Uyum ve Güvenlik"}){
   const [records,setRecords]=useState([]);
   const [loading,setLoading]=useState(true);
   const [activeType,setActiveType]=useState("document");
@@ -28184,6 +28187,9 @@ function ComplianceGovernanceModule({currentUser}){
   const [form,setForm]=useState({title:"",owner:"",dueDate:todayStr(),securityLevel:"internal",reference:"",details:"",evidence:"",effectiveness:""});
   const [saving,setSaving]=useState(false);
   const canManage=hasPermission(currentUser,"manage_compliance")||hasPermission(currentUser,"manage_security")||currentUser.role==="admin"||currentUser.role==="quality";
+  const availableTypes=(Array.isArray(allowedTypes)&&allowedTypes.length>0)
+    ? COMPLIANCE_RECORD_TYPES.filter(item=>allowedTypes.includes(item.id))
+    : COMPLIANCE_RECORD_TYPES;
   const type=complianceTypeMeta(activeType);
   const load=useCallback(async()=>{
     const rows=await window.DB.getAll("complianceRecords");
@@ -28191,6 +28197,12 @@ function ComplianceGovernanceModule({currentUser}){
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    const fallback=availableTypes[0]?.id||"document";
+    const next=availableTypes.some(item=>item.id===initialType)?initialType:fallback;
+    setActiveType(next);
+    setFilter("open");
+  },[initialType,availableTypes.map(item=>item.id).join(",")]);
   const typeRows=records.filter(row=>row.type===activeType);
   const visibleRows=typeRows.filter(row=>filter==="all"?true:(filter==="open"?!["closed","obsolete","checked_out","revoked"].includes(row.status):row.status===filter));
   const openCount=records.filter(row=>!["closed","obsolete","checked_out","revoked"].includes(row.status)).length;
@@ -28235,14 +28247,14 @@ function ComplianceGovernanceModule({currentUser}){
   return <div style={{display:"flex",flexDirection:"column",gap:14,paddingBottom:20}}>
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16}}>
       <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
-        <div><div style={{fontSize:18,fontWeight:800,color:C.text}}>QMS, EYDEP ve Tesis Güvenliği</div><div style={{fontSize:12,color:C.muted2,marginTop:5}}>Yönetişim, CAPA, kanıt ve tesis güvenliği kayıt merkezi. Ürün muayeneleri ayrı kalite ekranında tutulur.</div></div>
+        <div><div style={{fontSize:18,fontWeight:800,color:C.text}}>{moduleLabel}</div><div style={{fontSize:12,color:C.muted2,marginTop:5}}>Yönetişim, CAPA, kanıt ve tesis güvenliği kayıt merkezi. Ürün muayeneleri ayrı kalite ekranında tutulur.</div></div>
         <Badge label={canManage?"Yönetim Yetkisi":"Salt Okunur"} color={canManage?C.green:C.muted2}/>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginTop:14}}>
         {[["Açık Kayıt",openCount,C.accent],["Gecikmiş Aksiyon",overdueCount,overdueCount?C.red:C.green],["Güvenlik Takibi",securityOpen,securityOpen?C.warn:C.green]].map(([label,value,color])=><div key={label} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>{label}</div><div style={{marginTop:4,fontSize:23,fontWeight:800,color}}>{value}</div></div>)}
       </div>
     </div>
-    <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>{COMPLIANCE_RECORD_TYPES.map(item=><button key={item.id} onClick={()=>{setActiveType(item.id);setFilter("open");}} style={{...btnSt(activeType===item.id?"primary":"ghost"),padding:"8px 10px",fontSize:12}}>{item.label}</button>)}</div>
+    {availableTypes.length>1&&<div style={{display:"flex",gap:7,flexWrap:"wrap"}}>{availableTypes.map(item=><button key={item.id} onClick={()=>{setActiveType(item.id);setFilter("open");}} style={{...btnSt(activeType===item.id?"primary":"ghost"),padding:"8px 10px",fontSize:12}}>{item.label}</button>)}</div>}
     <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(320px,.9fr)",gap:14,alignItems:"start"}}>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}><div><div style={{fontWeight:800,color:C.text}}>{type.label}</div><div style={{fontSize:11,color:C.muted2,marginTop:3}}>{type.area} kayıtları</div></div><select value={filter} onChange={e=>setFilter(e.target.value)} style={{...inputSt,width:150,padding:"7px 9px",fontSize:12}}><option value="open">Açıklar</option><option value="all">Tümü</option>{type.statuses.map(s=><option key={s} value={s}>{complianceStatusLabel(s)}</option>)}</select></div>
@@ -29250,7 +29262,10 @@ function App() {
       {id:"quality_trace",icon:"quality",label:"İz Kaydı",group:"Kalite Yönetimi",enabled:canQuality},
       {id:"quality_inspect",icon:"quality",label:"Muayene ve Hurda",group:"Kalite Yönetimi",enabled:canQuality},
       {id:"quality_fai",icon:"quality",label:"FAI ve Oto Balon",group:"Kalite Yönetimi",enabled:canQuality},
-      {id:"compliance",icon:"quality",label:"QMS, EYDEP ve Tesis Güvenliği",group:"Uyum ve Güvenlik",enabled:canCompliance},
+      {id:"compliance_qms",icon:"quality",label:"QMS ve Doküman Yönetimi",group:"Uyum ve Güvenlik",enabled:canCompliance},
+      {id:"compliance_as9100",icon:"quality",label:"AS9100 · NCR / CAPA",group:"Uyum ve Güvenlik",enabled:canCompliance},
+      {id:"compliance_eydep",icon:"quality",label:"EYDEP Yetkinlik ve Olgunluk",group:"Uyum ve Güvenlik",enabled:canCompliance},
+      {id:"compliance_security",icon:"quality",label:"Tesis Güvenliği",group:"Uyum ve Güvenlik",enabled:canCompliance},
       {id:"materials",icon:"materials",label:"Malzeme Kütüphanesi",group:"Kaynak ve Tedarik",enabled:(canOrders||canPurchasing)},
       {id:"tools",icon:"tools",label:"Takım Yönetimi",group:"Kaynak ve Tedarik",enabled:canTools},
       {id:"purchase_requests",icon:"purchase",label:"Talep ve PO",group:"Kaynak ve Tedarik",enabled:canPurchasing},
@@ -29759,7 +29774,10 @@ function App() {
     if(tab==="quality"||tab==="quality_trace") return <QualityTraceabilityModule currentUser={currentUser} machines={machines} initialView="trace"/>;
     if(tab==="quality_inspect") return <QualityTraceabilityModule currentUser={currentUser} machines={machines} initialView="inspect"/>;
     if(tab==="quality_fai") return <QualityTraceabilityModule currentUser={currentUser} machines={machines} initialView="fai"/>;
-    if(tab==="compliance") return <ComplianceGovernanceModule currentUser={currentUser}/>;
+    if(tab==="compliance"||tab==="compliance_qms") return <ComplianceGovernanceModule currentUser={currentUser} initialType="document" allowedTypes={["document"]} moduleLabel="QMS ve Doküman Yönetimi"/>;
+    if(tab==="compliance_as9100") return <ComplianceGovernanceModule currentUser={currentUser} initialType="capa" allowedTypes={["capa"]} moduleLabel="AS9100 · NCR / MRB / CAPA"/>;
+    if(tab==="compliance_eydep") return <ComplianceGovernanceModule currentUser={currentUser} initialType="risk" allowedTypes={["risk","audit","management_review","competency"]} moduleLabel="EYDEP Yetkinlik ve Olgunluk"/>;
+    if(tab==="compliance_security") return <ComplianceGovernanceModule currentUser={currentUser} initialType="visitor" allowedTypes={["visitor","controlled_access","media","security_incident"]} moduleLabel="Tesis Güvenliği"/>;
     if(tab==="notifications") return <NotificationCenterModule currentUser={currentUser}/>;
     if(tab==="finance") return <FinanceModule currentUser={currentUser} filtersVisible={financeFilterOpen}/>;
     if(tab==="cost") return <CostingModule filtersVisible={costFilterOpen}/>;
