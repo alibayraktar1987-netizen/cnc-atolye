@@ -30440,6 +30440,16 @@ function App() {
   );
   const showLegacyTopBar=tab!=="dashboard";
   const activeHelp=getModuleHelp(tab,tabLabelById[tab]||activeContextLabel);
+  const helpDetailByTab={
+    quality_trace:{checks:["İş emri, seri/lot numarası ve parça bilgisinin aynı kayda ait olduğunu kontrol edin.","Tezgâh, operatör ve NC program sürümünü kayda ekleyin."],output:"Çıktı: Parçanın üretimden muayeneye kadar izlenebilirlik kaydı oluşur."},
+    quality_inspect:{checks:["Önce ilgili iz kaydını seçin; sonuç ve ölçüm bilgisini bu kayda bağlayın.","Red/hurda varsa adet, neden ve maliyet bilgisini mutlaka girin."],output:"Çıktı: Muayene sonucu, hurda etkisi ve gerekli kalite aksiyonları takip edilir."},
+    quality_fai:{checks:["Onaylı iş emrini ve doğru teknik resim PDF dosyasını seçin.","Otomatik balon sonuçlarını manuel gözle doğrulayın; kritik ölçüleri düzeltin."],output:"Çıktı: Balonlu teknik resim çalışması FAI kaydına bağlanır ve denetim için saklanır."},
+    compliance_qms:{checks:["Doküman kodu/referansı, sorumlu, revizyon ve yürürlük tarihini doğrulayın.","Kanıt bağlantısını ekleyin; onay ve dağıtım durumu listeden takip edilir."],output:"Çıktı: Kontrollü doküman kaydı ve revizyon izleme geçmişi oluşur."},
+    compliance_as9100:{checks:["Uygunsuzluk veya CAPA başlığını açık ve ölçülebilir yazın.","Kök neden, faaliyet sahibi, termin ve etkinlik doğrulamasını tamamlayın."],output:"Çıktı: NCR/MRB/CAPA akışı kapanışa kadar izlenir ve form çıktısı alınabilir."},
+    compliance_eydep:{checks:["Mevcut olgunluk durumunu kanıtla birlikte kaydedin.","Geliştirme aksiyonuna sorumlu ve hedef tarih atayın."],output:"Çıktı: EYDEP değerlendirme, denetim ve yetkinlik gelişim kaydı oluşur."},
+    compliance_security:{checks:["Erişim ihtiyacını, güvenlik seviyesini ve refakat/izin durumunu doğrulayın.","Ziyaretçi, medya veya olay kayıtlarına kanıt ve kapanış bilgisini ekleyin."],output:"Çıktı: Tesis güvenliği denetimi için izlenebilir erişim ve olay kaydı oluşur."},
+  };
+  const activeHelpDetail=helpDetailByTab[tab]||{checks:["Liste üzerinde doğru kaydı bulmak için arama ve filtreleri kullanın.","Yeni kayıt açarken zorunlu alanları, sorumluyu ve hedef tarihi tamamlayın."],output:"Çıktı: Kayıt, sorumlu ve durum bilgisiyle izlenebilir olarak saklanır."};
 
   return (
     <div style={{background:C.bg,height:"100dvh",minHeight:"100vh",overflow:"hidden",color:C.text}}>
@@ -30570,27 +30580,38 @@ function App() {
       >?</button>
       {helpOpen&&(
         <div role="dialog" aria-modal="true" aria-label="Yardım merkezi" onClick={()=>setHelpOpen(false)} style={{position:"fixed",inset:0,zIndex:90,background:"rgba(15,23,42,.68)",display:"flex",alignItems:"center",justifyContent:"center",padding:isMobile?12:24}}>
-          <div onClick={e=>e.stopPropagation()} className="mrp-scrollbar" style={{width:"100%",maxWidth:760,maxHeight:"88vh",overflowY:"auto",background:C.card,border:`1px solid ${C.border}`,borderRadius:16,boxShadow:"0 24px 60px rgba(0,0,0,.32)"}}>
-            <div style={{padding:"16px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12}}>
+          <div onClick={e=>e.stopPropagation()} className="mrp-scrollbar" style={{width:"100%",maxWidth:820,maxHeight:"88vh",overflowY:"auto",background:C.card,border:`1px solid ${C.border}`,borderRadius:16,boxShadow:"0 24px 60px rgba(0,0,0,.32)"}}>
+            <div style={{padding:"18px 20px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12,background:`linear-gradient(135deg,${C.accentSoft},${C.card})`}}>
               <div>
-                <div style={{fontSize:11,fontWeight:800,letterSpacing:.8,textTransform:"uppercase",color:C.accent}}>Yardım Merkezi</div>
+                <div style={{fontSize:11,fontWeight:800,letterSpacing:.8,textTransform:"uppercase",color:C.accent}}>Modül Rehberi · Ne? Nasıl? Sonra Ne?</div>
                 <div style={{fontSize:21,fontWeight:800,color:C.text,marginTop:3}}>{tabLabelById[tab]||activeContextLabel}</div>
+                <div style={{fontSize:12,color:C.muted2,marginTop:5}}>Bu ekran, kayıt açmadan önce doğru akışı izlemeniz için hazırlanmıştır.</div>
               </div>
               <button onClick={()=>setHelpOpen(false)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Kapat</button>
             </div>
             <div style={{padding:18,display:"grid",gap:16}}>
               <div style={{padding:13,border:`1px solid ${C.border}`,borderRadius:11,background:C.surface}}>
-                <div style={{fontSize:12,fontWeight:800,color:C.text,marginBottom:5}}>Bu alan ne için kullanılır?</div>
+                <div style={{fontSize:12,fontWeight:800,color:C.text,marginBottom:5}}>1. Bu alan ne için kullanılır?</div>
                 <div style={{fontSize:13,lineHeight:1.6,color:C.muted2}}>{activeHelp.purpose}</div>
               </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:10}}>
+                <div style={{padding:13,border:`1px solid ${C.border}`,borderRadius:11,background:C.card}}>
+                  <div style={{fontSize:12,fontWeight:800,color:C.accent,marginBottom:7}}>2. Başlangıç ve kayıt açma</div>
+                  <div style={{fontSize:12,color:C.muted2,lineHeight:1.55}}>Önce listeyi inceleyin. Yeni işlem gerektiğinde <b style={{color:C.text}}>+ Yeni Kayıt</b> düğmesini kullanın; aynı kaydı tekrar oluşturmaktan kaçının.</div>
+                </div>
+                <div style={{padding:13,border:`1px solid ${C.border}`,borderRadius:11,background:C.card}}>
+                  <div style={{fontSize:12,fontWeight:800,color:C.accent,marginBottom:7}}>3. Kontrol edilmesi gerekenler</div>
+                  <ul style={{margin:0,paddingLeft:17,display:"grid",gap:6,fontSize:12,lineHeight:1.45,color:C.muted2}}>{activeHelpDetail.checks.map((check,index)=><li key={index}>{check}</li>)}</ul>
+                </div>
+              </div>
               <div>
-                <div style={{fontSize:14,fontWeight:800,color:C.text,marginBottom:9}}>Nasıl kullanılır?</div>
+                <div style={{fontSize:14,fontWeight:800,color:C.text,marginBottom:9}}>4. Adım adım işlem akışı</div>
                 <ol style={{margin:0,paddingLeft:21,display:"grid",gap:9,color:C.text}}>
                   {activeHelp.steps.map((step,index)=><li key={index} style={{fontSize:13,lineHeight:1.5,paddingLeft:3}}>{step}</li>)}
                 </ol>
               </div>
-              <div style={{padding:"11px 13px",borderRadius:10,background:C.accentSoft,border:`1px solid ${C.accentBorder}`,fontSize:12,color:C.text,lineHeight:1.55}}>
-                İpucu: Kayıt oluşturmadan önce ilgili iş emri, müşteri veya parça bilgisini arama alanından doğrulayın. Kritik kalite ve güvenlik kayıtlarında kanıt ile sorumlu bilgisini ekleyin.
+              <div style={{padding:"12px 14px",borderRadius:10,background:C.accentSoft,border:`1px solid ${C.accentBorder}`,fontSize:12,color:C.text,lineHeight:1.55}}>
+                <b>5. Kayıt sonrası:</b> {activeHelpDetail.output} Kritik kalite ve güvenlik kayıtlarında kanıt, sorumlu ve tarih alanlarını boş bırakmayın.
               </div>
             </div>
           </div>
