@@ -383,7 +383,7 @@ window.dispatchEvent(new Event("fb_ready"));
 <script src="https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-<script type="text/babel" data-presets="react">
+<script id="factorab-app-source" type="text/plain">
 const { useState, useEffect, useCallback, useRef, useMemo } = React;
 
 // ¦¦ CONSTANTS ¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦
@@ -30031,6 +30031,17 @@ function App() {
   );
 }
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+<script>
+  // Babel'in güncel varsayılanı JSX'i ESM olarak üretir. Bu sayfa klasik script
+  // olarak çalıştığı için JSX'i React.createElement çağrılarına dönüştürüyoruz.
+  const factorabAppSource = document.getElementById("factorab-app-source").textContent;
+  const factorabAppCode = Babel.transform(factorabAppSource, {
+    plugins: [["transform-react-jsx", { runtime: "classic" }]]
+  }).code;
+  const factorabAppScript = document.createElement("script");
+  factorabAppScript.textContent = factorabAppCode;
+  document.body.appendChild(factorabAppScript);
 </script>
 </body>
 </html>
