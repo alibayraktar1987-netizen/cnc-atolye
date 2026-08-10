@@ -20757,7 +20757,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   function openPlanModalForOrder(order){
     if(!order) return;
     const pickedMachine=resolveOrderMachines(order)[0]||defaultPlanningMachine;
-    const baseDate=order.dueDate||todayStr();
+    const baseDate=todayStr();
     setEditId(null);
     setSelectedPlan(null);
     setForm({
@@ -20809,11 +20809,16 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       alert("Bu is emri planlama ekraninda zaten mevcut.");
       return;
     }
-    const pickedMachine=candidates.find(machine=>!plans.some(p=>p.machine===machine&&p.date===today));
-    if(!pickedMachine){
-      alert("Bugün için uygun boş tezgah bulunamadı.");
+    const capacityOptions=candidates.map(machine=>({machine,date:findNextFreeMachineDate(machine,today)})).filter(row=>row.date);
+    capacityOptions.sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.machine).localeCompare(String(b.machine),"tr"));
+    const picked=capacityOptions[0]||null;
+    if(!picked){
+      alert("Uygun boş tezgah kapasitesi bulunamadı.");
       return;
     }
+    const pickedMachine=picked.machine;
+    const planDate=picked.date;
+    if(planDate!==today) alert(`Bugün boş kapasite yok. En erken uygun slot: ${pickedMachine} · ${planDate}`);
     const data={
       machine:pickedMachine,
       orderId:order.id,
@@ -20825,9 +20830,9 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       note:order.notes||"",
       status:"planned",
       createdBy:currentUser.id,
-      date:today,
-      week:weekStart(parseYmdLocal(today)),
-      month:monthStr(parseYmdLocal(today)),
+      date:planDate,
+      week:weekStart(parseYmdLocal(planDate)),
+      month:monthStr(parseYmdLocal(planDate)),
       updatedAt:new Date().toISOString(),
     };
     const id=await window.DB.addDoc("plans",data);
@@ -21145,6 +21150,23 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     const p=await window.DB.getAll("plans");
     setPlans(p.sort((a,b)=>(b.date||"").localeCompare(a.date||"")));
   }
+  async function restorePlanRows(rows){
+    const source=Array.isArray(rows)?rows:[];
+    for(const row of source){
+      const {id,...payload}=row||{};
+      const restoredId=await window.DB.addDoc("plans",payload);
+      if(!restoredId) return false;
+    }
+    return true;
+  }
+  async function rollbackPlanMutation({createdRows=[],deletedRows=[]}={}){
+    const created=Array.isArray(createdRows)?createdRows:[];
+    for(const row of created){
+      if(row?.id) await window.DB.deleteDoc("plans",row.id);
+    }
+    await restorePlanRows(deletedRows);
+    await refreshPlans();
+  }
 
   function getSegmentToken(seg){
     const first=(seg&&Array.isArray(seg.plans)&&seg.plans.length>0)?seg.plans[0]:null;
@@ -21253,14 +21275,18 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   async function persistMachineQueueFromSpecs(machine,specs,anchorIndex=0){
     const rows=Array.isArray(specs)?specs:[];
     if(rows.length===0){
-      const machinePlanIds=plans.filter(p=>p.machine===machine).map(p=>p.id).filter(Boolean);
+      const machinePlanRows=plans.filter(p=>p.machine===machine);
+      const machinePlanIds=machinePlanRows.map(p=>p.id).filter(Boolean);
+      const deletedSoFar=[];
       for(const id of machinePlanIds){
         const ok=await window.DB.deleteDoc("plans",id);
         if(!ok){
           alert("Plan sirasi guncellenemedi (silme).");
-          await refreshPlans();
+          await rollbackPlanMutation({deletedRows:deletedSoFar});
           return false;
         }
+        const deleted=machinePlanRows.find(row=>row.id===id);
+        if(deleted) deletedSoFar.push(deleted);
       }
       if(machinePlanIds.length>0){
         const removed=new Set(machinePlanIds);
@@ -21271,13 +21297,17 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
     const anchor=Math.max(0,Math.min(rows.length-1,Math.floor(Number(anchorIndex)||0)));
     const impacted=rows.slice(anchor);
     const removeIds=[...new Set(impacted.flatMap(spec=>Array.isArray(spec.planIds)?spec.planIds:[]).filter(Boolean))];
+    const deletedRows=plans.filter(plan=>removeIds.includes(plan.id));
+    const deletedSoFar=[];
     for(const id of removeIds){
       const ok=await window.DB.deleteDoc("plans",id);
       if(!ok){
         alert("Plan sirasi guncellenemedi (silme).");
-        await refreshPlans();
+        await rollbackPlanMutation({deletedRows:deletedSoFar});
         return false;
       }
+      const deleted=deletedRows.find(row=>row.id===id);
+      if(deleted) deletedSoFar.push(deleted);
     }
     const recreated=[];
     for(const spec of impacted){
@@ -21288,7 +21318,7 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
         const id=await window.DB.addDoc("plans",payload);
         if(!id){
           alert("Plan sirasi guncellenemedi (ekleme).");
-          await refreshPlans();
+          await rollbackPlanMutation({createdRows:recreated,deletedRows:deletedSoFar});
           return false;
         }
         recreated.push({id,...payload});
@@ -21721,13 +21751,20 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       setShowPlanModal(false);
       return;
     }
-    const duplicateDates=plannedWindow.dates.filter(dt=>plans.some(p=>p.date===dt&&p.machine===form.machine));
-    if(duplicateDates.length>0){
-      alert(`Bu tezgah için plan zaten var: ${duplicateDates.slice(0,5).join(", ")}${duplicateDates.length>5?" ...":""}`);
+    const capacityWindow=findNextAvailablePlanWindow(form.machine,plannedWindow.startDate,plannedWindow.days);
+    if(!capacityWindow){
+      alert("Tezgah kapasitesinde uygun bir plan aralığı bulunamadı.");
       return;
     }
+    const scheduledWindow={...plannedWindow,...capacityWindow};
+    if(scheduledWindow.startDate!==plannedWindow.startDate){
+      const warning=picked.dueDate&&scheduledWindow.endDate>picked.dueDate
+        ? `Uyarı: ${form.machine} kapasitesi nedeniyle plan ${scheduledWindow.startDate} - ${scheduledWindow.endDate} aralığına kaydırıldı ve termin (${picked.dueDate}) aşılıyor.`
+        : `${form.machine} kapasitesi nedeniyle plan ${scheduledWindow.startDate} - ${scheduledWindow.endDate} aralığına kaydırıldı.`;
+      alert(warning);
+    }
     const created=[];
-    for(const dt of plannedWindow.dates){
+    for(const dt of scheduledWindow.dates){
       const data={
         ...baseData,
         date:dt,
@@ -21736,14 +21773,15 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
       };
       const id=await window.DB.addDoc("plans",data);
       if(!id){
-        alert(`Plan kaydı sırasında hata oluştu. Oluşan kayıt: ${created.length}/${plannedWindow.dates.length}`);
-        break;
+        await rollbackPlanMutation({createdRows:created});
+        alert("Plan kaydı tamamlanamadı; oluşturulan ara kayıtlar geri alındı.");
+        return;
       }
       created.push({id,...data});
     }
-    if(created.length>0){
+    if(created.length===scheduledWindow.dates.length){
       setPlans(p=>[...created.reverse(),...p]);
-      setForm({...emptyForm,machine:form.machine,startDate:form.startDate,endDate:form.endDate});
+      setForm({...emptyForm,machine:form.machine,startDate:scheduledWindow.startDate,endDate:scheduledWindow.endDate});
       setShowPlanModal(false);
     }
   }
@@ -21871,13 +21909,19 @@ function Planning({currentUser,machines=DEFAULT_MACHINES}) {
   }
 
   function findNextFreeMachineDate(machine,startDate){
+    const window=findNextAvailablePlanWindow(machine,startDate,1);
+    return window?.startDate||"";
+  }
+  function findNextAvailablePlanWindow(machine,startDate,days=1){
     const base=String(startDate||todayStr());
+    const duration=Math.max(1,Math.floor(Number(days)||1));
     for(let i=0;i<370;i+=1){
-      const dt=addDays(base,i);
-      const occupied=plans.some(p=>p.machine===machine&&p.date===dt);
-      if(!occupied) return dt;
+      const candidateStart=addDays(base,i);
+      const dates=getDateRange(candidateStart,addDays(candidateStart,duration-1));
+      const occupied=dates.some(dt=>plans.some(p=>p.machine===machine&&p.date===dt));
+      if(!occupied) return {startDate:candidateStart,endDate:dates[dates.length-1],dates};
     }
-    return "";
+    return null;
   }
 
   async function createPlanFromQueueOrderDrop(order,targetMachine,targetSegmentId=""){
