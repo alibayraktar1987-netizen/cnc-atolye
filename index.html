@@ -712,33 +712,33 @@ const ROLE_PERMISSION_DEFAULTS = {
 };
 const ROLE_MODULE_CATALOG = [
   {id:"dashboard",label:"Gösterge Paneli",group:"Genel"},
-  {id:"customers",label:"Müşteriler",group:"Ticari"},
-  {id:"quotes",label:"Teklif Yönetimi",group:"Ticari"},
-  {id:"sales",label:"Satış Siparişleri",group:"Ticari"},
-  {id:"parts",label:"Ürün / Parça Merkezi",group:"Planlama"},
-  {id:"planning",label:"Planlama",group:"Planlama"},
-  {id:"orders",label:"İş Emirleri",group:"Planlama"},
+  {id:"customers",label:"Müşteriler",group:"Ticari Yönetim"},
+  {id:"quotes",label:"Teklif Yönetimi",group:"Ticari Yönetim"},
+  {id:"sales",label:"Satış Siparişleri",group:"Ticari Yönetim"},
+  {id:"parts",label:"Ürün / Parça Merkezi",group:"Operasyon"},
+  {id:"planning",label:"Planlama",group:"Operasyon"},
+  {id:"orders",label:"İş Emirleri",group:"Operasyon"},
   {id:"giris",label:"Üretim Girişi",group:"Operasyon"},
   {id:"entryrecords",label:"Üretim Kayıtları",group:"Operasyon"},
   {id:"assignments",label:"Çalışan Görevlendirme",group:"Operasyon"},
   {id:"cncmonitor",label:"CNC İzleme",group:"Operasyon"},
   {id:"downtime",label:"Duruş Yönetimi",group:"Operasyon"},
-  {id:"quality",label:"Ürün Kalitesi ve İzlenebilirlik",group:"Kalite"},
-  {id:"compliance",label:"QMS, EYDEP ve Tesis Güvenliği",group:"Kalite"},
-  {id:"materials",label:"Malzeme Kütüphanesi",group:"Stok ve Tedarik"},
-  {id:"tools",label:"Takım Yönetimi",group:"Stok ve Tedarik"},
-  {id:"purchase_requests",label:"Talep ve PO",group:"Stok ve Tedarik"},
-  {id:"purchase_suppliers",label:"Tedarikçiler",group:"Stok ve Tedarik"},
-  {id:"rapor",label:"Raporlar",group:"Analiz"},
-  {id:"finance",label:"Finans",group:"Analiz"},
-  {id:"cost",label:"Maliyetleme",group:"Analiz"},
-  {id:"materialquote",label:"Cost Estimator",group:"Analiz"},
-  {id:"progenergy",label:"Program ve Enerji",group:"Analiz"},
-  {id:"toolcycle",label:"Takım ve Çevrim",group:"Analiz"},
-  {id:"closedloop",label:"Ölçüm ve Depo",group:"Analiz"},
-  {id:"machineprep",label:"Makine Hazırlık",group:"Sistem"},
-  {id:"integrations",label:"Entegrasyonlar",group:"Sistem"},
-  {id:"users",label:"Ayarlar ve Güvenlik",group:"Sistem"},
+  {id:"quality",label:"Ürün Kalitesi ve İzlenebilirlik",group:"Kalite Yönetimi"},
+  {id:"compliance",label:"QMS, EYDEP ve Tesis Güvenliği",group:"Uyum ve Güvenlik"},
+  {id:"materials",label:"Malzeme Kütüphanesi",group:"Kaynak ve Tedarik"},
+  {id:"tools",label:"Takım Yönetimi",group:"Kaynak ve Tedarik"},
+  {id:"purchase_requests",label:"Talep ve PO",group:"Kaynak ve Tedarik"},
+  {id:"purchase_suppliers",label:"Tedarikçiler",group:"Kaynak ve Tedarik"},
+  {id:"rapor",label:"Raporlar",group:"Analiz ve Raporlar"},
+  {id:"finance",label:"Finans",group:"Analiz ve Raporlar"},
+  {id:"cost",label:"Maliyetleme",group:"Analiz ve Raporlar"},
+  {id:"materialquote",label:"Cost Estimator",group:"Analiz ve Raporlar"},
+  {id:"progenergy",label:"Program ve Enerji",group:"Analiz ve Raporlar"},
+  {id:"toolcycle",label:"Takım ve Çevrim",group:"Analiz ve Raporlar"},
+  {id:"closedloop",label:"Ölçüm ve Depo",group:"Analiz ve Raporlar"},
+  {id:"machineprep",label:"Makine Hazırlık",group:"Sistem Yönetimi"},
+  {id:"integrations",label:"Entegrasyonlar",group:"Sistem Yönetimi"},
+  {id:"users",label:"Ayarlar ve Güvenlik",group:"Sistem Yönetimi"},
 ];
 const ALL_MODULE_IDS = ROLE_MODULE_CATALOG.map(row=>row.id);
 const DEFAULT_ROLE_PROFILES = [
@@ -6384,7 +6384,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
       };
     });
     const rows=Object.values(map);
-    const groupOrder=["Genel","Ticari","Planlama","Operasyon","Kalite","Stok ve Tedarik","Analiz","Sistem"];
+    const groupOrder=["Genel","Ticari Yönetim","Operasyon","Kalite Yönetimi","Uyum ve Güvenlik","Kaynak ve Tedarik","Analiz ve Raporlar","Sistem Yönetimi"];
     rows.sort((a,b)=>{
       const ai=groupOrder.indexOf(a.group);
       const bi=groupOrder.indexOf(b.group);
@@ -28931,6 +28931,7 @@ function App() {
   const [mobileMenuOpen,setMobileMenuOpen]=useState(false);
   const [menuQuery,setMenuQuery]=useState("");
   const [menuGroupFilter,setMenuGroupFilter]=useState("all");
+  const [expandedMenuGroups,setExpandedMenuGroups]=useState({});
   const [hoveredSidebarTabId,setHoveredSidebarTabId]=useState("");
   const [globalFilterOpen,setGlobalFilterOpen]=useState(false);
   const [salesFilterOpen,setSalesFilterOpen]=useState(true);
@@ -29205,32 +29206,32 @@ function App() {
     }
     return [
       {id:"dashboard",icon:"dashboard",label:"Gösterge Paneli",group:"Genel",enabled:(canEntry||canOrders||canReport||canSales||canPurchasing)},
-      {id:"customers",icon:"customers",label:"Müşteriler",group:"Ticari",enabled:(canCustomers||canSales)},
-      {id:"quotes",icon:"quotes",label:"Teklif Yönetimi",group:"Ticari",enabled:canSales},
-      {id:"sales",icon:"sales",label:"Satış Siparişleri",group:"Ticari",enabled:canSales},
-      {id:"parts",icon:"parts",label:"Ürün/Parça Merkezi",group:"Planlama",enabled:canPlanning},
-      {id:"planning",icon:"planning",label:"Planlama",group:"Planlama",enabled:canPlanning},
-      {id:"orders",icon:"orders",label:"İş Emirleri",group:"Planlama",enabled:canOrders},
+      {id:"customers",icon:"customers",label:"Müşteriler",group:"Ticari Yönetim",enabled:(canCustomers||canSales)},
+      {id:"quotes",icon:"quotes",label:"Teklif Yönetimi",group:"Ticari Yönetim",enabled:canSales},
+      {id:"sales",icon:"sales",label:"Satış Siparişleri",group:"Ticari Yönetim",enabled:canSales},
+      {id:"parts",icon:"parts",label:"Ürün/Parça Merkezi",group:"Operasyon",enabled:canPlanning},
+      {id:"planning",icon:"planning",label:"Planlama",group:"Operasyon",enabled:canPlanning},
+      {id:"orders",icon:"orders",label:"İş Emirleri",group:"Operasyon",enabled:canOrders},
       {id:"entryrecords",icon:"giris",label:"Üretim Kayıtları",group:"Operasyon",enabled:(canEntry||canOrders||canReport)},
       {id:"assignments",icon:"tasks",label:"Çalışan Görevlendirme",group:"Operasyon",enabled:true},
       {id:"cncmonitor",icon:"monitor",label:"CNC İzleme",group:"Operasyon",enabled:canMonitor},
       {id:"downtime",icon:"downtime",label:"Duruş Yönetimi",group:"Operasyon",enabled:canDowntime},
-      {id:"quality",icon:"quality",label:"Ürün Kalitesi ve İzlenebilirlik",group:"Kalite",enabled:canQuality},
-      {id:"compliance",icon:"quality",label:"QMS, EYDEP ve Tesis Güvenliği",group:"Kalite",enabled:canCompliance},
-      {id:"materials",icon:"materials",label:"Malzeme Kütüphanesi",group:"Stok ve Tedarik",enabled:(canOrders||canPurchasing)},
-      {id:"tools",icon:"tools",label:"Takım Yönetimi",group:"Stok ve Tedarik",enabled:canTools},
-      {id:"purchase_requests",icon:"purchase",label:"Talep ve PO",group:"Stok ve Tedarik",enabled:canPurchasing},
-      {id:"purchase_suppliers",icon:"customers",label:"Tedarikçiler",group:"Stok ve Tedarik",enabled:canPurchasing},
-      {id:"rapor",icon:"rapor",label:"Raporlar",group:"Analiz",enabled:canReport},
-      {id:"finance",icon:"cost",label:"Finans",group:"Analiz",enabled:(canSales||canPurchasing||canReport)},
-      {id:"cost",icon:"cost",label:"Maliyetleme",group:"Analiz",enabled:(canOrders||canReport||canSales)},
-      {id:"materialquote",icon:"cost",label:"Cost Estimator",group:"Analiz",enabled:(canOrders||canSales||canPurchasing||canReport)},
-      {id:"progenergy",icon:"integration",label:"Program ve Enerji",group:"Analiz",enabled:canSmartFactory},
-      {id:"toolcycle",icon:"tools",label:"Takım ve Çevrim",group:"Analiz",enabled:canSmartFactory},
-      {id:"closedloop",icon:"quality",label:"Ölçüm ve Depo",group:"Analiz",enabled:canSmartFactory},
-      {id:"machineprep",icon:"machines",label:"Makine Hazırlık",group:"Sistem",enabled:canMachinePrep},
-      {id:"integrations",icon:"integration",label:"Entegrasyonlar",group:"Sistem",enabled:(canUsers||isAdmin)},
-      {id:"users",icon:"users",label:"Ayarlar ve Güvenlik",group:"Sistem",enabled:canUsers},
+      {id:"quality",icon:"quality",label:"Ürün Kalitesi ve İzlenebilirlik",group:"Kalite Yönetimi",enabled:canQuality},
+      {id:"compliance",icon:"quality",label:"QMS, EYDEP ve Tesis Güvenliği",group:"Uyum ve Güvenlik",enabled:canCompliance},
+      {id:"materials",icon:"materials",label:"Malzeme Kütüphanesi",group:"Kaynak ve Tedarik",enabled:(canOrders||canPurchasing)},
+      {id:"tools",icon:"tools",label:"Takım Yönetimi",group:"Kaynak ve Tedarik",enabled:canTools},
+      {id:"purchase_requests",icon:"purchase",label:"Talep ve PO",group:"Kaynak ve Tedarik",enabled:canPurchasing},
+      {id:"purchase_suppliers",icon:"customers",label:"Tedarikçiler",group:"Kaynak ve Tedarik",enabled:canPurchasing},
+      {id:"rapor",icon:"rapor",label:"Raporlar",group:"Analiz ve Raporlar",enabled:canReport},
+      {id:"finance",icon:"cost",label:"Finans",group:"Analiz ve Raporlar",enabled:(canSales||canPurchasing||canReport)},
+      {id:"cost",icon:"cost",label:"Maliyetleme",group:"Analiz ve Raporlar",enabled:(canOrders||canReport||canSales)},
+      {id:"materialquote",icon:"cost",label:"Cost Estimator",group:"Analiz ve Raporlar",enabled:(canOrders||canSales||canPurchasing||canReport)},
+      {id:"progenergy",icon:"integration",label:"Program ve Enerji",group:"Analiz ve Raporlar",enabled:canSmartFactory},
+      {id:"toolcycle",icon:"tools",label:"Takım ve Çevrim",group:"Analiz ve Raporlar",enabled:canSmartFactory},
+      {id:"closedloop",icon:"quality",label:"Ölçüm ve Depo",group:"Analiz ve Raporlar",enabled:canSmartFactory},
+      {id:"machineprep",icon:"machines",label:"Makine Hazırlık",group:"Sistem Yönetimi",enabled:canMachinePrep},
+      {id:"integrations",icon:"integration",label:"Entegrasyonlar",group:"Sistem Yönetimi",enabled:(canUsers||isAdmin)},
+      {id:"users",icon:"users",label:"Ayarlar ve Güvenlik",group:"Sistem Yönetimi",enabled:canUsers},
     ];
   },[canEntry,canOrders,canSales,canPurchasing,canQuality,canCompliance,canDowntime,canReport,canPlanning,canTools,canCustomers,canMachinePrep,canUsers,isAdmin,canSmartFactory,isOperatorRole,canMonitor]);
   const hiddenTabs=menuVisibility?.hiddenTabs||[];
@@ -29260,7 +29261,7 @@ function App() {
         return {...row,moduleLabel:tabMeta?.label||row.label};
       });
   },[dashboardCreateCatalog,tabs]);
-  const groupOrder=["Genel","Ticari","Planlama","Operasyon","Kalite","Stok ve Tedarik","Analiz","Sistem"];
+  const groupOrder=["Genel","Ticari Yönetim","Operasyon","Kalite Yönetimi","Uyum ve Güvenlik","Kaynak ve Tedarik","Analiz ve Raporlar","Sistem Yönetimi"];
   const menuGroupCountMap=useMemo(()=>{
     const map={all:tabs.length};
     groupOrder.forEach(g=>{
@@ -29656,6 +29657,7 @@ function App() {
   const mobilePrimary=tabs.slice(0,4);
   const activeTabMeta=tabs.find(t=>t.id===tab)||null;
   const activeContextLabel=activeTabMeta?.label||"Modul";
+  const activeMenuGroup=activeTabMeta?.group||"";
   const menuResultText=`${visibleTabs.length}/${tabs.length} modul`;
   const desktopMenuIconOnly=layoutMode==="desktop"&&desktopMenuCollapsed;
   const sidebarWidth=layoutMode==="desktop"
@@ -29667,6 +29669,14 @@ function App() {
       if(next) setMenuQuery("");
       return next;
     });
+  }
+  function isMenuGroupExpanded(group){
+    if(menuQuery||menuGroupFilter!=="all") return true;
+    if(Object.prototype.hasOwnProperty.call(expandedMenuGroups,group)) return Boolean(expandedMenuGroups[group]);
+    return group===activeMenuGroup;
+  }
+  function toggleMenuGroup(group){
+    setExpandedMenuGroups(prev=>({...prev,[group]:!isMenuGroupExpanded(group)}));
   }
   function SidebarToggleIcon({collapsed,size=16}){
     return (
@@ -29813,10 +29823,17 @@ function App() {
       )}
       {visibleGroups.map(g=>(
         <div key={g}>
-          <div title={g} style={{fontSize:10,color:sideTone?leftNavColors.muted:C.muted2,letterSpacing:.5,textTransform:"uppercase",marginBottom:6,padding:compact?"0 2px":"0 6px",fontWeight:800,textAlign:iconOnly?"center":"left",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-            {iconOnly?g.split(" ").map(x=>x[0]||"").join("").slice(0,3):g}
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          <button
+            type="button"
+            title={g}
+            aria-expanded={isMenuGroupExpanded(g)}
+            onClick={()=>toggleMenuGroup(g)}
+            style={{width:"100%",display:"flex",alignItems:"center",justifyContent:iconOnly?"center":"space-between",gap:6,fontSize:10,color:sideTone?leftNavColors.muted:C.muted2,letterSpacing:.5,textTransform:"uppercase",marginBottom:isMenuGroupExpanded(g)?6:0,padding:compact?"6px 2px":"7px 6px",fontWeight:800,textAlign:iconOnly?"center":"left",background:"transparent",border:"none",borderRadius:7,cursor:"pointer",fontFamily:"inherit"}}
+          >
+            <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{iconOnly?g.split(" ").map(x=>x[0]||"").join("").slice(0,3):g}</span>
+            {!iconOnly&&<span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,letterSpacing:0}}><span>{groupedTabs[g].length}</span><span style={{fontSize:13,lineHeight:1,transform:isMenuGroupExpanded(g)?"rotate(90deg)":"none",transition:"transform .16s ease"}}>›</span></span>}
+          </button>
+          {isMenuGroupExpanded(g)&&<div style={{display:"flex",flexDirection:"column",gap:6}}>
             {groupedTabs[g].map(t=>{
               const isActive=tab===t.id;
               const isHovered=hoveredSidebarTabId===t.id;
@@ -29878,7 +29895,7 @@ function App() {
                 </a>
               );
             })}
-          </div>
+          </div>}
         </div>
       ))}
     </div>
