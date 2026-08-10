@@ -26547,6 +26547,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
   const [balloonSaveBusy,setBalloonSaveBusy]=useState(false);
   const [balloonDeleteBusyId,setBalloonDeleteBusyId]=useState("");
   const [balloonError,setBalloonError]=useState("");
+  const [balloonWorkspaceOpen,setBalloonWorkspaceOpen]=useState(false);
   const [balloonPreview,setBalloonPreview]=useState(null);
   const [editableBalloons,setEditableBalloons]=useState([]);
   const [drawSelection,setDrawSelection]=useState(null);
@@ -26593,6 +26594,9 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
   const orderBalloonRuns=balloonForm.orderId
     ? balloonRuns.filter(r=>r.orderId===balloonForm.orderId)
     : [];
+  const balloonWorkspaceStyle=balloonWorkspaceOpen
+    ? {position:"fixed",inset:0,zIndex:500,overflow:"auto",background:C.bg,padding:"18px 20px 28px",borderRadius:0,border:"none",boxShadow:"0 18px 45px rgba(15,23,42,.35)"}
+    : {background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10,marginBottom:10};
   useEffect(()=>{
     if(!pdfOrders.length) return;
     if(balloonForm.orderId&&pdfOrderById[balloonForm.orderId]) return;
@@ -26997,6 +27001,25 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
       setBalloonBusy(false);
     }
   }
+  async function openOrCreateAutoBalloon(){
+    const wo=pdfOrderById[balloonForm.orderId];
+    if(!wo){alert("PDF icin is emri secin.");return;}
+    if(!selectedPdfFile){alert("PDF secin.");return;}
+    const requestedPage=Math.max(1,safeNum(balloonForm.page)||1);
+    const existing=balloonRuns.find(run=>
+      run.orderId===wo.id&&
+      String(run.filePickId||"")===String(selectedPdfFile._pickId||"")&&
+      Math.max(1,safeNum(run.page)||1)===requestedPage
+    );
+    setBalloonWorkspaceOpen(true);
+    if(existing){
+      setFaiForm(f=>({...f,balloonRunId:existing.id||"",orderId:f.orderId||wo.id||"",partNo:f.partNo||wo.partNo||""}));
+      loadEditableBalloonsFromRun(existing);
+      await openPreviewForRun(existing);
+      return;
+    }
+    await runAutoBalloon();
+  }
   function bindSelectedBalloonRunToFai(runId){
     const run=balloonRuns.find(r=>r.id===runId)||null;
     if(!run){
@@ -27114,8 +27137,11 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
       {view==="fai"&&(
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
           <div style={{fontWeight:700,color:C.text,marginBottom:8}}>FAI Akisi</div>
-          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10,marginBottom:10}}>
-            <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:7}}>Teknik Resim Oto Balon · Metin Tespiti V2</div>
+          <div style={balloonWorkspaceStyle}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:7}}>
+              <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Teknik Resim Oto Balon · Metin Tespiti V2</div>
+              {balloonWorkspaceOpen&&<button onClick={()=>setBalloonWorkspaceOpen(false)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Çalışma Alanını Kapat</button>}
+            </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr .4fr 1fr",gap:8}}>
               <div>
                 <span style={labelSt}>Onayli Siparisten Gelen Is Emri</span>
@@ -27151,8 +27177,8 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES}){
             </div>
             <div style={{display:"flex",gap:8,justifyContent:"space-between",marginTop:8,flexWrap:"wrap"}}>
               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                <button onClick={runAutoBalloon} disabled={balloonBusy||!balloonForm.orderId||!balloonForm.fileId} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,opacity:(balloonBusy||!balloonForm.orderId||!balloonForm.fileId)?0.65:1}}>
-                  {balloonBusy?"Oto Balonlanıyor...":"Oto Balonla"}
+                <button onClick={openOrCreateAutoBalloon} disabled={balloonBusy||!balloonForm.orderId||!balloonForm.fileId} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,opacity:(balloonBusy||!balloonForm.orderId||!balloonForm.fileId)?0.65:1}}>
+                  {balloonBusy?"Oto Balonlanıyor...":"Oto Balon Çalışmasını Aç"}
                 </button>
                 <button onClick={addEditableBalloonRow} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>
                   + Manuel Olcu
