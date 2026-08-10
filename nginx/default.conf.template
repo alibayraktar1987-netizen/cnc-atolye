@@ -39,6 +39,16 @@ server {
     proxy_set_header X-Forwarded-Proto $scheme;
   }
 
+  # Cost Estimator is served as a first-class module under the same origin.
+  # This keeps its assets and /api/v1 calls independent of localhost ports.
+  location = /cost-estimator {
+    return 301 /cost-estimator/;
+  }
+
+  location /cost-estimator/ {
+    try_files $uri $uri/ /cost-estimator/index.html;
+  }
+
   location / {
     try_files $uri $uri/ =404;
   }
