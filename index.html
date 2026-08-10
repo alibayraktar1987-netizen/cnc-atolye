@@ -678,6 +678,7 @@ const USER_ROLES = [
   { id:"supervisor", label:"Vardiya Sefi" },
   { id:"operator", label:"Operator" },
   { id:"quality", label:"Kalite" },
+  { id:"security", label:"Tesis Güvenliği" },
   { id:"viewer", label:"Izleyici" },
 ];
 function isKnownUserRole(roleId){
@@ -693,6 +694,8 @@ const PERMISSIONS = [
   { id:"manage_sales", label:"Satis ve Teklif", icon:"ST", desc:"Teklif ve siparis yonetebilir" },
   { id:"manage_purchasing", label:"Satin Alma", icon:"SA", desc:"Talep ve PO yonetebilir" },
   { id:"manage_quality", label:"Kalite", icon:"KL", desc:"Muayene ve FAI kayitlari girebilir" },
+  { id:"manage_compliance", label:"EYDEP ve Uyum", icon:"UY", desc:"Denetim, risk, CAPA ve kontrollu dokuman kayitlarini yonetebilir" },
+  { id:"manage_security", label:"Tesis Güvenliği", icon:"TG", desc:"Ziyaretci, kontrollu alan ve guvenlik olaylarini yonetebilir" },
   { id:"manage_downtime", label:"Duruş Yönetimi", icon:"DR", desc:"Duruş nedeni ve kaydı girebilir" },
   { id:"manage_notifications", label:"Bildirim Kurallari", icon:"BD", desc:"Uyari kurallari duzenleyebilir" },
 ];
@@ -704,6 +707,7 @@ const ROLE_PERMISSION_DEFAULTS = {
   supervisor:["data_entry","view_reports","manage_downtime","manage_notifications","assign_tasks"],
   operator:["data_entry"],
   quality:["manage_quality","view_reports"],
+  security:["manage_security","view_reports"],
   viewer:["view_reports"],
 };
 const ROLE_MODULE_CATALOG = [
@@ -720,6 +724,7 @@ const ROLE_MODULE_CATALOG = [
   {id:"cncmonitor",label:"CNC İzleme",group:"Operasyon"},
   {id:"downtime",label:"Duruş Yönetimi",group:"Operasyon"},
   {id:"quality",label:"Kalite ve İzlenebilirlik",group:"Kalite"},
+  {id:"compliance",label:"Kalite, EYDEP ve Güvenlik",group:"Kalite"},
   {id:"materials",label:"Malzeme Kütüphanesi",group:"Stok ve Tedarik"},
   {id:"tools",label:"Takım Yönetimi",group:"Stok ve Tedarik"},
   {id:"purchase_requests",label:"Talep ve PO",group:"Stok ve Tedarik"},
@@ -821,9 +826,20 @@ const DEFAULT_ROLE_PROFILES = [
     parentId:"profile_admin",
     description:"Kalite kayitlari ve izlenebilirlik.",
     permissions:[...ROLE_PERMISSION_DEFAULTS.quality],
-    moduleAccess:["dashboard","quality","rapor","materialquote"],
+    moduleAccess:["dashboard","quality","compliance","rapor","materialquote"],
     locked:true,
     order:7,
+  },
+  {
+    id:"profile_security",
+    name:"Tesis Guvenligi",
+    systemRole:"security",
+    parentId:"profile_admin",
+    description:"Tesis guvenligi ve kontrollu alan kayitlari.",
+    permissions:[...ROLE_PERMISSION_DEFAULTS.security],
+    moduleAccess:["dashboard","compliance","rapor"],
+    locked:true,
+    order:8,
   },
   {
     id:"profile_viewer",
@@ -834,7 +850,7 @@ const DEFAULT_ROLE_PROFILES = [
     permissions:[...ROLE_PERMISSION_DEFAULTS.viewer],
     moduleAccess:["dashboard","rapor","materialquote"],
     locked:true,
-    order:8,
+    order:9,
   },
 ];
 function normalizePermissionIds(list){
@@ -27986,6 +28002,114 @@ function IntegrationsReadinessModule(){
   );
 }
 
+const COMPLIANCE_RECORD_TYPES = [
+  {id:"document",label:"Kontrollü Doküman",code:"DOC",area:"AS9100",statuses:["draft","review","approved","published","obsolete"]},
+  {id:"capa",label:"NCR / MRB / CAPA",code:"CAPA",area:"AS9100",statuses:["open","containment","root_cause","action","effectiveness","closed"]},
+  {id:"risk",label:"Risk ve Fırsat",code:"RISK",area:"EYDEP",statuses:["open","monitoring","treated","closed"]},
+  {id:"audit",label:"İç Denetim",code:"AUD",area:"EYDEP",statuses:["planned","in_progress","finding","closed"]},
+  {id:"management_review",label:"Yönetimin Gözden Geçirmesi",code:"YGG",area:"EYDEP",statuses:["planned","held","actions_open","closed"]},
+  {id:"competency",label:"Eğitim ve Yetkinlik",code:"COMP",area:"EYDEP",statuses:["planned","active","expired","closed"]},
+  {id:"visitor",label:"Ziyaretçi Kaydı",code:"VIS",area:"Tesis Güvenliği",statuses:["planned","inside","checked_out","closed"]},
+  {id:"controlled_access",label:"Kontrollü Alan Erişimi",code:"ACC",area:"Tesis Güvenliği",statuses:["requested","approved","active","revoked","closed"]},
+  {id:"media",label:"Medya / Teknik Veri Erişimi",code:"MED",area:"Tesis Güvenliği",statuses:["requested","approved","returned","closed"]},
+  {id:"security_incident",label:"Güvenlik Olayı",code:"SEC",area:"Tesis Güvenliği",statuses:["open","containment","investigating","actions_open","closed"]},
+];
+function complianceTypeMeta(id){
+  return COMPLIANCE_RECORD_TYPES.find(row=>row.id===id)||COMPLIANCE_RECORD_TYPES[0];
+}
+function complianceStatusLabel(status){
+  return ({draft:"Taslak",review:"İncelemede",approved:"Onaylı",published:"Yayınlandı",obsolete:"Arşiv",open:"Açık",containment:"Geçici Önlem",root_cause:"Kök Neden",action:"Faaliyet",effectiveness:"Etkinlik Doğrulama",closed:"Kapalı",monitoring:"İzlemede",treated:"İşlem Yapıldı",planned:"Planlandı",in_progress:"Devam Ediyor",finding:"Bulgu Var",held:"Yapıldı",actions_open:"Aksiyon Açık",active:"Aktif",expired:"Süresi Geçti",inside:"İçeride",checked_out:"Çıkış Yapıldı",requested:"Talep",revoked:"İptal",returned:"İade Edildi",investigating:"İncelemede"})[status]||status||"-";
+}
+function ComplianceGovernanceModule({currentUser}){
+  const [records,setRecords]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [activeType,setActiveType]=useState("document");
+  const [filter,setFilter]=useState("open");
+  const [form,setForm]=useState({title:"",owner:"",dueDate:todayStr(),securityLevel:"internal",reference:"",details:"",evidence:"",effectiveness:""});
+  const [saving,setSaving]=useState(false);
+  const canManage=hasPermission(currentUser,"manage_compliance")||hasPermission(currentUser,"manage_security")||currentUser.role==="admin"||currentUser.role==="quality";
+  const type=complianceTypeMeta(activeType);
+  const load=useCallback(async()=>{
+    const rows=await window.DB.getAll("complianceRecords");
+    setRecords((rows||[]).sort((a,b)=>(b.updatedAt||b.createdAt||"").localeCompare(a.updatedAt||a.createdAt||"")));
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  const typeRows=records.filter(row=>row.type===activeType);
+  const visibleRows=typeRows.filter(row=>filter==="all"?true:(filter==="open"?!["closed","obsolete","checked_out","revoked"].includes(row.status):row.status===filter));
+  const openCount=records.filter(row=>!["closed","obsolete","checked_out","revoked"].includes(row.status)).length;
+  const overdueCount=records.filter(row=>row.dueDate&&row.dueDate<todayStr()&&!["closed","obsolete","checked_out","revoked"].includes(row.status)).length;
+  const securityOpen=records.filter(row=>["security_incident","visitor","controlled_access","media"].includes(row.type)&&!["closed","checked_out","revoked"].includes(row.status)).length;
+  function updateForm(key,value){setForm(prev=>({...prev,[key]:value}));}
+  async function saveRecord(){
+    if(!canManage){alert("Bu kaydı oluşturma yetkiniz yok.");return;}
+    if(!form.title.trim()||!form.owner.trim()){alert("Kayıt başlığı ve sorumlu zorunludur.");return;}
+    setSaving(true);
+    try{
+      const now=new Date().toISOString();
+      const payload={
+        recordNo:`${type.code}-${Date.now().toString().slice(-8)}`,
+        type:type.id, area:type.area, title:form.title.trim(), owner:form.owner.trim(), dueDate:form.dueDate||"",
+        securityLevel:form.securityLevel, reference:form.reference.trim(), details:form.details.trim(),
+        evidence:form.evidence.trim(), effectiveness:form.effectiveness.trim(), status:type.statuses[0],
+        createdBy:currentUser.id, createdAt:now, updatedBy:currentUser.id, updatedAt:now, revision:1,
+      };
+      const id=await window.DB.addDoc("complianceRecords",payload);
+      if(!id){alert("Kayıt oluşturulamadı.");return;}
+      await addAuditLog(currentUser.id,"complianceRecord",id,"create",null,payload,{module:"compliance",area:type.area});
+      setRecords(prev=>[{id,...payload},...prev]);
+      setForm({title:"",owner:"",dueDate:todayStr(),securityLevel:"internal",reference:"",details:"",evidence:"",effectiveness:""});
+    }finally{setSaving(false);}
+  }
+  async function advanceRecord(row){
+    if(!canManage) return;
+    const statuses=complianceTypeMeta(row.type).statuses;
+    const idx=statuses.indexOf(row.status);
+    const next=statuses[Math.min(statuses.length-1,Math.max(0,idx+1))];
+    if(next===row.status) return;
+    if(next==="closed"&&row.type==="capa"&&!String(row.effectiveness||"").trim()){
+      alert("CAPA kapatmak için etkinlik doğrulama notu zorunludur.");return;
+    }
+    const patch={status:next,updatedAt:new Date().toISOString(),updatedBy:currentUser.id,closedAt:next==="closed"?new Date().toISOString():row.closedAt||"",closedBy:next==="closed"?currentUser.id:row.closedBy||"",revision:safeNum(row.revision)+1};
+    const ok=await window.DB.updateDoc("complianceRecords",row.id,patch);
+    if(!ok){alert("Durum güncellenemedi.");return;}
+    await addAuditLog(currentUser.id,"complianceRecord",row.id,"status_transition",row,{...row,...patch},{module:"compliance",from:row.status,to:next});
+    setRecords(prev=>prev.map(item=>item.id===row.id?{...item,...patch}:item));
+  }
+  return <div style={{display:"flex",flexDirection:"column",gap:14,paddingBottom:20}}>
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
+        <div><div style={{fontSize:18,fontWeight:800,color:C.text}}>Kalite, EYDEP ve Tesis Güvenliği</div><div style={{fontSize:12,color:C.muted2,marginTop:5}}>Denetlenebilir kayıt, aksiyon, kanıt ve elektronik durum geçişi merkezi.</div></div>
+        <Badge label={canManage?"Yönetim Yetkisi":"Salt Okunur"} color={canManage?C.green:C.muted2}/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginTop:14}}>
+        {[["Açık Kayıt",openCount,C.accent],["Gecikmiş Aksiyon",overdueCount,overdueCount?C.red:C.green],["Güvenlik Takibi",securityOpen,securityOpen?C.warn:C.green]].map(([label,value,color])=><div key={label} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px"}}><div style={{fontSize:11,color:C.muted2}}>{label}</div><div style={{marginTop:4,fontSize:23,fontWeight:800,color}}>{value}</div></div>)}
+      </div>
+    </div>
+    <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>{COMPLIANCE_RECORD_TYPES.map(item=><button key={item.id} onClick={()=>{setActiveType(item.id);setFilter("open");}} style={{...btnSt(activeType===item.id?"primary":"ghost"),padding:"8px 10px",fontSize:12}}>{item.label}</button>)}</div>
+    <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(320px,.9fr)",gap:14,alignItems:"start"}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}><div><div style={{fontWeight:800,color:C.text}}>{type.label}</div><div style={{fontSize:11,color:C.muted2,marginTop:3}}>{type.area} kayıtları</div></div><select value={filter} onChange={e=>setFilter(e.target.value)} style={{...inputSt,width:150,padding:"7px 9px",fontSize:12}}><option value="open">Açıklar</option><option value="all">Tümü</option>{type.statuses.map(s=><option key={s} value={s}>{complianceStatusLabel(s)}</option>)}</select></div>
+        {loading?<div style={{color:C.muted2,fontSize:13,padding:14}}>Kayıtlar yükleniyor...</div>:visibleRows.length===0?<div style={{color:C.muted2,fontSize:13,padding:14}}>Bu filtrede kayıt yok.</div>:<div style={{display:"grid",gap:8}}>{visibleRows.map(row=><div key={row.id} style={{border:`1px solid ${C.border}`,borderRadius:10,padding:11,background:C.surface}}><div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"start"}}><div><div style={{fontWeight:750,color:C.text}}>{row.title}</div><div style={{fontSize:11,color:C.muted2,marginTop:3}}>{row.recordNo} · Sorumlu: {row.owner} · Termin: {row.dueDate||"-"}</div></div><Badge label={complianceStatusLabel(row.status)} color={row.status==="closed"?C.green:(row.dueDate&&row.dueDate<todayStr()?C.red:C.warn)}/></div><div style={{fontSize:12,color:C.muted2,marginTop:7,whiteSpace:"pre-wrap"}}>{row.details||"Açıklama girilmemiş."}</div><div style={{display:"flex",justifyContent:"space-between",gap:8,marginTop:9,alignItems:"center",flexWrap:"wrap"}}><span style={{fontSize:11,color:C.muted2}}>Güvenlik: {row.securityLevel||"internal"} · Rev.{row.revision||1}</span>{canManage&&row.status!=="closed"&&row.status!=="obsolete"&&<button onClick={()=>advanceRecord(row)} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11}}>Sonraki Durum ›</button>}</div></div>)}</div>}
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{fontWeight:800,color:C.text}}>Yeni {type.label} Kaydı</div><div style={{fontSize:11,color:C.muted2,marginTop:4,marginBottom:12}}>Zorunlu alanlar ve audit izi ile kaydedilir.</div>
+        <div style={{display:"grid",gap:9}}>
+          <div><span style={labelSt}>Başlık *</span><input disabled={!canManage} style={inputSt} value={form.title} onChange={e=>updateForm("title",e.target.value)} placeholder="Kayıt başlığı"/></div>
+          <div><span style={labelSt}>Sorumlu *</span><input disabled={!canManage} style={inputSt} value={form.owner} onChange={e=>updateForm("owner",e.target.value)} placeholder="Ad soyad / rol"/></div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><div><span style={labelSt}>Termin</span><input disabled={!canManage} type="date" style={inputSt} value={form.dueDate} onChange={e=>updateForm("dueDate",e.target.value)}/></div><div><span style={labelSt}>Güvenlik Seviyesi</span><select disabled={!canManage} style={inputSt} value={form.securityLevel} onChange={e=>updateForm("securityLevel",e.target.value)}><option value="internal">Kurum İçi</option><option value="restricted">Kısıtlı</option><option value="controlled">Kontrollü</option></select></div></div>
+          <div><span style={labelSt}>Standart / Form Referansı</span><input disabled={!canManage} style={inputSt} value={form.reference} onChange={e=>updateForm("reference",e.target.value)} placeholder="Örn. süreç başlığı veya form kodu"/></div>
+          <div><span style={labelSt}>Açıklama / Bulgular</span><textarea disabled={!canManage} style={{...inputSt,minHeight:82,resize:"vertical"}} value={form.details} onChange={e=>updateForm("details",e.target.value)} /></div>
+          <div><span style={labelSt}>Kanıt / Bağlantı Referansı</span><input disabled={!canManage} style={inputSt} value={form.evidence} onChange={e=>updateForm("evidence",e.target.value)} placeholder="Doküman, fotoğraf veya kayıt numarası"/></div>
+          {activeType==="capa"&&<div><span style={labelSt}>Etkinlik Doğrulama Notu</span><textarea disabled={!canManage} style={{...inputSt,minHeight:58,resize:"vertical"}} value={form.effectiveness} onChange={e=>updateForm("effectiveness",e.target.value)} placeholder="CAPA kapanışından önce zorunludur"/></div>}
+          <button disabled={!canManage||saving} onClick={saveRecord} style={{...btnSt("primary"),padding:"10px 12px",opacity:(!canManage||saving)?.65:1}}>{saving?"Kaydediliyor...":"Audit İzli Kayıt Oluştur"}</button>
+        </div>
+      </div>
+    </div>
+    <div style={{fontSize:11,color:C.muted2,lineHeight:1.55,padding:"0 4px"}}>Bu modül sertifikasyon kararı vermez; denetim, kalite ve tesis güvenliği kayıt altyapısı sağlar. Tasnifli veri veya gerçek savunma proje verisi demo/canlı olmayan ortamlarda kullanılmamalıdır.</div>
+  </div>;
+}
+
 function MaterialQuoteBridgeModule(){
   const isBrowser=typeof window!=="undefined";
   const isHttpRuntime=isBrowser&&/^https?:$/i.test(String(window.location.protocol||""));
@@ -28938,6 +29062,7 @@ function App() {
   const canSales=hasPermission(userForPerm,"manage_sales")||canOrders;
   const canPurchasing=hasPermission(userForPerm,"manage_purchasing")||canOrders;
   const canQuality=hasPermission(userForPerm,"manage_quality")||canOrders||canReport;
+  const canCompliance=hasPermission(userForPerm,"manage_compliance")||hasPermission(userForPerm,"manage_security")||canQuality||isAdmin;
   const canDowntime=hasPermission(userForPerm,"manage_downtime")||canEntry||canReport;
   const canPlanning=canOrders;
   const canCustomers=canOrders;
@@ -28966,6 +29091,7 @@ function App() {
       {id:"cncmonitor",icon:"monitor",label:"CNC İzleme",group:"Operasyon",enabled:canMonitor},
       {id:"downtime",icon:"downtime",label:"Duruş Yönetimi",group:"Operasyon",enabled:canDowntime},
       {id:"quality",icon:"quality",label:"Kalite ve İzlenebilirlik",group:"Kalite",enabled:canQuality},
+      {id:"compliance",icon:"quality",label:"Kalite, EYDEP ve Güvenlik",group:"Kalite",enabled:canCompliance},
       {id:"materials",icon:"materials",label:"Malzeme Kütüphanesi",group:"Stok ve Tedarik",enabled:(canOrders||canPurchasing)},
       {id:"tools",icon:"tools",label:"Takım Yönetimi",group:"Stok ve Tedarik",enabled:canTools},
       {id:"purchase_requests",icon:"purchase",label:"Talep ve PO",group:"Stok ve Tedarik",enabled:canPurchasing},
@@ -28981,7 +29107,7 @@ function App() {
       {id:"integrations",icon:"integration",label:"Entegrasyonlar",group:"Sistem",enabled:(canUsers||isAdmin)},
       {id:"users",icon:"users",label:"Ayarlar ve Güvenlik",group:"Sistem",enabled:canUsers},
     ];
-  },[canEntry,canOrders,canSales,canPurchasing,canQuality,canDowntime,canReport,canPlanning,canTools,canCustomers,canMachinePrep,canUsers,isAdmin,canSmartFactory,isOperatorRole,canMonitor]);
+  },[canEntry,canOrders,canSales,canPurchasing,canQuality,canCompliance,canDowntime,canReport,canPlanning,canTools,canCustomers,canMachinePrep,canUsers,isAdmin,canSmartFactory,isOperatorRole,canMonitor]);
   const hiddenTabs=menuVisibility?.hiddenTabs||[];
   const enabledTabs=useMemo(()=>{
     const permissionTabs=allTabs.filter(t=>t.enabled);
@@ -29463,6 +29589,7 @@ function App() {
     if(tab==="purchase_suppliers") return <PurchasingModule currentUser={currentUser} filtersVisible={purchaseFilterOpen} defaultView="suppliers"/>;
     if(tab==="downtime") return <DowntimeModule currentUser={currentUser} machines={machines} filtersVisible={downtimeFilterOpen}/>;
     if(tab==="quality") return <QualityTraceabilityModule currentUser={currentUser} machines={machines}/>;
+    if(tab==="compliance") return <ComplianceGovernanceModule currentUser={currentUser}/>;
     if(tab==="notifications") return <NotificationCenterModule currentUser={currentUser}/>;
     if(tab==="finance") return <FinanceModule currentUser={currentUser} filtersVisible={financeFilterOpen}/>;
     if(tab==="cost") return <CostingModule filtersVisible={costFilterOpen}/>;
