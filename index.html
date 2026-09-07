@@ -28375,7 +28375,7 @@ function ComplianceGovernanceModule({currentUser,initialType="document",allowedT
   const [createOpen,setCreateOpen]=useState(false);
   const [form,setForm]=useState({title:"",owner:"",dueDate:todayStr(),securityLevel:"internal",reference:"",details:"",evidence:"",effectiveness:""});
   const [saving,setSaving]=useState(false);
-  const canManage=hasPermission(currentUser,"manage_compliance")||hasPermission(currentUser,"manage_security")||currentUser.role==="admin"||currentUser.role==="quality";
+  const canManage=hasPermission(currentUser,"manage_compliance")||hasPermission(currentUser,"manage_security")||hasPermission(currentUser,"manage_quality")||currentUser.role==="admin"||currentUser.role==="quality";
   const availableTypes=(Array.isArray(allowedTypes)&&allowedTypes.length>0)
     ? COMPLIANCE_RECORD_TYPES.filter(item=>allowedTypes.includes(item.id))
     : COMPLIANCE_RECORD_TYPES;
