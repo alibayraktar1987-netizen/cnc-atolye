@@ -27247,14 +27247,15 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:9}}>
           <div><div style={{fontWeight:800,color:C.text}}>{qualityListMeta.title}</div><div style={{fontSize:11,color:C.muted2,marginTop:3}}>Önce kayıt listesini inceleyin, yeni kayıt gerektiğinde ekleme alanını açın.</div></div>
-          <button onClick={()=>setQualityCreateOpen(open=>!open)} style={{...(qualityCreateOpen?btnSt("ghost"):btnSt("primary")),padding:"8px 11px",fontSize:12}}>{qualityCreateOpen?"Ekleme Alanını Kapat":`+ ${qualityListMeta.button}`}</button>
+          <button onClick={()=>setQualityCreateOpen(open=>!open)} style={{...(qualityCreateOpen?btnSt("ghost"):btnSt("primary")),padding:"8px 11px",fontSize:12}}>{qualityCreateOpen?"Formu Kapat":`+ ${qualityListMeta.button}`}</button>
         </div>
         {qualityListMeta.rows.length===0?<div style={{fontSize:12,color:C.muted2,padding:"12px 0"}}>Henüz kayıt yok.</div>:<div style={{display:"grid",gap:7}}>{qualityListMeta.rows.slice(0,80).map(row=><div key={row.id} style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"center",padding:"9px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,flexWrap:"wrap"}}><div><div style={{fontWeight:700,color:C.text}}>{qualityListMeta.render(row)}</div><div style={{fontSize:11,color:C.muted2,marginTop:3}}>{qualityListMeta.detail(row)}</div></div><Badge label={view==="inspect"?(row.result==="pass"?"Geçti":"Kaldı"):(row.status||"Kayıt")} color={view==="inspect"?(row.result==="pass"?C.green:C.red):(row.status==="approved"?C.green:C.warn)}/></div>)}</div>}
       </div>
 
       {view==="trace"&&qualityCreateOpen&&(
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Parca Iz Kaydi</div>
+        <div style={{position:"fixed",inset:0,zIndex:80,padding:14,background:"rgba(8,12,18,.52)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setQualityCreateOpen(false)}>
+        <div className="mrp-scrollbar" style={{width:"100%",maxWidth:980,maxHeight:"92vh",overflowY:"auto",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,boxShadow:"0 24px 56px rgba(0,0,0,.34)"}} onClick={e=>e.stopPropagation()}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}><div style={{fontWeight:700,color:C.text,marginBottom:8}}>Parca Iz Kaydi</div><button onClick={()=>setQualityCreateOpen(false)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Kapat</button></div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
             <div>
               <span style={labelSt}>Is Emri</span>
@@ -27280,11 +27281,13 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
             <div style={{fontSize:12,color:C.muted2}}>Son kayit: {traces[0]?.serialNo||"-"}</div>
           </div>
         </div>
+        </div>
       )}
 
       {view==="inspect"&&qualityCreateOpen&&(
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>Muayene ve Hurda Girisi</div>
+        <div style={{position:"fixed",inset:0,zIndex:80,padding:14,background:"rgba(8,12,18,.52)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setQualityCreateOpen(false)}>
+        <div className="mrp-scrollbar" style={{width:"100%",maxWidth:920,maxHeight:"92vh",overflowY:"auto",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,boxShadow:"0 24px 56px rgba(0,0,0,.34)"}} onClick={e=>e.stopPropagation()}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}><div style={{fontWeight:700,color:C.text,marginBottom:8}}>Muayene ve Hurda Girisi</div><button onClick={()=>setQualityCreateOpen(false)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Kapat</button></div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
             <div>
               <span style={labelSt}>Iz Kaydi</span>
@@ -27306,11 +27309,13 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
             <div style={{fontSize:12,color:C.muted2}}>Kayit: {inspections.length}</div>
           </div>
         </div>
+        </div>
       )}
 
       {view==="fai"&&qualityCreateOpen&&(
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-          <div style={{fontWeight:700,color:C.text,marginBottom:8}}>FAI Akisi</div>
+        <div style={{position:"fixed",inset:0,zIndex:80,padding:14,background:"rgba(8,12,18,.52)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setQualityCreateOpen(false)}>
+        <div className="mrp-scrollbar" style={{width:"100%",maxWidth:1280,maxHeight:"94vh",overflowY:"auto",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,boxShadow:"0 24px 56px rgba(0,0,0,.34)"}} onClick={e=>e.stopPropagation()}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}><div style={{fontWeight:700,color:C.text,marginBottom:8}}>FAI Akisi</div><button onClick={()=>setQualityCreateOpen(false)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Kapat</button></div>
           <div style={balloonWorkspaceStyle}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:7}}>
               <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Teknik Resim Oto Balon · Metin Tespiti V2</div>
@@ -27480,6 +27485,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
             <button onClick={saveFai} style={{...btnSt("green"),padding:"8px 12px",fontSize:12}}>FAI Kaydet</button>
             <div style={{fontSize:12,color:C.muted2}}>FAI kaydi: {fai.length}</div>
           </div>
+        </div>
         </div>
       )}
     </div>
@@ -28459,13 +28465,14 @@ function ComplianceGovernanceModule({currentUser,initialType="document",allowedT
       </div>
     </div>
     {availableTypes.length>1&&<div style={{display:"flex",gap:7,flexWrap:"wrap"}}>{availableTypes.map(item=><button key={item.id} onClick={()=>{setActiveType(item.id);setFilter("open");setCreateOpen(false);}} style={{...btnSt(activeType===item.id?"primary":"ghost"),padding:"8px 10px",fontSize:12}}>{item.label}</button>)}</div>}
-    <div style={{display:"grid",gridTemplateColumns:createOpen?"minmax(0,1fr) minmax(320px,.9fr)":"minmax(0,1fr)",gap:14,alignItems:"start"}}>
+    <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr)",gap:14,alignItems:"start"}}>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-        <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}><div><div style={{fontWeight:800,color:C.text}}>{type.label}</div><div style={{fontSize:11,color:C.muted2,marginTop:3}}>{type.area} kayıtları</div></div><div style={{display:"flex",gap:7,alignItems:"center",flexWrap:"wrap"}}><button onClick={()=>setCreateOpen(open=>!open)} disabled={!canManage} style={{...(createOpen?btnSt("ghost"):btnSt("primary")),padding:"7px 10px",fontSize:12,opacity:canManage?1:.65}}>{createOpen?"Ekleme Alanını Kapat":"+ Yeni Kayıt"}</button><button onClick={printComplianceList} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:11}}>Liste Çıktısı</button><select value={filter} onChange={e=>setFilter(e.target.value)} style={{...inputSt,width:150,padding:"7px 9px",fontSize:12}}><option value="open">Açıklar</option><option value="all">Tümü</option>{type.statuses.map(s=><option key={s} value={s}>{complianceStatusLabel(s)}</option>)}</select></div></div>
+        <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}><div><div style={{fontWeight:800,color:C.text}}>{type.label}</div><div style={{fontSize:11,color:C.muted2,marginTop:3}}>{type.area} kayıtları</div></div><div style={{display:"flex",gap:7,alignItems:"center",flexWrap:"wrap"}}><button onClick={()=>setCreateOpen(open=>!open)} disabled={!canManage} style={{...(createOpen?btnSt("ghost"):btnSt("primary")),padding:"7px 10px",fontSize:12,opacity:canManage?1:.65}}>{createOpen?"Formu Kapat":"+ Yeni Kayıt"}</button><button onClick={printComplianceList} style={{...btnSt("ghost"),padding:"7px 9px",fontSize:11}}>Liste Çıktısı</button><select value={filter} onChange={e=>setFilter(e.target.value)} style={{...inputSt,width:150,padding:"7px 9px",fontSize:12}}><option value="open">Açıklar</option><option value="all">Tümü</option>{type.statuses.map(s=><option key={s} value={s}>{complianceStatusLabel(s)}</option>)}</select></div></div>
         {loading?<div style={{color:C.muted2,fontSize:13,padding:14}}>Kayıtlar yükleniyor...</div>:visibleRows.length===0?<div style={{color:C.muted2,fontSize:13,padding:14}}>Bu filtrede kayıt yok.</div>:<div style={{display:"grid",gap:8}}>{visibleRows.map(row=><div key={row.id} style={{border:`1px solid ${C.border}`,borderRadius:10,padding:11,background:C.surface}}><div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"start"}}><div><div style={{fontWeight:750,color:C.text}}>{row.title}</div><div style={{fontSize:11,color:C.muted2,marginTop:3}}>{row.recordNo} · Sorumlu: {row.owner} · Termin: {row.dueDate||"-"}</div></div><Badge label={complianceStatusLabel(row.status)} color={row.status==="closed"?C.green:(row.dueDate&&row.dueDate<todayStr()?C.red:C.warn)}/></div><div style={{fontSize:12,color:C.muted2,marginTop:7,whiteSpace:"pre-wrap"}}>{row.details||"Açıklama girilmemiş."}</div><div style={{display:"flex",justifyContent:"space-between",gap:8,marginTop:9,alignItems:"center",flexWrap:"wrap"}}><span style={{fontSize:11,color:C.muted2}}>Güvenlik: {row.securityLevel||"internal"} · Rev.{row.revision||1}</span><div style={{display:"flex",gap:6}}><button onClick={()=>printComplianceRecord(row)} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11}}>Form Çıktısı</button>{canManage&&row.status!=="closed"&&row.status!=="obsolete"&&<button onClick={()=>advanceRecord(row)} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11}}>Sonraki Durum ›</button>}</div></div></div>)}</div>}
       </div>
-      {createOpen&&<div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
-        <div style={{fontWeight:800,color:C.text}}>Yeni {type.label} Kaydı</div><div style={{fontSize:11,color:C.muted2,marginTop:4,marginBottom:12}}>Zorunlu alanlar ve audit izi ile kaydedilir.</div>
+      {createOpen&&<div style={{position:"fixed",inset:0,zIndex:80,padding:14,background:"rgba(8,12,18,.52)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setCreateOpen(false)}>
+        <div className="mrp-scrollbar" style={{width:"100%",maxWidth:720,maxHeight:"92vh",overflowY:"auto",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,boxShadow:"0 24px 56px rgba(0,0,0,.34)"}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}><div style={{fontWeight:800,color:C.text}}>Yeni {type.label} Kaydı</div><button onClick={()=>setCreateOpen(false)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Kapat</button></div><div style={{fontSize:11,color:C.muted2,marginTop:4,marginBottom:12}}>Zorunlu alanlar ve audit izi ile kaydedilir.</div>
         <div style={{display:"grid",gap:9}}>
           <div><span style={labelSt}>Başlık *</span><input disabled={!canManage} style={inputSt} value={form.title} onChange={e=>updateForm("title",e.target.value)} placeholder="Kayıt başlığı"/></div>
           <div><span style={labelSt}>Sorumlu *</span><input disabled={!canManage} style={inputSt} value={form.owner} onChange={e=>updateForm("owner",e.target.value)} placeholder="Ad soyad / rol"/></div>
@@ -28476,7 +28483,7 @@ function ComplianceGovernanceModule({currentUser,initialType="document",allowedT
           {activeType==="capa"&&<div><span style={labelSt}>Etkinlik Doğrulama Notu</span><textarea disabled={!canManage} style={{...inputSt,minHeight:58,resize:"vertical"}} value={form.effectiveness} onChange={e=>updateForm("effectiveness",e.target.value)} placeholder="CAPA kapanışından önce zorunludur"/></div>}
           <button disabled={!canManage||saving} onClick={saveRecord} style={{...btnSt("primary"),padding:"10px 12px",opacity:(!canManage||saving)?.65:1}}>{saving?"Kaydediliyor...":"Audit İzli Kayıt Oluştur"}</button>
         </div>
-      </div>}
+        </div></div>}
     </div>
     <div style={{fontSize:11,color:C.muted2,lineHeight:1.55,padding:"0 4px"}}>Bu modül sertifikasyon kararı vermez; denetim, kalite ve tesis güvenliği kayıt altyapısı sağlar. Tasnifli veri veya gerçek savunma proje verisi demo/canlı olmayan ortamlarda kullanılmamalıdır.</div>
   </div>;
