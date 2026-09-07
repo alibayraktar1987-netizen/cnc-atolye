@@ -23691,10 +23691,14 @@ function MachineConnectivityPrep({currentUser,machines=DEFAULT_MACHINES,onMachin
       </div>
 
       {showForm&&(
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
+        <div style={{position:"fixed",inset:0,zIndex:80,padding:14,background:"rgba(8,12,18,.52)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>{setEditId(null);setShowForm(false);setForm({...emptyForm,code:nextConnectorCode()});}}>
+        <div className="mrp-scrollbar" style={{width:"100%",maxWidth:900,maxHeight:"92vh",overflowY:"auto",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,boxShadow:"0 24px 56px rgba(0,0,0,.34)"}} onClick={e=>e.stopPropagation()}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:10}}>
             <div style={{fontWeight:700,color:C.text}}>{editId?"Makina Profili Duzenle":"Yeni Makina Profili"}</div>
-            {form.ncTransfer==="bidirectional"&&<Badge label="NC Transfer Cift Yon" color={C.accent}/>}
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              {form.ncTransfer==="bidirectional"&&<Badge label="NC Transfer Cift Yon" color={C.accent}/>}
+              <button onClick={()=>{setEditId(null);setShowForm(false);setForm({...emptyForm,code:nextConnectorCode()});}} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Kapat</button>
+            </div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
             <div><span style={labelSt}>Profil Kodu</span><input style={{...inputSt,background:C.surface,color:C.muted2}} value={form.code||nextConnectorCode()} readOnly/></div>
@@ -23749,6 +23753,7 @@ function MachineConnectivityPrep({currentUser,machines=DEFAULT_MACHINES,onMachin
             <button onClick={saveProfile} style={{...btnSt("primary"),flex:1,padding:12}}>{editId?"Profili Guncelle":"Profili Kaydet"}</button>
             <button onClick={()=>{setEditId(null);setShowForm(false);setForm({...emptyForm,code:nextConnectorCode()});}} style={{...btnSt("ghost"),padding:"12px 14px"}}>Iptal</button>
           </div>
+        </div>
         </div>
       )}
 
@@ -25182,13 +25187,6 @@ function MPSModule(){
       if(d.type==="new"){
         setShowPlanForm(true);
         setForm({partNo:"",weekStart:startOfWeekYmd(todayStr()),plannedQty:"0",note:""});
-        setTimeout(()=>{
-          if(planFormRef.current&&planFormRef.current.scrollIntoView){
-            planFormRef.current.scrollIntoView({behavior:"smooth",block:"start"});
-          }else{
-            window.scrollTo({top:0,behavior:"smooth"});
-          }
-        },40);
       }
     }
     window.addEventListener("mrp:tab-action",onTabAction);
@@ -25236,26 +25234,33 @@ function MPSModule(){
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
           <div style={{fontWeight:700,color:C.text}}>MPS Planlama</div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            <button onClick={()=>{if(showPlanForm){setShowPlanForm(false);}else{setForm({partNo:"",weekStart:startOfWeekYmd(todayStr()),plannedQty:"0",note:""});setShowPlanForm(true);setTimeout(()=>{if(planFormRef.current&&planFormRef.current.scrollIntoView){planFormRef.current.scrollIntoView({behavior:"smooth",block:"start"});}},40);}}} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>
+            <button onClick={()=>{if(showPlanForm){setShowPlanForm(false);}else{setForm({partNo:"",weekStart:startOfWeekYmd(todayStr()),plannedQty:"0",note:""});setShowPlanForm(true);}}} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>
               {showPlanForm?"Formu Kapat":"+ Yeni Planlama"}
             </button>
             <button onClick={()=>downloadCsv(`mps-${todayStr()}.csv`,[{label:"Hafta",key:"hafta"},{label:"Talep",key:"talep"},{label:"Is Emri Arz",key:"isEmriArz"},{label:"MPS Plan",key:"mpsPlan"},{label:"Bakiye",key:"bakiye"}],exportRows)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>CSV Indir</button>
           </div>
         </div>
-        {showPlanForm&&(
-          <div ref={planFormRef} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:10}}>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+      </div>
+      {showPlanForm&&(
+        <div style={{position:"fixed",inset:0,zIndex:80,padding:14,background:"rgba(8,12,18,.52)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setShowPlanForm(false)}>
+          <div ref={planFormRef} style={{width:"100%",maxWidth:720,maxHeight:"92vh",overflowY:"auto",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,boxShadow:"0 24px 56px rgba(0,0,0,.34)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:12}}>
+              <div style={{fontSize:16,fontWeight:800,color:C.text}}>Yeni MPS Planlama</div>
+              <button onClick={()=>setShowPlanForm(false)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Kapat</button>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
               <div><span style={labelSt}>Parca No</span><input style={inputSt} value={form.partNo} onChange={e=>setF("partNo",e.target.value)} placeholder="PRT-001"/></div>
               <div><span style={labelSt}>Hafta Baslangic</span><input style={inputSt} type="date" value={form.weekStart} onChange={e=>setF("weekStart",e.target.value||todayStr())}/></div>
               <div><span style={labelSt}>Planlanan Adet</span><input style={inputSt} type="number" min="0" value={form.plannedQty} onChange={e=>setF("plannedQty",e.target.value)}/></div>
             </div>
             <div style={{marginTop:8}}><span style={labelSt}>Not</span><textarea rows={2} style={{...inputSt,minHeight:62,resize:"vertical"}} value={form.note} onChange={e=>setF("note",e.target.value)}/></div>
-            <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}>
+            <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:12}}>
+              <button onClick={()=>setShowPlanForm(false)} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Iptal</button>
               <button onClick={savePlan} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}}>MPS Kaydet</button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14}}>
         <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>8 Haftalik Ana Uretim Plani</div>
         {buckets.map(b=>(
