@@ -2380,9 +2380,9 @@ function escapeDocumentHtml(value){
 function documentHtmlMultiline(value){
   return escapeDocumentHtml(value).replace(/\n/g,"<br/>");
 }
-function resolvePrintAssetUrl(value){
+function resolvePrintAssetUrl(value,{useDefault=true}={}){
   const source=String(value||"").trim();
-  if(!source||source===LOGO_SRC) return "";
+  if(!source||source===LOGO_SRC) return useDefault?FACTORAB_FAVICON_FALLBACK:"";
   if(/^data:|^blob:/i.test(source)) return source;
   try{
     return new URL(source,window.location.href).href;
@@ -6298,7 +6298,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
   const [notificationDeliverySettings,setNotificationDeliverySettings]=useState(()=>normalizeNotificationDeliverySettings({}));
   const [notificationSaving,setNotificationSaving]=useState(false);
   const logoInputRef=useRef(null);
-  const configuredLogoUrl=resolvePrintAssetUrl(currentLogo);
+  const configuredLogoUrl=resolvePrintAssetUrl(currentLogo,{useDefault:false});
 
   const load=useCallback(async()=>{
     const [u,templateDoc,notifDoc]=await Promise.all([
