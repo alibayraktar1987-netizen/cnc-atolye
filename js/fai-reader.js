@@ -44,8 +44,17 @@
       const detected=engine.detect(ocr,page.canvas.width,page.canvas.height,page.page);
       result={rows:engine.dedupe([...result.rows,...detected.rows]),lineCount:result.lineCount+detected.lineCount};usedOcr=true;
     }
-    const tokens=result.rows,balloons=tokens.slice(0,Math.max(1,Math.min(500,Number(options.maxItems)||260))).map((row,i)=>({...row,no:i+1}));
-    return {...page,canvas:undefined,runs:undefined,tokens,balloons,detection:{engine:usedOcr?'pdf_ocr_v3':'pdf_geometry_v3',textItemCount:page.runs.length,lineCount:result.lineCount,detectedCount:tokens.length,balloonCount:balloons.length,limited:tokens.length>balloons.length,note:`${usedOcr?'OCR ve PDF metni':'PDF metni'} ile ${tokens.length} ölçü adayı bulundu. Sayısal işaretler de aday olabilir; eksik, yanlış ve tekrarlanan ölçüleri kaydetmeden önce kontrol edin.`}};
+    const tokens=result.rows,classified=engine.classify(tokens);
+    const balloons=arrange(classified.accepted.slice(0,Math.max(1,Math.min(500,Number(options.maxItems)||260))).map((row,i)=>({...row,no:i+1})),page.canvas,tokens.map(r=>r.bounds).filter(Boolean));
+    return {...page,canvas:undefined,runs:undefined,tokens,reviewCandidates:classified.review,balloons,detection:{engine:usedOcr?'pdf_ocr_v4':'pdf_geometry_v4',textItemCount:page.runs.length,lineCount:result.lineCount,detectedCount:tokens.length,balloonCount:balloons.length,reviewCount:classified.review.length,limited:classified.accepted.length>balloons.length,note:`${balloons.length} ölçü balonlandı; ${classified.review.length} belirsiz aday incelemeye ayrıldı. Düz sayılar ve düşük güvenli okumalar otomatik balonlanmaz. Ölçü listesini teknik resimle karşılaştırın.`}};
   }
-  root.FaiReader={render,detect};
+  function arrange(rows,image,obstacles=[]){
+    const canvas=document.createElement('canvas');canvas.width=800;canvas.height=Math.round(800*(image.height||image.naturalHeight)/(image.width||image.naturalWidth));
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(image,0,0,canvas.width,canvas.height);
+    const {data}=ctx.getImageData(0,0,canvas.width,canvas.height);
+    const ink=(x,y,r)=>{let count=0,total=0;for(let yy=Math.max(0,Math.floor(y-r));yy<Math.min(canvas.height,y+r);yy+=2)for(let xx=Math.max(0,Math.floor(x-r));xx<Math.min(canvas.width,x+r);xx+=2){const i=(yy*canvas.width+xx)*4;total++;if(data[i+3]>0&&(data[i]+data[i+1]+data[i+2])<660)count++;}return count/Math.max(1,total);};
+    return root.FaiDetection.place(rows,{width:canvas.width,height:canvas.height,ink,obstacles});
+  }
+  async function arrangePreview(rows,src,obstacles=[]){const img=new Image();img.src=src;await img.decode();return arrange(rows,img,obstacles);}
+  root.FaiReader={render,detect,arrange,arrangePreview};
 })(window);

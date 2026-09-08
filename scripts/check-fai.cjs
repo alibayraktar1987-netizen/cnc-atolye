@@ -2,6 +2,23 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const f=require('../js/fai-detection.js');
 const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+test('technical callouts combine quantity, diameter and tolerance; ambiguous numbers need review',()=>{
+  assert.deepEqual(f.matches('4 x Ø10 ±0.1').map(r=>r.text),['4 x Ø10 ±0.1']);
+  const result=f.classify([{text:'20',confidence:.95},{text:'Ø10 ±0.1',confidence:.9},{text:'R5',confidence:.2}]);
+  assert.equal(result.accepted.length,1);assert.equal(result.review.length,2);
+  for(const text of ['QTY 4','WEIGHT 20','ADET 6','ÖLÇEK 1:2'])assert.equal(f.matches(text).length,0);
+});
+test('stacked signed tolerances belong to a nearby nominal value',()=>{
+  const runs=[{text:'20',x:20,y:50,width:20,height:12},{text:'+0.1',x:43,y:44,width:18,height:6},{text:'-0.2',x:43,y:56,width:18,height:6}].map(r=>({...r,ux:1,uy:0,confidence:1,source:'pdf_text'}));
+  assert.deepEqual(f.detect(runs,100,100).rows.map(r=>r.text),['20 +0.1 -0.2']);
+});
+test('balloons avoid text, other balloons and ink while preserving measurement anchors',()=>{
+  const rows=[{text:'Ø10',page:1,xPct:50,yPct:50,bounds:{left:45,right:55,top:48,bottom:52}},{text:'R5',page:1,xPct:51,yPct:50}];
+  const placed=f.place(rows,{width:800,height:600,ink:(x,y)=>y>300?1:0});
+  assert.equal(placed[0].anchorXPct,50);assert.equal(placed[0].anchorYPct,50);
+  assert.ok(placed[0].yPct<48);assert.ok(Math.hypot((placed[0].xPct-placed[1].xPct)*8,(placed[0].yPct-placed[1].yPct)*6)>=28);
+  assert.deepEqual(f.place(placed,{width:800,height:600,ink:(x,y)=>y>300?1:0}),placed);
+});
 test('empty rerun cannot overwrite a saved balloon list',async()=>{
   const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
   const start=html.indexOf('  async function runAutoBalloon('),end=html.indexOf('  async function openOrCreateAutoBalloon(',start);

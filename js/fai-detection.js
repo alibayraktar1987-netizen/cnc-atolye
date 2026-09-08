@@ -7,8 +7,8 @@
   const pattern=`(?:[ØR]\\s*)?${num}(?:\\s*[xX]\\s*${num}){0,2}(?:\\s*(?:mm|[°]|(?:[HhGgFfKk]|[Jj][Ss])\\d{1,2}))?${tolerance}`;
   function matches(text){
     const input=normalize(text),out=[];
-    if(/\b(?:REV(?:ISION)?|DRAWING|DWG|SCALE|SHEET|DATE|MATERIAL|DRAWN|CHECKED|APPROVED|TARIH|ÖLÇEK|SAYFA|MALZEME|PARÇA\s*NO)\b/i.test(input))return out;
-    const re=new RegExp(`M\\s*${num}(?:\\s*[xX]\\s*${num})?(?:\\s*-\\s*\\d{1,2}[GHgh])?|${pattern}`,'g');
+    if(/(?:\b(?:REV(?:ISION)?|DRAWING|DWG|SCALE|SHEET|DATE|MATERIAL|DRAWN|CHECKED|APPROVED|TARIH|SAYFA|MALZEME|WEIGHT|MASS|QTY|QUANTITY|ITEM|NOTE|NOTES)\b|ÖLÇEK|PARÇA\s*NO|AĞIRLIK|ADET|POZ\s*NO)/i.test(input))return out;
+    const re=new RegExp(`(?:\\d+\\s*[xX]\\s*)?(?:M\\s*${num}(?:\\s*[xX]\\s*${num})?(?:\\s*-\\s*\\d{1,2}[GHgh])?|${pattern})`,'g');
     for(const m of input.matchAll(re)){
       const before=input.slice(0,m.index),after=input.slice(m.index+m[0].length);
       if(/[\w:./+-]$/.test(before)||/^[\w:./+-]/.test(after))continue;
@@ -41,7 +41,19 @@
         segment.text+=space;const start=segment.text.length;segment.text+=run.text;segment.spans.push({...run,start,end:segment.text.length});previous=run;
       }
     }
-    return lines;
+    const consumed=new Set();
+    for(const base of lines){
+      if(!/^(?:[ØR]\s*)?\d+(?:[.,]\d+)?$/.test(base.text))continue;
+      const last=base.spans[base.spans.length-1],ux=last.ux,uy=last.uy;
+      const nearby=lines.filter(other=>other!==base&&!consumed.has(other)&&/^[+−-]\s*\d+(?:[.,]\d+)?$/.test(other.text)).filter(other=>{
+        const first=other.spans[0],dx=first.x-last.x-ux*last.width,dy=first.y-last.y-uy*last.width;
+        return first.ux*ux+first.uy*uy>.98&&dx*ux+dy*uy>=-base.height*.25&&dx*ux+dy*uy<base.height*1.5&&Math.abs(-dx*uy+dy*ux)<base.height*1.6&&other.height<=base.height;
+      });
+      const plus=nearby.filter(l=>l.text.startsWith('+')),minus=nearby.filter(l=>l.text.startsWith('-'));
+      if(plus.length!==1||minus.length!==1)continue;
+      for(const other of [plus[0],minus[0]]){const offset=base.text.length+1;base.text+=' '+other.text;base.spans.push(...other.spans.map(s=>({...s,start:s.start+offset,end:s.end+offset})));consumed.add(other);}
+    }
+    return lines.filter(line=>!consumed.has(line));
   }
   function detect(runs,width,height,page=1){
     const lines=groupRuns(runs),rows=[];
@@ -51,7 +63,9 @@
       const x=points.reduce((n,p)=>n+p.x,0)/points.length,y=points.reduce((n,p)=>n+p.y,0)/points.length;
       if(x<0||x>width||y<0||y>height)continue;
       const confidence=Math.min(...spans.map(s=>Number(s.confidence??1)))*(match.plain?.65:.95);
-      rows.push({text:match.text,page,xPct:x/width*100,yPct:y/height*100,confidence:Number(confidence.toFixed(2)),source:spans[0].source||'ocr',reviewRequired:true});
+      const pad=Math.max(...spans.map(s=>s.height))/2;
+      const bounds={left:(Math.min(...points.map(p=>p.x))-pad)/width*100,right:(Math.max(...points.map(p=>p.x))+pad)/width*100,top:(Math.min(...points.map(p=>p.y))-pad)/height*100,bottom:(Math.max(...points.map(p=>p.y))+pad)/height*100};
+      rows.push({text:match.text,page,xPct:x/width*100,yPct:y/height*100,bounds,plain:match.plain,confidence:Number(confidence.toFixed(2)),source:spans[0].source||'ocr',reviewRequired:true});
     }
     return {rows:dedupe(rows),lineCount:lines.length};
   }
@@ -70,5 +84,32 @@
       return {...base,x,y,ux:1,uy:0};
     });
   }
-  return {normalize,canonical,matches,pdfRuns,groupRuns,detect,dedupe,ocrRuns};
+  // Bare numbers have no reliable semantic meaning without drawing context.
+  // Keep them available for explicit review instead of assigning a balloon.
+  function classify(rows){
+    const accepted=[],review=[];
+    for(const row of rows){
+      const explicit=/[ØR±°]|(?:^|\s|x)M\s*\d|\d\s*(?:H|h|g|G|Js)\d|\d\s*[+]\s*\d|\d\s*[xX]\s*\d|\d\s*mm/i.test(row.text);
+      (explicit&&row.confidence>=.65?accepted:review).push({...row,reason:explicit?'Ölçü gösterimi':'Bağlamı doğrulanacak sayısal değer'});
+    }
+    return {accepted,review};
+  }
+  function place(rows,{width=800,height=600,ink=()=>0,obstacles=[]}={}){
+    const radius=12,placed=[],boxes=[...obstacles,...rows.map(r=>r.bounds).filter(Boolean)];
+    const overlap=(x,y,b)=>x+radius>b.left*width/100&&x-radius<b.right*width/100&&y+radius>b.top*height/100&&y-radius<b.bottom*height/100;
+    return rows.map(row=>{
+      const ax=(row.anchorXPct??row.xPct)*width/100,ay=(row.anchorYPct??row.yPct)*height/100;
+      let best=null;
+      for(const distance of [28,40,56,76,100,132])for(let i=0;i<24;i++){
+        const angle=i*Math.PI/12,x=ax+Math.cos(angle)*distance,y=ay+Math.sin(angle)*distance;
+        if(x<radius||y<radius||x>width-radius||y>height-radius)continue;
+        const collisions=boxes.filter(b=>overlap(x,y,b)).length+placed.filter(p=>Math.hypot(x-p.x,y-p.y)<radius*2+4).length;
+        const score=collisions*100000+ink(x,y,radius)*2000+distance;
+        if(!best||score<best.score)best={x,y,score,collisions};
+      }
+      best=best||{x:Math.max(radius,Math.min(width-radius,ax)),y:Math.max(radius,Math.min(height-radius,ay)),collisions:1};placed.push(best);
+      return {...row,anchorXPct:ax/width*100,anchorYPct:ay/height*100,xPct:best.x/width*100,yPct:best.y/height*100,placementReview:best.collisions>0};
+    });
+  }
+  return {normalize,canonical,matches,pdfRuns,groupRuns,detect,dedupe,ocrRuns,classify,place};
 });

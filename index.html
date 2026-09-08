@@ -25618,7 +25618,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
       alert("Secilen alanda olcu bulunamadi.");
       return;
     }
-    const existingKeySet=new Set(editableBalloons.map(r=>`${String(r.text||"").trim().toUpperCase()}|${Math.round(safeNum(r.xPct)*10)/10}|${Math.round(safeNum(r.yPct)*10)/10}`));
+    const existingKeySet=new Set(editableBalloons.map(r=>`${String(r.text||"").trim().toUpperCase()}|${Math.round(safeNum(r.anchorXPct??r.xPct)*10)/10}|${Math.round(safeNum(r.anchorYPct??r.yPct)*10)/10}`));
     const dedupeToken={};
     const toAdd=[];
     picked.forEach(t=>{
@@ -25626,6 +25626,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
       if(existingKeySet.has(key)||dedupeToken[key]) return;
       dedupeToken[key]=true;
       toAdd.push({
+        ...t,
         no:0,
         text:String(t.text||"").trim(),
         page:Math.max(1,safeNum(t.page)||Math.max(1,safeNum(balloonForm.page)||1)),
@@ -25637,7 +25638,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
       alert("Secimdeki olculer zaten listede var.");
       return;
     }
-    setEditableBalloons(prev=>[...prev,...toAdd].map((row,idx)=>({...row,no:idx+1})));
+    rearrangeBalloons(toAdd);
   }
   function startBalloonDrag(ev,idx){
     const row=editableBalloons[idx];
@@ -25731,6 +25732,16 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
   }
   function removeEditableBalloonRow(idx){
     setEditableBalloons(prev=>prev.filter((_,i)=>i!==idx).map((row,i)=>({...row,no:i+1})));
+  }
+  async function rearrangeBalloons(candidate=null){
+    if(!balloonPreview||balloonBusy)return;
+    setBalloonBusy(true);setBalloonProgress("Balonlar boş alanlara yerleştiriliyor…");
+    try{
+      const rows=candidate?[...editableBalloons,...(Array.isArray(candidate)?candidate:[candidate])].map((r,i)=>({...r,no:i+1})):editableBalloons;
+      const next=await window.FaiReader.arrangePreview(rows,balloonPreview.previewDataUrl,(balloonPreview.tokens||[]).map(r=>r.bounds).filter(Boolean));
+      setEditableBalloons(next);
+    }catch(err){setBalloonError(String(err?.message||"Balonlar yerleştirilemedi."));}
+    finally{setBalloonBusy(false);}
   }
   function resetBalloonDraft(){
     setBalloonPreview(null);setEditableBalloons([]);setBalloonError("");setBalloonProgress("");setFaiForm(f=>({...f,balloonRunId:""}));
@@ -25886,9 +25897,19 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
     setBalloonProgress("");
     setBalloonError("");
     try{
-      const result=engine==="ai"
+      let result=engine==="ai"
         ? await autoBalloonAiDrawing(selectedPdfFile,{pageNumber:Math.max(1,safeNum(balloonForm.page)||1)})
         : await autoBalloonPdfDrawing(selectedPdfFile,{pageNumber:Math.max(1,safeNum(balloonForm.page)||1),forceOcr:engine==="ocr",onProgress:setBalloonProgress});
+      if(engine==="ai"){
+        const classified=window.FaiDetection.classify(result.tokens||[]);
+        result={...result,reviewCandidates:classified.review,balloons:await window.FaiReader.arrangePreview(classified.accepted.map((r,i)=>({...r,no:i+1})),result.previewDataUrl)};
+      }
+      if(!result.balloons?.length&&result.reviewCandidates?.length){
+        setBalloonPreview({runId:replaceRunId,previewDataUrl:result.previewDataUrl,tokens:result.tokens,detection:result.detection,fileName:selectedPdfFile.name,page:result.page});
+        if(!replaceRunId){setEditableBalloons([]);setFaiForm(f=>({...f,balloonRunId:""}));}
+        setBalloonError("Kesin ölçü gösterimi bulunamadı. İnceleme listesinden uygun adayları ekleyin; kayıtlı ölçüler değiştirilmedi.");
+        return;
+      }
       if(!result.balloons?.length)throw new Error("Ölçü bulunamadı; mevcut çalışma korunuyor. Daha net bir PDF veya manuel ölçü girişi kullanın.");
       const now=new Date().toISOString();
       const payload={
@@ -26205,6 +26226,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
                 {balloonWorkspaceOpen&&<button onClick={runAiAutoBalloon} disabled={balloonBusy||!balloonForm.orderId||!balloonForm.fileId} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,opacity:(balloonBusy||!balloonForm.orderId||!balloonForm.fileId)?0.65:1}}>
                   {balloonBusy?"AI Teknik Resmi Okuyor...":"AI ile Ölçü Tespit Et"}
                 </button>}
+                <button onClick={()=>rearrangeBalloons()} disabled={!balloonPreview||!editableBalloons.length} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Balonları boş alanlara yerleştir</button>
                 <button onClick={addEditableBalloonRow} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>
                   + Manuel Olcu
                 </button>
@@ -26236,10 +26258,13 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
                       onMouseMove={onPreviewMouseMove}
                       onMouseUp={finalizePreviewSelection}
                       onMouseLeave={finalizePreviewSelection}
-                      style={{position:"relative",minWidth:420,cursor:(balloonPreview.tokens||[]).length>0?"crosshair":"default",userSelect:"none"}}
+                      style={{position:"relative",minWidth:800,cursor:(balloonPreview.tokens||[]).length>0?"crosshair":"default",userSelect:"none"}}
                     >
                       <img src={balloonPreview.previewDataUrl} alt={balloonPreview.fileName||"PDF"} style={{width:"100%",display:"block"}}/>
-                      {editableBalloons.slice(0,300).map((b,idx)=>(
+                      <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{position:"absolute",inset:0,width:"100%",height:"100%",pointerEvents:"none"}}>
+                        {editableBalloons.filter(b=>b.page===balloonPreview.page&&Number.isFinite(b.anchorXPct)&&Number.isFinite(b.anchorYPct)).map(b=><line key={`leader_${b.no}`} x1={b.anchorXPct} y1={b.anchorYPct} x2={b.xPct} y2={b.yPct} stroke="#dc2626" strokeWidth="1" vectorEffect="non-scaling-stroke"/>)}
+                      </svg>
+                      {editableBalloons.slice(0,300).map((b,idx)=>b.page===balloonPreview.page&&(
                         <span
                           key={`bal_${b.no}_${b.page}`}
                           title={`${b.no} · ${b.text}`}
@@ -26249,9 +26274,9 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
                             left:`${b.xPct}%`,
                             top:`${b.yPct}%`,
                             transform:"translate(-50%,-50%)",
-                            minWidth:18,
-                            height:18,
-                            padding:"0 4px",
+                            width:22,
+                            height:22,
+                            padding:0,
                             borderRadius:999,
                             background:"#ef4444",
                             color:"#fff",
@@ -26287,6 +26312,10 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
                 <div style={{border:`1px solid ${C.border}`,borderRadius:8,padding:8,maxHeight:520,overflowY:"auto",background:C.card}}>
                   <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase",marginBottom:6}}>Olcu Listesi ({editableBalloons.length})</div>
                   {balloonPreview&&<div style={{fontSize:11,color:C.muted2,marginBottom:6}}>PDF ustunde kutu cizerek olcu otomatik ekleyebilirsiniz. Balon numaralarini surukleyip konumunu duzeltebilirsiniz.</div>}
+                  {balloonPreview&&<details style={{marginBottom:10}}><summary>İncelenecek sayısal adaylar (otomatik balonlanmaz)</summary>
+                    <div style={{fontSize:12,margin:"6px 0"}}>Yalnızca teknik resimde ölçü olduğundan emin olduğunuz değerleri ekleyin.</div>
+                    {window.FaiDetection.classify(balloonPreview.tokens||[]).review.filter(r=>!editableBalloons.some(b=>b.page===r.page&&b.text===r.text&&Math.abs((b.anchorXPct??b.xPct)-r.xPct)<.35&&Math.abs((b.anchorYPct??b.yPct)-r.yPct)<.35)).map((r,i)=><div key={`review_${i}`} style={{display:"flex",justifyContent:"space-between",gap:6,marginBottom:5}}><span>{r.text} · X {r.xPct.toFixed(1)}% / Y {r.yPct.toFixed(1)}%</span><button onClick={()=>rearrangeBalloons(r)} style={btnSt("ghost")}>Ölçü olarak ekle</button></div>)}
+                  </details>}
                   {editableBalloons.length===0&&<div style={{fontSize:12,color:C.muted2}}>Olcu satiri yok. "Manuel Olcu" ile ekleyin.</div>}
                   {editableBalloons.slice(0,260).map((row,idx)=>(
                     <div key={`dim_${row.no}_${idx}`} style={{display:"grid",gridTemplateColumns:"34px 1fr auto",gap:6,padding:"5px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,alignItems:"center"}}>

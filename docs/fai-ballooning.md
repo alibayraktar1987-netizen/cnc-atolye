@@ -1,5 +1,9 @@
 # FAI otomatik ölçü tespiti
 
+Balonlar ölçü merkezinden ayrı saklanır; ölçüye bağlantı çizgisiyle bağlanır. Yerleştirme yazı kutularını, görüntüdeki koyu alanları ve diğer balonları dikkate alır. Eski çalışmalarda **Balonları boş alanlara yerleştir** düğmesini kullanıp sonucu **Ölçüleri Kaydet** ile saklayın. Çok yoğun çizimlerde elle konum düzeltmesi gerekebilir.
+
+Belirsiz düz sayılar artık otomatik balonlanmaz; **İncelenecek sayısal adaylar** listesinden doğrulanarak eklenir. `4 x Ø10 ±0.1` tek çağrıdır. Yakın ve hizalı nominal ölçünün yanındaki bir üst ve bir alt işaretli tolerans birleştirilir. Bu kurallar tam bir geometrik tolerans veya ölçü çizgisi çözümleyicisi değildir.
+
 Oto Balon önce PDF metnini konumlarıyla okur. Ölçü adayı bulunamazsa tarayıcıda OCR çalıştırır. Metin ve görüntü karışımı PDF'lerde eksik ölçüler için **OCR ile yeniden tara** kullanılabilir. İlk OCR kullanımında motor ve dil dosyaları internetten indirilir; bu seçenek çizimi AI servisine göndermez. **AI ile Ölçü Tespit Et** ayrı bir sunucu hizmetidir.
 
 Algoritma düz sayıları, çapları, yarıçapları, vida ölçülerini, açıları ve aynı satırdaki toleransları aday olarak çıkarır. Farklı konumlardaki aynı değerleri korur. PDF dönüş ve kırpma bilgileri konum hesabına katılır. OCR yatay ve iki dikey yönde çalışır. Boş sonuç önceki çalışmayı değiştirmez; kayıtlı çalışmanın önizlemesi yeniden OCR gerektirmez.
