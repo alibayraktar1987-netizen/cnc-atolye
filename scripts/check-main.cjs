@@ -56,6 +56,9 @@ async function main() {
   }
   vm.runInContext('const DEFAULT_MACHINES=["CNC-DEFAULT"];', context);
   vm.runInContext(declaration('normalizeMachineList')+'\n'+declaration('machineNamesFromConnectors'), context);
+  vm.runInContext(declaration('resolveMachineCatalog'),context);
+  assert.equal(vm.runInContext('JSON.stringify(resolveMachineCatalog(["T3 - STAR SR32","T4 - STAR SB 20RG","K1 - STAR SR38"],[{machineName:"K1 - STAR SR32"},{machineName:"K2 - STAR SR32"}]))',context),'["K1 - STAR SR32","K2 - STAR SR32"]');
+  assert.equal(vm.runInContext('JSON.stringify(resolveMachineCatalog(["MANUEL-1"],[]))',context),'["MANUEL-1"]');
   assert.equal(vm.runInContext('JSON.stringify(normalizeMachineList([],[]))',context),'[]');
   assert.equal(vm.runInContext('JSON.stringify(machineNamesFromConnectors([]))',context),'[]');
   assert.equal(vm.runInContext('JSON.stringify(normalizeMachineList(["MANUEL-1","CNC-1"," cnc-1 ","CNC-NEW"]))',context),'["MANUEL-1","CNC-1","CNC-NEW"]');

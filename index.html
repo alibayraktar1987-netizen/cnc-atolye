@@ -454,6 +454,10 @@ function normalizeMachineList(list,fallback=DEFAULT_MACHINES){
 function machineNamesFromConnectors(rows){
   return normalizeMachineList((Array.isArray(rows)?rows:[]).map(r=>r?.machineName||""),[]);
 }
+function resolveMachineCatalog(configList,connectorRows){
+  const profileNames=machineNamesFromConnectors(connectorRows);
+  return profileNames.length?profileNames:normalizeMachineList(configList);
+}
 function sameMachineList(a,b){
   const left=normalizeMachineList(a,[]);
   const right=normalizeMachineList(b,[]);
@@ -28365,7 +28369,7 @@ function App() {
       ]);
       const connectorMachines=machineNamesFromConnectors(connectorRows);
       const configMachines=normalizeMachineList(mc?.list||[],[]);
-      const initialMachines=normalizeMachineList([...configMachines,...connectorMachines]);
+      const initialMachines=resolveMachineCatalog(configMachines,connectorRows);
       const brandingConfig=normalizeBrandingSettings(branding||{});
       setMachines(initialMachines);
       setMenuVisibility(normalizeMenuVisibilityConfig(menuVisibilityDoc||{}));
@@ -28513,7 +28517,7 @@ function App() {
   },[currentUser?.id]);
 
   const updateMachines=useCallback(async(list)=>{
-    const next=normalizeMachineList([...machinesRef.current,...list]);
+    const next=normalizeMachineList(list);
     if(sameMachineList(machinesRef.current,next)) return;
     machinesRef.current=next;
     setMachines(prev=>sameMachineList(prev,next)?prev:next);
