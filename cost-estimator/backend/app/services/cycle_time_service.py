@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import pi
 from typing import Iterable
 
 
@@ -23,6 +24,11 @@ class ParameterProfile:
 
 
 class CycleTimeService:
+    @staticmethod
+    def spindle_rpm(sfm: float, diameter_mm: float) -> float:
+        # SFM is feet/minute; diameters and feeds in this service use millimetres.
+        return (sfm * 304.8) / (pi * max(diameter_mm, 1.0))
+
     def estimate(
         self,
         operations: list[dict],
@@ -58,7 +64,7 @@ class CycleTimeService:
             if op_name in {"CNC Turning"}:
                 diameter = max(x, y, 1.0)
                 cutting_length = max(z, 1.0)
-                rpm = (p.sfm * 3.82) / max(diameter, 1.0)
+                rpm = self.spindle_rpm(p.sfm, diameter)
                 feed_rate = max(rpm * p.feed_per_rev, 0.1)
                 cycle_min = (cutting_length / feed_rate) + p.facing_time_min + p.parting_time_min
                 details = {
@@ -69,7 +75,7 @@ class CycleTimeService:
                 }
             elif op_name in {"CNC Milling", "C-axis Milling"}:
                 tool_path_length = max(surface_area_mm2 / max(p.stepover_mm, 0.1), 1.0)
-                rpm = (p.sfm * 3.82) / max(p.cutter_diameter_mm, 1.0)
+                rpm = self.spindle_rpm(p.sfm, p.cutter_diameter_mm)
                 feed_rate = max(rpm * p.feed_per_tooth * max(p.number_of_teeth, 1), 0.1)
                 tool_changes = 2 if op_name == "CNC Milling" else 1
                 cycle_min = (tool_path_length / feed_rate) + (tool_changes * p.tool_change_time_min)
@@ -91,7 +97,7 @@ class CycleTimeService:
                     feature_count = max(bores, 1)
                     tool_dia = 20.0
                 hole_depth = max(z * 0.7, 3.0)
-                rpm = (p.sfm * 3.82) / max(tool_dia, 1.0)
+                rpm = self.spindle_rpm(p.sfm, tool_dia)
                 feed_rate = max(rpm * p.feed_per_rev, 0.1)
                 per_hole = (hole_depth / feed_rate) + p.retract_time_min
                 cycle_min = per_hole * feature_count

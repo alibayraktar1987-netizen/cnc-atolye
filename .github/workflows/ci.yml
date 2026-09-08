@@ -13,6 +13,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Main application regression checks
+        run: node scripts/check-main.cjs
+
+      - name: Report and collection calculations
+        run: node --test scripts/check-reporting.cjs
+
+      - name: Measurement and warehouse regressions
+        run: node --test scripts/check-workshop.cjs
+
       - name: Validate required files
         run: |
           test -f index.html
@@ -32,3 +45,27 @@ jobs:
         run: |
           python -m pip install --quiet openapi-spec-validator
           python -m openapi_spec_validator openapi.yaml
+
+  estimator-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: cost-estimator/frontend/package-lock.json
+      - run: npm ci
+        working-directory: cost-estimator/frontend
+      - run: npm run build
+        working-directory: cost-estimator/frontend
+
+  estimator-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r cost-estimator/backend/requirements.txt
+      - run: python -m unittest discover -s cost-estimator/backend/tests -v

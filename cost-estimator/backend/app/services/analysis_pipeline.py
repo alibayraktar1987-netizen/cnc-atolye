@@ -26,7 +26,6 @@ class AnalysisPipeline:
         self.stock_service = StockService()
         self.operation_classifier = OperationClassifier()
         self.cycle_service = CycleTimeService()
-        self.storage = StorageService()
 
     def run(self, part_id: str, job_id: str, machine_profile: str = "auto") -> None:
         part = self.db.get(Part, part_id)
@@ -40,6 +39,7 @@ class AnalysisPipeline:
         self.db.commit()
 
         try:
+            storage = StorageService()
             material = self.db.get(Material, part.material_id)
             if material is None:
                 raise ValueError("Material not found")
@@ -47,7 +47,7 @@ class AnalysisPipeline:
 
             with tempfile.TemporaryDirectory(prefix="step-analysis-") as tmp_dir:
                 step_path = Path(tmp_dir) / part.filename
-                self.storage.download_raw_to(part.storage_key, step_path)
+                storage.download_raw_to(part.storage_key, step_path)
 
                 geometry, model_bytes, model_format = self.geometry_service.analyze_step_file(step_path)
                 stock = self.stock_service.determine_stock(
@@ -121,7 +121,7 @@ class AnalysisPipeline:
                 estimate["machine_profile"] = machine_meta
 
                 model_key = f"{part.id}/preview.{model_format}"
-                self.storage.upload_model(model_key, model_bytes)
+                storage.upload_model(model_key, model_bytes)
 
                 part.model_key = model_key
                 part.model_format = model_format
@@ -136,6 +136,7 @@ class AnalysisPipeline:
                 job.error_message = None
                 self.db.commit()
         except Exception as exc:  # noqa: BLE001
+            self.db.rollback()
             part.status = "failed"
             job.status = "failed"
             job.error_message = str(exc)

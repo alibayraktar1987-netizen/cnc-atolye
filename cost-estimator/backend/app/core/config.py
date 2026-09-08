@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import List
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,6 +16,15 @@ class Settings(BaseSettings):
     cors_origins: List[str] = Field(default_factory=list)
 
     database_url: str = "postgresql+psycopg://cnc:cnc@postgres:5432/cnc_cost"
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_database_url(cls, value: str) -> str:
+        for prefix in ("postgres://", "postgresql://"):
+            if value.startswith(prefix):
+                return "postgresql+psycopg://" + value[len(prefix):]
+        return value
+
     redis_url: str = "redis://redis:6379/0"
 
     minio_endpoint: str = "minio:9000"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import ceil
 
 
 ROUND_BAR_STANDARD_DIAMETERS = [10, 12, 16, 20, 25, 30, 35, 40, 50, 60, 80, 100]
@@ -20,7 +21,8 @@ class StockService:
         for opt in sorted(options):
             if opt >= value:
                 return float(opt)
-        return float(options[-1])
+        # Above the catalogue range, retain the required size for custom stock.
+        return float(ceil(value))
 
     def determine_stock(
         self,

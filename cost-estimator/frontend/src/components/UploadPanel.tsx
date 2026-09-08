@@ -1,10 +1,10 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { MachineProfile, Material } from "../types/domain";
 
 type Props = {
   materials: Material[];
   machineProfiles: MachineProfile[];
-  onUpload: (file: File, materialId: number, machineProfileId: string) => Promise<void>;
+  onUpload: (file: File, materialId: number, machineProfileId: string) => Promise<boolean>;
   busy: boolean;
 };
 
@@ -13,6 +13,7 @@ export function UploadPanel({ materials, machineProfiles, onUpload, busy }: Prop
   const [machineProfileId, setMachineProfileId] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const acceptedHint = ".step,.stp";
   const defaultMaterialId = useMemo(() => materials[0]?.id ?? null, [materials]);
@@ -35,8 +36,10 @@ export function UploadPanel({ materials, machineProfiles, onUpload, busy }: Prop
       setError("Lutfen bir tezgah secin.");
       return;
     }
-    await onUpload(file, selectedMaterial, selectedMachineProfile);
-    setFile(null);
+    if (await onUpload(file, selectedMaterial, selectedMachineProfile)) {
+      setFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   }
 
   return (
@@ -70,7 +73,9 @@ export function UploadPanel({ materials, machineProfiles, onUpload, busy }: Prop
         <label className="field">
           <span>STEP Dosyasi</span>
           <input
+            ref={fileInputRef}
             type="file"
+            disabled={busy}
             accept={acceptedHint}
             onChange={(e) => setFile(e.target.files && e.target.files.length > 0 ? e.target.files[0] : null)}
           />

@@ -16,7 +16,8 @@ import type { AnalysisJob, MachineProfile, Material, PartRead, PartSummary } fro
 import "./styles.css";
 
 function jobStatusLabel(status: string): string {
-  if (status === "processing") return "Isleniyor";
+  if (status === "queued") return "Sirada";
+  if (status === "processing" || status === "running") return "Isleniyor";
   if (status === "completed") return "Tamamlandi";
   if (status === "failed") return "Basarisiz";
   return status;
@@ -28,7 +29,8 @@ function App() {
   const [parts, setParts] = useState<PartSummary[]>([]);
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
   const [selectedPart, setSelectedPart] = useState<PartRead | null>(null);
-  const [activeJob, setActiveJob] = useState<AnalysisJob | null>(null);
+  const [partRevision, setPartRevision] = useState(0);
+  const [activeJob, setActiveJob] = useState<Pick<AnalysisJob, "id" | "part_id" | "status" | "error_message"> | null>(null);
   const [uploadBusy, setUploadBusy] = useState(false);
   const [globalError, setGlobalError] = useState("");
 
@@ -43,6 +45,7 @@ function App() {
       setMaterials(materialsData);
       setMachineProfiles(machineProfilesData);
       setParts(partsData);
+      setPartRevision((version) => version + 1);
       setSelectedPartId((current) => {
         if (partsData.length === 0) return null;
         if (current && partsData.some((p) => p.id === current)) return current;
@@ -80,24 +83,33 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [selectedPartId]);
+  }, [selectedPartId, partRevision]);
 
   useEffect(() => {
     if (!activeJob?.id) return;
-    const timer = window.setInterval(async () => {
+    const jobId = activeJob.id;
+    let cancelled = false;
+    let timer: number | undefined;
+    async function poll() {
       try {
-        const next = await fetchJob(activeJob.id);
+        const next = await fetchJob(jobId);
+        if (cancelled) return;
         setActiveJob(next);
         if (next.status === "completed" || next.status === "failed") {
-          window.clearInterval(timer);
           await loadInitial();
-          setSelectedPartId(next.part_id);
+          return;
         }
       } catch (error) {
+        if (cancelled) return;
         console.error(error);
       }
-    }, 1800);
-    return () => window.clearInterval(timer);
+      if (!cancelled) timer = window.setTimeout(poll, 1800);
+    }
+    void poll();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [activeJob?.id]);
 
   async function handleUpload(file: File, materialId: number, machineProfileId: string) {
@@ -105,13 +117,14 @@ function App() {
     setGlobalError("");
     try {
       const response = await uploadStep(file, materialId, machineProfileId);
-      const job = await fetchJob(response.job_id);
-      setActiveJob(job);
+      setActiveJob({ id: response.job_id, part_id: response.part_id, status: response.status, error_message: null });
       setSelectedPartId(response.part_id);
       await loadInitial();
+      return true;
     } catch (error) {
       console.error(error);
       setGlobalError("Yukleme basarisiz. Dosya bicimini ve API kayitlarini kontrol edin.");
+      return false;
     } finally {
       setUploadBusy(false);
     }

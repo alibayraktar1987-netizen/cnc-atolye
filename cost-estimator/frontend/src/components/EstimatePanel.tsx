@@ -31,6 +31,12 @@ export function EstimatePanel({ part }: Props) {
   return (
     <section className="panel">
       <h2>Maliyet Dagilimi</h2>
+      {geometry?.analysis_mode === "fallback" && (
+        <div className="alert error">
+          Demo sonuc: STEP geometrisi okunamadi. Olculer dosya boyutundan turetilmistir;
+          bu maliyetleri teklif veya uretim icin kullanmayin.
+        </div>
+      )}
       {estimate ? (
         <>
           {machine && (

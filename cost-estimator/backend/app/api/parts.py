@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -68,7 +69,15 @@ def upload_part(
     db.add(job)
     db.commit()
 
-    async_task = run_part_analysis_task.delay(part_id=part.id, job_id=job.id, machine_profile=machine_profile)
+    try:
+        async_task = run_part_analysis_task.delay(part_id=part.id, job_id=job.id, machine_profile=machine_profile)
+    except Exception as exc:
+        part.status = "failed"
+        job.status = "failed"
+        job.error_message = "Analysis could not be queued. Check the task broker."
+        job.completed_at = datetime.now(timezone.utc)
+        db.commit()
+        raise HTTPException(status_code=503, detail=job.error_message) from exc
     job.celery_task_id = async_task.id
     db.commit()
 
