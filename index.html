@@ -627,7 +627,6 @@ function minuteFromIsoLike(value){
 }
 const EFFECTIVE_SECONDS = 72000;
 const LOGO_SRC = "./logo.png";
-const PRINT_FALLBACK_LOGO_SRC = "data:image/svg+xml;charset=utf-8,"+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 96"><rect width="360" height="96" rx="16" fill="#0f766e"/><path d="M28 68V28h34v10H41v6h18v10H41v14h22v10H28Z" fill="#fff"/><path d="M70 68V28h14l12 20 12-20h14v40h-13V48L98 66h-4L83 48v20H70Z" fill="#d1fae5"/><text x="137" y="56" fill="#fff" font-family="Arial,Helvetica,sans-serif" font-size="31" font-weight="700" letter-spacing="1">FACTORAB</text><text x="139" y="75" fill="#ccfbf1" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="700" letter-spacing="2">ÜRETİM YÖNETİMİ</text></svg>`);
 const FACTORAB_ORANGE = "#f05a00";
 const FACTORAB_WHITE = "#eef2ff";
 const FACTORAB_INK = "#0b0f1c";
@@ -2366,10 +2365,9 @@ function escapeDocumentHtml(value){
 function documentHtmlMultiline(value){
   return escapeDocumentHtml(value).replace(/\n/g,"<br/>");
 }
-function resolvePrintAssetUrl(value,fallback=LOGO_SRC){
-  const source=String(value||fallback||"").trim();
-  if(!source||source===LOGO_SRC) return PRINT_FALLBACK_LOGO_SRC;
-  if(!source) return "";
+function resolvePrintAssetUrl(value){
+  const source=String(value||"").trim();
+  if(!source||source===LOGO_SRC) return "";
   if(/^data:|^blob:/i.test(source)) return source;
   try{
     return new URL(source,window.location.href).href;
