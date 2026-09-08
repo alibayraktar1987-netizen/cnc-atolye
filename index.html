@@ -6344,12 +6344,13 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
     const file=e.target.files&&e.target.files[0];
     if(!file) return;
     if(!file.type.startsWith("image/")){alert("Lutfen bir gorsel dosyasi secin."); return;}
-    if(file.size>2*1024*1024){alert("Logo en fazla 2MB olabilir."); return;}
+    if(file.size>700*1024){alert("Logo en fazla 700KB olabilir. Baskı ve ayarlarda güvenilir saklama için dosyayı küçültün."); return;}
     setLogoLoading(true);
     const data=await fileToBase64(file);
-    await onLogoUpdate(data);
+    const saved=await onLogoUpdate(data);
     setLogoLoading(false);
     e.target.value="";
+    if(saved===false) return;
   }
   function setTemplateField(key,value){
     setQuoteTemplate(prev=>({...prev,[key]:value}));
@@ -13195,7 +13196,10 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
       return;
     }
     try{
-      const templateDoc=await window.DB.getDoc("config","documentTemplates");
+      const [templateDoc,latestBrandingDoc]=await Promise.all([
+        window.DB.getDoc("config","documentTemplates"),
+        window.DB.getDoc("config","branding"),
+      ]);
       const templateLibrary=normalizeDocumentTemplateLibrary(templateDoc||{});
       const templateId=docType==="quote"?"quote":"order";
       const activeTemplate=templateLibrary.templates?.[templateId]||normalizeDocumentTemplate(templateId,{});
@@ -13207,7 +13211,7 @@ function SalesManagement({currentUser,machines=DEFAULT_MACHINES,onOpenWorkOrders
         templateId,
         template:activeTemplate,
         data,
-        logoSrc:brandingLogo,
+        logoSrc:typeof latestBrandingDoc?.logo==="string"?latestBrandingDoc.logo:brandingLogo,
         documentCode:doc.code||"",
       });
       if(writeDocumentPrintWindow(printWindow,html)) return;
@@ -15309,14 +15313,14 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
       },
     };
   }
-  function buildWorkOrderTravelerHtml(order){
+  function buildWorkOrderTravelerHtml(order,logoOverride=""){
     const snapshot=(order?.partSnapshot&&typeof order.partSnapshot==="object")?order.partSnapshot:null;
     const template=normalizeQuoteTemplate(workOrderTemplate||{});
     const companyName=String(template.companyName||DEFAULT_QUOTE_TEMPLATE.companyName||"Firma").trim();
     const companyAddress=String(template.companyAddress||"").trim();
     const companyPhone=String(template.companyPhone||"").trim();
     const companyEmail=String(template.companyEmail||"").trim();
-    const printLogoSrc=resolvePrintAssetUrl(workOrderBrandingLogo);
+    const printLogoSrc=resolvePrintAssetUrl(logoOverride||workOrderBrandingLogo);
     const printLogoEnabled=Boolean(printLogoSrc);
     const produced=productionByOrder[order.code]||{correct:0,wrong:0,total:0};
     const qtyTarget=Math.max(0,safeNum(order.qty));
@@ -15641,21 +15645,26 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
       alert("Yazdirma penceresi acilamadi. Tarayici acilir pencereyi engellemis olabilir.");
       return;
     }
+    let currentPrintLogo=workOrderBrandingLogo;
     try{
-      const templateDoc=await window.DB.getDoc("config","documentTemplates");
+      const [templateDoc,latestBrandingDoc]=await Promise.all([
+        window.DB.getDoc("config","documentTemplates"),
+        window.DB.getDoc("config","branding"),
+      ]);
       const templateLibrary=normalizeDocumentTemplateLibrary(templateDoc||{});
+      currentPrintLogo=typeof latestBrandingDoc?.logo==="string"?latestBrandingDoc.logo:workOrderBrandingLogo;
       const activeTemplate=templateLibrary.templates?.workOrder||normalizeDocumentTemplate("workOrder",{});
       const data=buildWorkOrderDocumentOutputData(order,activeTemplate.pageTitle||"Is Emri Formu");
       const html=buildDocumentTemplatePrintHtml({
         templateId:"workOrder",
         template:activeTemplate,
         data,
-        logoSrc:workOrderBrandingLogo,
+        logoSrc:currentPrintLogo,
         documentCode:order.code||"",
       });
       if(writeDocumentPrintWindow(printWindow,html)) return;
     }catch{}
-    if(writeDocumentPrintWindow(printWindow,buildWorkOrderTravelerHtml(order))) return;
+    if(writeDocumentPrintWindow(printWindow,buildWorkOrderTravelerHtml(order,currentPrintLogo))) return;
     alert("Yazdirma penceresi acilamadi. Tarayici acilir pencereyi engellemis olabilir.");
   }
   const workSplitWrapStyle={
@@ -29502,8 +29511,20 @@ function App() {
   },[]);
   async function updateLogo(logoData){
     const next=logoData||LOGO_SRC;
+    const currentBranding=await window.DB.getDoc("config","branding");
+    const ok=await window.DB.setDoc("config","branding",{
+      ...(currentBranding||{}),
+      logo:logoData||"",
+      updatedAt:new Date().toISOString(),
+      updatedBy:currentUser?.id||"",
+    });
+    if(!ok){
+      alert("Logo kaydedilemedi. Dosya boyutunu küçültüp tekrar deneyin.");
+      return false;
+    }
     setLogoSrc(next);
-    await window.DB.setDoc("config","branding",{logo:logoData||""});
+    window.dispatchEvent(new CustomEvent("branding_logo_updated",{detail:{logo:next}}));
+    return true;
   }
   async function updateTheme(mode){
     const next=mode==="dark"?"dark":"light";
