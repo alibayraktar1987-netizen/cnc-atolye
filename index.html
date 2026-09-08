@@ -2194,6 +2194,21 @@ function normalizeDocumentTemplate(templateId,raw){
     blocks,
   };
 }
+function ensureDocumentTemplatePrintBranding(templateId,template){
+  const normalized=normalizeDocumentTemplate(templateId,template||{});
+  const headerIndex=normalized.blocks.findIndex(block=>block.type==="brandHeader");
+  const fallbackHeader=createDocumentTemplateBlock("brandHeader",{
+    id:`${templateId||"document"}_print_brand_header`,
+    metaText:"{{company.address}}\n{{company.phone}} · {{company.email}}",
+    rightText:"{{document.title}}\nKontrollü kopya",
+  });
+  const header=headerIndex>=0?normalized.blocks[headerIndex]:fallbackHeader;
+  const brandedHeader={...header,showLogo:true};
+  const blocks=headerIndex>=0
+    ? normalized.blocks.map((block,index)=>index===headerIndex?brandedHeader:block)
+    : [brandedHeader,...normalized.blocks];
+  return {...normalized,blocks};
+}
 function normalizeDocumentTemplateLibrary(raw){
   const src=(raw&&typeof raw==="object")?raw:{};
   const templateSrc=(src.templates&&typeof src.templates==="object")?src.templates:src;
@@ -2375,6 +2390,25 @@ function resolvePrintAssetUrl(value){
     return source;
   }
 }
+function buildPrintReadyScript(){
+  return `<script>
+    window.addEventListener("load", function(){
+      const images=Array.from(document.images||[]);
+      const waitForImage=image=>{
+        if(image.complete) return Promise.resolve();
+        return new Promise(resolve=>{
+          const done=()=>resolve();
+          image.addEventListener("load",done,{once:true});
+          image.addEventListener("error",done,{once:true});
+          setTimeout(done,3000);
+        });
+      };
+      Promise.all(images.map(waitForImage)).then(function(){
+        setTimeout(function(){ window.focus(); window.print(); },120);
+      });
+    });
+  <\\/script>`;
+}
 function formatDocumentOutputDate(value){
   const raw=String(value||"").trim();
   if(!raw) return "";
@@ -2555,7 +2589,7 @@ function renderDocumentTemplateBlockHtml(block,data,{logoSrc=""}={}){
   `;
 }
 function buildDocumentTemplatePrintHtml({templateId,template,data,logoSrc="",documentCode=""}={}){
-  const normalizedTemplate=normalizeDocumentTemplate(templateId,template||{});
+  const normalizedTemplate=ensureDocumentTemplatePrintBranding(templateId,template||{});
   const pageTitle=String(data?.document?.title||normalizedTemplate.pageTitle||"Belge").trim()||"Belge";
   const printableLogoSrc=resolvePrintAssetUrl(logoSrc);
   const blocksHtml=(normalizedTemplate.blocks||[]).map(block=>renderDocumentTemplateBlockHtml(block,data,{logoSrc:printableLogoSrc})).join("");
@@ -2618,14 +2652,7 @@ function buildDocumentTemplatePrintHtml({templateId,template,data,logoSrc="",doc
       ${blocksHtml||`<div>${escapeDocumentHtml(pageTitle)}</div>`}
     </div>
   </div>
-  <script>
-    window.addEventListener("load", function(){
-      setTimeout(function(){
-        window.focus();
-        window.print();
-      }, 250);
-    });
-  <\/script>
+  ${buildPrintReadyScript()}
 </body>
 </html>`;
 }
@@ -6063,8 +6090,8 @@ function DocumentTemplateSettings({currentUser,currentLogo="",companyProfile={}}
             <div style={{display:"flex",gap:12,alignItems:"flex-start",minWidth:0}}>
               {block.showLogo&&(
                 <div style={{width:80,height:80,border:`1px solid ${rgbaFromHex(accent,0.18)}`,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",background:"#fff",flex:"0 0 auto"}}>
-                  {String(currentLogo||"").startsWith("data:image/")
-                    ? <img src={currentLogo} alt="Logo" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}}/>
+                  {resolvePrintAssetUrl(currentLogo)
+                    ? <img src={resolvePrintAssetUrl(currentLogo)} alt="Logo" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}}/>
                     : <FactorabMark size={52} variant="light"/>}
                 </div>
               )}
@@ -6271,6 +6298,7 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
   const [notificationDeliverySettings,setNotificationDeliverySettings]=useState(()=>normalizeNotificationDeliverySettings({}));
   const [notificationSaving,setNotificationSaving]=useState(false);
   const logoInputRef=useRef(null);
+  const configuredLogoUrl=resolvePrintAssetUrl(currentLogo);
 
   const load=useCallback(async()=>{
     const [u,templateDoc,notifDoc]=await Promise.all([
@@ -6607,9 +6635,14 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,themeMode="li
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12}}>
             <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
               <div style={{width:56,height:56,borderRadius:12,background:C.surface,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
-                <FactorabMark size={34} variant={themeMode==="dark"?"dark":"light"}/>
+                {configuredLogoUrl
+                  ? <img src={configuredLogoUrl} alt="Kaydedilen firma logosu" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain",display:"block"}}/>
+                  : <FactorabMark size={34} variant={themeMode==="dark"?"dark":"light"}/>
+                }
               </div>
-              <div style={{fontSize:12,color:C.muted2}}>Giris sayfasi ve uygulama basliginda kullanilir.</div>
+              <div style={{fontSize:12,color:C.muted2}}>
+                {configuredLogoUrl?"Kaydedilen firma logosu · Tüm evrak çıktılarında kullanılır.":"Henüz firma logosu yüklenmedi; varsayılan uygulama işareti kullanılır."}
+              </div>
             </div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
               <button onClick={()=>logoInputRef.current?.click()} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12}} disabled={logoLoading}>{logoLoading?"Yukleniyor...":"Logo Yukle"}</button>
@@ -15625,17 +15658,10 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
       </div>
     </div>
   </div>
-  <script>
-    window.addEventListener("load", function(){
-      setTimeout(function(){
-        window.focus();
-        window.print();
-      }, 250);
-    });
-  <\/script>
+  ${buildPrintReadyScript()}
 </body>
 </html>`;
-  }
+}
   async function printWorkOrderForm(order){
     if(!order){alert("Yazdirma icin is emri secin.");return;}
     const printWindow=openDocumentPrintWindow(buildDocumentPrintStatusHtml("Is emri formu hazirlaniyor",order.code||""));
@@ -28418,7 +28444,7 @@ function buildCompliancePrintHtml({title="Uyum Kaydı",subtitle="",records=[],si
   const body=singleRecord?recordCard(singleRecord):(records.length?`<table><thead><tr><th>No</th><th>Başlık</th><th>Sorumlu</th><th>Termin</th><th>Durum</th><th>Referans</th></tr></thead><tbody>${records.map(row=>`<tr><td>${safe(row.recordNo)}</td><td>${safe(row.title)}</td><td>${safe(row.owner)}</td><td>${safe(row.dueDate||"-")}</td><td>${safe(complianceStatusLabel(row.status))}</td><td>${safe(row.reference||"-")}</td></tr>`).join("")}</tbody></table>`:"<p class=empty>Bu kapsamda yazdırılacak kayıt bulunmuyor.</p>");
   return `<!doctype html><html lang="tr"><head><meta charset="utf-8"><title>${safe(title)}</title><style>@page{size:A4;margin:14mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#17212b;font-size:11px}.header{border-bottom:3px solid #176b5a;padding-bottom:10px;margin-bottom:14px;display:flex;justify-content:space-between;gap:18px}.brand{font-size:18px;font-weight:800;color:#176b5a}.title{font-size:17px;font-weight:800;margin-top:5px}.muted{color:#64748b;margin-top:4px}.meta{text-align:right;color:#475569;font-size:10px}table{width:100%;border-collapse:collapse}th{background:#eaf5f1;color:#145b4d;text-align:left}th,td{border:1px solid #cbd5e1;padding:7px;vertical-align:top}.record{border:1px solid #cbd5e1;border-radius:6px;padding:12px;margin-bottom:12px;break-inside:avoid}.record-head{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid #e2e8f0;padding-bottom:8px}.record h2{font-size:15px;margin:0}.record p{margin:3px 0;color:#64748b}.record-head strong{color:#176b5a}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;margin:10px 0}.record>p{margin:9px 0;line-height:1.45}.record b{display:block;color:#334155;margin-bottom:2px}.record span{white-space:pre-wrap}.footerline{font-size:9px;color:#64748b;border-top:1px solid #e2e8f0;padding-top:7px;margin-top:10px}.empty{padding:16px;color:#64748b}@media print{body{font-size:10px}}</style></head><body><header class="header"><div><div class="brand">FACTORAB · UYUM VE GÜVENLİK</div><div class="title">${safe(title)}</div><div class="muted">${safe(subtitle)}</div></div><div class="meta">Çıktı tarihi<br><b>${safe(generatedAt)}</b><br><br>Kontrollü kopya</div></header>${body}<script>window.addEventListener('load',function(){setTimeout(function(){window.focus();window.print()},250)})<\/script></body></html>`;
 }
-function buildCorporateCompliancePrintHtml({title="Uyum Kaydı",subtitle="",records=[],singleRecord=null,logoSrc=""}={}){
+function buildCorporateCompliancePrintHtmlLegacy({title="Uyum Kaydı",subtitle="",records=[],singleRecord=null,logoSrc=""}={}){
   const safe=value=>escapeDocumentHtml(String(value??"-"));
   const printableLogoSrc=resolvePrintAssetUrl(logoSrc);
   const generatedAt=new Date().toLocaleString("tr-TR");
@@ -28428,6 +28454,13 @@ function buildCorporateCompliancePrintHtml({title="Uyum Kaydı",subtitle="",reco
   };
   const body=singleRecord?rowHtml(singleRecord):(records.length?`<section class="table-card"><table><thead><tr><th>No</th><th>Başlık</th><th>Sorumlu</th><th>Termin</th><th>Durum</th><th>Referans</th></tr></thead><tbody>${records.map(row=>`<tr><td>${safe(row.recordNo)}</td><td>${safe(row.title)}</td><td>${safe(row.owner)}</td><td>${safe(row.dueDate||"-")}</td><td>${safe(complianceStatusLabel(row.status))}</td><td>${safe(row.reference||"-")}</td></tr>`).join("")}</tbody></table></section>`:`<div class="empty">Bu kapsamda yazdırılacak kayıt bulunmuyor.</div>`);
   return `<!doctype html><html lang="tr"><head><meta charset="utf-8"><title>${safe(title)}</title><style>@page{size:A4;margin:12mm}*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#0f172a;font-size:11px}.sheet{max-width:186mm;margin:auto}.header{display:grid;grid-template-columns:76px 1fr auto;gap:12px;align-items:center;border:1px solid #cbd5e1;border-top:4px solid #0f766e;border-radius:10px;padding:11px 12px;margin-bottom:12px}.logo{width:68px;height:68px;border:1px solid #cbd5e1;border-radius:8px;padding:5px;display:flex;align-items:center;justify-content:center;background:#fff}.logo img{max-width:100%;max-height:100%;object-fit:contain}.brand{font-size:11px;font-weight:800;letter-spacing:1px;color:#0f766e;text-transform:uppercase}.title{font-size:19px;font-weight:800;margin-top:3px}.subtitle{font-size:11px;color:#64748b;margin-top:3px}.meta{text-align:right;font-size:10px;color:#475569;line-height:1.5}.meta b{color:#0f172a}.record,.table-card{border:1px solid #cbd5e1;border-radius:10px;overflow:hidden;margin-bottom:10px;break-inside:avoid}.record{padding:12px}.record-head{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #e2e8f0;padding-bottom:9px}.record h2{margin:0;font-size:15px}.record-code{color:#64748b;font-size:10px;margin-top:4px}.status{align-self:start;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:800}.facts{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:10px 0}.facts>div,.detail{border:1px solid #e2e8f0;border-radius:7px;padding:7px;line-height:1.45}.facts b,.detail b{display:block;color:#475569;font-size:10px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px}.detail{margin-top:7px;white-space:pre-wrap}.audit{border-top:1px solid #e2e8f0;margin-top:10px;padding-top:7px;font-size:9px;color:#64748b}table{width:100%;border-collapse:collapse}th{background:#0f766e;color:#fff;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.35px}th,td{padding:8px;border-bottom:1px solid #e2e8f0;vertical-align:top}tr:nth-child(even) td{background:#f8fafc}.empty{border:1px dashed #cbd5e1;border-radius:10px;padding:20px;color:#64748b;text-align:center}@media print{body{font-size:10px}}</style></head><body><main class="sheet"><header class="header"><div class="logo">${printableLogoSrc?`<img src="${safe(printableLogoSrc)}" alt="Firma logosu">`:`<strong>F</strong>`}</div><div><div class="brand">Factorab · Kontrollü Doküman</div><div class="title">${safe(title)}</div><div class="subtitle">${safe(subtitle)}</div></div><div class="meta">Çıktı tarihi<br><b>${safe(generatedAt)}</b><br>Kontrollü kopya</div></header>${body}</main><script>window.addEventListener("load",function(){setTimeout(function(){window.focus();window.print()},250)})<\/script></body></html>`;
+}
+function buildCorporateCompliancePrintHtml(options={}){
+  const html=buildCorporateCompliancePrintHtmlLegacy(options);
+  return html.replace(
+    /<script>window\.addEventListener\("load",function\(\)\{setTimeout\(function\(\)\{window\.focus\(\);window\.print\(\)\},250\)\}\)<\/script>/,
+    buildPrintReadyScript()
+  );
 }
 function ComplianceGovernanceModule({currentUser,initialType="document",allowedTypes=[],moduleLabel="Uyum ve Güvenlik"}){
   const [records,setRecords]=useState([]);
