@@ -10,6 +10,8 @@
 <link rel="stylesheet" href="css/reports.css"/>
 <link rel="stylesheet" href="css/workshop.css"/>
 <script src="js/reporting.js"></script>
+<script src="js/fai-detection.js"></script>
+<script src="js/fai-reader.js"></script>
 <script src="js/workshop.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -3570,217 +3572,16 @@ function guessPartFieldsFromPdf({text="",lines=[],fileName=""}={}){
     barLengthMm:barLengthLabel,
   };
 }
-function normalizeDimensionToken(token){
-  return String(token||"")
-    .replace(/[⌀⏥]/g,"Ø")
-    .replace(/[×]/g,"x")
-    .replace(/[‐‑–—]/g,"-")
-    .replace(/\s+/g," ")
-    .trim()
-    .replace(/,+/g,",")
-    .replace(/\.+/g,".");
+async function renderFaiDrawingPage(file,options={}){
+  return window.FaiReader.render(file,{...options,loadBytes:loadFileBytes,loadScript:ensureExternalScript});
 }
-function canonicalDimensionToken(token){
-  return normalizeDimensionToken(token).replace(/,/g,".").replace(/\s+/g,"").toUpperCase();
-}
-function isLikelyDimensionToken(token){
-  const raw=normalizeDimensionToken(token);
-  if(!raw) return false;
-  const compact=raw.replace(/\s+/g,"");
-  if(!/\d/.test(compact)) return false;
-  if(compact.length<2||compact.length>36) return false;
-  if(/^[0-9]+$/.test(compact)) return false;
-  const hasMarker=/[ØR±°]|MM$/i.test(compact)||/M\d+/i.test(compact)||/\d+[.,]\d+/.test(compact)||/\d+[xX]\d+/.test(compact)||/[HhGgFfJjKk][0-9]{1,2}$/.test(compact)||/[+]\d+(?:[.,]\d+)?(?:\/-|-)\d+(?:[.,]\d+)?/.test(compact);
-  return hasMarker;
-}
-function extractDimensionTokensFromText(text){
-  const cleaned=normalizeDimensionToken(text);
-  if(!cleaned) return [];
-  const number="\\d{1,4}(?:[.,]\\d{1,4})?";
-  const patterns=[
-    new RegExp(`(?:Ø|R)\\s*${number}(?:\\s*(?:H|h|g|f|js|k)\\d{1,2})?(?:\\s*[±]\\s*${number}|\\s*\\+\\s*${number}\\s*(?:\\/|-)\\s*-?\\s*${number})?`,"gi"),
-    new RegExp(`\\bM\\s*${number}(?:\\s*[xX]\\s*${number})?(?:\\s*-?\\s*(?:6[GH]|[0-9]{1,2}[A-Za-z]))?\\b`,"gi"),
-    new RegExp(`\\b${number}(?:\\s*[xX]\\s*${number}){1,2}(?:\\s*mm)?\\b`,"gi"),
-    new RegExp(`\\b${number}\\s*(?:[±]\\s*${number}|\\+\\s*${number}\\s*(?:\\/|-)\\s*-?\\s*${number})\\b`,"gi"),
-    new RegExp(`\\b${number}\\s*(?:H|h|g|f|js|k)\\d{1,2}\\b`,"gi"),
-    new RegExp(`\\b${number}\\s*°`,"gi"),
-    new RegExp(`\\b${number}\\s*mm\\b`,"gi"),
-  ];
-  const matches=[];
-  patterns.forEach(regex=>{
-    let match;
-    while((match=regex.exec(cleaned))!==null){
-      matches.push(match[0]);
-      if(match.index===regex.lastIndex) regex.lastIndex++;
-    }
-  });
-  const normalized=matches
-    .map(normalizeDimensionToken)
-    .filter(isLikelyDimensionToken);
-  const uniq={};
-  return normalized
-    .filter((token,index,list)=>!list.some((other,otherIndex)=>{
-      if(otherIndex===index) return false;
-      const current=canonicalDimensionToken(token);
-      const candidate=canonicalDimensionToken(other);
-      return candidate.length>current.length&&candidate.includes(current);
-    }))
-    .filter(token=>{
-      const key=canonicalDimensionToken(token);
-      if(uniq[key]) return false;
-      uniq[key]=true;
-      return true;
-    });
-}
-function collectPdfTextGeometry(items,viewport){
-  const runs=(items||[]).map(item=>{
-    const text=String(item?.str||"").replace(/\s+/g," ").trim();
-    if(!text) return null;
-    const tr=Array.isArray(item?.transform)?item.transform:[1,0,0,1,0,0];
-    const x=Math.max(0,safeNum(tr[4]));
-    const y=Math.max(0,safeNum(tr[5]));
-    const height=Math.max(6,Math.abs(safeNum(item?.height))||Math.abs(safeNum(tr[3]))||8);
-    const width=Math.max(1,Math.abs(safeNum(item?.width))||text.length*Math.max(4,height*.45));
-    return {text,x,yTop:Math.max(0,viewport.height-y-height),width,height};
-  }).filter(Boolean).sort((a,b)=>Math.abs(a.yTop-b.yTop)>2?a.yTop-b.yTop:a.x-b.x);
-  const lines=[];
-  runs.forEach(run=>{
-    let line=lines.find(candidate=>Math.abs(candidate.yTop-run.yTop)<=Math.max(3,Math.min(9,Math.max(candidate.height,run.height)*.6)));
-    if(!line){
-      line={runs:[],x:run.x,yTop:run.yTop,width:run.width,height:run.height};
-      lines.push(line);
-    }
-    line.runs.push(run);
-    line.x=Math.min(line.x,run.x);
-    line.yTop=Math.min(line.yTop,run.yTop);
-    line.width=Math.max(line.width,(run.x+run.width)-line.x);
-    line.height=Math.max(line.height,run.height);
-  });
-  return lines.map(line=>{
-    const sorted=line.runs.sort((a,b)=>a.x-b.x);
-    let previous=null;
-    const text=sorted.map(run=>{
-      const gap=previous?run.x-(previous.x+previous.width):0;
-      const spacer=previous&&gap>Math.max(1,Math.min(previous.height,run.height)*.18)?" ":"";
-      previous=run;
-      return spacer+run.text;
-    }).join("");
-    return {...line,text:normalizeDimensionToken(text)};
-  });
-}
-function scoreDimensionCandidate(token,lineText){
-  const compact=canonicalDimensionToken(token);
-  let score=.54;
-  if(/[ØR]/.test(compact)||/^M\d/.test(compact)) score+=.24;
-  if(/[±°]|\+\d+(?:\/-|-)/.test(compact)||/[HhGgFfJjKk]\d{1,2}$/.test(compact)) score+=.15;
-  if(/\d(?:X)\d/.test(compact)||/MM$/.test(compact)) score+=.1;
-  if(/(?:REV|DATE|SCALE|SHEET|DRAWN|CHECKED|MATERIAL)/i.test(lineText||"")) score-=.22;
-  return Math.max(.1,Math.min(.99,Number(score.toFixed(2))));
-}
-async function autoBalloonPdfDrawing(file,{pageNumber=1,maxItems=260}={}){
-  if(!getFileSource(file)) throw new Error("PDF dosyasi bulunamadi.");
-  const pdfLibSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-  const pdfWorkerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-  const ok=await ensureExternalScript(pdfLibSrc,()=>Boolean(window.pdfjsLib&&window.pdfjsLib.getDocument));
-  if(!ok||!window.pdfjsLib||!window.pdfjsLib.getDocument) throw new Error("PDF motoru yuklenemedi.");
-  if(window.pdfjsLib.GlobalWorkerOptions) window.pdfjsLib.GlobalWorkerOptions.workerSrc=pdfWorkerSrc;
-  const bytes=await loadFileBytes(file);
-  const task=window.pdfjsLib.getDocument({data:bytes});
-  const pdf=await task.promise;
-  const totalPages=Math.max(1,Number(pdf.numPages)||1);
-  const safePage=Math.min(totalPages,Math.max(1,Number(pageNumber)||1));
-  const page=await pdf.getPage(safePage);
-  const viewport=page.getViewport({scale:1});
-  const textContent=await page.getTextContent();
-  if(!(textContent.items||[]).some(item=>String(item?.str||"").trim())){
-    throw new Error("PDF'de secilebilir metin bulunamadi. Taranmis resim PDF'lerde olculeri manuel ekleyin veya metin katmanli teknik resim kullanin.");
-  }
-  const rows=[];
-  const lines=collectPdfTextGeometry(textContent.items||[],viewport);
-  lines.forEach(line=>{
-    const tokens=extractDimensionTokensFromText(line.text);
-    if(tokens.length===0) return;
-    tokens.forEach(token=>{
-      const index=Math.max(0,line.text.toUpperCase().indexOf(token.toUpperCase()));
-      const ratio=line.text.length?index/line.text.length:0;
-      const confidence=scoreDimensionCandidate(token,line.text);
-      if(confidence<.52) return;
-      rows.push({text:token,x:line.x+(line.width*ratio),yTop:line.yTop,height:line.height,confidence,source:"pdf_text_line"});
-    });
-  });
-  const dedupe={};
-  const uniqueRows=[];
-  rows.forEach(row=>{
-    const key=`${canonicalDimensionToken(row.text)}|${Math.round(row.x/8)}|${Math.round(row.yTop/8)}`;
-    if(dedupe[key]) return;
-    dedupe[key]=true;
-    uniqueRows.push(row);
-  });
-  uniqueRows.sort((a,b)=>{
-    const dy=a.yTop-b.yTop;
-    if(Math.abs(dy)>6) return dy;
-    return a.x-b.x;
-  });
-    const limited=uniqueRows.slice(0,Math.max(1,Math.min(500,Number(maxItems)||260)));
-  const tokens=uniqueRows.map(row=>({
-    text:row.text,
-    page:safePage,
-    xPct:Math.max(0,Math.min(100,(row.x/Math.max(1,viewport.width))*100)),
-    yPct:Math.max(0,Math.min(100,(row.yTop/Math.max(1,viewport.height))*100)),
-    confidence:row.confidence,
-    source:row.source,
-  }));
-  const balloons=limited.map((row,idx)=>({
-    no:idx+1,
-    text:row.text,
-    page:safePage,
-    xPct:Math.max(0,Math.min(100,(row.x/Math.max(1,viewport.width))*100)),
-    yPct:Math.max(0,Math.min(100,(row.yTop/Math.max(1,viewport.height))*100)),
-    confidence:row.confidence,
-  }));
-  const canvas=document.createElement("canvas");
-  canvas.width=Math.max(1,Math.round(viewport.width));
-  canvas.height=Math.max(1,Math.round(viewport.height));
-  const ctx=canvas.getContext("2d");
-  await page.render({canvasContext:ctx,viewport}).promise;
-  return {
-    page:safePage,
-    pageCount:totalPages,
-    pageWidth:viewport.width,
-    pageHeight:viewport.height,
-    previewDataUrl:canvas.toDataURL("image/png"),
-    tokens,
-    balloons,
-    detection:{
-      engine:"pdf_text_line_v2",
-      textItemCount:(textContent.items||[]).length,
-      lineCount:lines.length,
-      detectedCount:uniqueRows.length,
-      balloonCount:balloons.length,
-      limited:uniqueRows.length>limited.length,
-      note:uniqueRows.length===0?"Olcu formati tespit edilemedi; PDF uzerinde kutu cizerek veya Manuel Olcu ile ekleyin.":"Olculer PDF metin katmanindan konumlariyla tespit edildi. Kritik olculeri onaylayin.",
-    },
-  };
+async function autoBalloonPdfDrawing(file,options={}){
+  return window.FaiReader.detect(file,{...options,loadBytes:loadFileBytes,loadScript:ensureExternalScript});
 }
 async function autoBalloonAiDrawing(file,{pageNumber=1,maxItems=260}={}){
-  if(!getFileSource(file)) throw new Error("PDF dosyasi bulunamadi.");
-  const pdfLibSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-  const pdfWorkerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-  const ok=await ensureExternalScript(pdfLibSrc,()=>Boolean(window.pdfjsLib&&window.pdfjsLib.getDocument));
-  if(!ok||!window.pdfjsLib?.getDocument) throw new Error("PDF motoru yuklenemedi.");
-  window.pdfjsLib.GlobalWorkerOptions.workerSrc=pdfWorkerSrc;
-  const bytes=await loadFileBytes(file);
-  const pdf=await window.pdfjsLib.getDocument({data:bytes}).promise;
-  const totalPages=Math.max(1,Number(pdf.numPages)||1);
-  const safePage=Math.min(totalPages,Math.max(1,Number(pageNumber)||1));
-  const page=await pdf.getPage(safePage);
-  const viewport=page.getViewport({scale:1.5});
-  const canvas=document.createElement("canvas");
-  canvas.width=Math.max(1,Math.round(viewport.width));
-  canvas.height=Math.max(1,Math.round(viewport.height));
-  const ctx=canvas.getContext("2d");
-  await page.render({canvasContext:ctx,viewport}).promise;
-  const previewDataUrl=canvas.toDataURL("image/jpeg",.88);
+  const rendered=await renderFaiDrawingPage(file,{pageNumber});
+  const {page:safePage,pageCount:totalPages,previewDataUrl}=rendered;
+  const viewport={width:rendered.pageWidth,height:rendered.pageHeight};
   const response=await fetch("/api/v1/fai/auto-balloon-ai",{
     method:"POST",
     headers:{"Content-Type":"application/json"},
@@ -3788,29 +3589,17 @@ async function autoBalloonAiDrawing(file,{pageNumber=1,maxItems=260}={}){
   });
   const body=await response.json().catch(()=>({}));
   if(!response.ok) throw new Error(String(body?.detail||"AI olcu tespiti basarisiz."));
-  const seen={};
-  const rows=(Array.isArray(body?.dimensions)?body.dimensions:[])
-    .map(row=>({
-      text:normalizeDimensionToken(row?.text||""),
-      page:safePage,
-      xPct:Math.max(0,Math.min(100,safeNum(row?.xPct))),
-      yPct:Math.max(0,Math.min(100,safeNum(row?.yPct))),
-      confidence:Math.max(0,Math.min(1,safeNum(row?.confidence))),
-      source:"openai_vision",
-    }))
-    .filter(row=>row.text&&isLikelyDimensionToken(row.text))
-    .filter(row=>{
-      const key=`${canonicalDimensionToken(row.text)}|${Math.round(row.xPct/2)}|${Math.round(row.yPct/2)}`;
-      if(seen[key]) return false;
-      seen[key]=true;
-      return true;
-    })
-    .slice(0,Math.max(1,Math.min(500,Number(maxItems)||260)));
+  const allRows=window.FaiDetection.dedupe((Array.isArray(body?.dimensions)?body.dimensions:[])
+    .filter(row=>typeof row?.xPct==="number"&&typeof row?.yPct==="number")
+    .map(row=>({text:window.FaiDetection.normalize(row.text),page:safePage,xPct:row.xPct,yPct:row.yPct,
+      confidence:Number.isFinite(row.confidence)?Math.max(0,Math.min(1,row.confidence)):0,
+      source:"openai_vision",reviewRequired:true})).filter(row=>window.FaiDetection.matches(row.text).length));
+  const rows=allRows.slice(0,Math.max(1,Math.min(500,Number(maxItems)||260)));
   return {
     page:safePage,pageCount:totalPages,pageWidth:viewport.width,pageHeight:viewport.height,previewDataUrl,
-    tokens:rows,
+    tokens:allRows,
     balloons:rows.map((row,idx)=>({...row,no:idx+1})),
-    detection:{engine:"openai_vision",detectedCount:rows.length,balloonCount:rows.length,lineCount:0,limited:false,note:(body?.notes||[]).join(" ")||"AI goruntu analiziyle tespit edildi. Kritik olculeri onaylayin."},
+    detection:{engine:"openai_vision",detectedCount:allRows.length,balloonCount:rows.length,lineCount:0,limited:allRows.length>rows.length,note:(Array.isArray(body?.notes)?body.notes:[]).join(" ")||"AI goruntu analiziyle tespit edildi. Kritik olculeri onaylayin."},
   };
 }
 function disposeThreeObject(root) {
@@ -25654,6 +25443,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
   const [faiForm,setFaiForm]=useState({orderId:"",partNo:"",status:"draft",note:"",balloonRunId:""});
   const [balloonForm,setBalloonForm]=useState({orderId:"",fileId:"",page:"1"});
   const [balloonBusy,setBalloonBusy]=useState(false);
+  const [balloonProgress,setBalloonProgress]=useState("");
   const [balloonSaveBusy,setBalloonSaveBusy]=useState(false);
   const [balloonDeleteBusyId,setBalloonDeleteBusyId]=useState("");
   const [balloonError,setBalloonError]=useState("");
@@ -25743,6 +25533,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
   },[selectedPdfOrder?.id,selectedPdfFiles.map(f=>f._pickId).join(","),balloonForm.fileId]);
   function normalizeBalloonRows(rows){
     const normalized=(rows||[]).map((row,idx)=>({
+      ...row,
       no:idx+1,
       text:String(row?.text||"").trim(),
       page:Math.max(1,safeNum(row?.page)||Math.max(1,safeNum(balloonForm.page)||1)),
@@ -25758,6 +25549,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
     }
     const rows=Array.isArray(run.dimensions)?run.dimensions:[];
     const prepared=rows.map((r,idx)=>({
+      ...r,
       no:idx+1,
       text:String(r?.text||"").trim(),
       page:Math.max(1,safeNum(r?.page)||Math.max(1,safeNum(run.page)||1)),
@@ -25911,20 +25703,21 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
     const wo=pdfOrderById[run.orderId];
     if(!wo){setBalloonPreview(null);return;}
     const pdfRows=(wo.files||[]).filter(f=>f&&getFileSource(f)&&isPdfFile(f)).map((f,idx)=>({...f,_pickId:String(f.id||`pdf_${idx}`)}));
-    const picked=pdfRows.find(f=>f._pickId===run.filePickId)||pdfRows[0]||null;
-    if(!picked){setBalloonPreview(null);return;}
+    const picked=pdfRows.find(f=>f._pickId===run.filePickId)||null;
+    if(!picked){setBalloonPreview(null);setBalloonError("Kayıtlı PDF bulunamadı. Teknik resmi yeniden seçin.");return;}
     setBalloonForm(f=>({...f,orderId:wo.id||f.orderId,fileId:picked._pickId,page:String(run.page||1)}));
     setDragBalloon(null);
     setBalloonBusy(true);
+    setBalloonProgress("");
     setBalloonError("");
     try{
-      const result=await autoBalloonPdfDrawing(picked,{pageNumber:Math.max(1,safeNum(run.page)||1)});
+      const result=await renderFaiDrawingPage(picked,{pageNumber:Math.max(1,safeNum(run.page)||1)});
       setBalloonPreview({
         runId:run.id||"",
         previewDataUrl:result.previewDataUrl,
         balloons:Array.isArray(run.dimensions)?run.dimensions:[],
-        tokens:result.tokens||[],
-        detection:result.detection||run.detection||null,
+        tokens:run.detectedTokens||[],
+        detection:run.detection||null,
         fileName:run.fileName||picked.name||"drawing.pdf",
         page:result.page,
       });
@@ -25939,13 +25732,19 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
   function removeEditableBalloonRow(idx){
     setEditableBalloons(prev=>prev.filter((_,i)=>i!==idx).map((row,i)=>({...row,no:i+1})));
   }
+  function resetBalloonDraft(){
+    setBalloonPreview(null);setEditableBalloons([]);setBalloonError("");setBalloonProgress("");setFaiForm(f=>({...f,balloonRunId:""}));
+  }
   async function saveEditableBalloons(){
+    if(balloonBusy)return;
     const rows=normalizeBalloonRows(editableBalloons);
     if(rows.length===0){alert("Kaydedilecek olcu yok.");return;}
     setBalloonSaveBusy(true);
     try{
       const runId=faiForm.balloonRunId||balloonPreview?.runId||"";
       if(runId){
+        const run=balloonRuns.find(r=>r.id===runId);
+        if(!run||run.orderId!==balloonForm.orderId||run.filePickId!==selectedPdfFile?._pickId||Number(run.page)!==Number(balloonForm.page))throw new Error("Çalışma seçili teknik resimle eşleşmiyor. Balon çalışmasını yeniden açın.");
         const patch={
           dimensions:rows,
           dimensionCount:rows.length,
@@ -25985,6 +25784,8 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
       setFaiForm(f=>({...f,balloonRunId:id,orderId:f.orderId||wo.id||"",partNo:f.partNo||wo.partNo||""}));
       setBalloonPreview(prev=>prev?{...prev,runId:id,balloons:rows}:prev);
       setEditableBalloons(rows);
+    }catch(err){
+      setBalloonError(String(err?.message||"Ölçüler kaydedilemedi."));
     }finally{
       setBalloonSaveBusy(false);
     }
@@ -26076,16 +25877,19 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
     setQualityCreateOpen(false);
   }
   async function runAutoBalloon({replaceRunId="",engine="pdf"}={}){
+    if(balloonBusy||balloonSaveBusy)return;
     const wo=pdfOrderById[balloonForm.orderId];
     if(!wo){alert("PDF icin is emri secin.");return;}
     if(!selectedPdfFile){alert("PDF secin.");return;}
     setDragBalloon(null);
     setBalloonBusy(true);
+    setBalloonProgress("");
     setBalloonError("");
     try{
       const result=engine==="ai"
         ? await autoBalloonAiDrawing(selectedPdfFile,{pageNumber:Math.max(1,safeNum(balloonForm.page)||1)})
-        : await autoBalloonPdfDrawing(selectedPdfFile,{pageNumber:Math.max(1,safeNum(balloonForm.page)||1)});
+        : await autoBalloonPdfDrawing(selectedPdfFile,{pageNumber:Math.max(1,safeNum(balloonForm.page)||1),forceOcr:engine==="ocr",onProgress:setBalloonProgress});
+      if(!result.balloons?.length)throw new Error("Ölçü bulunamadı; mevcut çalışma korunuyor. Daha net bir PDF veya manuel ölçü girişi kullanın.");
       const now=new Date().toISOString();
       const payload={
         orderId:wo.id||"",
@@ -26097,6 +25901,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
         pageCount:result.pageCount,
         dimensionCount:(result.balloons||[]).length,
         dimensions:(result.balloons||[]).map(d=>({
+          ...d,
           no:d.no,
           text:d.text,
           page:d.page,
@@ -26105,7 +25910,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
         })),
         detectedTokens:result.tokens||[],
         detection:result.detection||null,
-        source:engine==="ai"?"openai_vision":"auto_pdfjs_v2",
+        source:result.detection?.engine||engine,
         status:"draft",
         createdBy:currentUser.id,
         createdAt:now,
@@ -26138,6 +25943,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
       });
       setLastSelection(null);
       setEditableBalloons((result.balloons||[]).map((row,idx)=>({
+        ...row,
         no:idx+1,
         text:String(row.text||""),
         page:Math.max(1,safeNum(row.page)||payload.page||1),
@@ -26175,7 +25981,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
     }
     await runAutoBalloon();
   }
-  async function rerunAutoBalloon(){
+  async function rerunAutoBalloon(engine="pdf"){
     const wo=pdfOrderById[balloonForm.orderId];
     if(!wo||!selectedPdfFile){alert("Is emri ve teknik resim PDF secin.");return;}
     const requestedPage=Math.max(1,safeNum(balloonForm.page)||1);
@@ -26185,11 +25991,11 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
       Math.max(1,safeNum(run.page)||1)===requestedPage
     );
     if(!matchingRun){
-      await runAutoBalloon();
+      await runAutoBalloon({engine});
       return;
     }
     if(!await askAppConfirm("Mevcut balon numaralari ve manuel duzeltmeler, yeni otomatik tespitle guncellenecek. Devam edilsin mi?")) return;
-    await runAutoBalloon({replaceRunId:matchingRun.id});
+    await runAutoBalloon({replaceRunId:matchingRun.id,engine});
   }
   async function runAiAutoBalloon(){
     const wo=pdfOrderById[balloonForm.orderId];
@@ -26349,9 +26155,9 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
         <div style={{position:"fixed",inset:0,zIndex:80,padding:14,background:"rgba(8,12,18,.52)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>{setQualityEditId("");setQualityCreateOpen(false);}}>
         <div className="mrp-scrollbar" style={{width:"100%",maxWidth:1280,maxHeight:"94vh",overflowY:"auto",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:14,boxShadow:"0 24px 56px rgba(0,0,0,.34)"}} onClick={e=>e.stopPropagation()}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}><div style={{fontWeight:700,color:C.text,marginBottom:8}}>{qualityEditId?"FAI Kaydini Duzenle":"FAI Akisi"}</div><button onClick={()=>{setQualityEditId("");setQualityCreateOpen(false);}} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Kapat</button></div>
-          <div style={balloonWorkspaceStyle}>
+          <fieldset disabled={balloonBusy||balloonSaveBusy} style={{...balloonWorkspaceStyle,minWidth:0,margin:0,pointerEvents:balloonBusy||balloonSaveBusy?"none":"auto"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:7}}>
-              <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Teknik Resim Oto Balon · Metin Tespiti V2</div>
+              <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Teknik Resim · Otomatik Ölçü Tespiti ve OCR</div>
               {balloonWorkspaceOpen&&<button onClick={()=>setBalloonWorkspaceOpen(false)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Çalışma Alanını Kapat</button>}
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr .4fr 1fr",gap:8}}>
@@ -26359,7 +26165,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
                 <span style={labelSt}>Onayli Siparisten Gelen Is Emri</span>
                 <SearchableSelect
                   value={balloonForm.orderId}
-                  onChange={v=>{setBalloonForm(f=>({...f,orderId:v,page:"1"}));setBalloonPreview(null);setBalloonError("");}}
+                  onChange={v=>{setBalloonForm(f=>({...f,orderId:v,page:"1"}));resetBalloonDraft();}}
                   placeholder="Secin"
                   options={pdfOrders.map(o=>({value:o.id,label:`${o.code} · ${o.partNo||o.name||"-"}`}))}
                 />
@@ -26368,14 +26174,14 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
                 <span style={labelSt}>Teknik Resim PDF</span>
                 <SearchableSelect
                   value={balloonForm.fileId}
-                  onChange={v=>{setBalloonForm(f=>({...f,fileId:v}));setBalloonPreview(null);setBalloonError("");}}
+                  onChange={v=>{setBalloonForm(f=>({...f,fileId:v}));resetBalloonDraft();}}
                   placeholder="Secin"
                   options={selectedPdfFiles.map(f=>({value:f._pickId,label:f.name||"drawing.pdf"}))}
                 />
               </div>
               <div>
                 <span style={labelSt}>Sayfa</span>
-                <input style={inputSt} type="number" min="1" value={balloonForm.page} onChange={e=>setBalloonForm(f=>({...f,page:e.target.value||"1"}))}/>
+                <input style={inputSt} type="number" min="1" value={balloonForm.page} onChange={e=>{setBalloonForm(f=>({...f,page:e.target.value||"1"}));resetBalloonDraft();}}/>
               </div>
               <div>
                 <span style={labelSt}>Kayitli Balon Calismasi</span>
@@ -26392,16 +26198,17 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
                 <button onClick={openOrCreateAutoBalloon} disabled={balloonBusy||!balloonForm.orderId||!balloonForm.fileId} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,opacity:(balloonBusy||!balloonForm.orderId||!balloonForm.fileId)?0.65:1}}>
                   {balloonBusy?"Oto Balonlanıyor...":"Oto Balon Çalışmasını Aç"}
                 </button>
-                {balloonWorkspaceOpen&&<button onClick={rerunAutoBalloon} disabled={balloonBusy||!balloonForm.orderId||!balloonForm.fileId} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,opacity:(balloonBusy||!balloonForm.orderId||!balloonForm.fileId)?0.65:1}}>
+                {balloonWorkspaceOpen&&<button onClick={()=>rerunAutoBalloon()} disabled={balloonBusy||!balloonForm.orderId||!balloonForm.fileId} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,opacity:(balloonBusy||!balloonForm.orderId||!balloonForm.fileId)?0.65:1}}>
                   {balloonBusy?"Yeniden Taranıyor...":"Yeniden Oto Balonla"}
                 </button>}
+                {balloonWorkspaceOpen&&<button onClick={()=>rerunAutoBalloon("ocr")} disabled={balloonBusy||balloonSaveBusy||!selectedPdfFile} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>OCR ile yeniden tara</button>}
                 {balloonWorkspaceOpen&&<button onClick={runAiAutoBalloon} disabled={balloonBusy||!balloonForm.orderId||!balloonForm.fileId} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,opacity:(balloonBusy||!balloonForm.orderId||!balloonForm.fileId)?0.65:1}}>
                   {balloonBusy?"AI Teknik Resmi Okuyor...":"AI ile Ölçü Tespit Et"}
                 </button>}
                 <button onClick={addEditableBalloonRow} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>
                   + Manuel Olcu
                 </button>
-                <button onClick={saveEditableBalloons} disabled={balloonSaveBusy||editableBalloons.length===0} style={{...btnSt("green"),padding:"8px 12px",fontSize:12,opacity:(balloonSaveBusy||editableBalloons.length===0)?0.65:1}}>
+                <button onClick={saveEditableBalloons} disabled={balloonBusy||balloonSaveBusy||editableBalloons.length===0} style={{...btnSt("green"),padding:"8px 12px",fontSize:12,opacity:(balloonSaveBusy||editableBalloons.length===0)?0.65:1}}>
                   {balloonSaveBusy?"Kaydediliyor...":"Olculeri Kaydet"}
                 </button>
                 <button onClick={()=>removeBalloonRun(faiForm.balloonRunId)} disabled={!faiForm.balloonRunId||Boolean(balloonDeleteBusyId)} style={{...btnSt("danger"),padding:"8px 12px",fontSize:12,opacity:(!faiForm.balloonRunId||Boolean(balloonDeleteBusyId))?0.65:1}}>
@@ -26412,6 +26219,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
                 {selectedBalloonRun?`Bagli calisma: ${selectedBalloonRun.fileName||"-"} · ${selectedBalloonRun.dimensionCount||0} olcu`:`Calisma secilmedi (manuel kayitta yeni calisma acilir)`}
               </div>
             </div>
+            {balloonBusy&&<div role="status" style={{fontSize:12,marginTop:7}}>{balloonProgress||"Teknik resim okunuyor…"}</div>}
             {balloonError&&<div style={{fontSize:12,color:C.red,marginTop:7}}>{balloonError}</div>}
             {balloonPreview?.detection&&(
               <div style={{fontSize:12,color:balloonPreview.detection.detectedCount?C.muted2:C.warn,marginTop:7}}>
@@ -26490,7 +26298,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
                 </div>
               </div>
             )}
-          </div>
+          </fieldset>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
             <div>
               <span style={labelSt}>Is Emri</span>

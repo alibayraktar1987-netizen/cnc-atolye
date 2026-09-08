@@ -1,4 +1,5 @@
 import json
+import math
 import re
 from typing import Any
 
@@ -43,7 +44,9 @@ def analyze_fai_drawing(payload: BalloonAiRequest) -> dict[str, Any]:
 Extract only drawing dimensions. Exclude title blocks, dates, drawing numbers, revisions, page numbers, and general notes.
 Recognize diameters, radii, threads, tolerances, fits, angles, depths, and axial dimensions.
 For each dimension, return the center position of the dimension text as 0-100 percentage coordinates.
-Exclude a dimension when its position is uncertain. Deduplicate repeated dimensions.
+Include plain linear dimensions such as 20 and 125, even without a unit or symbol.
+Exclude a dimension when its text or position is uncertain; never invent missing values.
+Preserve identical dimensions at different locations. Deduplicate only the same text at the same location.
 Return no text outside this JSON object:
 {"dimensions":[{"text":"DIA 12 H7","xPct":42.5,"yPct":31.2,"confidence":0.91}],"notes":["optional short note"]}
 """
@@ -74,15 +77,20 @@ Return no text outside this JSON object:
         if not text:
             continue
         try:
-            x_pct = max(0.0, min(100.0, float(item.get("xPct", 0))))
-            y_pct = max(0.0, min(100.0, float(item.get("yPct", 0))))
-            confidence = max(0.0, min(1.0, float(item.get("confidence", 0.5))))
-        except (TypeError, ValueError):
+            x_pct = float(item["xPct"])
+            y_pct = float(item["yPct"])
+            confidence = float(item.get("confidence", 0.5))
+            if not all(math.isfinite(v) for v in (x_pct, y_pct, confidence)):
+                continue
+            if not (0 <= x_pct <= 100 and 0 <= y_pct <= 100):
+                continue
+            confidence = max(0.0, min(1.0, confidence))
+        except (KeyError, TypeError, ValueError):
             continue
         dimensions.append({"text": text[:80], "xPct": x_pct, "yPct": y_pct, "confidence": confidence})
     return {
         "engine": "openai_vision",
         "page": payload.page_number,
         "dimensions": dimensions,
-        "notes": [str(note)[:240] for note in result.get("notes", []) if str(note).strip()][:8],
+        "notes": [str(note)[:240] for note in result.get("notes", []) if str(note).strip()][:8] if isinstance(result.get("notes"), list) else [],
     }
