@@ -8,7 +8,7 @@ test('explicit tolerances produce separate deviations and exact limits',()=>{
   }
   const d=f.dimension('8 +0.2/-0.1');assert.equal(d.upperLimit,8.2);assert.equal(d.lowerLimit,7.9);
   assert.equal(f.dimension('8').upperLimit,null);
-  assert.equal(f.dimension('Ø8 H7').toleranceStatus,'iso_fit_required');
+  assert.equal(f.dimension('Ø8 H7').toleranceStatus,'unit_required');
   assert.equal(f.dimension('8 +0.2/+0.1').lowerLimit,8.1);
 });
 test('technical callouts combine quantity, diameter and tolerance; ambiguous numbers need review',()=>{

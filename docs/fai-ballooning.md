@@ -6,7 +6,7 @@ Düz sayısal ölçüler yeniden otomatik aday listesine alınır; düşük güv
 
 Ölçü tespiti yalnızca tarayıcıda OCR ile yapılır. **OCR Çalışmasını Aç** ve **OCR ile yeniden tara** aynı motoru kullanır. AI düğmesi, AI sunucu uç noktası ve PDF metin katmanından tespit akışı kaldırılmıştır. İlk OCR kullanımında motor ve dil dosyaları internetten indirilir. Kayıtlı çalışmalar korunur.
 
-`8 ±0,1` için nominal 8, üst sapma +0,1, alt sapma −0,1, alt sınır 7,9 ve üst sınır 8,1 ayrı alanlarda gösterilir ve kaydedilir. Asimetrik yazılı toleranslar da hesaplanır. Tolerans yazılmamışsa sınır üretilmez. H7 gibi geçme sınıfları için ISO tablosu doğrulaması gerektiği gösterilir; otomatik geçme tablosu ve genel tolerans uygulaması henüz yoktur. Terimler için [ISO 286-1](https://www.iso.org/standard/45975.html), doğrusal boyutlandırma kapsamı için [ISO 14405-1](https://www.iso.org/standard/14405-1) esas alınmıştır; bu özellik tam ISO uygunluğu belgesi değildir.
+`8 ±0,1` için nominal 8, üst sapma +0,1, alt sapma −0,1, alt sınır 7,9 ve üst sınır 8,1 ayrı alanlarda gösterilir ve kaydedilir. Asimetrik yazılı toleranslar da hesaplanır. Çizim birimi ve genel tolerans sınıfı çalışma üzerinde seçilebilir. Desteklenen ISO 286 geçmeleri ve ISO 2768-1 genel tabloları otomatik hesaplanır; [kapsam ve kullanım ayrıntıları](fai-iso-tolerances.md) geçerlidir. Yazılı özel tolerans her zaman önceliklidir.
 
 Algoritma düz sayıları, çapları, yarıçapları, vida ölçülerini, açıları ve aynı satırdaki toleransları aday olarak çıkarır. Farklı konumlardaki aynı değerleri korur. PDF dönüş ve kırpma bilgileri konum hesabına katılır. OCR yatay ve iki dikey yönde çalışır. Boş sonuç önceki çalışmayı değiştirmez; kayıtlı çalışmanın önizlemesi yeniden OCR gerektirmez.
 

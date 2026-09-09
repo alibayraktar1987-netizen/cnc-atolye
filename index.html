@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="css/reports.css"/>
 <link rel="stylesheet" href="css/workshop.css"/>
 <script src="js/reporting.js"></script>
+<script src="js/fai-tolerances.js"></script>
 <script src="js/fai-detection.js"></script>
 <script src="js/fai-reader.js"></script>
 <script src="js/workshop.js"></script>
@@ -25418,6 +25419,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
   const [inspForm,setInspForm]=useState({traceId:"",result:"pass",measurements:"",scrapQty:"0",scrapReason:"",scrapCost:"0"});
   const [faiForm,setFaiForm]=useState({orderId:"",partNo:"",status:"draft",note:"",balloonRunId:""});
   const [balloonForm,setBalloonForm]=useState({orderId:"",fileId:"",page:"1"});
+  const [toleranceSettings,setToleranceSettings]=useState({unit:"",generalClass:""});
   const [balloonBusy,setBalloonBusy]=useState(false);
   const [balloonProgress,setBalloonProgress]=useState("");
   const [balloonSaveBusy,setBalloonSaveBusy]=useState(false);
@@ -25507,10 +25509,13 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
     if(selectedPdfFiles.some(f=>f._pickId===balloonForm.fileId)) return;
     setBalloonForm(f=>({...f,fileId:selectedPdfFiles[0]._pickId}));
   },[selectedPdfOrder?.id,selectedPdfFiles.map(f=>f._pickId).join(","),balloonForm.fileId]);
+  function calculateBalloonDimension(row){
+    return window.FaiDetection.dimension(row.text,{...toleranceSettings,...row.toleranceContext});
+  }
   function normalizeBalloonRows(rows){
     const normalized=(rows||[]).map((row,idx)=>({
       ...row,
-      ...window.FaiDetection.dimension(row.text),
+      ...calculateBalloonDimension(row),
       no:idx+1,
       text:String(row?.text||"").trim(),
       page:Math.max(1,safeNum(row?.page)||Math.max(1,safeNum(balloonForm.page)||1)),
@@ -25520,6 +25525,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
     return normalized.filter(r=>r.text);
   }
   function loadEditableBalloonsFromRun(run){
+    setToleranceSettings(window.FaiTolerances.settings(run?.toleranceSettings));
     if(!run){
       setEditableBalloons([]);
       return;
@@ -25538,7 +25544,8 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
   function updateEditableBalloon(idx,key,value){
     setEditableBalloons(prev=>prev.map((row,i)=>{
       if(i!==idx) return row;
-      if(key==="text") return {...row,text:String(value||""),...window.FaiDetection.dimension(value)};
+      if(key==="text") return {...row,text:String(value||""),...calculateBalloonDimension({...row,text:value})};
+      if(["kind","shortSideMm","excluded"].includes(key))return {...row,toleranceContext:{...row.toleranceContext,[key]:value}};
       if(key==="page") return {...row,page:Math.max(1,safeNum(value)||1)};
       if(key==="xPct"||key==="yPct") return {...row,[key]:Math.max(0,Math.min(100,safeNum(value)))};
       return row;
@@ -25721,6 +25728,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
     finally{setBalloonBusy(false);}
   }
   function resetBalloonDraft(){
+    setToleranceSettings({unit:"",generalClass:""});
     setBalloonPreview(null);setEditableBalloons([]);setBalloonError("");setBalloonProgress("");setFaiForm(f=>({...f,balloonRunId:""}));
   }
   async function saveEditableBalloons(){
@@ -25735,6 +25743,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
         if(!run||run.orderId!==balloonForm.orderId||run.filePickId!==selectedPdfFile?._pickId||Number(run.page)!==Number(balloonForm.page))throw new Error("Çalışma seçili teknik resimle eşleşmiyor. Balon çalışmasını yeniden açın.");
         const patch={
           dimensions:rows,
+          toleranceSettings,
           dimensionCount:rows.length,
           updatedAt:new Date().toISOString(),
           updatedBy:currentUser.id,
@@ -25759,6 +25768,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
         dimensionCount:rows.length,
         dimensions:rows,
         detectedTokens:Array.isArray(balloonPreview?.tokens)?balloonPreview.tokens:[],
+        toleranceSettings,
         detection:balloonPreview?.detection||null,
         source:"manual",
         status:"draft",
@@ -25894,6 +25904,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
         dimensionCount:(result.balloons||[]).length,
         dimensions:(result.balloons||[]).map(d=>({
           ...d,
+          ...calculateBalloonDimension(d),
           no:d.no,
           text:d.text,
           page:d.page,
@@ -25901,6 +25912,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
           yPct:d.yPct,
         })),
         detectedTokens:result.tokens||[],
+        toleranceSettings,
         detection:result.detection||null,
         source:result.detection?.engine||"ocr",
         status:"draft",
@@ -26144,6 +26156,11 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
               <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Teknik Resim · OCR Ölçü ve Tolerans Analizi</div>
               {balloonWorkspaceOpen&&<button onClick={()=>setBalloonWorkspaceOpen(false)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Çalışma Alanını Kapat</button>}
             </div>
+            <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"end",marginBottom:12}}>
+              <label><span style={labelSt}>Çizim birimi</span><select style={inputSt} value={toleranceSettings.unit} onChange={e=>setToleranceSettings(s=>({...s,unit:e.target.value}))}><option value="">Seçin</option><option value="mm">mm</option><option value="inch">inç (ISO tablo hesabı uygulanmaz)</option></select></label>
+              <label><span style={labelSt}>Çizimde belirtilen genel tolerans</span><select style={inputSt} value={toleranceSettings.generalClass} onChange={e=>setToleranceSettings(s=>({...s,generalClass:e.target.value}))}><option value="">Yok / belirtilmemiş</option>{["f","m","c","v"].map(c=><option key={c} value={c}>ISO 2768-1:1989 · {c}</option>)}</select></label>
+              <span style={{fontSize:11,color:C.muted2}}>Özel tolerans ve geçme sınıfı önceliklidir. Seçimleri Ölçüleri Kaydet ile saklayın.</span>
+            </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr .4fr 1fr",gap:8}}>
               <div>
                 <span style={labelSt}>Onayli Siparisten Gelen Is Emri</span>
@@ -26281,10 +26298,13 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
                       <div style={{fontWeight:700,color:C.accent}}>#{row.no}</div>
                       <input style={{...inputSt,padding:"5px 7px",fontSize:12}} value={row.text} onChange={e=>updateEditableBalloon(idx,"text",e.target.value)} placeholder="Olcu metni"/>
                       <button onClick={()=>removeEditableBalloonRow(idx)} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Sil</button>
-                      {(()=>{const d=window.FaiDetection.dimension(row.text);const fmt=v=>v===null?"—":String(v).replace(".",",");return <div style={{gridColumn:"1 / -1",fontSize:11,color:C.muted2,display:"flex",gap:12,flexWrap:"wrap"}}>
+                      {(()=>{const d=calculateBalloonDimension(row);const fmt=v=>v===null?"—":String(v).replace(".",",");return <div style={{gridColumn:"1 / -1",fontSize:11,color:C.muted2,display:"flex",gap:12,flexWrap:"wrap"}}>
                         <span>Nominal: <b>{fmt(d.nominal)}</b></span><span>Üst sapma: <b>{d.upperDeviation>0?"+":""}{fmt(d.upperDeviation)}</b></span><span>Alt sapma: <b>{d.lowerDeviation>0?"+":""}{fmt(d.lowerDeviation)}</b></span>
                         <span>Alt sınır: <b>{fmt(d.lowerLimit)}</b></span><span>Üst sınır: <b>{fmt(d.upperLimit)}</b></span>
-                        <span>{d.unit==="drawing"?"Birim: çizimdeki birim":d.unit} · {d.toleranceStatus==="explicit"?"Yazılı toleranstan hesaplandı":d.toleranceStatus==="iso_fit_required"?"ISO geçme tablosu doğrulaması gerekiyor":d.toleranceStatus==="review"?"Bileşik ölçü / tolerans kontrolü gerekiyor":"Tolerans belirtilmemiş; genel tolerans notunu kontrol edin"}</span>
+                        <span>{d.unit==="drawing"?(toleranceSettings.unit||"Birim seçilmedi"):d.unit} · {d.toleranceBasis||({unit_required:"Tablo hesabı için mm birimini doğrulayın",iso_fit_unsupported:"Geçme sınıfı veya boyut tablo kapsamı dışında",iso_fit_required:"Geçme sınıfını kontrol edin",angle_length_required:"Açı için kısa kenar uzunluğunu girin",feature_kind_required:"Yarıçapın normal ölçü mü kırılmış kenar mı olduğunu seçin",outside_table:"Boyut veya sınıf tablonun kapsamı dışında",excluded:"Genel tolerans uygulanmaz",review:"Bileşik ölçüyü kontrol edin"}[d.toleranceStatus]||"Tolerans belirtilmemiş")}</span>
+                        <label>Ölçü türü <select value={row.toleranceContext?.kind||""} onChange={e=>updateEditableBalloon(idx,"kind",e.target.value)}><option value="">Otomatik</option><option value="linear">Doğrusal / normal yarıçap</option><option value="edge">Kırılmış kenar / pah yüksekliği</option></select></label>
+                        {d.unit==="°"&&<label>Kısa kenar (mm) <input aria-label={`Kısa kenar ${row.no}`} type="number" min="0" step="any" value={row.toleranceContext?.shortSideMm||""} onChange={e=>updateEditableBalloon(idx,"shortSideMm",e.target.value)} style={{width:70}}/></label>}
+                        <label><input type="checkbox" checked={Boolean(row.toleranceContext?.excluded)} onChange={e=>updateEditableBalloon(idx,"excluded",e.target.checked)}/> Referans / teorik kesin ölçü</label>
                       </div>;})()}
 
                     </div>

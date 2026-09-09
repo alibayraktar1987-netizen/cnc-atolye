@@ -27,7 +27,7 @@ jobs:
         run: node --test scripts/check-workshop.cjs
 
       - name: FAI dimension detection regressions
-        run: node --test scripts/check-fai.cjs
+        run: node --test scripts/check-fai.cjs scripts/check-fai-iso.cjs
 
       - name: Validate required files
         run: |
