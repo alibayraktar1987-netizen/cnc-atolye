@@ -5182,6 +5182,15 @@ function buildOperatorScreenUrl(baseUrl,machine,station){
   }
 }
 
+function buildMachineScreenHref(currentHref,machine,availableMachines){
+  const target=String(machine||"").trim();
+  if(!target||!(availableMachines||[]).includes(target))throw new Error("Geçerli bir tezgâh seçin.");
+  const url=new URL(currentHref);
+  url.searchParams.set("machine",target);
+  url.searchParams.set("station",target);
+  if(url.searchParams.has("screen"))url.searchParams.set("screen",target);
+  return url.toString();
+}
 function detectLockedMachineFromUrl(){
   if(typeof window==="undefined") return "";
   const params=new URLSearchParams(window.location.search||"");
@@ -15949,6 +15958,8 @@ function WorkOrders({currentUser,machines=DEFAULT_MACHINES,filtersVisible=true})
 //  DATA ENTRY
 // ============================================================
 function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
+  const [stationTarget,setStationTarget]=useState("");
+  const [stationSwitchBusy,setStationSwitchBusy]=useState(false);
   const [orders,setOrders]=useState([]);
   const [parts,setParts]=useState([]);
   const [tools,setTools]=useState([]);
@@ -16284,6 +16295,16 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
     setForm(p=>({...p,machine,selectedOrder:plannedOrder||null}));
     setShowPicker(false);
     setSearch("");
+  }
+  async function switchStationScreen(){
+    if(stationSwitchBusy||!stationTarget||stationTarget===form.machine)return;
+    setStationSwitchBusy(true);
+    try{
+      const href=buildMachineScreenHref(window.location.href,stationTarget,machines);
+      if((String(form.correct).trim()||String(form.wrong).trim()||form.machineToolId)&&!await askAppConfirm("Kaydedilmemiş üretim girişiniz var. Girişi bırakıp seçilen tezgâha geçilsin mi?"))return;
+      window.location.assign(href);
+    }catch(err){alert(String(err?.message||"Tezgâh ekranı açılamadı."));}
+    finally{setStationSwitchBusy(false);}
   }
   useEffect(()=>{
     if(editId) return;
@@ -17301,6 +17322,12 @@ function DataEntry({currentUser,machines=DEFAULT_MACHINES,kioskMode=false}) {
               <div>
                 <div style={{fontSize:40,fontWeight:800,lineHeight:1,letterSpacing:.4}}>{form.selectedOrder?.code||"PLAN YOK"}</div>
                 <div style={{fontSize:20,fontWeight:700,marginTop:6}}>Tezgah: {form.machine}</div>
+                <div style={{display:"flex",gap:8,alignItems:"center",marginTop:12}}>
+                  <select aria-label="Tezgâh değiştir" value={stationTarget} onChange={e=>setStationTarget(e.target.value)} disabled={stationSwitchBusy||showToolModal||showMaterialModal||showShiftModal||Boolean(editId)} style={{maxWidth:300,minWidth:180,padding:"9px 12px",fontSize:16,borderRadius:8,border:"1px solid #ccd5df",background:"#fff",color:"#152334"}}>
+                    <option value="">Tezgâh seçin</option>{machines.map(m=><option key={m} value={m}>{m}{m===form.machine?" (bu ekran)":""}</option>)}
+                  </select>
+                  <button onClick={switchStationScreen} disabled={!stationTarget||stationTarget===form.machine||stationSwitchBusy||showToolModal||showMaterialModal||showShiftModal||Boolean(editId)} style={{padding:"9px 14px",fontSize:16,fontWeight:700,borderRadius:8,border:"1px solid #ccd5df",background:"#fff",color:"#152334",cursor:"pointer"}}>{stationSwitchBusy?"Geçiliyor…":"Tezgâha geç"}</button>
+                </div>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:7,alignItems:"flex-start"}}>
                 <div style={{border:"1px solid rgba(255,255,255,.45)",background:topHeaderTheme.controlBg,color:topHeaderTheme.controlText,borderRadius:10,padding:"8px 12px",fontWeight:700,fontSize:14}}>

@@ -32,6 +32,9 @@ jobs:
       - name: Quality record deletion regressions
         run: node --test scripts/check-quality-records.cjs
 
+      - name: Machine screen navigation
+        run: node --test scripts/check-machine-navigation.cjs
+
       - name: Validate required files
         run: |
           test -f index.html
