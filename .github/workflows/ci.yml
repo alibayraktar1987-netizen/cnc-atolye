@@ -29,6 +29,9 @@ jobs:
       - name: FAI dimension detection regressions
         run: node --test scripts/check-fai.cjs scripts/check-fai-iso.cjs
 
+      - name: Quality record deletion regressions
+        run: node --test scripts/check-quality-records.cjs
+
       - name: Validate required files
         run: |
           test -f index.html

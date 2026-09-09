@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="css/workshop.css"/>
 <script src="js/reporting.js"></script>
 <script src="js/fai-tolerances.js"></script>
+<script src="js/quality-records.js"></script>
 <script src="js/fai-detection.js"></script>
 <script src="js/fai-reader.js"></script>
 <script src="js/workshop.js"></script>
@@ -25415,6 +25416,9 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
   const [view,setView]=useState("trace");
   const [qualityCreateOpen,setQualityCreateOpen]=useState(false);
   const [qualityEditId,setQualityEditId]=useState("");
+  const [qualityDeleteBusy,setQualityDeleteBusy]=useState("");
+  const [qualityDeleteError,setQualityDeleteError]=useState("");
+  const qualityDeleteLock=useRef(false);
   const [traceForm,setTraceForm]=useState({orderId:"",machine:machines[0]||"CNC-1",operatorId:currentUser.id||"",programVersion:"V1",serialNo:"",timestamp:todayStr()+"T08:00",complaintRef:""});
   const [inspForm,setInspForm]=useState({traceId:"",result:"pass",measurements:"",scrapQty:"0",scrapReason:"",scrapCost:"0"});
   const [faiForm,setFaiForm]=useState({orderId:"",partNo:"",status:"draft",note:"",balloonRunId:""});
@@ -25836,6 +25840,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
   }
 
   async function saveTrace(){
+    if(qualityDeleteLock.current)return;
     const wo=orderById[traceForm.orderId];
     if(!wo){alert("Is emri secin.");return;}
     if(!traceForm.serialNo.trim()){alert("Seri/lot no zorunlu.");return;}
@@ -25854,6 +25859,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
     setQualityCreateOpen(false);
   }
   async function saveInspection(){
+    if(qualityDeleteLock.current)return;
     const tr=traces.find(t=>t.id===inspForm.traceId);
     if(!tr){alert("Iz kaydi secin.");return;}
     const payload={traceId:tr.id,orderId:tr.orderId,orderCode:tr.orderCode,partNo:tr.partNo||"",result:inspForm.result,measurements:inspForm.measurements.trim(),scrapQty:Math.max(0,safeNum(inspForm.scrapQty)),scrapReason:inspForm.scrapReason.trim(),scrapCost:Math.max(0,safeNum(inspForm.scrapCost)),updatedBy:currentUser.id,updatedAt:new Date().toISOString()};
@@ -26018,6 +26024,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
     }));
   }
   async function saveFai(){
+    if(qualityDeleteLock.current)return;
     const wo=orderById[faiForm.orderId];
     if(!wo){alert("Is emri secin.");return;}
     const linkedRun=balloonRuns.find(r=>r.id===faiForm.balloonRunId)||null;
@@ -26056,7 +26063,23 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
     : view==="inspect"
       ? {title:"Muayene ve Hurda Listesi",button:"Yeni Muayene Kaydı",rows:inspections,render:row=>`${row.orderCode||"-"} · ${row.result==="pass"?"Geçti":"Kaldı"}`,detail:row=>`Hurda: ${safeNum(row.scrapQty)} · ${row.measurements||"Ölçüm girilmemiş"}`}
       : {title:"FAI Kayıt Listesi",button:"Yeni FAI Kaydı",rows:fai,render:row=>`${row.orderCode||"-"} · ${row.partNo||"Parça yok"}`,detail:row=>`${row.balloonCount||0} balon · ${row.status||"draft"}`};
+  async function removeQualityEntry(row){
+    if(qualityDeleteLock.current)return;
+    qualityDeleteLock.current=true;setQualityDeleteBusy(row.id);setQualityDeleteError("");
+    const deletingView=view;
+    try{
+      const result=await window.QualityRecords.remove(window.DB,deletingView,row,askAppConfirm);
+      if(!result.deleted)return;
+      const setter=deletingView==="trace"?setTraces:deletingView==="inspect"?setInspections:setFai;
+      setter(prev=>prev.filter(r=>r.id!==row.id));
+      if(qualityEditId===row.id){setQualityEditId("");setQualityCreateOpen(false);}
+      if(deletingView==="trace")setInspForm(f=>f.traceId===row.id?{...f,traceId:""}:f);
+      await addAuditLog(currentUser.id,result.collection,row.id,"delete",result.before,null,{module:"quality"});
+    }catch(err){setQualityDeleteError(String(err?.message||"Kayıt silinemedi."));}
+    finally{qualityDeleteLock.current=false;setQualityDeleteBusy("");}
+  }
   function openQualityEdit(row){
+    if(qualityDeleteLock.current)return;
     if(!row) return;
     setQualityEditId(row.id||"");
     if(view==="trace") setTraceForm({orderId:row.orderId||"",machine:row.machine||machines[0]||"CNC-1",operatorId:row.operatorId||currentUser.id||"",programVersion:row.programVersion||"V1",serialNo:row.serialNo||"",timestamp:String(row.timestamp||todayStr()+"T08:00").slice(0,16),complaintRef:row.complaintRef||""});
@@ -26084,7 +26107,8 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
           <div><div style={{fontWeight:800,color:C.text}}>{qualityListMeta.title}</div><div style={{fontSize:11,color:C.muted2,marginTop:3}}>Önce kayıt listesini inceleyin, yeni kayıt gerektiğinde ekleme alanını açın.</div></div>
           <button onClick={()=>{setQualityEditId("");setQualityCreateOpen(open=>!open);}} style={{...(qualityCreateOpen?btnSt("ghost"):btnSt("primary")),padding:"8px 11px",fontSize:12}}>{qualityCreateOpen?"Formu Kapat":`+ ${qualityListMeta.button}`}</button>
         </div>
-        {qualityListMeta.rows.length===0?<div style={{fontSize:12,color:C.muted2,padding:"12px 0"}}>Henüz kayıt yok.</div>:<div style={{display:"grid",gap:7}}>{qualityListMeta.rows.slice(0,80).map(row=><div key={row.id} style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"center",padding:"9px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,flexWrap:"wrap"}}><div><div style={{fontWeight:700,color:C.text}}>{qualityListMeta.render(row)}</div><div style={{fontSize:11,color:C.muted2,marginTop:3}}>{qualityListMeta.detail(row)}</div></div><div style={{display:"flex",alignItems:"center",gap:7}}><Badge label={view==="inspect"?(row.result==="pass"?"Geçti":"Kaldı"):(row.status||"Kayıt")} color={view==="inspect"?(row.result==="pass"?C.green:C.red):(row.status==="approved"?C.green:C.warn)}/><button onClick={()=>openQualityEdit(row)} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11}}>Düzenle</button></div></div>)}</div>}
+        {qualityDeleteError&&<div role="alert" style={{color:C.red,fontSize:12,marginBottom:8}}>{qualityDeleteError}</div>}
+        {qualityListMeta.rows.length===0?<div style={{fontSize:12,color:C.muted2,padding:"12px 0"}}>Henüz kayıt yok.</div>:<div style={{display:"grid",gap:7}}>{qualityListMeta.rows.slice(0,80).map(row=><div key={row.id} style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"center",padding:"9px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,flexWrap:"wrap"}}><div><div style={{fontWeight:700,color:C.text}}>{qualityListMeta.render(row)}</div><div style={{fontSize:11,color:C.muted2,marginTop:3}}>{qualityListMeta.detail(row)}</div></div><div style={{display:"flex",alignItems:"center",gap:7}}><Badge label={view==="inspect"?(row.result==="pass"?"Geçti":"Kaldı"):(row.status||"Kayıt")} color={view==="inspect"?(row.result==="pass"?C.green:C.red):(row.status==="approved"?C.green:C.warn)}/><button onClick={()=>openQualityEdit(row)} disabled={Boolean(qualityDeleteBusy)} style={{...btnSt("ghost"),padding:"6px 9px",fontSize:11}}>Düzenle</button><button onClick={()=>removeQualityEntry(row)} disabled={Boolean(qualityDeleteBusy)} aria-label={`${qualityListMeta.render(row)} kaydını sil`} style={{...btnSt("danger"),padding:"6px 9px",fontSize:11}}>{qualityDeleteBusy===row.id?"Siliniyor…":"Sil"}</button></div></div>)}</div>}
       </div>
 
       {view==="trace"&&qualityCreateOpen&&(
