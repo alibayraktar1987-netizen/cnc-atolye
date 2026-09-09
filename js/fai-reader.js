@@ -11,8 +11,8 @@
       const viewport=page.getViewport({scale:Math.min(3,4000/Math.max(base.width,base.height))});
       const canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
       await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
-      const content=await page.getTextContent();
-      return {canvas,page:pageNo,pageCount:pdf.numPages,pageWidth:viewport.width,pageHeight:viewport.height,previewDataUrl:canvas.toDataURL('image/png'),runs:root.FaiDetection.pdfRuns(content.items,viewport)};
+
+      return {canvas,page:pageNo,pageCount:pdf.numPages,pageWidth:viewport.width,pageHeight:viewport.height,previewDataUrl:canvas.toDataURL('image/png'),runs:[]};
     }finally{await task.destroy();}
   }
   async function recognize(canvas,loadScript,onProgress){
@@ -37,16 +37,12 @@
   async function detect(file,options){
     const onProgress=options.onProgress||(()=>{});onProgress('PDF okunuyor…');
     const page=await render(file,options),engine=root.FaiDetection;
-    let result=engine.detect(page.runs,page.pageWidth,page.pageHeight,page.page),usedOcr=false;
-    if(options.forceOcr||!result.rows.length){
-      onProgress('Görüntüdeki ölçüler OCR ile okunuyor…');
-      const ocr=await recognize(page.canvas,options.loadScript,onProgress);
-      const detected=engine.detect(ocr,page.canvas.width,page.canvas.height,page.page);
-      result={rows:engine.dedupe([...result.rows,...detected.rows]),lineCount:result.lineCount+detected.lineCount};usedOcr=true;
-    }
+    onProgress('Görüntüdeki ölçüler ve toleranslar OCR ile okunuyor…');
+    const ocr=await recognize(page.canvas,options.loadScript,onProgress);
+    const result=engine.detect(ocr,page.canvas.width,page.canvas.height,page.page);
     const tokens=result.rows,classified=engine.classify(tokens);
     const balloons=arrange(classified.accepted.slice(0,Math.max(1,Math.min(500,Number(options.maxItems)||260))).map((row,i)=>({...row,no:i+1})),page.canvas,tokens.map(r=>r.bounds).filter(Boolean));
-    return {...page,canvas:undefined,runs:undefined,tokens,reviewCandidates:classified.review,balloons,detection:{engine:usedOcr?'pdf_ocr_v4':'pdf_geometry_v4',textItemCount:page.runs.length,lineCount:result.lineCount,detectedCount:tokens.length,balloonCount:balloons.length,reviewCount:classified.review.length,limited:classified.accepted.length>balloons.length,note:`${balloons.length} ölçü balonlandı; ${classified.review.length} belirsiz aday incelemeye ayrıldı. Düz sayılar ve düşük güvenli okumalar otomatik balonlanmaz. Ölçü listesini teknik resimle karşılaştırın.`}};
+    return {...page,canvas:undefined,runs:undefined,tokens,reviewCandidates:classified.review,balloons,detection:{engine:'ocr_dimensions_v5',textItemCount:page.runs.length,lineCount:result.lineCount,detectedCount:tokens.length,balloonCount:balloons.length,reviewCount:classified.review.length,limited:classified.accepted.length>balloons.length,note:`${balloons.length} ölçü balonlandı; ${classified.review.length} belirsiz aday incelemeye ayrıldı. Düz sayısal ölçüler dahildir. Düşük güvenli okumaları ayrıca inceleyin. Ölçü listesini teknik resimle karşılaştırın.`}};
   }
   function arrange(rows,image,obstacles=[]){
     const canvas=document.createElement('canvas');canvas.width=800;canvas.height=Math.round(800*(image.height||image.naturalHeight)/(image.width||image.naturalWidth));

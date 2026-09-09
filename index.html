@@ -3575,32 +3575,8 @@ function guessPartFieldsFromPdf({text="",lines=[],fileName=""}={}){
 async function renderFaiDrawingPage(file,options={}){
   return window.FaiReader.render(file,{...options,loadBytes:loadFileBytes,loadScript:ensureExternalScript});
 }
-async function autoBalloonPdfDrawing(file,options={}){
+async function autoBalloonOcrDrawing(file,options={}){
   return window.FaiReader.detect(file,{...options,loadBytes:loadFileBytes,loadScript:ensureExternalScript});
-}
-async function autoBalloonAiDrawing(file,{pageNumber=1,maxItems=260}={}){
-  const rendered=await renderFaiDrawingPage(file,{pageNumber});
-  const {page:safePage,pageCount:totalPages,previewDataUrl}=rendered;
-  const viewport={width:rendered.pageWidth,height:rendered.pageHeight};
-  const response=await fetch("/api/v1/fai/auto-balloon-ai",{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({image_data_url:previewDataUrl,page_number:safePage,page_width:viewport.width,page_height:viewport.height}),
-  });
-  const body=await response.json().catch(()=>({}));
-  if(!response.ok) throw new Error(String(body?.detail||"AI olcu tespiti basarisiz."));
-  const allRows=window.FaiDetection.dedupe((Array.isArray(body?.dimensions)?body.dimensions:[])
-    .filter(row=>typeof row?.xPct==="number"&&typeof row?.yPct==="number")
-    .map(row=>({text:window.FaiDetection.normalize(row.text),page:safePage,xPct:row.xPct,yPct:row.yPct,
-      confidence:Number.isFinite(row.confidence)?Math.max(0,Math.min(1,row.confidence)):0,
-      source:"openai_vision",reviewRequired:true})).filter(row=>window.FaiDetection.matches(row.text).length));
-  const rows=allRows.slice(0,Math.max(1,Math.min(500,Number(maxItems)||260)));
-  return {
-    page:safePage,pageCount:totalPages,pageWidth:viewport.width,pageHeight:viewport.height,previewDataUrl,
-    tokens:allRows,
-    balloons:rows.map((row,idx)=>({...row,no:idx+1})),
-    detection:{engine:"openai_vision",detectedCount:allRows.length,balloonCount:rows.length,lineCount:0,limited:allRows.length>rows.length,note:(Array.isArray(body?.notes)?body.notes:[]).join(" ")||"AI goruntu analiziyle tespit edildi. Kritik olculeri onaylayin."},
-  };
 }
 function disposeThreeObject(root) {
   if(!(root&&root.traverse)) return;
@@ -25534,6 +25510,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
   function normalizeBalloonRows(rows){
     const normalized=(rows||[]).map((row,idx)=>({
       ...row,
+      ...window.FaiDetection.dimension(row.text),
       no:idx+1,
       text:String(row?.text||"").trim(),
       page:Math.max(1,safeNum(row?.page)||Math.max(1,safeNum(balloonForm.page)||1)),
@@ -25561,7 +25538,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
   function updateEditableBalloon(idx,key,value){
     setEditableBalloons(prev=>prev.map((row,i)=>{
       if(i!==idx) return row;
-      if(key==="text") return {...row,text:String(value||"")};
+      if(key==="text") return {...row,text:String(value||""),...window.FaiDetection.dimension(value)};
       if(key==="page") return {...row,page:Math.max(1,safeNum(value)||1)};
       if(key==="xPct"||key==="yPct") return {...row,[key]:Math.max(0,Math.min(100,safeNum(value)))};
       return row;
@@ -25887,7 +25864,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
     setInspForm({traceId:"",result:"pass",measurements:"",scrapQty:"0",scrapReason:"",scrapCost:"0"});
     setQualityCreateOpen(false);
   }
-  async function runAutoBalloon({replaceRunId="",engine="pdf"}={}){
+  async function runAutoBalloon({replaceRunId=""}={}){
     if(balloonBusy||balloonSaveBusy)return;
     const wo=pdfOrderById[balloonForm.orderId];
     if(!wo){alert("PDF icin is emri secin.");return;}
@@ -25897,13 +25874,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
     setBalloonProgress("");
     setBalloonError("");
     try{
-      let result=engine==="ai"
-        ? await autoBalloonAiDrawing(selectedPdfFile,{pageNumber:Math.max(1,safeNum(balloonForm.page)||1)})
-        : await autoBalloonPdfDrawing(selectedPdfFile,{pageNumber:Math.max(1,safeNum(balloonForm.page)||1),forceOcr:engine==="ocr",onProgress:setBalloonProgress});
-      if(engine==="ai"){
-        const classified=window.FaiDetection.classify(result.tokens||[]);
-        result={...result,reviewCandidates:classified.review,balloons:await window.FaiReader.arrangePreview(classified.accepted.map((r,i)=>({...r,no:i+1})),result.previewDataUrl)};
-      }
+      const result=await autoBalloonOcrDrawing(selectedPdfFile,{pageNumber:Math.max(1,safeNum(balloonForm.page)||1),onProgress:setBalloonProgress});
       if(!result.balloons?.length&&result.reviewCandidates?.length){
         setBalloonPreview({runId:replaceRunId,previewDataUrl:result.previewDataUrl,tokens:result.tokens,detection:result.detection,fileName:selectedPdfFile.name,page:result.page});
         if(!replaceRunId){setEditableBalloons([]);setFaiForm(f=>({...f,balloonRunId:""}));}
@@ -25931,7 +25902,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
         })),
         detectedTokens:result.tokens||[],
         detection:result.detection||null,
-        source:result.detection?.engine||engine,
+        source:result.detection?.engine||"ocr",
         status:"draft",
         createdBy:currentUser.id,
         createdAt:now,
@@ -26002,7 +25973,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
     }
     await runAutoBalloon();
   }
-  async function rerunAutoBalloon(engine="pdf"){
+  async function rerunAutoBalloon(){
     const wo=pdfOrderById[balloonForm.orderId];
     if(!wo||!selectedPdfFile){alert("Is emri ve teknik resim PDF secin.");return;}
     const requestedPage=Math.max(1,safeNum(balloonForm.page)||1);
@@ -26012,19 +25983,11 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
       Math.max(1,safeNum(run.page)||1)===requestedPage
     );
     if(!matchingRun){
-      await runAutoBalloon({engine});
+      await runAutoBalloon();
       return;
     }
     if(!await askAppConfirm("Mevcut balon numaralari ve manuel duzeltmeler, yeni otomatik tespitle guncellenecek. Devam edilsin mi?")) return;
-    await runAutoBalloon({replaceRunId:matchingRun.id,engine});
-  }
-  async function runAiAutoBalloon(){
-    const wo=pdfOrderById[balloonForm.orderId];
-    if(!wo||!selectedPdfFile){alert("Is emri ve teknik resim PDF secin.");return;}
-    const requestedPage=Math.max(1,safeNum(balloonForm.page)||1);
-    const matchingRun=balloonRuns.find(run=>run.orderId===wo.id&&String(run.filePickId||"")===String(selectedPdfFile._pickId||"")&&Math.max(1,safeNum(run.page)||1)===requestedPage);
-    if(matchingRun&&!await askAppConfirm("AI tespiti mevcut balon listesini guncelleyecek. Devam edilsin mi?")) return;
-    await runAutoBalloon({replaceRunId:matchingRun?.id||"",engine:"ai"});
+    await runAutoBalloon({replaceRunId:matchingRun.id});
   }
   function bindSelectedBalloonRunToFai(runId){
     const run=balloonRuns.find(r=>r.id===runId)||null;
@@ -26178,7 +26141,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}><div style={{fontWeight:700,color:C.text,marginBottom:8}}>{qualityEditId?"FAI Kaydini Duzenle":"FAI Akisi"}</div><button onClick={()=>{setQualityEditId("");setQualityCreateOpen(false);}} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Kapat</button></div>
           <fieldset disabled={balloonBusy||balloonSaveBusy} style={{...balloonWorkspaceStyle,minWidth:0,margin:0,pointerEvents:balloonBusy||balloonSaveBusy?"none":"auto"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:7}}>
-              <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Teknik Resim · Otomatik Ölçü Tespiti ve OCR</div>
+              <div style={{fontSize:11,color:C.muted2,letterSpacing:1,textTransform:"uppercase"}}>Teknik Resim · OCR Ölçü ve Tolerans Analizi</div>
               {balloonWorkspaceOpen&&<button onClick={()=>setBalloonWorkspaceOpen(false)} style={{...btnSt("ghost"),padding:"7px 10px",fontSize:12}}>Çalışma Alanını Kapat</button>}
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr .4fr 1fr",gap:8}}>
@@ -26217,14 +26180,10 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
             <div style={{display:"flex",gap:8,justifyContent:"space-between",marginTop:8,flexWrap:"wrap"}}>
               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                 <button onClick={openOrCreateAutoBalloon} disabled={balloonBusy||!balloonForm.orderId||!balloonForm.fileId} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,opacity:(balloonBusy||!balloonForm.orderId||!balloonForm.fileId)?0.65:1}}>
-                  {balloonBusy?"Oto Balonlanıyor...":"Oto Balon Çalışmasını Aç"}
+                  {balloonBusy?"Oto Balonlanıyor...":"OCR Çalışmasını Aç"}
                 </button>
                 {balloonWorkspaceOpen&&<button onClick={()=>rerunAutoBalloon()} disabled={balloonBusy||!balloonForm.orderId||!balloonForm.fileId} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12,opacity:(balloonBusy||!balloonForm.orderId||!balloonForm.fileId)?0.65:1}}>
-                  {balloonBusy?"Yeniden Taranıyor...":"Yeniden Oto Balonla"}
-                </button>}
-                {balloonWorkspaceOpen&&<button onClick={()=>rerunAutoBalloon("ocr")} disabled={balloonBusy||balloonSaveBusy||!selectedPdfFile} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>OCR ile yeniden tara</button>}
-                {balloonWorkspaceOpen&&<button onClick={runAiAutoBalloon} disabled={balloonBusy||!balloonForm.orderId||!balloonForm.fileId} style={{...btnSt("primary"),padding:"8px 12px",fontSize:12,opacity:(balloonBusy||!balloonForm.orderId||!balloonForm.fileId)?0.65:1}}>
-                  {balloonBusy?"AI Teknik Resmi Okuyor...":"AI ile Ölçü Tespit Et"}
+                  {balloonBusy?"Yeniden Taranıyor...":"OCR ile yeniden tara"}
                 </button>}
                 <button onClick={()=>rearrangeBalloons()} disabled={!balloonPreview||!editableBalloons.length} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>Balonları boş alanlara yerleştir</button>
                 <button onClick={addEditableBalloonRow} style={{...btnSt("ghost"),padding:"8px 12px",fontSize:12}}>
@@ -26312,7 +26271,7 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
                 <div style={{border:`1px solid ${C.border}`,borderRadius:8,padding:8,maxHeight:520,overflowY:"auto",background:C.card}}>
                   <div style={{fontSize:11,color:C.muted2,letterSpacing:.7,textTransform:"uppercase",marginBottom:6}}>Olcu Listesi ({editableBalloons.length})</div>
                   {balloonPreview&&<div style={{fontSize:11,color:C.muted2,marginBottom:6}}>PDF ustunde kutu cizerek olcu otomatik ekleyebilirsiniz. Balon numaralarini surukleyip konumunu duzeltebilirsiniz.</div>}
-                  {balloonPreview&&<details style={{marginBottom:10}}><summary>İncelenecek sayısal adaylar (otomatik balonlanmaz)</summary>
+                  {balloonPreview&&<details style={{marginBottom:10}}><summary>Düşük güvenli OCR okumaları</summary>
                     <div style={{fontSize:12,margin:"6px 0"}}>Yalnızca teknik resimde ölçü olduğundan emin olduğunuz değerleri ekleyin.</div>
                     {window.FaiDetection.classify(balloonPreview.tokens||[]).review.filter(r=>!editableBalloons.some(b=>b.page===r.page&&b.text===r.text&&Math.abs((b.anchorXPct??b.xPct)-r.xPct)<.35&&Math.abs((b.anchorYPct??b.yPct)-r.yPct)<.35)).map((r,i)=><div key={`review_${i}`} style={{display:"flex",justifyContent:"space-between",gap:6,marginBottom:5}}><span>{r.text} · X {r.xPct.toFixed(1)}% / Y {r.yPct.toFixed(1)}%</span><button onClick={()=>rearrangeBalloons(r)} style={btnSt("ghost")}>Ölçü olarak ekle</button></div>)}
                   </details>}
@@ -26322,6 +26281,12 @@ function QualityTraceabilityModule({currentUser,machines=DEFAULT_MACHINES,initia
                       <div style={{fontWeight:700,color:C.accent}}>#{row.no}</div>
                       <input style={{...inputSt,padding:"5px 7px",fontSize:12}} value={row.text} onChange={e=>updateEditableBalloon(idx,"text",e.target.value)} placeholder="Olcu metni"/>
                       <button onClick={()=>removeEditableBalloonRow(idx)} style={{...btnSt("danger"),padding:"5px 8px",fontSize:11}}>Sil</button>
+                      {(()=>{const d=window.FaiDetection.dimension(row.text);const fmt=v=>v===null?"—":String(v).replace(".",",");return <div style={{gridColumn:"1 / -1",fontSize:11,color:C.muted2,display:"flex",gap:12,flexWrap:"wrap"}}>
+                        <span>Nominal: <b>{fmt(d.nominal)}</b></span><span>Üst sapma: <b>{d.upperDeviation>0?"+":""}{fmt(d.upperDeviation)}</b></span><span>Alt sapma: <b>{d.lowerDeviation>0?"+":""}{fmt(d.lowerDeviation)}</b></span>
+                        <span>Alt sınır: <b>{fmt(d.lowerLimit)}</b></span><span>Üst sınır: <b>{fmt(d.upperLimit)}</b></span>
+                        <span>{d.unit==="drawing"?"Birim: çizimdeki birim":d.unit} · {d.toleranceStatus==="explicit"?"Yazılı toleranstan hesaplandı":d.toleranceStatus==="iso_fit_required"?"ISO geçme tablosu doğrulaması gerekiyor":d.toleranceStatus==="review"?"Bileşik ölçü / tolerans kontrolü gerekiyor":"Tolerans belirtilmemiş; genel tolerans notunu kontrol edin"}</span>
+                      </div>;})()}
+
                     </div>
                   ))}
                 </div>
@@ -28119,7 +28084,7 @@ function getModuleHelp(tab,label){
     orders:{purpose:"Üretim iş emirlerini açın, ilerlemesini kaydedin ve kapatın.",steps:["Yeni iş emrinde müşteri, parça, miktar ve termin bilgilerini girin.","Operasyon ve malzeme ihtiyaçlarını doğrulayın.","Üretim kaydı tamamlanınca iş emrini izlenebilir şekilde kapatın."]},
     quality_trace:{purpose:"Lot, işlem ve muayene kayıtlarıyla uçtan uca izlenebilirlik sağlayın.",steps:["İş emri veya lotu seçin.","Operasyon, ölçüm ve kabul/red sonucunu kaydedin.","Belge veya kanıtları ilgili kayda ekleyin."]},
     quality_inspect:{purpose:"Muayene sonuçlarını, uygunsuzlukları ve hurdayı yönetin.",steps:["Muayene planı ve iş emrini doğrulayın.","Ölçüm sonuçlarını nominal/tolerans ile girin.","Red veya hurda varsa nedenini ve aksiyonu kaydedin."]},
-    quality_fai:{purpose:"FAI ilk numune kontrolü ve teknik resim balonlama çalışmalarını yönetin.",steps:["İş emrini ve teknik resim PDF dosyasını seçin.","Oto Balon Çalışmasını Aç ile mevcut çalışmayı inceleyin.","Yeniden Oto Balonla ile taramayı güncelleyin; kritik ölçüleri manuel onaylayın."]},
+    quality_fai:{purpose:"FAI ilk numune kontrolü ve teknik resim balonlama çalışmalarını yönetin.",steps:["İş emrini ve teknik resim PDF dosyasını seçin.","OCR Çalışmasını Aç ile mevcut çalışmayı inceleyin.","OCR ile yeniden tara ile taramayı güncelleyin; kritik ölçüleri manuel onaylayın."]},
     compliance_qms:{purpose:"QMS dokümanlarının sürüm, onay ve dağıtım kayıtlarını yönetin.",steps:["Doküman türü ve sorumlusunu seçin.","Revizyon, yürürlük tarihi ve onay akışını kaydedin.","Dağıtım ve gözden geçirme tarihlerini takip edin."]},
     compliance_as9100:{purpose:"AS9100 kapsamındaki NCR, MRB ve CAPA süreçlerini kayıt altına alın.",steps:["Uygunsuzluğu kanıt ve etki bilgisiyle açın.","Kök neden ve düzeltici faaliyeti atayın.","Etkinlik doğrulaması sonrasında kaydı kapatın."]},
     compliance_eydep:{purpose:"EYDEP yetkinlik, olgunluk, denetim ve aksiyon çalışmalarını yönetin.",steps:["Değerlendirme alanını ve mevcut durumu kaydedin.","Kanıtları ve geliştirme aksiyonlarını ekleyin.","Sorumlu ve hedef tarihleri periyodik olarak gözden geçirin."]},

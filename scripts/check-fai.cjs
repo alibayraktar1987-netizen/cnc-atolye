@@ -2,10 +2,19 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const f=require('../js/fai-detection.js');
 const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+test('explicit tolerances produce separate deviations and exact limits',()=>{
+  for(const text of ['8 +- 0.1','8 ±0,1','8 +/-0.1']){
+    const d=f.dimension(text);assert.equal(d.nominal,8);assert.equal(d.upperDeviation,.1);assert.equal(d.lowerDeviation,-.1);assert.equal(d.upperLimit,8.1);assert.equal(d.lowerLimit,7.9);
+  }
+  const d=f.dimension('8 +0.2/-0.1');assert.equal(d.upperLimit,8.2);assert.equal(d.lowerLimit,7.9);
+  assert.equal(f.dimension('8').upperLimit,null);
+  assert.equal(f.dimension('Ø8 H7').toleranceStatus,'iso_fit_required');
+  assert.equal(f.dimension('8 +0.2/+0.1').lowerLimit,8.1);
+});
 test('technical callouts combine quantity, diameter and tolerance; ambiguous numbers need review',()=>{
   assert.deepEqual(f.matches('4 x Ø10 ±0.1').map(r=>r.text),['4 x Ø10 ±0.1']);
   const result=f.classify([{text:'20',confidence:.95},{text:'Ø10 ±0.1',confidence:.9},{text:'R5',confidence:.2}]);
-  assert.equal(result.accepted.length,1);assert.equal(result.review.length,2);
+  assert.equal(result.accepted.length,2);assert.equal(result.review.length,1);
   for(const text of ['QTY 4','WEIGHT 20','ADET 6','ÖLÇEK 1:2'])assert.equal(f.matches(text).length,0);
 });
 test('stacked signed tolerances belong to a nearby nominal value',()=>{
@@ -25,7 +34,7 @@ test('empty rerun cannot overwrite a saved balloon list',async()=>{
   let error='',writes=0;
   const context=vm.createContext({balloonBusy:false,balloonSaveBusy:false,pdfOrderById:{order:{id:'order'}},balloonForm:{orderId:'order',page:'1'},selectedPdfFile:{id:'pdf'},safeNum:Number,
     setDragBalloon(){},setBalloonBusy(){},setBalloonProgress(){},setBalloonError(value){error=value;},
-    autoBalloonPdfDrawing:async()=>({balloons:[]}),window:{DB:{updateDoc:async()=>{writes++;}}}});
+    autoBalloonOcrDrawing:async()=>({balloons:[]}),window:{DB:{updateDoc:async()=>{writes++;}}}});
   vm.runInContext(html.slice(start,end),context);
   await vm.runInContext('runAutoBalloon({replaceRunId:"saved"})',context);
   assert.equal(writes,0);assert.match(error,/mevcut çalışma korunuyor/);

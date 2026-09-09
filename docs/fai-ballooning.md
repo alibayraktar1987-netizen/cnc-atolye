@@ -2,9 +2,11 @@
 
 Balonlar ölçü merkezinden ayrı saklanır; ölçüye bağlantı çizgisiyle bağlanır. Yerleştirme yazı kutularını, görüntüdeki koyu alanları ve diğer balonları dikkate alır. Eski çalışmalarda **Balonları boş alanlara yerleştir** düğmesini kullanıp sonucu **Ölçüleri Kaydet** ile saklayın. Çok yoğun çizimlerde elle konum düzeltmesi gerekebilir.
 
-Belirsiz düz sayılar artık otomatik balonlanmaz; **İncelenecek sayısal adaylar** listesinden doğrulanarak eklenir. `4 x Ø10 ±0.1` tek çağrıdır. Yakın ve hizalı nominal ölçünün yanındaki bir üst ve bir alt işaretli tolerans birleştirilir. Bu kurallar tam bir geometrik tolerans veya ölçü çizgisi çözümleyicisi değildir.
+Düz sayısal ölçüler yeniden otomatik aday listesine alınır; düşük güvenli okumalar ayrıca incelenir. `4 x Ø10 ±0.1` tek çağrıdır. Yakın ve hizalı nominal ölçünün yanındaki bir üst ve bir alt işaretli tolerans birleştirilir. Bu kurallar tam bir geometrik tolerans veya ölçü çizgisi çözümleyicisi değildir.
 
-Oto Balon önce PDF metnini konumlarıyla okur. Ölçü adayı bulunamazsa tarayıcıda OCR çalıştırır. Metin ve görüntü karışımı PDF'lerde eksik ölçüler için **OCR ile yeniden tara** kullanılabilir. İlk OCR kullanımında motor ve dil dosyaları internetten indirilir; bu seçenek çizimi AI servisine göndermez. **AI ile Ölçü Tespit Et** ayrı bir sunucu hizmetidir.
+Ölçü tespiti yalnızca tarayıcıda OCR ile yapılır. **OCR Çalışmasını Aç** ve **OCR ile yeniden tara** aynı motoru kullanır. AI düğmesi, AI sunucu uç noktası ve PDF metin katmanından tespit akışı kaldırılmıştır. İlk OCR kullanımında motor ve dil dosyaları internetten indirilir. Kayıtlı çalışmalar korunur.
+
+`8 ±0,1` için nominal 8, üst sapma +0,1, alt sapma −0,1, alt sınır 7,9 ve üst sınır 8,1 ayrı alanlarda gösterilir ve kaydedilir. Asimetrik yazılı toleranslar da hesaplanır. Tolerans yazılmamışsa sınır üretilmez. H7 gibi geçme sınıfları için ISO tablosu doğrulaması gerektiği gösterilir; otomatik geçme tablosu ve genel tolerans uygulaması henüz yoktur. Terimler için [ISO 286-1](https://www.iso.org/standard/45975.html), doğrusal boyutlandırma kapsamı için [ISO 14405-1](https://www.iso.org/standard/14405-1) esas alınmıştır; bu özellik tam ISO uygunluğu belgesi değildir.
 
 Algoritma düz sayıları, çapları, yarıçapları, vida ölçülerini, açıları ve aynı satırdaki toleransları aday olarak çıkarır. Farklı konumlardaki aynı değerleri korur. PDF dönüş ve kırpma bilgileri konum hesabına katılır. OCR yatay ve iki dikey yönde çalışır. Boş sonuç önceki çalışmayı değiştirmez; kayıtlı çalışmanın önizlemesi yeniden OCR gerektirmez.
 

@@ -1,9 +1,9 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.FaiDetection=api;})(typeof window!=='undefined'?window:globalThis,function(){
   'use strict';
-  const normalize=value=>String(value??'').replace(/[⌀∅]/g,'Ø').replace(/\b(?:DIA(?:METER)?|DIAM)\s*/gi,'Ø').replace(/×/g,'x').replace(/[−‐‑–—]/g,'-').replace(/\s+/g,' ').trim();
+  const normalize=value=>String(value??'').replace(/[⌀∅]/g,'Ø').replace(/\b(?:DIA(?:METER)?|DIAM)\s*/gi,'Ø').replace(/×/g,'x').replace(/[−‐‑–—]/g,'-').replace(/\+\s*\/?\s*-/g,'±').replace(/\s+/g,' ').trim();
   const canonical=value=>normalize(value).replace(/,/g,'.').replace(/\s/g,'').toUpperCase();
   const num='(?:\\d{1,5}(?:[.,]\\d{1,6})?|[.,]\\d{1,6})';
-  const tolerance=`(?:\\s*±\\s*${num}|\\s*[+]\\s*${num}\\s*(?:/\\s*)?-\\s*${num}|\\s*-\\s*${num}\\s*(?:/\\s*)?[+]\\s*${num})?`;
+  const tolerance=`(?:\\s*±\\s*${num}|\\s*[+-]\\s*${num}\\s*(?:/\\s*)?[+-]\\s*${num})?`;
   const pattern=`(?:[ØR]\\s*)?${num}(?:\\s*[xX]\\s*${num}){0,2}(?:\\s*(?:mm|[°]|(?:[HhGgFfKk]|[Jj][Ss])\\d{1,2}))?${tolerance}`;
   function matches(text){
     const input=normalize(text),out=[];
@@ -90,9 +90,25 @@
     const accepted=[],review=[];
     for(const row of rows){
       const explicit=/[ØR±°]|(?:^|\s|x)M\s*\d|\d\s*(?:H|h|g|G|Js)\d|\d\s*[+]\s*\d|\d\s*[xX]\s*\d|\d\s*mm/i.test(row.text);
-      (explicit&&row.confidence>=.65?accepted:review).push({...row,reason:explicit?'Ölçü gösterimi':'Bağlamı doğrulanacak sayısal değer'});
+      (row.confidence>=(explicit?.55:.5)?accepted:review).push({...row,...dimension(row.text),reason:explicit?'Ölçü gösterimi':'Sayısal ölçü adayı; çizimle karşılaştırın'});
     }
     return {accepted,review};
+  }
+  function dimension(value){
+    const text=normalize(value).replace(/,/g,'.'),number='(?:\\d+(?:\\.\\d+)?|\\.\\d+)';
+    const result={nominal:null,upperDeviation:null,lowerDeviation:null,upperLimit:null,lowerLimit:null,toleranceStatus:'not_specified',unit:text.includes('°')?'°':/\bmm\b/i.test(text)?'mm':'drawing',quantity:1};
+    const qty=text.match(/^(\d+)\s*x\s*(?=[ØRM])/i);if(qty)result.quantity=Number(qty[1]);
+    const body=qty?text.slice(qty[0].length):text;
+    const match=body.match(new RegExp(`^(?:[ØRM]\\s*)?(${number})(.*)$`));if(!match)return {...result,toleranceStatus:'review'};
+    result.nominal=Number(match[1]);const rest=match[2].trim();
+    const symmetric=rest.match(new RegExp(`^(?:mm|°)?\\s*±\\s*(${number})\\s*(?:mm|°)?$`));
+    const bilateral=rest.match(new RegExp(`^([+-])\\s*(${number})\\s*/?\\s*([+-])\\s*(${number})\\s*(?:mm|°)?$`));
+    if(symmetric){result.upperDeviation=Number(symmetric[1]);result.lowerDeviation=-Number(symmetric[1]);}
+    else if(bilateral){const a=Number(bilateral[1]+bilateral[2]),b=Number(bilateral[3]+bilateral[4]);result.upperDeviation=Math.max(a,b);result.lowerDeviation=Math.min(a,b);}
+    else if(/[HhGgFfKk]\d|[Jj][Ss]\d/.test(rest))result.toleranceStatus='iso_fit_required';
+    else if(rest&&!/^(?:mm|°)$/.test(rest))result.toleranceStatus='review';
+    if(result.upperDeviation!==null){const round=n=>Number(n.toFixed(9));result.upperLimit=round(result.nominal+result.upperDeviation);result.lowerLimit=round(result.nominal+result.lowerDeviation);result.toleranceStatus='explicit';}
+    return result;
   }
   function place(rows,{width=800,height=600,ink=()=>0,obstacles=[]}={}){
     const radius=12,placed=[],boxes=[...obstacles,...rows.map(r=>r.bounds).filter(Boolean)];
@@ -111,5 +127,5 @@
       return {...row,anchorXPct:ax/width*100,anchorYPct:ay/height*100,xPct:best.x/width*100,yPct:best.y/height*100,placementReview:best.collisions>0};
     });
   }
-  return {normalize,canonical,matches,pdfRuns,groupRuns,detect,dedupe,ocrRuns,classify,place};
+  return {normalize,canonical,matches,pdfRuns,groupRuns,detect,dedupe,ocrRuns,classify,place,dimension};
 });
