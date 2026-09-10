@@ -4,7 +4,7 @@
 
 ## Kullanım
 
-İlgili modüldeki **Kalite Evrakları → Yeni Evrak** bölümünde evrak türünü ve bağlanacak mevcut kaydı seçin. **Kaydı Bağla ve Formu Doldur** ile bilinen bilgiler aktarılır. Eksik alanlar ve tablo satırları tamamlandıktan sonra evrak kaydedilir. **Formu Yazdır** veya **Baskı Önizleme** ile A4 çıktı/PDF alınır.
+İlgili modüldeki **Kalite Evrakları → Yeni Evrak** bölümünde evrak türünü ve bağlanacak mevcut kaydı seçin. **Kaydı Bağla ve Formu Doldur** ile bilinen bilgiler aktarılır. Eksik alanlar ve tablo satırları tamamlandıktan sonra evrak kaydedilir. **Yazdır** veya **Baskı Önizleme** ile A4 çıktı/PDF alınır.
 
 Kayıtlar, formların kullanıldığı diğer modüllerde de görünür. Aynı iş emri veya ortak kaynak kayıt üzerinden ilişkili evraklar **Bağlı evraklar / sertifika kayıtları** alanından seçilebilir. Bağlı evrakın kimliği ve revizyonu çıktı üzerinde yer alır. Örneğin CoC hazırlanırken aynı iş emrine bağlı ölçüm raporu seçilebilir.
 
@@ -29,7 +29,15 @@ Kayıtlar, formların kullanıldığı diğer modüllerde de görünür. Aynı i
 
 63 şablonun dağılımı: Form Şablonları Kitabı'ndan 36 form; 07–09'dan 3 sözleşme/taahhütname; 10/12/13'ten 3 sertifika/kontrol şablonu; 06'dan 15 kayıt matrisi; 11'den ölçüm raporu; 14/15'ten 5 ortak saha formu.
 
-**Kaynak Dokümanlar** bölümünde ilk beş kitabın metin ve tabloları okunabilir. Diğer kaynakların kullanılabilir şablonları ve bağlı ekranları listelenir. Doldurulmuş örnekler canlı kayda aktarılmaz. Word/Excel/PDF orijinalleri değiştirilmedi; ham klasörün tamamı herkese açık dosya yolu olarak yayınlanmadı.
+**Doküman Rehberi** bölümünde ilk beş kitabın metin ve tabloları arama ve açılır bölümlerle okunabilir. Diğer kaynakların kullanılabilir şablonları ve bağlı ekranları listelenir. Doldurulmuş örnekler canlı kayda aktarılmaz. Word/Excel/PDF orijinalleri değiştirilmedi; ham klasörün tamamı herkese açık dosya yolu olarak yayınlanmadı.
+
+## Ortak ekran ve antet düzeni
+
+Evraklara ana ekrandaki tek düğmeyle erişilir. Pencerenin başlığı ve işlem sekmeleri sabit kalır; içerik kendi alanında kayar. Kaynak kitaplar Doküman Rehberi içinde açılır bölümlere ayrılmıştır. Bağlı evrak seçimi isteğe bağlı açılan bir bölümdedir. Ekran renkleri mevcut proje temasından alınır.
+
+Evrak Listesi masaüstünde başlık, ilişkili kayıt, hazırlayan/tarih ve işlem sütunlarıyla gösterilir; tablet ve telefonda kart düzenine geçer. İlk açılışta son sürümler listelenir. Önceki kayıtlar **Sürüm → Tüm sürümler** ile görülebilir. Arama ve evrak türü filtresi birlikte çalışır; kayıtlar onar satır halinde sayfalanır. “Son sürüm” elektronik onay veya geçerlilik kararı değildir.
+
+Kalite ve personel çıktıları artık sipariş belgelerinin kullandığı `buildDocumentTemplatePrintHtml` antetini kullanır. Ayarlar içindeki şirket profili, logo ve sipariş şablonunun marka başlığı esas alınır; sağ kutuya kalite evrakının kodu, kayıt numarası, revizyonu ve tarihi yazılır. Adres, telefon ve e-posta aynı şirket ayarlarından gelir. Ölçüm raporunun yatay A4 düzeni korunur. Bu tasarım değişikliği kayıt içeriğini veya revizyon zincirini değiştirmez.
 
 ## Ölçüm ve veri eşleştirme
 
@@ -48,7 +56,7 @@ Kayıtlar, formların kullanıldığı diğer modüllerde de görünür. Aynı i
 
 `qualityFormRecords` koleksiyonu şablon ve alanların anlık kopyasını, kaynak kimliklerini, bağlantıları, oluşturucuyu ve revizyon zincirini tutar. Kayıt sonrasında şablon değişmesi eski çıktıyı değiştirmez. Bu entegrasyon mevcut üretim/depo kayıtlarını veya kullanıcı erişim rollerini dönüştürmez; yeni evraklar onlarla ilişkilidir.
 
-Bu çalışma belge üretme/kaydetme/basım akışını kapsar. Elektronik imza, imzalı dosya yükleme, sunucuda yeni yetkilendirme politikaları, otomatik saklama/imha süreleri veya tam AS9102 onay süreci eklenmedi. Canlı Firestore'da işlem ve GitHub/Render yayını yapılmadı. Sunucu kuralları bu incelemede doğrulanmadı; testler sahte veritabanıyla yapıldı.
+Bu çalışma belge üretme/kaydetme/basım akışını kapsar. Elektronik imza, imzalı dosya yükleme, sunucuda yeni yetkilendirme politikaları, otomatik saklama/imha süreleri veya tam AS9102 onay süreci eklenmedi. Canlı Firestore kayıtları değiştirilmedi. Sunucu kuralları bu incelemede doğrulanmadı; testler sahte veritabanıyla yapıldı.
 
 ## Doğrulama ve örnekler
 

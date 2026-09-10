@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="css/reports.css"/>
 <link rel="stylesheet" href="css/workshop.css"/>
 <link rel="stylesheet" href="css/station.css"/>
+<link rel="stylesheet" href="css/quality-documents.css"/>
 <script src="js/reporting.js"></script>
 <script src="js/fai-tolerances.js"></script>
 <script src="js/quality-records.js"></script>
@@ -6735,13 +6736,62 @@ function AdminUsers({currentUser,machines,currentLogo,onLogoUpdate,onMachinesSyn
   );
 }
 
+function buildQualityLetterheadHtml(html,{companyProfile={},logoSrc="",templateLibrary={},title="",code="",recordNo="",revision=0,sourceRevision="",date="",reference=""}={}){
+  const parsed=new DOMParser().parseFromString(html,"text/html");
+  parsed.querySelectorAll("header,.toolbar,.meta").forEach(node=>node.remove());
+  const firstParagraph=parsed.body.querySelector("p");
+  if(firstParagraph?.textContent.trim().toLocaleLowerCase("tr")===title.trim().toLocaleLowerCase("tr"))firstParagraph.remove();
+  const library=normalizeDocumentTemplateLibrary(templateLibrary);
+  const base=ensureDocumentTemplatePrintBranding("order",library.templates.order);
+  const brand=base.blocks.find(block=>block.type==="brandHeader");
+  const header={...brand,rightText:"{{document.code}}\nKayıt No: {{document.recordNo}}\nRevizyon: {{document.revision}} · Şablon: {{document.sourceRevision}}\nTarih: {{document.date}}"};
+  const data=buildDocumentCompanyPayload(companyProfile);
+  data.document={title,code,recordNo:recordNo||"Önizleme",revision:String(revision),sourceRevision:String(sourceRevision),date:formatDocumentOutputDate(date)};
+  const shell=buildDocumentTemplatePrintHtml({templateId:"order",template:{...base,blocks:[header,createDocumentTemplateBlock("text",{content:"{{document.title}}",fontSize:22,weight:800,color:"#17212f",span:2})]},data,logoSrc,documentCode:code});
+  const landscape=/size:\s*A4\s+landscape/i.test(html);
+  const originalCss=Array.from(parsed.querySelectorAll("style"),node=>node.textContent).join("\n");
+  const css=`${originalCss}\n${buildDocumentPrintBaseCss()}
+    @page{size:A4 ${landscape?"landscape":"portrait"};margin:12mm}
+    .sheet{max-width:${landscape?"273":"186"}mm}
+    .qd-print-content{margin-top:14px;color:#17212f}
+    .qd-print-content th{background:#f3f4f6;color:#374151;font-weight:700}
+    .qd-print-content th,.qd-print-content td{border-color:#d1d5db;padding:7px 8px}
+    .qd-print-content table:not(.fields) th{padding:6px 4px}
+    .qd-print-content h2{font-size:12px;color:#374151;margin:14px 0 8px}
+    .qd-print-content .signatures div{border-color:#cbd5e1;border-radius:4px}
+    .qd-print-content footer{color:#6b7280;font-size:9px;line-height:1.5}
+    .qd-print-reference{padding:8px 10px;border:1px solid #cbd5e1;border-radius:4px;color:#4b5563;font-size:10.5px}
+    @media print{.sheet{max-width:none}}
+  `;
+  const body=`<section class="qd-print-content dt-span-2">${reference?`<div class="qd-print-reference">İlişkili kayıt: ${escapeDocumentHtml(reference)}</div>`:""}${parsed.body.innerHTML}</section>`;
+  const output=new DOMParser().parseFromString(shell,"text/html");
+  const style=output.createElement("style");style.textContent=css;output.head.appendChild(style);
+  output.querySelector(".dt-grid").insertAdjacentHTML("beforeend",body);
+  return "<!doctype html>"+output.documentElement.outerHTML;
+}
+function qualityReferenceSections(doc){
+  const sections=[];let section={title:"Doküman bilgisi",blocks:[]};
+  for(const block of doc?.blocks||[]){
+    if(block.text&&/^(?:[A-ZÇĞİÖŞÜ]{2,5}-(?:PR|TL|FR)-?\d+|GT-\d+)\s*[—–-]|^\d+(?:\.\d+)*[.)]?\s+\S/.test(block.text)){
+      if(section.blocks.length)sections.push(section);
+      section={title:block.text,blocks:[]};
+    }else section.blocks.push(block);
+  }
+  if(section.blocks.length)sections.push(section);
+  return sections;
+}
+function qualityDocumentLabel(doc){
+  return {"01":"Entegre Yönetim Sistemi El Kitabı","02":"Prosedürler Kitabı","03":"İş Talimatları ve Görev Tanımları","04":"Form Şablonları Kitabı","05":"EYDEP ve Tesis Güvenliği Rehberi","06":"Yönetim Sistemi Kayıtları ve Matrisler","07":"Çalışan Gizlilik Taahhütnamesi","08":"Karşılıklı Gizlilik Sözleşmesi","09":"İş Sözleşmesi ve Ekleri","10":"Uygunluk Sertifikası (CoC)","11":"Ölçüm ve Nihai Kontrol Raporu","12":"Malzeme Sertifikası İnceleme","13":"Özel Proses Sertifikası ve Doğrulama","14":"Günlük ve Vardiya Çizelgeleri","15":"Tezgâh Yanı Basılı Formlar"}[doc.id]||doc.title;
+}
 function QualityDocumentPanel({tab,currentUser,logoSrc="",machine="",compact=false}) {
   const api=window.QualityDocuments,options=api.forTab(tab),sourceOptions=api.sourceOptions(tab);
   const [opened,setOpened]=useState(false),[mode,setMode]=useState("records"),[records,setRecords]=useState([]),[sourceRows,setSourceRows]=useState([]);
   const [templateId,setTemplateId]=useState(options[0]?.id||""),[collection,setCollection]=useState(sourceOptions[0]?.[0]||""),[sourceId,setSourceId]=useState("");
   const [context,setContext]=useState(null),[draft,setDraft]=useState(null),[previous,setPrevious]=useState(null),[query,setQuery]=useState("");
   const [error,setError]=useState(""),[busy,setBusy]=useState(false),[loaded,setLoaded]=useState(false),[sourcesLoaded,setSourcesLoaded]=useState(false),[company,setCompany]=useState({});
-  const [referenceId,setReferenceId]=useState("03"),[printLogo,setPrintLogo]=useState(logoSrc);
+  const [referenceId,setReferenceId]=useState("03"),[printLogo,setPrintLogo]=useState(logoSrc),[referenceQuery,setReferenceQuery]=useState("");
+  const [printTemplates,setPrintTemplates]=useState({});
+  const [recordType,setRecordType]=useState("all"),[versionScope,setVersionScope]=useState("latest"),[recordPage,setRecordPage]=useState(1);
   const lock=useRef(false),request=useRef(0);
   const canManage=currentUser.role==="admin"||["manage_quality","manage_compliance","manage_security","manage_orders","manage_purchasing","manage_sales","assign_tasks","approve_users"].some(p=>hasPermission(currentUser,p));
   const canPersonnel=currentUser.role==="admin"||hasPermission(currentUser,"approve_users");
@@ -6753,11 +6803,16 @@ function QualityDocumentPanel({tab,currentUser,logoSrc="",machine="",compact=fal
   const permittedIds=new Set(permittedTemplates.map(t=>t.id));
   const visible=records.filter(r=>permittedIds.has(r.templateId)&&(!ownOnly||r.createdBy===currentUser.id)&&(!machine||r.machine===machine)&&[r.sourceLabel,r.template?.title,r.id].join(" ").toLocaleLowerCase("tr").includes(query.toLocaleLowerCase("tr"))).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));
   const superseded=new Set(records.map(r=>r.supersedesId).filter(Boolean));
+  const filteredRecords=visible.filter(r=>(recordType==="all"||r.templateId===recordType)&&(versionScope==="all"||!superseded.has(r.id)));
+  const recordPageCount=Math.max(1,Math.ceil(filteredRecords.length/10));
+  const safeRecordPage=Math.min(recordPage,recordPageCount);
+  const pageRecords=filteredRecords.slice((safeRecordPage-1)*10,safeRecordPage*10);
+  useEffect(()=>setRecordPage(1),[query,recordType,versionScope]);
   async function loadRecords(){
     setLoaded(false);setError("");
     try{setRecords(await window.DB.getAll("qualityFormRecords",{throwOnError:true}));setLoaded(true);}catch(e){setError("Evraklar yüklenemedi: "+e.message);}
   }
-  useEffect(()=>{if(!opened)return;loadRecords();window.DB.getDoc("config","quoteTemplate").then(c=>setCompany(c||{})).catch(()=>{});window.DB.getDoc("config","branding").then(c=>setPrintLogo(logoSrc||c?.logo||"" )).catch(()=>{});},[opened]);
+  useEffect(()=>{if(!opened)return;loadRecords();window.DB.getDoc("config","quoteTemplate").then(c=>setCompany(c||{})).catch(()=>{});window.DB.getDoc("config","branding").then(c=>setPrintLogo(logoSrc||c?.logo||"" )).catch(()=>{});window.DB.getDoc("config","documentTemplates").then(c=>setPrintTemplates(c||{})).catch(()=>{});},[opened]);
   useEffect(()=>{
     if(!opened||!collection)return;
     let alive=true;setSourcesLoaded(false);setSourceRows([]);
@@ -6787,24 +6842,39 @@ function QualityDocumentPanel({tab,currentUser,logoSrc="",machine="",compact=fal
     try{
       const payload={...api.snapshot(selectedTemplate,draft,context,currentUser,{previous}),machine:machine||context.record.machine||context.trace?.machine||""};
       const id=await window.DB.addDoc("qualityFormRecords",payload);if(!id)throw Error("Evrak kaydedilemedi. Bağlantı ve kayıt yetkisini kontrol edin.");
-      setRecords(rs=>[{...payload,id},...rs]);setDraft(null);setContext(null);setPrevious(null);setMode("records");
+      setRecords(rs=>[{...payload,id},...rs]);setDraft(null);setContext(null);setPrevious(null);setMode("records");setQuery("");setRecordType("all");setRecordPage(1);
     }catch(e){setError(e.message);}finally{lock.current=false;setBusy(false);}
   }
-  function print(row){if(!openDocumentPrintWindow(api.printHtml(row,{companyName:company.companyName||"ABBA TEKNOLOJİ",logo:resolvePrintAssetUrl(printLogo,{useDefault:false})})))setError("Yazdırma penceresi açılamadı. Açılır pencere iznini kontrol edin.");}
+  function print(row){
+    const html=buildQualityLetterheadHtml(api.printHtml(row),{companyProfile:company,logoSrc:printLogo,templateLibrary:printTemplates,title:row.template.title,code:row.template.code,recordNo:row.id,revision:row.revision,sourceRevision:row.template.revision,date:row.createdAt,reference:row.sourceLabel});
+    if(!openDocumentPrintWindow(html))setError("Yazdırma penceresi açılamadı. Açılır pencere iznini kontrol edin.");
+  }
   function setValue(key,value){setDraft(d=>({...d,values:{...d.values,[key]:value}}));}
   function setMeasure(i,key,value){setDraft(d=>({...d,measurementRows:d.measurementRows.map((r,j)=>i===j?{...r,[key]:value}:r)}));}
   function setCell(ti,ri,ci,value){setDraft(d=>({...d,tables:d.tables.map((t,i)=>i===ti?{...t,rows:t.rows.map((r,j)=>j===ri?r.map((v,k)=>k===ci?value:v):r)}:t)}));}
   const control={...inputSt,width:"100%",minHeight:44},button={...btnSt("ghost"),minHeight:44};
   if(!options.length)return null;
-  return <div style={compact?{}:{marginBottom:12,padding:"10px 14px",border:`1px solid ${C.border}`,borderRadius:10,background:C.card,display:"flex",justifyContent:"space-between",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-    {!compact&&<div><strong>İlgili Kalite Evrakları</strong><div style={{fontSize:12,color:C.muted2}}>Kayıtla bağlantılı formlar, revizyonlar ve kaynak dokümanlar</div></div>}
+  return <div className={`qd-panel${compact?" qd-compact":""}`} style={{"--qd-accent":C.accent,"--qd-border":C.border,"--qd-surface":C.surface,"--qd-muted":C.muted2,"--qd-text":C.text}}>
     <button style={{...button,background:C.card,color:C.text}} onClick={()=>setOpened(true)}>Kalite Evrakları ({permittedTemplates.length})</button>
     {opened&&<div style={{position:"fixed",inset:0,zIndex:150,background:"rgba(0,0,0,.65)",padding:12,display:"flex",alignItems:"center",justifyContent:"center",textAlign:"left",color:C.text,fontSize:14,fontWeight:400}}>
-      <div role="dialog" aria-modal="true" aria-label="İlgili kalite evrakları" style={{width:"100%",maxWidth:1180,maxHeight:"calc(100dvh - 24px)",overflowY:"auto",background:C.card,borderRadius:14,padding:16}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}><h3>İlgili Kalite Evrakları</h3><button disabled={busy} style={button} onClick={close}>Kapat</button></div>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{[["records","Kayıtlı Evraklar"],["create","Yeni Evrak"],["references","Kaynak Dokümanlar"]].filter(([id])=>id!=="create"||canCreate).map(([id,title])=><button key={id} disabled={busy} style={mode===id?{...btnSt("primary"),minHeight:44}:button} onClick={()=>setMode(id)}>{title}</button>)}</div>
+      <div className="qd-dialog" role="dialog" aria-modal="true" aria-label="İlgili kalite evrakları" style={{width:"100%",maxWidth:1080,maxHeight:"calc(100dvh - 24px)",background:C.card,borderRadius:14}}>
+        <div className="qd-dialog-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}><div><h3>Kalite Evrakları</h3><span className="qd-context-label">{ROLE_MODULE_CATALOG.find(m=>m.id===api.normalizeTab(tab))?.label||"Proje evrakları"}</span></div><div className="qd-header-actions">{canCreate&&<button disabled={busy} style={{...btnSt("primary"),minHeight:44}} onClick={()=>setMode("create")}>Yeni Evrak</button>}<button disabled={busy} style={button} onClick={close}>Kapat</button></div></div>
+        <div className="qd-dialog-nav">{[["records","Evrak Listesi"],["references","Doküman Rehberi"]].map(([id,title])=><button key={id} disabled={busy} style={button} aria-pressed={mode===id} onClick={()=>setMode(id)}>{title}</button>)}{mode==="create"&&<span className="qd-editing-label">{previous?"Revizyon düzenleniyor":"Yeni evrak hazırlanıyor"}</span>}</div>
+        <div className="qd-dialog-body">
         {error&&<p role="alert" style={{color:C.red}}>{error}</p>}
-        {mode==="records"&&<div style={{marginTop:12}}><input aria-label="Evrak ara" style={control} placeholder="İş emri, kayıt veya evrak adı ara" value={query} onChange={e=>setQuery(e.target.value)}/><button style={button} onClick={loadRecords}>Kayıtları Yenile</button>{!loaded?<p>Evrak kayıtları yükleniyor.</p>:!visible.length?<p>Bu ekran için kayıtlı evrak bulunamadı. Yeni Evrak ile bir proje kaydına form bağlayabilirsiniz.</p>:visible.map(r=><div key={r.id} style={{borderBottom:`1px solid ${C.border}`,padding:"12px 0",display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}><div style={{overflowWrap:"anywhere",minWidth:0}}><strong>{r.template?.code} · {r.template?.title}</strong><div>{r.sourceLabel} · Rev.{r.revision||0}{superseded.has(r.id)?" · Önceki sürüm":""}</div><small>{r.createdByName} · {String(r.createdAt).slice(0,10)}</small></div><div style={{display:"flex",gap:8}}><button style={button} onClick={()=>print(r)}>Formu Yazdır</button>{canCreate&&!superseded.has(r.id)&&<button disabled={busy} style={button} onClick={()=>prepare(r)}>Yeni Revizyon</button>}</div></div>)}</div>}
+        {mode==="records"&&<div className="qd-records">
+          <div className="qd-record-filters"><label className="qd-record-search">Ara<input aria-label="Evrak ara" style={control} placeholder="Evrak adı veya iş emri" value={query} onChange={e=>setQuery(e.target.value)}/></label><label>Evrak türü<select aria-label="Evrak türü filtresi" style={control} value={recordType} onChange={e=>setRecordType(e.target.value)}><option value="all">Tüm evraklar</option>{permittedTemplates.map(t=><option key={t.id} value={t.id}>{t.title}</option>)}</select></label><label>Sürüm<select aria-label="Evrak sürümü" style={control} value={versionScope} onChange={e=>setVersionScope(e.target.value)}><option value="latest">Son sürümler</option><option value="all">Tüm sürümler</option></select></label></div>
+          <div className="qd-list-summary"><span>{loaded?`${filteredRecords.length} evrak`:"Yükleniyor…"}</span><button style={button} disabled={busy||!loaded&&!error} onClick={loadRecords}>Yenile</button></div>
+          {!loaded?<div className="qd-empty"><strong>Evraklar yükleniyor</strong><p>Kayıt listesi hazırlanıyor.</p></div>:!filteredRecords.length?<div className="qd-empty"><strong>{query||recordType!=="all"?"Aramanıza uygun evrak yok":"Henüz evrak oluşturulmamış"}</strong><p>{query||recordType!=="all"?"Aramayı veya evrak türünü değiştirerek tekrar deneyin.":"İlgili proje kaydını seçerek ilk evrakınızı hazırlayabilirsiniz."}</p>{query||recordType!=="all"?<button style={button} onClick={()=>{setQuery("");setRecordType("all");}}>Filtreleri Temizle</button>:canCreate&&<button style={button} onClick={()=>setMode("create")}>İlk Evrakı Oluştur</button>}</div>:<>
+            <div className="qd-record-table-wrap"><table className="qd-record-table"><thead><tr><th>Evrak</th><th>İlişkili kayıt</th><th>Hazırlayan / Tarih</th><th>İşlemler</th></tr></thead><tbody>{pageRecords.map(r=><tr key={r.id} className={superseded.has(r.id)?"qd-previous-version":""}>
+              <td className="qd-record-title"><strong>{r.template?.title}</strong><div className="qd-record-meta"><span>{r.template?.code}</span><span className="qd-version">Rev.{String(r.revision||0).padStart(2,"0")}</span>{superseded.has(r.id)&&<span>Önceki sürüm</span>}</div></td>
+              <td data-label="İlişkili kayıt" className="qd-record-reference">{r.sourceLabel||"—"}</td>
+              <td data-label="Hazırlayan" className="qd-record-author"><span>{r.createdByName||"—"}</span><time>{/^\d{4}-\d{2}-\d{2}/.test(String(r.createdAt))?String(r.createdAt).slice(0,10).split("-").reverse().join("."):"—"}</time></td>
+              <td className="qd-record-actions"><button style={button} onClick={()=>print(r)}>Yazdır</button>{canCreate&&!superseded.has(r.id)&&<button disabled={busy} style={button} onClick={()=>prepare(r)}>Yeni Revizyon</button>}</td>
+            </tr>)}</tbody></table></div>
+            <div className="qd-pagination"><span>{(safeRecordPage-1)*10+1}–{Math.min(safeRecordPage*10,filteredRecords.length)} / {filteredRecords.length} evrak</span><div><button style={button} disabled={safeRecordPage<=1} onClick={()=>setRecordPage(safeRecordPage-1)}>Önceki</button><span>{safeRecordPage} / {recordPageCount}</span><button style={button} disabled={safeRecordPage>=recordPageCount} onClick={()=>setRecordPage(safeRecordPage+1)}>Sonraki</button></div></div>
+          </>}
+        </div>}
         {mode==="create"&&canCreate&&<div style={{marginTop:14}}>
           {!draft&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,240px),1fr))",gap:12}}>
             <label>Evrak türü<select aria-label="Evrak türü" style={control} value={template?.id||""} onChange={e=>setTemplateId(e.target.value)}>{permittedTemplates.map(t=><option key={t.id} value={t.id}>{t.code} · {t.title}</option>)}</select></label>
@@ -6814,19 +6884,27 @@ function QualityDocumentPanel({tab,currentUser,logoSrc="",machine="",compact=fal
           </div>}
           {draft&&<><h3>{selectedTemplate.code} · {selectedTemplate.title}</h3><p>{api.label(context.record)} · Kaynaktan aktarılmayan alanları tamamlayın. Kaydetmek elektronik onay vermez.</p>
             <fieldset disabled={busy} style={{border:0,padding:0,margin:0,minWidth:0}}>
-              <label>Bağlı evraklar / sertifika kayıtları<select aria-label="Bağlı evraklar" multiple style={{...control,minHeight:90,marginBottom:12}} value={(draft.relatedDocuments||[]).map(r=>r.id)} onChange={e=>{const ids=Array.from(e.target.selectedOptions,o=>o.value);setDraft(d=>({...d,relatedDocuments:records.filter(r=>ids.includes(r.id)).map(r=>({id:r.id,label:`${r.template?.code} · ${r.sourceLabel}`,revision:r.revision||0}))}));}}>{records.filter(r=>r.id!==previous?.id&&r.template?.kind!=="contract"&&(!ownOnly||r.createdBy===currentUser.id)&&(context.links||[]).some(link=>(r.links||[]).some(other=>other.collection===link.collection&&other.id===link.id))).map(r=><option key={r.id} value={r.id}>{r.template?.code} · {r.sourceLabel} · Rev.{r.revision||0}</option>)}</select></label>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,260px),1fr))",gap:10}}>{selectedTemplate.fields.map(f=><label key={f.key}>{f.label}<textarea aria-label={f.label} style={{...control,minHeight:65}} value={draft.values[f.key]||""} onChange={e=>setValue(f.key,e.target.value)}/></label>)}</div>
+
+              <div className="qd-field-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,260px),1fr))",gap:12}}>{selectedTemplate.fields.map(f=><label key={f.key}>{f.label}<textarea aria-label={f.label} rows={1} style={{...control,minHeight:44,height:String(draft.values[f.key]||" ").length>100?90:44}} value={draft.values[f.key]||""} onChange={e=>setValue(f.key,e.target.value)}/></label>)}</div>
               {draft.tables.map((tb,ti)=><div key={ti} style={{marginTop:16}}><h4>{tb.title}</h4><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:tb.columns.length*155}}><thead><tr>{tb.columns.map((c,ci)=><th key={ci} style={{textAlign:"left",padding:7}}>{c}</th>)}<th>Satır</th></tr></thead><tbody>{tb.rows.map((r,ri)=><tr key={ri}>{tb.columns.map((c,ci)=><td key={ci}><textarea aria-label={`${tb.title} ${ri+1} ${c}`} style={{...control,minHeight:65}} value={r[ci]||""} onChange={e=>setCell(ti,ri,ci,e.target.value)}/></td>)}<td><button style={button} onClick={()=>setDraft(d=>({...d,tables:d.tables.map((t,i)=>i===ti?{...t,rows:t.rows.filter((_,j)=>j!==ri)}:t)}))}>Kaldır</button></td></tr>)}</tbody></table></div><button style={button} onClick={()=>setDraft(d=>({...d,tables:d.tables.map((t,i)=>i===ti?{...t,rows:[...t.rows,t.columns.map(()=>"")]}:t)}))}>Satır Ekle</button></div>)}
               {selectedTemplate.kind==="measurement"&&<div><h4>Ölçüm Sonuçları</h4><p>Alt/üst toleranslar işaretli sapmadır. Örnek: 8 ±0,1 → alt −0,1 / üst +0,1. Numune sayısı ve ölçümler tamamlanmadan uygunluk kararı verilmez.</p>{draft.measurementRows.map((r,i)=>{const result=api.evaluate(r);return <div key={i} style={{padding:12,marginBottom:10,border:`1px solid ${C.border}`,borderRadius:9}}><strong>Karakteristik {i+1} · {result.status}</strong><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,155px),1fr))",gap:8,marginTop:8}}>
                 <label>Kontrol türü<select aria-label={`Kontrol türü ${i+1}`} style={control} value={r.kind} onChange={e=>setMeasure(i,"kind",e.target.value)}><option value="numeric">Sayısal ölçüm</option><option value="attribute">Nitel / Görsel / Mastar</option></select></label>
                 {[["balloon","Balon"],["characteristic","Karakteristik"],["device","Cihaz"],["note","Not"],...(r.kind==="numeric"?[["unit","Birim"],["nominal","Nominal"],["lower","Alt sapma"],["upper","Üst sapma"],["expected","Numune sayısı"]]:[])].map(([key,label])=><label key={key}>{label}<input aria-label={`${label} ${i+1}`} style={control} value={r[key]??""} onChange={e=>setMeasure(i,key,e.target.value)}/></label>)}
                 {r.kind==="attribute"?<label>Sonuç<select aria-label={`Nitel sonuç ${i+1}`} style={control} value={r.attribute} onChange={e=>setMeasure(i,"attribute",e.target.value)}><option value="">Seçin</option><option value="pass">Uygun</option><option value="fail">Uygun değil</option></select></label>:r.samples.map((v,j)=><label key={j}>Ölçüm {j+1}<input aria-label={`Karakteristik ${i+1} Ölçüm ${j+1}`} style={control} value={v} onChange={e=>setMeasure(i,"samples",r.samples.map((s,k)=>k===j?e.target.value:s))}/></label>)}
               </div><p>Alt limit: {result.lower} · Üst limit: {result.upper} · Min: {result.min} · Maks: {result.max}</p><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{r.kind==="numeric"&&<button style={button} onClick={()=>setMeasure(i,"samples",[...r.samples,""])}>Numune Alanı Ekle</button>}<button style={button} onClick={()=>setDraft(d=>({...d,measurementRows:d.measurementRows.filter((_,j)=>j!==i)}))}>Karakteristiği Kaldır</button></div></div>;})}<button style={button} onClick={()=>setDraft(d=>({...d,measurementRows:[...d.measurementRows,api.emptyMeasurement()]}))}>Karakteristik Ekle</button></div>}
+              <details className="qd-related"><summary>Bağlı evraklar ve sertifikalar</summary>              <label>Bağlı evraklar / sertifika kayıtları<select aria-label="Bağlı evraklar" multiple style={{...control,minHeight:90,marginBottom:12}} value={(draft.relatedDocuments||[]).map(r=>r.id)} onChange={e=>{const ids=Array.from(e.target.selectedOptions,o=>o.value);setDraft(d=>({...d,relatedDocuments:records.filter(r=>ids.includes(r.id)).map(r=>({id:r.id,label:`${r.template?.code} · ${r.sourceLabel}`,revision:r.revision||0}))}));}}>{records.filter(r=>r.id!==previous?.id&&r.template?.kind!=="contract"&&(!ownOnly||r.createdBy===currentUser.id)&&(context.links||[]).some(link=>(r.links||[]).some(other=>other.collection===link.collection&&other.id===link.id))).map(r=><option key={r.id} value={r.id}>{r.template?.code} · {r.sourceLabel} · Rev.{r.revision||0}</option>)}</select></label></details>
             </fieldset>
-            <div style={{position:"sticky",bottom:-16,padding:"12px 0",background:C.card,display:"flex",justifyContent:"flex-end",gap:8,flexWrap:"wrap"}}><button disabled={busy} style={button} onClick={()=>{if(confirm("Kaydedilmemiş evrak iptal edilsin mi?")){setDraft(null);setContext(null);setPrevious(null);}}}>Vazgeç</button><button disabled={busy} style={button} onClick={()=>print(api.snapshot(selectedTemplate,draft,context,currentUser,{previous}))}>Baskı Önizleme</button><button disabled={busy} style={{...btnSt("primary"),minHeight:44}} onClick={save}>{busy?"Kaydediliyor…":"Evrakı Kaydet"}</button></div>
+            <div style={{position:"sticky",bottom:-16,padding:"12px 0",borderTop:`1px solid ${C.border}`,background:C.card,display:"flex",justifyContent:"flex-end",gap:8,flexWrap:"wrap"}}><button disabled={busy} style={button} onClick={()=>{if(confirm("Kaydedilmemiş evrak iptal edilsin mi?")){setDraft(null);setContext(null);setPrevious(null);}}}>Vazgeç</button><button disabled={busy} style={button} onClick={()=>print(api.snapshot(selectedTemplate,draft,context,currentUser,{previous}))}>Baskı Önizleme</button><button disabled={busy} style={{...btnSt("primary"),minHeight:44}} onClick={save}>{busy?"Kaydediliyor…":"Evrakı Kaydet"}</button></div>
           </>}
         </div>}
-        {mode==="references"&&<div style={{marginTop:14}}><p>Kaynak belgeler ve bu ekrana bağlı şablonlar. Örnek doldurulmuş veriler yeni kayıtlara aktarılmaz.</p><label>Kaynak belge<select aria-label="Kaynak belge" style={control} value={referenceId} onChange={e=>setReferenceId(e.target.value)}>{api.documents.map(d=><option key={d.id} value={d.id}>{d.id} · {d.title}</option>)}</select></label>{(()=>{const doc=api.documents.find(d=>d.id===referenceId);return <div><p>{doc?.file}</p>{doc?.blocks?<div style={{maxHeight:"55vh",overflow:"auto",border:`1px solid ${C.border}`,padding:12}}>{doc.blocks.map((b,i)=>b.text?<p key={i} style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{b.text}</p>:<div key={i} style={{overflowX:"auto"}}><table style={{borderCollapse:"collapse",width:"100%"}}><tbody>{b.rows.map((r,j)=><tr key={j}>{r.map((c,k)=><td key={k} style={{border:`1px solid ${C.border}`,padding:6,overflowWrap:"anywhere"}}>{c}</td>)}</tr>)}</tbody></table></div>)}</div>:<div>{api.templates.filter(t=>t.source===referenceId||t.relatedSources?.includes(referenceId)).map(t=><p key={t.id}>{t.code} · {t.title} — {t.tabs.map(id=>ROLE_MODULE_CATALOG.find(m=>m.id===id)?.label||id).join(", ")}</p>)}</div>}</div>;})()}</div>}
+        {mode==="references"&&<div>
+          <div className="qd-library-toolbar"><label>Doküman<select aria-label="Kaynak belge" style={control} value={referenceId} onChange={e=>{setReferenceId(e.target.value);setReferenceQuery("");}}>{api.documents.map(d=><option key={d.id} value={d.id}>{qualityDocumentLabel(d)}</option>)}</select></label><label>Bölüm veya form ara<input aria-label="Doküman içinde ara" style={control} value={referenceQuery} placeholder="Örn. bakım, GT-08, kontrol" onChange={e=>setReferenceQuery(e.target.value)}/></label></div>
+          {(()=>{const doc=api.documents.find(d=>d.id===referenceId),q=referenceQuery.toLocaleLowerCase("tr");
+            if(doc?.blocks){const sections=qualityReferenceSections(doc).filter(s=>[s.title,...s.blocks.map(b=>b.text||b.rows.flat().join(" "))].join(" ").toLocaleLowerCase("tr").includes(q));return <div key={referenceId}>{!sections.length&&<p>Aranan bölüm bulunamadı.</p>}{sections.map((section,i)=><details className="qd-reference-section" key={section.title+ i}><summary>{section.title}</summary><div className="qd-reference-content">{section.blocks.map((b,j)=>b.text?<p key={j}>{b.text}</p>:<div key={j} style={{overflowX:"auto"}}><table><tbody>{b.rows.map((r,k)=><tr key={k}>{r.map((c,l)=><td key={l}>{c}</td>)}</tr>)}</tbody></table></div>)}</div></details>)}</div>;}
+            const list=api.templates.filter(t=>(t.source===referenceId||t.relatedSources?.includes(referenceId))&&`${t.code} ${t.title}`.toLocaleLowerCase("tr").includes(q));return <div>{!list.length&&<p>Aranan form bulunamadı.</p>}{list.map(t=><div className="qd-library-item" key={t.id}><strong>{t.title}</strong><small>{t.code} · {t.tabs.map(id=>ROLE_MODULE_CATALOG.find(m=>m.id===id)?.label||id).join(" · ")}</small></div>)}</div>;
+          })()}
+        </div>}
+        </div>
       </div>
     </div>}
   </div>;
@@ -6835,7 +6913,7 @@ function QualityDocumentPanel({tab,currentUser,logoSrc="",machine="",compact=fal
 function EmployeeAppointmentPanel({currentUser,users=[],canAssign=false,logoSrc=""}) {
   const api=window.EmployeeAppointments;
   const [rows,setRows]=useState([]),[error,setError]=useState(""),[busy,setBusy]=useState(false),[loaded,setLoaded]=useState(false);
-  const [expanded,setExpanded]=useState(false),[form,setForm]=useState(null),[company,setCompany]=useState("");
+  const [expanded,setExpanded]=useState(false),[form,setForm]=useState(null),[company,setCompany]=useState({}),[printTemplates,setPrintTemplates]=useState({});
   const [search,setSearch]=useState("");
   const load=useCallback(async()=>{
     setError("");setLoaded(false);
@@ -6844,7 +6922,7 @@ function EmployeeAppointmentPanel({currentUser,users=[],canAssign=false,logoSrc=
       setRows(data);setLoaded(true);
     }catch(e){setError("Görev tanımları yüklenemedi: "+e.message);}
   },[]);
-  useEffect(()=>{load();window.DB.getDoc("config","quoteTemplate").then(c=>setCompany(c?.companyName||"")).catch(()=>{});},[load]);
+  useEffect(()=>{load();window.DB.getDoc("config","quoteTemplate").then(c=>setCompany(c||{})).catch(()=>{});window.DB.getDoc("config","documentTemplates").then(c=>setPrintTemplates(c||{})).catch(()=>{});},[load]);
   const visible=rows.filter(r=>(canAssign||r.employeeId===currentUser.id)&&[r.employeeName,r.title,r.department].join(" ").toLocaleLowerCase("tr").includes(search.toLocaleLowerCase("tr"))).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));
   const replaced=new Set(rows.map(r=>r.supersedesId).filter(Boolean));
   function openNew(){setError("");setForm({...api.template("GT-08"),employeeId:"",startDate:todayStr(),endDate:"",revision:0});setExpanded(true);}
@@ -6862,7 +6940,7 @@ function EmployeeAppointmentPanel({currentUser,users=[],canAssign=false,logoSrc=
   }
   function print(row){
     if(!canAssign&&row.employeeId!==currentUser.id)return;
-    const win=openDocumentPrintWindow(api.printHtml(row,{logo:resolvePrintAssetUrl(logoSrc,{useDefault:false}),companyName:company||"ABBA TEKNOLOJİ"}));
+    const win=openDocumentPrintWindow(buildQualityLetterheadHtml(api.printHtml(row),{companyProfile:company,logoSrc,templateLibrary:printTemplates,title:row.source?.title||api.source.title,code:row.source?.form||api.source.form,recordNo:row.id,revision:row.revision,sourceRevision:row.source?.revision,date:row.createdAt,reference:row.employeeName+" / "+row.roleCode}));
     if(!win)setError("Yazdırma penceresi açılamadı. Tarayıcının açılır pencere iznini kontrol edin.");
   }
   const edit=(key,value)=>setForm(prev=>({...prev,[key]:value}));
