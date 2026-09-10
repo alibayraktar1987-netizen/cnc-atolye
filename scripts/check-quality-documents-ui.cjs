@@ -16,9 +16,9 @@ const code=babel.transformSync(source,{presets:[[require.resolve('@babel/preset-
  });
  assert.equal(brandCheck.logo,brandCheck.expectedLogo);assert.equal(brandCheck.company,'Firma & Ortakları');assert.ok(brandCheck.color.includes('18, 94, 84'));assert.ok(brandCheck.meta.includes('firma@example.com'));assert.ok(brandCheck.side.includes('record-123'));assert.equal(brandCheck.old,false);assert.ok(brandCheck.content.includes('Kontrol içeriği'));
  const dialog=p.getByRole('dialog',{name:'İlgili kalite evrakları'});
- async function open(tab){await p.evaluate(t=>window.mount(t),tab);await p.getByRole('button',{name:/Kalite Evrakları \(/}).click();await dialog.waitFor();}
+ async function open(tab){await p.evaluate(t=>window.mount(t),tab);await p.getByRole('button',{name:'Kalite Evrakları',exact:true}).click();await dialog.waitFor();}
  async function create(template,source){await dialog.getByRole('button',{name:'Yeni Evrak',exact:true}).click();await dialog.getByLabel('Evrak türü',{exact:true}).selectOption(template);await dialog.getByLabel('İlişkili kayıt',{exact:true}).selectOption(source);await dialog.getByRole('button',{name:'Kaydı Bağla ve Formu Doldur',exact:true}).click();}
- await p.getByRole('button',{name:/Kalite Evrakları \(/}).click();await create('FR-QUA-21','f1');
+ await p.getByRole('button',{name:'Kalite Evrakları',exact:true}).click();await create('FR-QUA-21','f1');
  assert.equal(await dialog.getByLabel('Nominal 1',{exact:true}).inputValue(),'8');assert.equal(await dialog.getByLabel('Alt sapma 1',{exact:true}).inputValue(),'-0.1');
  await dialog.getByLabel('Numune sayısı 1',{exact:true}).fill('2');await dialog.getByLabel('Karakteristik 1 Ölçüm 1',{exact:true}).fill('7,9');await dialog.getByLabel('Karakteristik 1 Ölçüm 2',{exact:true}).fill('8,1');await dialog.getByText('Karakteristik 1 · UYGUN',{exact:true}).waitFor();
  assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await p.screenshot({path:path.join(output,'quality-documents-tablet.png')});
@@ -45,6 +45,6 @@ const code=babel.transformSync(source,{presets:[[require.resolve('@babel/preset-
   await p.setViewportSize({width,height});const box=await dialog.boundingBox();assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=width+1&&box.y+box.height<=height+1);
   assert.ok(await dialog.locator('.qd-dialog-body').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
  }
- await p.evaluate(()=>window.mount('quality_fai','viewer'));await p.getByRole('button',{name:/Kalite Evrakları \(/}).click();assert.equal(await dialog.getByRole('button',{name:'Yeni Evrak',exact:true}).count(),0);
+ await p.evaluate(()=>window.mount('quality_fai','viewer'));await p.getByRole('button',{name:'Kalite Evrakları',exact:true}).click();assert.equal(await dialog.getByRole('button',{name:'Yeni Evrak',exact:true}).count(),0);
  assert.deepEqual(errors,[]);await browser.close();console.log('PASS: OCR prefill, strict measurements, failed save, revision snapshots, lot/heat separation, linked CoC, employee NDA, references, viewer and PDF outputs');
 })().catch(e=>{console.error(e);process.exit(1);});

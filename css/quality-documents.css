@@ -1,6 +1,11 @@
 .qd-panel{margin:0 0 10px;display:flex;justify-content:flex-end;min-width:0}
 .qd-panel.qd-compact{margin:6px 0 0;justify-content:flex-start}
 .qd-panel button,.qd-panel input,.qd-panel select,.qd-panel textarea{font-family:inherit}
+.qd-launcher{display:inline-flex;align-items:center;gap:10px;min-height:44px;max-width:100%;padding:7px 12px;border:1px solid var(--qd-border);border-radius:10px;color:var(--qd-text);font-size:13px;font-weight:600;line-height:1.4;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.qd-launcher-icon{display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--qd-accent)}
+.qd-launcher-arrow{display:flex;flex-shrink:0;margin-left:6px;color:var(--qd-muted)}
+.qd-launcher:hover{border-color:var(--qd-accent);box-shadow:0 2px 6px rgba(0,0,0,.06)}
+.qd-launcher:focus-visible{outline:2px solid var(--qd-accent);outline-offset:3px}
 .qd-dialog{display:flex;flex-direction:column;overflow:hidden!important;padding:0!important;font-family:inherit;height:min(860px,calc(100dvh - 24px))}
 .qd-dialog-header{padding:16px 20px;border-bottom:1px solid var(--qd-border);flex-shrink:0}
 .qd-dialog-header h3{margin:0;font-size:17px;font-weight:750;letter-spacing:0}
