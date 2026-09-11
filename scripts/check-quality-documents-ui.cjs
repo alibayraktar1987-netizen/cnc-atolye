@@ -16,6 +16,22 @@ const code=babel.transformSync(source,{presets:[[require.resolve('@babel/preset-
  });
  assert.equal(brandCheck.logo,brandCheck.expectedLogo);assert.equal(brandCheck.company,'Firma & Ortakları');assert.ok(brandCheck.color.includes('18, 94, 84'));assert.ok(brandCheck.meta.includes('firma@example.com'));assert.ok(brandCheck.side.includes('record-123'));assert.equal(brandCheck.old,false);assert.ok(brandCheck.content.includes('Kontrol içeriği'));
  const dialog=p.getByRole('dialog',{name:'İlgili kalite evrakları'});
+ // Exercise the real page shell: its flex rule must not stretch the launcher row.
+ await p.evaluate(()=>{
+  const root=document.getElementById('root');root.className='mrp-view-slot-inner';
+  const shell=document.createElement('div');shell.className='mrp-view-slot';shell.style.height='100vh';root.before(shell);shell.append(root);
+  const content=document.createElement('section');content.id='layout-content';content.textContent='Modül içeriği';root.append(content);
+ });
+ for(const [width,height] of [[2048,1169],[1024,768],[820,1180],[390,844]]){
+  await p.setViewportSize({width,height});
+  const launcher=await p.locator('.qd-launcher').boundingBox(),panel=await p.locator('.qd-panel').boundingBox(),content=await p.locator('#layout-content').boundingBox();
+  assert.ok(launcher.height>=44&&launcher.height<=56,`Launcher stretched at ${width}: ${launcher.height}`);
+  assert.ok(panel.height<=56&&content.y-panel.y<=66,`Empty space above content at ${width}`);
+  assert.ok(launcher.x>=0&&launcher.x+launcher.width<=width);
+ }
+ await p.screenshot({path:path.join(output,'quality-launcher-page-layout.png')});
+ await p.evaluate(()=>document.getElementById('layout-content').remove());
+ await p.setViewportSize({width:820,height:1180});
  async function open(tab){await p.evaluate(t=>window.mount(t),tab);await p.getByRole('button',{name:'Kalite Evrakları',exact:true}).click();await dialog.waitFor();}
  async function create(template,source){await dialog.getByRole('button',{name:'Yeni Evrak',exact:true}).click();await dialog.getByLabel('Evrak türü',{exact:true}).selectOption(template);await dialog.getByLabel('İlişkili kayıt',{exact:true}).selectOption(source);await dialog.getByRole('button',{name:'Kaydı Bağla ve Formu Doldur',exact:true}).click();}
  await p.getByRole('button',{name:'Kalite Evrakları',exact:true}).click();await create('FR-QUA-21','f1');

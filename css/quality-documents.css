@@ -1,4 +1,4 @@
-.qd-panel{margin:0 0 10px;display:flex;justify-content:flex-end;min-width:0}
+.qd-panel{margin:0 0 10px;display:flex;align-items:center;justify-content:flex-end;flex:0 0 auto;min-width:0}
 .qd-panel.qd-compact{margin:6px 0 0;justify-content:flex-start}
 .qd-panel button,.qd-panel input,.qd-panel select,.qd-panel textarea{font-family:inherit}
 .qd-launcher{display:inline-flex;align-items:center;gap:10px;min-height:44px;max-width:100%;padding:7px 12px;border:1px solid var(--qd-border);border-radius:10px;color:var(--qd-text);font-size:13px;font-weight:600;line-height:1.4;cursor:pointer;transition:border-color .15s,box-shadow .15s}
